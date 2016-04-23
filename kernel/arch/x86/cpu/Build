@@ -1,0 +1,9 @@
+init.c
+gdt.c
+idt.c
+isr.c
+pic.c
+pit.c
+sdt.c
+smp.S
+sys.S

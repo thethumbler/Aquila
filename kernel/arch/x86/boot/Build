@@ -1,0 +1,2 @@
+multiboot.S:X86_MULTIBOOT=y
+init.c
