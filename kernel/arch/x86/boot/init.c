@@ -5,22 +5,9 @@
 #include <boot/boot.h>
 
 /* FIXME */
-void *kernel_heap = (void*)0x1000;
-void *stack_alloc_ptr = NULL;
+char scratch[8192 * 1024] __attribute__((aligned(0x1000)));	/* 8 MiB scratch area */
 
-static void *stack_alloc(size_t size, size_t align)
-{
-	uintptr_t stack_alloc_ptr_int = (uintptr_t) stack_alloc_ptr;
-	stack_alloc_ptr_int -= size;
-	stack_alloc_ptr_int &= (~(align - 1));
-
-	stack_alloc_ptr = (void*) stack_alloc_ptr_int;
-
-	memset(stack_alloc_ptr, 0, size);	/* We always clear the allocated area */
-
-	return stack_alloc_ptr;
-}
-
+void *kernel_heap = (void*)scratch;
 static void *heap_alloc(size_t size, size_t align)
 {
 	void *ret = (void*)((uintptr_t)(kernel_heap + align - 1) & (~(align - 1)));
@@ -63,58 +50,8 @@ void switch_to_higher_half()
 	asm volatile("mov %%cr0, %%eax; or %0, %%eax; mov %%eax, %%cr0;"::"g"(0x80000000));
 }
 
-char *kernel_cmdline = NULL;
-module_t *kernel_modules = NULL;
-mmap_t *kernel_mmap = NULL;
-
-void process_multiboot_info()
-{
-	kernel_cmdline = (char *) multiboot_info->cmdline;
-	uint32_t _mmap = multiboot_info->mmap_addr;
-	multiboot_mmap_t *mmap = (multiboot_mmap_t*)_mmap;
-	uint32_t mmap_end = _mmap + multiboot_info->mmap_length;
-
-	int count = 0;
-	void *stack_alloc_ptr = NULL;
-	
-	while(_mmap < mmap_end)
-	{
-		if(mmap->type == MULTIBOOT_MEMORY_AVAILABLE)
-		{
-			++count;
-			if(mmap->addr + mmap->len > (uintptr_t) stack_alloc_ptr)
-				stack_alloc_ptr = (void*) (uintptr_t) (mmap->addr + mmap->len);
-		}
-
-		_mmap += mmap->size + sizeof(uint32_t);
-		mmap   = (multiboot_mmap_t*) _mmap;
-	}
-
-	_mmap = multiboot_info->mmap_addr;
-	mmap = (multiboot_mmap_t*) _mmap;
-
-	kernel_mmap = stack_alloc(count * sizeof(mmap_t), 1);
-
-	int i = 0;
-
-	while(_mmap < mmap_end)
-	{
-		if(mmap->type == MULTIBOOT_MEMORY_AVAILABLE)
-		{
-			kernel_mmap[i].start = mmap->addr;
-			kernel_mmap[i].end   = mmap->addr + mmap->size;
-		}
-
-		_mmap += mmap->size + sizeof(uint32_t);
-		mmap   = (multiboot_mmap_t*) _mmap;
-	}
-
-	for(;;);
-}
-
 void early_init()
 {
-	process_multiboot_info();
 	/* We assume that GrUB loaded a valid GDT */
 	/* Then we map the kernel to the higher half */
 	switch_to_higher_half();

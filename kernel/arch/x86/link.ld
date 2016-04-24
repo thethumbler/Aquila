@@ -10,6 +10,8 @@ SECTIONS {
 		*boot.o(*)
 	}
 
+	boot_end = .;
+
 	_VMA = 0xC0000000;
 	. += _VMA;
 

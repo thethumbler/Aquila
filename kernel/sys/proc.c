@@ -28,10 +28,9 @@ proc_t *load_elf(char *fn)
 		
 		if(shdr.flags & SHF_ALLOC && shdr.type == SHT_PROGBITS)
 		{
-			printk("ALLOC %x [%d]\n", shdr.addr, shdr.size);
 			/* FIXME add some out-of-bounds handling code here */
 			pmman.map(shdr.addr, shdr.size, URWX);	/* FIXME URWX, are you serious? */
-			//vfs.read(file, shdr.off, shdr.size, (void*) shdr.addr);
+			vfs.read(file, shdr.off, shdr.size, (void*) shdr.addr);
 		}
 
 		offset += hdr.shentsize;
