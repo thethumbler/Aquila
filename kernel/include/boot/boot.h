@@ -5,8 +5,9 @@
 
 typedef struct
 {
-	void *ptr;
+	void *addr;
 	size_t size;
+	char *cmdline;
 } module_t;
 
 typedef struct
@@ -16,6 +17,9 @@ typedef struct
 } mmap_t;
 
 extern char *kernel_cmdline;
+extern int kernel_modules_count;
+extern uintptr_t kernel_total_mem;
+extern int kernel_mmap_count;
 extern module_t *kernel_modules;
 extern mmap_t *kernel_mmap;
 

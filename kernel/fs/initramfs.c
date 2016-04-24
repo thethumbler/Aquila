@@ -4,24 +4,23 @@
 #include <fs/vfs.h>
 #include <fs/initramfs.h>
 
-/* FIXME: bootloader dependent */
-#include <boot/multiboot.h>
+#include <boot/boot.h>
 #include <fs/devfs.h>
 #include <dev/ramdev.h>
 
 void load_ramdisk()
 {
-	multiboot_info_t **mboot_p = VMA(&multiboot_info);
-	multiboot_info_t *mboot = VMA(*mboot_p);
-	multiboot_module_t *mod = (multiboot_module_t*) VMA(mboot->mods_addr);
+	/* Ramdisk is the first module */
+	void *ramdisk = (void*) kernel_modules[0].addr;
+	size_t ramdisk_size = kernel_modules[0].size;
 
-	void *ramdisk = (void*) VMA(mod->mod_start);
-	size_t ramdisk_size = mod->mod_end - mod->mod_start;
+	//printk("ramdisk %x [%d]\n", ramdisk, ramdisk_size);
 
 	ramdev_private_t *p = kmalloc(sizeof(ramdev_private_t));
 	*p = (ramdev_private_t){.addr = ramdisk};
 
 	inode_t *node = kmalloc(sizeof(inode_t));
+
 	*node = (inode_t)
 	{
 		.name = "ram0",

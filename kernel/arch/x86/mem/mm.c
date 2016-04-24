@@ -2,8 +2,9 @@
 #include <mm/mm.h>
 #include <core/string.h>
 #include <core/panic.h>
-#include <boot/multiboot.h>
+#include <boot/boot.h>
 #include <ds/bitmap.h>
+#include <boot/multiboot.h>
 
 void *heap;
 static void *heap_alloc(size_t size, size_t align)
@@ -23,54 +24,31 @@ static uint32_t bitmap_max_index = 0;
 /* FIXME: make this function bootloader independent */
 void x86_mm_setup()
 {
-	extern void *kernel_heap;
-	void **_heap = VMA(&kernel_heap);
-	heap = VMA(*_heap);
+	extern void *_kernel_heap;
+	heap = _kernel_heap;
 
-	/* FIXME: Use bigger type, or make mem size in KBs to avoid overflow
-	 * on systems having >= 4GB of RAM
-	 */
-	uint32_t mem = 0;
-
-	uint32_t _mmap = multiboot_info->mmap_addr;
-	multiboot_mmap_t *mmap = (multiboot_mmap_t*)_mmap;
-	uint32_t mmap_end = _mmap + multiboot_info->mmap_length;
-
-	while(_mmap < mmap_end)
-	{
-		mem   += mmap->len;
-		_mmap += mmap->size + sizeof(uint32_t);
-		mmap   = (multiboot_mmap_t*) _mmap;
-	}
-
-	bitmap_max_index = mem / PAGE_SIZE;
-
+	bitmap_max_index = kernel_total_mem / PAGE_SIZE;
 	pm_bitmap = heap_alloc(BITMAP_SIZE(bitmap_max_index), 4);
 
 	BITMAP_CLR_RANGE(pm_bitmap, 0, bitmap_max_index);
 
-	_mmap = multiboot_info->mmap_addr;
-	_mmap = _mmap;
-	mmap = (multiboot_mmap_t*)_mmap;
-
-	while(_mmap < mmap_end)
+	for(int i = 0; i < kernel_mmap_count; ++i)
 	{
-		if(mmap->type == MULTIBOOT_MEMORY_AVAILABLE)
-			BITMAP_SET_RANGE(pm_bitmap,
-							(mmap->addr + PAGE_MASK) / PAGE_SIZE,
-							(mmap->addr + mmap->len) / PAGE_SIZE);
-		_mmap += mmap->size + sizeof(uint32_t);
-		mmap   = (multiboot_mmap_t*) _mmap;
+		BITMAP_SET_RANGE(pm_bitmap,
+							(kernel_mmap[i].start + PAGE_MASK) / PAGE_SIZE,
+							kernel_mmap[i].end / PAGE_SIZE);
 	}
 
 	extern char kernel_end;
 	BITMAP_CLR_RANGE(pm_bitmap, 0, (uintptr_t)&kernel_end/PAGE_SIZE);
 
-	/* Ramdisk */
-	multiboot_module_t *ramdisk = (void *) multiboot_info->mods_addr;
-	BITMAP_CLR_RANGE(pm_bitmap,
-					(ramdisk->mod_start + PAGE_MASK) / PAGE_SIZE,
-					(ramdisk->mod_end   + PAGE_MASK) / PAGE_SIZE);
+	/* Modules */
+	for(int i = 0; i < kernel_modules_count; ++i)
+	{
+		BITMAP_CLR_RANGE(pm_bitmap,
+					LMA(((uintptr_t)kernel_modules[i].addr + PAGE_MASK) / PAGE_SIZE),
+					LMA(((uintptr_t)kernel_modules[i].addr + kernel_modules[i].size + PAGE_MASK) / PAGE_SIZE));
+	}
 }
 
 extern uint32_t* BSP_LPT;

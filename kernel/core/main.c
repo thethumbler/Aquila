@@ -37,9 +37,7 @@ void us()
 
 void kmain()
 {
-	//load_ramdisk();
-	pmman.unmap(0x0, 0x400000);
-	for(;;);
+	load_ramdisk();
 	load_elf("/bin/init");
 	
 	for(;;);

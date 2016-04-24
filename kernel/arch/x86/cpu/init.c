@@ -5,14 +5,123 @@
 #include <core/string.h>
 #include <mm/mm.h>
 
+#include <boot/multiboot.h>
+#include <boot/boot.h>
+
+char *kernel_cmdline;
+int kernel_modules_count;
+uintptr_t kernel_total_mem;
+int kernel_mmap_count;
+module_t *kernel_modules;
+mmap_t *kernel_mmap;
+
+void *_kernel_heap;
+static void *heap_alloc(size_t size, size_t align)
+{
+	void *ret = (void*)((uintptr_t)(_kernel_heap + align - 1) & (~(align - 1)));
+	_kernel_heap = (void*)((uintptr_t)ret + size);
+
+	memset(ret, 0, size);	/* We always clear the allocated area */
+
+	return ret;
+}
+
+static int get_multiboot_mmap_count()
+{
+	int count = 0;
+	uint32_t _mmap = multiboot_info->mmap_addr;
+	multiboot_mmap_t *mmap = (multiboot_mmap_t*)_mmap;
+	uint32_t mmap_end = _mmap + multiboot_info->mmap_length;
+
+	while(_mmap < mmap_end)
+	{
+		if(mmap->type == MULTIBOOT_MEMORY_AVAILABLE)
+			++count;
+		_mmap += mmap->size + sizeof(uint32_t);
+		mmap   = (multiboot_mmap_t*) _mmap;
+	}
+	return count;
+}
+
+static uintptr_t get_multiboot_total_mem()
+{
+	uintptr_t total_mem = 0;
+	uint32_t _mmap = multiboot_info->mmap_addr;
+	multiboot_mmap_t *mmap = (multiboot_mmap_t*)_mmap;
+	uint32_t mmap_end = _mmap + multiboot_info->mmap_length;
+
+	while(_mmap < mmap_end)
+	{
+		total_mem += mmap->len;
+		_mmap += mmap->size + sizeof(uint32_t);
+		mmap   = (multiboot_mmap_t*) _mmap;
+	}
+
+	return total_mem;
+}
+
+static void build_multiboot_mmap(mmap_t *boot_mmap)	/* boot_mmap must be allocated beforehand */
+{
+	uint32_t _mmap = multiboot_info->mmap_addr;
+	multiboot_mmap_t *mmap = (multiboot_mmap_t*)_mmap;
+	uint32_t mmap_end = _mmap + multiboot_info->mmap_length;
+
+	while(_mmap < mmap_end)
+	{
+		if(mmap->type == MULTIBOOT_MEMORY_AVAILABLE)
+		{
+			*boot_mmap = (mmap_t)
+			{
+				.start = mmap->addr,
+				.end = mmap->addr + mmap->len
+			};
+
+			++boot_mmap;
+		}
+		_mmap += mmap->size + sizeof(uint32_t);
+		mmap   = (multiboot_mmap_t*) _mmap;
+	}
+}
+
+static void build_multiboot_modules(module_t *modules)	/* modules must be allocated beforehand */
+{
+	multiboot_module_t *mods = (multiboot_module_t *) multiboot_info->mods_addr;
+
+	for(unsigned i = 0; i < multiboot_info->mods_count; ++i)
+	{
+		modules[i] = (module_t)
+		{
+			.addr = (void *) VMA(mods[i].mod_start),
+			.size = mods[i].mod_end - mods[i].mod_start,
+			.cmdline = (char *) VMA(mods[i].cmdline)
+		};
+	}
+}
+
+void process_multiboot_info()
+{
+	kernel_cmdline = (char *) multiboot_info->cmdline;
+	kernel_total_mem = get_multiboot_total_mem();
+	kernel_mmap_count = get_multiboot_mmap_count();
+	kernel_mmap = heap_alloc(kernel_mmap_count * sizeof(mmap_t), 1);
+	build_multiboot_mmap(kernel_mmap);
+	build_multiboot_modules(kernel_modules);
+}
+
 volatile uint32_t *BSP_PD = NULL;
 volatile uint32_t *BSP_LPT = NULL;
+
 void cpu_init()
 {
 	extern uint32_t *_BSP_PD;
 	extern uint32_t *_BSP_LPT;
 	BSP_PD = VMA(_BSP_PD);
 	BSP_LPT = VMA(_BSP_LPT);
+
+	extern void *kernel_heap;
+	_kernel_heap = VMA(kernel_heap);
+
+	process_multiboot_info();
 
 	x86_gdt_setup();
 	early_console_init();
@@ -21,8 +130,10 @@ void cpu_init()
 	x86_isr_setup();
 	x86_pic_setup();
 	x86_mm_setup();
-	//BSP_PD[0] = 0;
 	x86_vmm_setup();
+
+	for(int i = 0; BSP_PD[i] != 0; ++i) BSP_PD[i] = 0;	/* Unmap lower half */
+
 	extern void x86_set_tss_esp(uint32_t esp);
 	x86_set_tss_esp(VMA(0x100000));
 
