@@ -1,4 +1,5 @@
 #include <core/system.h>
+#include <core/arch.h>
 #include <mm/mm.h>
 #include <fs/vfs.h>
 #include <sys/proc.h>
@@ -12,6 +13,7 @@ int get_pid()
 
 proc_t *load_elf(char *fn)
 {
+	arch_load_elf();
 	printk("Loading file %s\n", fn);
 	inode_t *file = vfs.find(NULL, fn);
 	if(!file) return NULL;

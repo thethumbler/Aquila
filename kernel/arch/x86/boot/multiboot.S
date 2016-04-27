@@ -3,11 +3,20 @@
 
 
 /*
- * Multiboot definitions
+ * 	Multiboot definitions
  */
 
 #define MULTIBOOT_FLAGS  MULTIBOOT_PAGE_ALIGN | MULTIBOOT_MEMORY_INFO
 #define MULTIBOOT_CHKSUM -(MULTIBOOT_HEADER_MAGIC + MULTIBOOT_FLAGS)
+
+/*
+ *	Multiboot lookup header
+ */
+
+.align 8
+.long MULTIBOOT_HEADER_MAGIC
+.long MULTIBOOT_FLAGS
+.long MULTIBOOT_CHKSUM
 
 /*
  * Entry point of the bootloader
@@ -15,13 +24,6 @@
 
 .global _start
 _start:
-	jmp _real_start
-	.align 8
-	.long MULTIBOOT_HEADER_MAGIC
-	.long MULTIBOOT_FLAGS
-	.long MULTIBOOT_CHKSUM
-
-_real_start:
 	movl %eax, (multiboot_signature)
 	movl %ebx, (multiboot_info)
 
