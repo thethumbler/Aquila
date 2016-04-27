@@ -30,7 +30,10 @@ typedef struct
 {
 	int		(*map)(uintptr_t addr, size_t size, int flags);
 	void	(*unmap)(uintptr_t addr, size_t size);
-}pmman_t;
+	void*	(*memcpypp)(void *phys_dest, void *phys_src, size_t n);	/* Phys to Phys memcpy */
+	void*	(*memcpypv)(void *virt_dest, void *phys_src, size_t n);	/* Phys to Virt memcpy */
+	void*	(*memcpyvp)(void *phys_dest, void *virt_src, size_t n);	/* Virt to Phys memcpy */
+} pmman_t;
 
 extern pmman_t pmman;
 

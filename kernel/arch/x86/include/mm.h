@@ -16,5 +16,7 @@ void x86_mm_setup();
 void x86_vmm_setup();
 void *kmalloc(size_t);
 void kfree(void*);
+uintptr_t arch_get_frame();
+uintptr_t arch_get_frame_no_clr();
 
 #endif /* !_X86_MM_H */

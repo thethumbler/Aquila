@@ -21,7 +21,6 @@ static void *heap_alloc(size_t size, size_t align)
 static volatile bitmap_t pm_bitmap = NULL;
 static uint32_t bitmap_max_index = 0;
 
-/* FIXME: make this function bootloader independent */
 void x86_mm_setup()
 {
 	extern void *_kernel_heap;
@@ -51,17 +50,16 @@ void x86_mm_setup()
 	}
 }
 
-extern uint32_t* BSP_LPT;
-void *mount_page(uintptr_t paddr)
+extern volatile uint32_t *BSP_LPT;
+static void *mount_page(uintptr_t paddr)
 {
 	*(BSP_LPT + 1023) = (paddr & (~PAGE_MASK)) | 3;
 	asm("invlpg (%%eax)"::"a"(~PAGE_MASK));
 	return (void*)(~PAGE_MASK); /* Last page */
 }
 
-
 unsigned last_checked_index = 0;
-uintptr_t get_frame()
+static uintptr_t get_frame()
 {
 	unsigned i;
 	for(i = last_checked_index; i < bitmap_max_index; ++i)
@@ -73,6 +71,11 @@ uintptr_t get_frame()
 			return BITMAP_CLR(pm_bitmap, i), i * PAGE_SIZE;
 		}
 	return -1;
+}
+
+void release_frame(uintptr_t i)
+{
+	BITMAP_CLR(pm_bitmap, i/PAGE_SIZE);
 }
 
 uintptr_t get_frame_no_clr()
@@ -87,7 +90,7 @@ uintptr_t get_frame_no_clr()
 	return -1;
 }
 
-int map_to_physical(uintptr_t ptr, size_t size, int flags)
+static int map_to_physical(uintptr_t ptr, size_t size, int flags)
 {
 	flags =  0x1 | ((flags & (KW | UW)) ? 0x2 : 0x0)
 		| ((flags & URWX) ? 0x4 : 0x0);
@@ -136,7 +139,7 @@ int map_to_physical(uintptr_t ptr, size_t size, int flags)
 	return 1;
 }
 
-void unmap_from_physical(uintptr_t ptr, size_t size)
+static void unmap_from_physical(uintptr_t ptr, size_t size)
 {
 	/* Number of tables that are mapped, we unmap only on table boundary */
 	uint32_t tables = (ptr + size + TABLE_MASK)/TABLE_SIZE - ptr/TABLE_SIZE;
@@ -210,10 +213,66 @@ void unmap_from_physical(uintptr_t ptr, size_t size)
 	}
 }
 
+uintptr_t arch_get_frame()
+{
+	return get_frame();
+}
+
+uintptr_t arch_get_frame_no_clr()
+{
+	return get_frame_no_clr();
+}
+
+static void *memcpypv(void *virt_dest, void *phys_src, size_t n)
+{
+	void *ret = virt_dest;
+	size_t s = n / PAGE_SIZE;
+	while(s--)
+	{
+		void *p = mount_page((uintptr_t) phys_src);
+		memcpy(virt_dest, p, PAGE_SIZE);
+		phys_src += PAGE_SIZE;
+		virt_dest += PAGE_SIZE;
+	}
+
+	s = n % PAGE_SIZE;
+
+	void *p = mount_page((uintptr_t) phys_src);
+	memcpy(virt_dest, p, s);
+	return ret;
+}
+
+static char memcpy_pp_buf[PAGE_SIZE];
+static void *memcpypp(void *phys_dest, void *phys_src, size_t n)
+{
+	void *ret = phys_dest;
+	size_t s = n / PAGE_SIZE;
+	while(s--)
+	{
+		void *p = mount_page((uintptr_t) phys_src);
+		memcpy(memcpy_pp_buf, p, PAGE_SIZE);
+		p = mount_page((uintptr_t) phys_dest);
+		memcpy(p, memcpy_pp_buf, PAGE_SIZE);
+		phys_src += PAGE_SIZE;
+		phys_dest += PAGE_SIZE;
+	}
+
+	s = n % PAGE_SIZE;
+
+	void *p = mount_page((uintptr_t) phys_src);
+	memcpy(memcpy_pp_buf, p, s);
+	p = mount_page((uintptr_t) phys_dest);
+	memcpy(p, memcpy_pp_buf, s);
+
+	return ret;
+}
+
 pmman_t pmman = (pmman_t)
 {
-	.map = map_to_physical,
-	.unmap = unmap_from_physical
+	.map = &map_to_physical,
+	.unmap = &unmap_from_physical,
+	.memcpypv = &memcpypv,
+	.memcpypp = &memcpypp,
 };
 
 typedef struct
