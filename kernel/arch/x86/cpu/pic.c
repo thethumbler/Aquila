@@ -140,9 +140,8 @@ void irq_handler(regs_t *r)
 	else
 		handler = irq_handlers[int_num - 32];
 
-
-	if (handler) handler(r);
 	irq_ack(int_num - 32);
+	if (handler) handler(r);
 }
 
 

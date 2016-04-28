@@ -12,5 +12,8 @@ void arch_init_proc(void *arch, proc_t *proc, uintptr_t entry);
 void arch_load_elf_end(void *arch);
 void arch_idle();
 void arch_switch_process(proc_t *proc);
+void *arch_sched();
+void arch_sched_end(void *arch);
+void arch_sched_init();
 
 #endif /* ! _ARCH_H */

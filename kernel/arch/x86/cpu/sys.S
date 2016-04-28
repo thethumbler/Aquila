@@ -79,6 +79,26 @@ isr\v:
 	jmp isr_handler
 .endm
 
+.macro push_context
+	push %eax
+	push %edx
+	push %ecx
+	push %ebx
+	push %ebp
+	push %esi
+	push %edi
+.endm
+	
+.macro pop_context
+	pop %edi
+	pop %esi
+	pop %ebp
+	pop %ebx
+	pop %ecx
+	pop %edx
+	pop %eax
+.endm
+
 ISR_NOERR 0
 ISR_NOERR 1
 ISR_NOERR 2
@@ -116,11 +136,11 @@ ISR_NOERR 31
 .extern interrupt
 .global isr_handler
 isr_handler:
-	pusha
+	push_context
 	push %esp
 	call interrupt
 	pop %eax
-	popa
+	pop_context
 	iret
 
 
@@ -157,11 +177,11 @@ IRQ 15, 47
 
 .extern irq_handler
 irq_stub:
-	pusha
+	push_context
 	push %esp
 	call irq_handler
 	pop %eax
-	popa
+	pop_context
 	iret
 
 .global x86_jump_userspace
