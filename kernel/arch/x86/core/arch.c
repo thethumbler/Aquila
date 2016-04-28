@@ -2,6 +2,7 @@
 #include <core/arch.h>
 #include <core/string.h>
 #include <mm/mm.h>
+#include <sys/proc.h>
 
 static uintptr_t get_cur_pd()
 {
@@ -21,7 +22,7 @@ static uintptr_t get_pd()
 	return pd;
 }
 
-void switch_pd(uintptr_t pd)
+static void switch_pd(uintptr_t pd)
 {
 	asm("mov %%eax, %%cr3;"::"eax"(pd));
 }
@@ -38,7 +39,26 @@ void *arch_load_elf()
 	ret->cur = get_cur_pd();
 	ret->new = get_pd();
 
-	printk("cur %x ret %x\n", ret->cur, ret->new);
 	switch_pd(ret->new);
-	for(;;);
+	
+	return ret;
+}
+
+void arch_init_proc(void *d, proc_t *p, uintptr_t entry)
+{
+	x86_proc_t *arch = kmalloc(sizeof(x86_proc_t));
+	struct arch_load_elf *s = d;
+
+	arch->pd = s->new;
+	arch->stat = (x86_stat_t){0};
+	arch->stat.eip = entry;
+	
+	p->arch = arch;
+}
+
+void arch_load_elf_end(void *d)
+{
+	struct arch_load_elf *p = (struct arch_load_elf *) d;
+	switch_pd(p->cur);
+	kfree(p);
 }
