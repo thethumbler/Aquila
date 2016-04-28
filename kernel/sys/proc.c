@@ -1,4 +1,5 @@
 #include <core/system.h>
+#include <core/string.h>
 #include <core/arch.h>
 #include <mm/mm.h>
 #include <fs/vfs.h>
@@ -39,9 +40,12 @@ proc_t *load_elf(char *fn)
 		offset += hdr.shentsize;
 	}
 
+	pmman.map(USER_STACK_BASE, USER_STACK_SIZE, URWX);
+
 	proc_t *proc = kmalloc(sizeof(proc_t));
-	
-	arch_init_proc(proc, arch_specific_data, hdr.entry);
+	proc->name = strdup(file->name);
+
+	arch_init_proc(arch_specific_data, proc, hdr.entry);
 	arch_load_elf_end(arch_specific_data);
 
 	return proc;

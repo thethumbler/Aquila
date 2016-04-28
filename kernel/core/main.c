@@ -11,23 +11,7 @@
 #include <boot/multiboot.h>
 
 #include <sys/proc.h>
-
-void switch_to_userspace()
-{
-    asm ("\
-    mov $0x20 | 0x3, %%ax;\
-    movw %%ax, %%ds;\
-    movw %%ax, %%es;\
-    movw %%ax, %%fs;\
-    movw %%ax, %%gs;\
-    pushl $0x20 | 0x3;  /* SS  selector */ \
-    pushl $0x1000;      /* ESP */ \
-    pushf;              /* EFLAGS */    \
-    popl %%eax; orl $0x200, %%eax; pushl %%eax; /* Set interrupts in USERPACE */\
-    pushl $0x18 | 0x3;  /* CS selector */\
-    pushl $0x0;         /* EIP */ \
-    iret;":::"eax");
-}
+#include <sys/sched.h>
 
 void us()
 {
@@ -38,7 +22,8 @@ void us()
 void kmain()
 {
 	load_ramdisk();
-	load_elf("/bin/init");
+	proc_t *init = load_elf("/bin/init");
+	spawn_init(init);
 	
 	for(;;);
     /*pmman.map(0x0, 0x1000, URWX);

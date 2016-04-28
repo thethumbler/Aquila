@@ -51,7 +51,12 @@ void arch_init_proc(void *d, proc_t *p, uintptr_t entry)
 
 	arch->pd = s->new;
 	arch->stat = (x86_stat_t){0};
+	
 	arch->stat.eip = entry;
+	arch->stat.cs  = 0x18 | 3;
+	arch->stat.ss  = 0x20 | 3;
+	arch->stat.eflags = 0x200;
+	arch->stat.esp = USER_STACK;
 	
 	p->arch = arch;
 }
@@ -61,4 +66,23 @@ void arch_load_elf_end(void *d)
 	struct arch_load_elf *p = (struct arch_load_elf *) d;
 	switch_pd(p->cur);
 	kfree(p);
+}
+
+void arch_idle()
+{
+	for(;;)
+		asm volatile("cli; hlt;");
+}
+
+void arch_jump_userspace(x86_stat_t *s)
+{
+	extern void x86_jump_userspace(x86_stat_t s);
+	x86_jump_userspace(*s);
+}
+
+void arch_switch_process(proc_t *proc)
+{
+	x86_proc_t *arch = proc->arch;
+	switch_pd(arch->pd);
+	arch_jump_userspace(&arch->stat);
 }

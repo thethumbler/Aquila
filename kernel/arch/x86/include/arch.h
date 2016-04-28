@@ -4,7 +4,7 @@
 typedef struct 
 {
 	uint32_t edi, esi, ebp, ebx, ecx, edx, eax,
-		eip, cs, eflags, esp, ss, es, ds, fs, gs;
+		eip, cs, eflags, esp, ss;
 } __attribute__((packed)) x86_stat_t;
 
 typedef struct

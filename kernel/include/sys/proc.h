@@ -4,6 +4,10 @@
 #include <core/system.h>
 #include <fs/vfs.h>
 
+#if ARCH==X86
+#include <arch/x86/include/proc.h>
+#endif
+
 typedef struct
 {
 	inode_t *inode;

@@ -163,3 +163,13 @@ irq_stub:
 	pop %eax
 	popa
 	iret
+
+.global x86_jump_userspace
+x86_jump_userspace:
+	mov  $0x20 | 0x3, %ax
+    movw %ax, %ds
+    movw %ax, %es
+    movw %ax, %fs
+    movw %ax, %gs
+    popa
+    iret
