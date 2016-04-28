@@ -3,6 +3,8 @@
 #include <core/string.h>
 #include <mm/mm.h>
 #include <sys/proc.h>
+#include <sys/sched.h>
+#include <cpu/cpu.h>
 
 static uintptr_t get_cur_pd()
 {
@@ -83,6 +85,35 @@ void arch_jump_userspace(x86_stat_t *s)
 void arch_switch_process(proc_t *proc)
 {
 	x86_proc_t *arch = proc->arch;
+	printk("Switching %s [%x]\n", proc->name, arch->stat.eip);
+	arch->stat.eflags |= 0x200;
 	switch_pd(arch->pd);
 	arch_jump_userspace(&arch->stat);
+}
+
+void *arch_sched()
+{
+	return NULL;
+}
+
+void arch_sched_end(void *p __attribute__((unused)))
+{
+
+}
+
+static void arch_sched_handler(regs_t *r)
+{
+	if(cur_proc)
+	{
+		x86_proc_t *arch = cur_proc->arch;
+		memcpy((void *) &arch->stat, (void *) r, sizeof(x86_stat_t));
+	}
+
+	schedule();
+}
+
+void arch_sched_init()
+{
+	x86_pit_setup(1);
+	irq_install_handler(PIT_IRQ, arch_sched_handler);
 }

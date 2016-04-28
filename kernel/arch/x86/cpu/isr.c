@@ -1,5 +1,4 @@
 #include <core/system.h>
-
 #include <cpu/cpu.h>
 
 extern void isr0 (void);

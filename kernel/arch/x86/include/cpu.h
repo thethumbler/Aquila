@@ -41,7 +41,7 @@ typedef struct
 {
 	uint32_t
 	edi, esi, ebp, ebx, ecx, edx, eax,
-	eip, cs, eflags, esp;
+	eip, cs, eflags, esp, ss;
 } __attribute__((packed)) regs_t;
 
 /* TODO: Move these declrations to some specific file */
@@ -58,5 +58,6 @@ void x86_pit_setup(uint32_t);
 #include "msr.h"
 #include "sdt.h"
 #include "irq.h"
+#include "pit.h"
 
 #endif /* !_X86_CPU_H */
