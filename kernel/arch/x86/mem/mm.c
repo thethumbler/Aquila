@@ -90,10 +90,21 @@ uintptr_t get_frame_no_clr()
 	return -1;
 }
 
+static uintptr_t get_cur_pd()
+{
+	uintptr_t cur_pd = 0;
+	asm("movl %%cr3, %%eax":"=a"(cur_pd));
+	return cur_pd;
+}
+
 static int map_to_physical(uintptr_t ptr, size_t size, int flags)
 {
 	flags =  0x1 | ((flags & (KW | UW)) ? 0x2 : 0x0)
 		| ((flags & URWX) ? 0x4 : 0x0);
+
+	uint32_t *cur_pd_phys = (uint32_t *) get_cur_pd();
+	uint32_t cur_pd[PAGE_SIZE/4];
+	pmman.memcpypv(cur_pd, cur_pd_phys, PAGE_SIZE);
 
 	/* Number of tables needed for mapping */
 	uint32_t tables = (ptr + size + TABLE_MASK)/TABLE_SIZE - ptr/TABLE_SIZE;
@@ -107,17 +118,15 @@ static int map_to_physical(uintptr_t ptr, size_t size, int flags)
 	/* Index of the first page in the first table */
 	uint32_t pindex = (ptr & TABLE_MASK)/PAGE_SIZE;
 
-	extern uint32_t *BSP_PD;
-
 	uint32_t i;
 	for(i = 0; i < tables; ++i)
 	{
 		/* If table is not allocated already, get one
 		   note that the frame we just got is already mounted */
-		if(!(BSP_PD[tindex + i] &1))
-			BSP_PD[tindex + i] = get_frame() | flags;
+		if(!(cur_pd[tindex + i] &1))
+			cur_pd[tindex + i] = get_frame() | flags;
 		else /* Otherwise, just mount the already allocated table */
-			mount_page(BSP_PD[tindex + i] & ~PAGE_MASK);
+			mount_page(cur_pd[tindex + i] & ~PAGE_MASK);
 
 		/* Mounted pages are mapped to the last page of 4GB system */
 		uint32_t *PT = (uint32_t*) ~PAGE_MASK; /* Last page */
@@ -136,11 +145,17 @@ static int map_to_physical(uintptr_t ptr, size_t size, int flags)
 		pindex = 0;	/* Now we are pointing to a new table so we clear pindex */
 	}
 
+	pmman.memcpyvp(cur_pd_phys, cur_pd, PAGE_SIZE);
+
 	return 1;
 }
 
 static void unmap_from_physical(uintptr_t ptr, size_t size)
 {
+	uint32_t *cur_pd_phys = (uint32_t *) get_cur_pd();
+	uint32_t cur_pd[PAGE_SIZE/4];
+	pmman.memcpypv(cur_pd, cur_pd_phys, PAGE_SIZE);
+
 	/* Number of tables that are mapped, we unmap only on table boundary */
 	uint32_t tables = (ptr + size + TABLE_MASK)/TABLE_SIZE - ptr/TABLE_SIZE;
 
@@ -153,16 +168,14 @@ static void unmap_from_physical(uintptr_t ptr, size_t size)
 	/* Index of the first page in the first table */
 	uint32_t pindex = ((ptr & TABLE_MASK) + PAGE_MASK)/PAGE_SIZE;
 
-	extern uint32_t *BSP_PD;
-
 	/* We first check if our pindex, is the first page of the first table */
 	if(pindex)	/* pindex does not point to the first page of the first table */
 	{
 		/* We proceed if the table is already mapped, otherwise, skip it */
-		if(BSP_PD[tindex] & 1)
+		if(cur_pd[tindex] & 1)
 		{
 			/* First, we mount the table */
-			uint32_t *PT = mount_page(BSP_PD[tindex] & ~PAGE_MASK);
+			uint32_t *PT = mount_page(cur_pd[tindex] & ~PAGE_MASK);
 
 			/* We unmap pages only, the table is not unmapped */
 			while(pages && pindex < 1024)
@@ -184,10 +197,10 @@ static void unmap_from_physical(uintptr_t ptr, size_t size)
 	while(tables--)
 	{
 		/* unmapping already mapped tables only, othewise skip */
-		if(BSP_PD[tindex] & 1)
+		if(cur_pd[tindex] & 1)
 		{
 			/* Mount the table so we can modify it */
-			uint32_t *PT = mount_page(BSP_PD[tindex] & ~PAGE_MASK);
+			uint32_t *PT = mount_page(cur_pd[tindex] & ~PAGE_MASK);
 
 			/* iterate over pages, stop if we reach the final page or the number
 			   of pages left to unmap is zero */
@@ -201,8 +214,8 @@ static void unmap_from_physical(uintptr_t ptr, size_t size)
 
 			if(pindex == 1024) /* unamp table only if we reach it's last page */
 			{
-				BITMAP_CLR(pm_bitmap, BSP_PD[tindex] >> PAGE_SHIFT);
-				BSP_PD[tindex] = 0;
+				BITMAP_CLR(pm_bitmap, cur_pd[tindex] >> PAGE_SHIFT);
+				cur_pd[tindex] = 0;
 			}
 
 			/* reset pindex */
@@ -211,6 +224,8 @@ static void unmap_from_physical(uintptr_t ptr, size_t size)
 
 		++tindex;
 	}
+
+	pmman.memcpyvp(cur_pd_phys, cur_pd, PAGE_SIZE);
 }
 
 uintptr_t arch_get_frame()
@@ -239,6 +254,25 @@ static void *memcpypv(void *virt_dest, void *phys_src, size_t n)
 
 	void *p = mount_page((uintptr_t) phys_src);
 	memcpy(virt_dest, p, s);
+	return ret;
+}
+
+static void *memcpyvp(void *phys_dest, void *virt_src, size_t n)
+{
+	void *ret = phys_dest;
+	size_t s = n / PAGE_SIZE;
+	while(s--)
+	{
+		void *p = mount_page((uintptr_t) phys_dest);
+		memcpy(p, virt_src, PAGE_SIZE);
+		phys_dest += PAGE_SIZE;
+		virt_src  += PAGE_SIZE;
+	}
+
+	s = n % PAGE_SIZE;
+
+	void *p = mount_page((uintptr_t) phys_dest);
+	memcpy(p, virt_src, s);
 	return ret;
 }
 
@@ -272,6 +306,7 @@ pmman_t pmman = (pmman_t)
 	.map = &map_to_physical,
 	.unmap = &unmap_from_physical,
 	.memcpypv = &memcpypv,
+	.memcpyvp = &memcpyvp,
 	.memcpypp = &memcpypp,
 };
 

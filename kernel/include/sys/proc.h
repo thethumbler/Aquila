@@ -4,12 +4,6 @@
 #include <core/system.h>
 #include <fs/vfs.h>
 
-typedef struct 
-{
-	uint32_t edi, esi, ebp, ebx, ecx, edx, eax,
-		eip, cs, eflags, esp, ss;
-} __attribute__((packed)) stat_t;
-
 typedef struct
 {
 	inode_t *inode;
@@ -26,13 +20,14 @@ typedef struct proc proc_t;
 struct proc
 {
 	char		*name;
-	int 		pid;
-	file_list_t fds;
+	int 		pid;	/* Process identifier */
+	file_list_t fds;	/* Open file descriptors */
 	proc_t 		*parent;
-	stat_t		stat;
-	char 		*cwd;
+	char 		*cwd;	/* Current Working Directory */
 
-	proc_t 		*next;
+	void		*arch;	/* Arch specific data */
+
+	proc_t 		*next;	/* Processes queue next pointer */
 } __attribute__((packed));
 
 proc_t *load_elf(char *fn);

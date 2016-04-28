@@ -13,7 +13,8 @@ int get_pid()
 
 proc_t *load_elf(char *fn)
 {
-	arch_load_elf();
+	void *arch_specific_data = arch_load_elf();
+
 	printk("Loading file %s\n", fn);
 	inode_t *file = vfs.find(NULL, fn);
 	if(!file) return NULL;
@@ -39,7 +40,9 @@ proc_t *load_elf(char *fn)
 	}
 
 	proc_t *proc = kmalloc(sizeof(proc_t));
-	proc->pid = get_pid();
+	
+	arch_init_proc(proc, arch_specific_data, hdr.entry);
+	arch_load_elf_end(arch_specific_data);
 
 	return proc;
 }
