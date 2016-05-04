@@ -238,22 +238,46 @@ uintptr_t arch_get_frame_no_clr()
 	return get_frame_no_clr();
 }
 
+void arch_release_frame(uintptr_t p)
+{
+	release_frame(p);
+}
+
 static void *memcpypv(void *virt_dest, void *phys_src, size_t n)
 {
 	void *ret = virt_dest;
-	size_t s = n / PAGE_SIZE;
-	while(s--)
+
+	/* Copy up to page boundary */
+	size_t offset = (uintptr_t) phys_src % PAGE_SIZE;
+	size_t size = MIN(n, PAGE_SIZE - offset);
+	
+	if(size)
 	{
 		void *p = mount_page((uintptr_t) phys_src);
-		memcpy(virt_dest, p, PAGE_SIZE);
-		phys_src += PAGE_SIZE;
-		virt_dest += PAGE_SIZE;
+		memcpy(virt_dest, p + offset, size);
+		
+		phys_src  += size;
+		virt_dest += size;
+
+		/* Copy complete pages */
+		n -= size;
+		size = n / PAGE_SIZE;
+		while(size--)
+		{
+			void *p = mount_page((uintptr_t) phys_src);
+			memcpy(virt_dest, p, PAGE_SIZE);
+			phys_src += PAGE_SIZE;
+			virt_dest += PAGE_SIZE;
+		}
+
+		/* Copy what is remainig */
+		size = n % PAGE_SIZE;
+		if(size)
+		{
+			p = mount_page((uintptr_t) phys_src);
+			memcpy(virt_dest, p, size);
+		}
 	}
-
-	s = n % PAGE_SIZE;
-
-	void *p = mount_page((uintptr_t) phys_src);
-	memcpy(virt_dest, p, s);
 	return ret;
 }
 
@@ -279,11 +303,27 @@ static void *memcpyvp(void *phys_dest, void *virt_src, size_t n)
 static char memcpy_pp_buf[PAGE_SIZE];
 static void *memcpypp(void *phys_dest, void *phys_src, size_t n)
 {
+	/* XXX: This function is catastrophic */
 	void *ret = phys_dest;
-	size_t s = n / PAGE_SIZE;
-	while(s--)
+
+	/* Copy up to page boundary */
+	size_t offset = (uintptr_t) phys_src % PAGE_SIZE;
+	size_t size = MIN(n, PAGE_SIZE - offset);
+
+	void *p = mount_page((uintptr_t) phys_src);
+	memcpy(memcpy_pp_buf + offset, p + offset, size);
+	p = mount_page((uintptr_t) phys_dest);
+	memcpy(p + offset, memcpy_pp_buf + offset, size);
+	
+	phys_src  += size;
+	phys_dest += size;
+	n -= size;
+
+	/* Copy complete pages */
+	size = n / PAGE_SIZE;
+	while(size--)
 	{
-		void *p = mount_page((uintptr_t) phys_src);
+		p = mount_page((uintptr_t) phys_src);
 		memcpy(memcpy_pp_buf, p, PAGE_SIZE);
 		p = mount_page((uintptr_t) phys_dest);
 		memcpy(p, memcpy_pp_buf, PAGE_SIZE);
@@ -291,12 +331,12 @@ static void *memcpypp(void *phys_dest, void *phys_src, size_t n)
 		phys_dest += PAGE_SIZE;
 	}
 
-	s = n % PAGE_SIZE;
-
-	void *p = mount_page((uintptr_t) phys_src);
-	memcpy(memcpy_pp_buf, p, s);
+	/* Copy what is remainig */
+	size = n % PAGE_SIZE;
+	p = mount_page((uintptr_t) phys_src);
+	memcpy(memcpy_pp_buf, p, size);
 	p = mount_page((uintptr_t) phys_dest);
-	memcpy(p, memcpy_pp_buf, s);
+	memcpy(p, memcpy_pp_buf, size);
 
 	return ret;
 }
@@ -343,13 +383,21 @@ void x86_vmm_setup()
 	nodes[3] = (vmm_node_t){0xC00000, 1, -1, -1};*/
 }
 
-uint32_t last_checked_node = 0;
+uint32_t first_free_node = 0;
 uint32_t get_node()
 {
-	unsigned i;
-	for(i = last_checked_node; i < LAST_NODE_INDEX; ++i)
+	unsigned i, flag = 0;
+	for(i = first_free_node; i < LAST_NODE_INDEX; ++i)
+	{
+		if(!flag && nodes[i].free)
+		{
+			first_free_node = flag = i;
+		}
+		
 		if(!nodes[i].size)
-			return last_checked_node = i;
+			return i;
+	}
+
 	panic("Can't find an unused node");
 	return -1;
 }
@@ -357,13 +405,13 @@ uint32_t get_node()
 void release_node(uint32_t i)
 {
 	nodes[i] = (vmm_node_t){0};
-	if(i < last_checked_node)
-		last_checked_node = i;
+	if(i < first_free_node)
+		first_free_node = i;
 }
 
 uint32_t get_first_fit_free_node(uint32_t size)
 {
-	unsigned i = last_checked_node;
+	unsigned i = first_free_node;
 	while(!(nodes[i].free && nodes[i].size >= size))
 	{
 		if(nodes[i].next == LAST_NODE_INDEX)

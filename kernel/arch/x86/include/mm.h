@@ -18,5 +18,6 @@ void *kmalloc(size_t);
 void kfree(void*);
 uintptr_t arch_get_frame();
 uintptr_t arch_get_frame_no_clr();
+void arch_release_frame(uintptr_t);
 
 #endif /* !_X86_MM_H */

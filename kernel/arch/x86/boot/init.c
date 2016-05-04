@@ -29,17 +29,17 @@ void switch_to_higher_half()
 	_BSP_PD = heap_alloc(PAGE_SIZE, PAGE_SIZE);
 
 	uint32_t page_tables = ((uintptr_t)(&kernel_end) + TABLE_MASK) / TABLE_SIZE;
-	uint32_t *BSP_PT = heap_alloc(page_tables * PAGE_SIZE, PAGE_SIZE);
+	uint32_t *BSP_PT = heap_alloc(4096 * 1024 /*page_tables * PAGE_SIZE*/, PAGE_SIZE);
 
 	uint32_t i;
 	for(i = 0; i < page_tables * 1024; ++i)
 		BSP_PT[i] = (0x1000 * i) | 3;
 
 	for(i = 0; i < page_tables; ++i)
-	{
 		_BSP_PD[i]       = (uint32_t)((uintptr_t)BSP_PT + i * PAGE_SIZE) | 3;
+
+	for(i = 0; i < 256; ++i)	/* Permanently map the upper 1 GiB to Page Tables */
 		_BSP_PD[768 + i] = (uint32_t)((uintptr_t)BSP_PT + i * PAGE_SIZE) | 3;
-	}
 
 
 	_BSP_LPT = heap_alloc(PAGE_SIZE, PAGE_SIZE);

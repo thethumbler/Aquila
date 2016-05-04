@@ -50,6 +50,7 @@ int x86_get_cpu_count();
 void x86_gdt_setup();
 void x86_idt_setup();
 void x86_idt_set_gate(uint32_t id, uint32_t offset);
+void x86_idt_set_gate_user(uint32_t id, uint32_t offset);
 void x86_isr_setup();
 void x86_pic_setup();
 void x86_pic_disable();

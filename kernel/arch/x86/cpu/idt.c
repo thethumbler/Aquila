@@ -25,7 +25,7 @@ idt_pointer =
 #define DPL0 0
 #define DPL3 3
 
-/* Sets Interrupt gates in kernel Code Segment */
+/* Sets Interrupt gates in Kernel Code Segment */
 void x86_idt_set_gate(uint32_t id, uint32_t offset)
 {
 	idt[id].offset_lo = (offset >> 0x00) & 0xFFFF;
@@ -34,6 +34,18 @@ void x86_idt_set_gate(uint32_t id, uint32_t offset)
 	idt[id].selector = 0x8;
 	idt[id].p = 1;
 	idt[id].dpl = DPL0;
+	idt[id].flags = 0x0E;
+}
+
+/* Sets Interrupt gates in User Code Segment */
+void x86_idt_set_gate_user(uint32_t id, uint32_t offset)
+{
+	idt[id].offset_lo = (offset >> 0x00) & 0xFFFF;
+	idt[id].offset_hi = (offset >> 0x10) & 0xFFFF;
+
+	idt[id].selector = 0x8;
+	idt[id].p = 1;
+	idt[id].dpl = DPL3;
 	idt[id].flags = 0x0E;
 }
 
