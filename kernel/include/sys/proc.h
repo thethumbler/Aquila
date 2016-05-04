@@ -28,6 +28,7 @@ struct proc
 	file_list_t fds;	/* Open file descriptors */
 	proc_t 		*parent;
 	char 		*cwd;	/* Current Working Directory */
+	void		*heap;	/* Process heap pointer */
 
 	void		*arch;	/* Arch specific data */
 
@@ -35,5 +36,6 @@ struct proc
 } __attribute__((packed));
 
 proc_t *load_elf(char *fn);
+int get_pid();
 
 #endif /* !_PROC_H */

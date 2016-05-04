@@ -23,6 +23,7 @@ proc_t *load_elf(char *fn)
 	elf32_hdr_t hdr;
 	vfs.read(file, 0, sizeof(hdr), &hdr);
 
+	void *proc_heap = NULL;
 	size_t offset = hdr.shoff;
 	
 	for(int i = 0; i < hdr.shnum; ++i)
@@ -35,6 +36,9 @@ proc_t *load_elf(char *fn)
 			/* FIXME add some out-of-bounds handling code here */
 			pmman.map(shdr.addr, shdr.size, URWX);	/* FIXME URWX, are you serious? */
 			vfs.read(file, shdr.off, shdr.size, (void*) shdr.addr);
+
+			if(shdr.addr + shdr.size > (uintptr_t) proc_heap)
+				proc_heap = (void *) (shdr.addr + shdr.size);
 		}
 
 		offset += hdr.shentsize;
@@ -44,9 +48,22 @@ proc_t *load_elf(char *fn)
 
 	proc_t *proc = kmalloc(sizeof(proc_t));
 	proc->name = strdup(file->name);
+	proc->pid = get_pid();
+	proc->heap = proc_heap;
 
 	arch_init_proc(arch_specific_data, proc, hdr.entry);
 	arch_load_elf_end(arch_specific_data);
 
 	return proc;
+}
+
+void kill_process(proc_t *proc)
+{
+	pmman.unmap((uintptr_t) NULL, (uintptr_t) proc->heap);
+	pmman.unmap(USER_STACK_BASE, USER_STACK_BASE);
+
+	arch_kill_process(proc);
+
+	kfree(proc->name);
+	kfree(proc);
 }

@@ -13,12 +13,6 @@
 #include <sys/proc.h>
 #include <sys/sched.h>
 
-void us()
-{
-    asm("sti");
-    for(;;);
-}
-
 void kmain()
 {
 	load_ramdisk();
@@ -26,9 +20,4 @@ void kmain()
 	spawn_init(init);
 	
 	for(;;);
-    /*pmman.map(0x0, 0x1000, URWX);
-    memcpy(0, us, kmain - us);
-    printk("Hello from kernel!\n");
-    switch_to_userspace();
-    for(;;);*/
 }

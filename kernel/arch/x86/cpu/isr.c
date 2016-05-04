@@ -1,5 +1,8 @@
 #include <core/system.h>
+#include <core/string.h>
 #include <cpu/cpu.h>
+#include <core/arch.h>
+#include <sys/sched.h>
 
 extern void isr0 (void);
 extern void isr1 (void);
@@ -33,8 +36,9 @@ extern void isr28(void);
 extern void isr29(void);
 extern void isr30(void);
 extern void isr31(void);
+extern void isr128(void);
 
-static const char *msg[32] = {
+static const char *int_msg[32] = {
 	"Division by zero",				/* 0 */
 	"Debug",
 	"Non-maskable interrupt",
@@ -74,7 +78,17 @@ void interrupt(regs_t *regs)
 	extern uint32_t int_num;
 	extern uint32_t err_num;
 	
-	printk("Recieved interrupt [%d] [err:%d] : %s\n", int_num, err_num, msg[int_num]);
+	if(int_num == 0x80)	/* syscall */
+	{
+		arch_syscall(regs);
+		/*x86_proc_t *arch = cur_proc->arch;
+		memcpy(regs, &arch->stat, sizeof(regs_t));
+		return;*/
+		kernel_idle();
+	}
+
+	const char *msg = int_msg[int_num];
+	printk("Recieved interrupt [%d] [err:%d] : %s\n", int_num, err_num, msg);
 	printk("eip %x\n", regs->eip);
 	printk("Kernel exception\n"); /* That's bad */
 	for(;;);
@@ -113,4 +127,5 @@ void x86_isr_setup(void) {
 	x86_idt_set_gate(0x1D, (uint32_t) isr29);
 	x86_idt_set_gate(0x1E, (uint32_t) isr30);
 	x86_idt_set_gate(0x1F, (uint32_t) isr31);
+	x86_idt_set_gate_user(0x80, (uint32_t) isr128);
 }
