@@ -81,10 +81,9 @@ void interrupt(regs_t *regs)
 	if(int_num == 0x80)	/* syscall */
 	{
 		arch_syscall(regs);
-		/*x86_proc_t *arch = cur_proc->arch;
+		x86_proc_t *arch = cur_proc->arch;
 		memcpy(regs, &arch->stat, sizeof(regs_t));
-		return;*/
-		kernel_idle();
+		return;
 	}
 
 	const char *msg = int_msg[int_num];
