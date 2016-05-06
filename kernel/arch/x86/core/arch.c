@@ -89,14 +89,17 @@ void arch_idle()
 
 void arch_jump_userspace(x86_stat_t *s)
 {
-	extern void x86_jump_userspace(x86_stat_t s);
+	/*extern char dum_var;
+	if(cur_proc->pid == 2)
+		dum_var = 0;*/
+	extern void x86_jump_userspace(x86_stat_t);
 	x86_jump_userspace(*s);
 }
 
 void arch_switch_process(proc_t *proc)
 {
 	x86_proc_t *arch = proc->arch;
-	printk("Switching %s (%d) [IP: %x]\n", proc->name, proc->pid, arch->stat.eip);
+	printk("Switching %s (%d) [IP: %x, EBP:%x]\n", proc->name, proc->pid, arch->stat.eip, arch->stat.ebp);
 	arch->stat.eflags |= 0x200;	/* Make sure interrupts are enabled */
 	switch_pd(arch->pd);
 	arch_jump_userspace(&arch->stat);
@@ -162,7 +165,6 @@ void arch_sys_fork(proc_t *proc)
 	for(uint32_t i = 0; i < tables_count * 1024UL; ++i)
 		if(pages_buf[i] != 0)
 		{
-			printk("%x: %x\n", i * PAGE_SIZE, pages_buf[i] & ~PAGE_MASK);
 			pmman.map(i * PAGE_SIZE, PAGE_SIZE, URWX);
 			pmman.memcpypv((void*) (i * PAGE_SIZE), (void*) (pages_buf[i] & ~PAGE_MASK), PAGE_SIZE);
 		}

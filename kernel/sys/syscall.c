@@ -31,16 +31,12 @@ static void sys_fork()
 	enqueue_process(fork);
 }
 
-static int dum = 0;
 static void sys_dum()
 {
 	printk("sys_dum\n");
-	if(cur_proc->pid == 2) for(;;);
-	++dum;
-	printk("dum %d\n", dum);
 	x86_proc_t *arch = cur_proc->arch;
 	printk("pid %d\n", arch->stat.ebx);
-	if(dum == 2) for(;;);
+	if(cur_proc->pid == 2) for(;;);
 }
 
 void (*syscall_table[])() = 
