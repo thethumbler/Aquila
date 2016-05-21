@@ -1,1 +1,5 @@
 ramdev.c
+i8042.c
+ps2kbd.c
+tty.c
+console.c
