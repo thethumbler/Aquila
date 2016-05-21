@@ -5,8 +5,8 @@
 
 typedef enum
 {
-	DEV_CHR = 1,
-	DEV_BLK = 2,
+	CHRDEV = 1,
+	BLKDEV = 2,
 } dev_type;
 
 typedef struct dev_struct dev_t;
