@@ -2,6 +2,8 @@
 #include <core/string.h>
 #include <mm/mm.h>
 #include <fs/vfs.h>
+#include <sys/proc.h>
+#include <sys/sched.h>
 
 inode_t *vfs_root = NULL;
 
@@ -45,12 +47,26 @@ static size_t vfs_read(inode_t *inode, size_t offset, size_t size, void *buf)
 	return inode->fs->read(inode, offset, size, buf);
 }
 
+static size_t vfs_write(inode_t *inode, size_t offset, size_t size, void *buf)
+{
+	if(!inode) return 0;
+	return inode->fs->write(inode, offset, size, buf);
+}
+
 static inode_t *vfs_create(inode_t *dir, const char *name)
 {
 	if(dir->type != FS_DIR)
 		return NULL;
 
 	return dir->fs->create(dir, name);
+}
+
+static inode_t *vfs_mkdir(inode_t *dir, const char *name)
+{
+	if(dir->type != FS_DIR)
+		return NULL;
+
+	return dir->fs->mkdir(dir, name);
 }
 
 static int vfs_mount(inode_t *parent, inode_t *child)
@@ -66,12 +82,21 @@ static int vfs_open(inode_t *file, int flags)
 	return file->fs->open(file, flags);
 }
 
+int vfs_generic_open(inode_t *file, int flags __unused)
+{
+	int fd = get_fd(cur_proc);
+	cur_proc->fds[fd].inode = file;
+	return fd;
+}
+
 struct vfs vfs = (struct vfs) 
 {
 	.mount_root = &vfs_mount_root,
 	.create = &vfs_create,
+	.mkdir = &vfs_mkdir,
 	.open = &vfs_open,
 	.mount = &vfs_mount,
 	.read = &vfs_read,
+	.write = &vfs_write,
 	.find = &vfs_find,
 };

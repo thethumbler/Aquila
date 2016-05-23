@@ -40,5 +40,6 @@ dev_t ps2kbddev = (dev_t)
 	.name  = "kbddev",
 	.type  = CHRDEV,
 	.probe = ps2kbd_probe,
+	.open  = vfs_generic_open,
 	.read  = ps2kbd_read,
 };

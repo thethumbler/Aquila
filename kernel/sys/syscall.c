@@ -39,25 +39,35 @@ static void sys_dum()
 	if(cur_proc->pid == 2) for(;;);
 }
 
-static void sys_open(const char *fn)
+static void sys_open(const char *fn, int flags)
 {
 	inode_t *inode = vfs.find(vfs_root, fn);
 	if(!inode)
 		arch_user_return(cur_proc, -1);
 
-	int fd = get_fd(cur_proc);
-
-	cur_proc->fds[fd] = (file_list_t){.inode = inode, .offset = 0};
+	int fd = vfs.open(inode, flags);
 
 	arch_user_return(cur_proc, fd);
 }
 
 static void sys_read(int fd, void *buf, size_t count)
 {
+	printk("sys_read(%d, %x, %d)\n", fd, buf, count);
 	inode_t *inode = cur_proc->fds[fd].inode;
 	size_t  offset = cur_proc->fds[fd].offset;
-	
+
 	int ret = vfs.read(inode, offset, count, buf);
+	arch_user_return(cur_proc, ret);
+}
+
+static void sys_write(int fd, void *buf, size_t count)
+{
+	printk("sys_write(%d, %x, %d)\n", fd, buf, count);
+	
+	inode_t *inode = cur_proc->fds[fd].inode;
+	size_t  offset = cur_proc->fds[fd].offset;
+
+	int ret = vfs.write(inode, offset, count, buf);
 	arch_user_return(cur_proc, ret);
 }
 
@@ -68,5 +78,6 @@ void (*syscall_table[])() =
 	sys_fork,
 	sys_open,
 	sys_read,
+	sys_write,
 	sys_dum,
 };

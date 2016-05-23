@@ -42,8 +42,9 @@ static inline size_t ring_write(ring_t *ring, size_t n, char *buf)
 
 	while(n)
 	{
-		if(ring->head == ring->tail)	/* Ring is full */
-			break;
+		//if(ring->head == ring->tail)	/* Ring is full */
+		//	break;
+
 		if(ring->tail == ring->size)
 			ring->tail = 0;
 		ring->buf[ring->tail++] = *buf++;

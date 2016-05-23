@@ -2,9 +2,12 @@
 #include <core/string.h>
 #include <fs/vfs.h>
 #include <fs/devfs.h>
+#include <fs/devpts.h>
 #include <ds/ring.h>
 #include <sys/proc.h>
 #include <sys/sched.h>
+
+inode_t *devpts_root = NULL;
 
 #define PTY_BUF	512
 
@@ -74,19 +77,16 @@ inode_t *new_ptm(pty_t *pty)
 
 inode_t *new_pts(pty_t *pty)
 {
-	inode_t *pts = kmalloc(sizeof(inode_t));
-	memset(pts, 0, sizeof(inode_t));
+	/* FIXME */
+	char *name = strdup("pts ");
+	name[3] = '0' + pty->id;
 
-	*pts = (inode_t)
-	{
-		.fs = &devfs,
-		.dev = &ptsdev,
-		.type = FS_FILE,
-		.size = PTY_BUF,
-		.p = pty,
-	};
+	inode_t *pts = vfs.create(devpts_root, name);
 
-	/* pts should be exposed here */
+	pts->dev = &ptsdev;
+	pts->size = PTY_BUF;
+	pts->p = pty;
+
 	return pts;
 }
 
@@ -110,9 +110,10 @@ int ptmxfs_open(inode_t *inode __unused, int flags __unused)
 	int fdm = get_fd(cur_proc);
 	int fds = get_fd(cur_proc);
 
+	printk("Openinig pty at %d & %d for %s\n", fdm, fds, cur_proc->name);
 	new_pty(cur_proc, &(cur_proc->fds[fdm].inode), &(cur_proc->fds[fds].inode));
 
-	return 0;
+	return fdm;
 }
 
 static dev_t ptmxdev = (dev_t)
@@ -123,6 +124,17 @@ static dev_t ptmxdev = (dev_t)
 
 void devpts_init()
 {
+	devpts.create = devfs.create;
+
+	devpts_root = kmalloc(sizeof(inode_t));
+	memset(devpts_root, 0, sizeof(inode_t));
+
+	*devpts_root = (inode_t)
+	{
+		.type = FS_DIR,
+		.fs   = &devpts,
+	};
+
 	inode_t *ptmx = vfs.create(dev_root, "ptmx");
 	ptmx->dev = &ptmxdev;
 }

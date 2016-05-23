@@ -30,5 +30,6 @@ void devman_init();
 /* Devices */
 extern dev_t i8042dev;
 extern dev_t ps2kbddev;
+extern dev_t condev;
 
 #endif
