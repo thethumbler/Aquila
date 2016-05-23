@@ -1,7 +1,9 @@
 #include <core/system.h>
 #include <core/string.h>
+#include <mm/mm.h>
 #include <cpu/io.h>
 #include <dev/dev.h>
+#include <fs/devfs.h>
 
 #define VGA_START	(VMA((char*)0xB8000))
 
@@ -32,6 +34,7 @@ void set_cursor(unsigned pos)
 
 size_t console_write(inode_t *dev __unused, size_t offset __unused, size_t size, void *buf)
 {
+	printk("Got write\n");
 	for(size_t i = 0; i < size; ++i)
 	{
 		char c = ((char*)buf)[i];
@@ -65,10 +68,21 @@ size_t console_write(inode_t *dev __unused, size_t offset __unused, size_t size,
 	return size;
 }
 
-dev_t console = 
+static int console_probe()
+{
+	inode_t *console = vfs.create(dev_root, "console");
+
+	console->dev  = &condev;
+
+	return 0;
+}
+
+dev_t condev = 
 {
 	.name = "condev",
 	.type = CHRDEV,
+	.probe = console_probe,
+	.open = vfs_generic_open,
 	.read = NULL,
 	.write = console_write,
 };

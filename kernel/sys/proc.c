@@ -73,7 +73,10 @@ int get_fd(proc_t *proc)
 {
 	for(int i = 0; i < FDS_COUNT; ++i)
 		if(!proc->fds[i].inode)
+		{
+			proc->fds[i].inode = (void*)-1;	
 			return i;
+		}
 
 	return -1;
 }

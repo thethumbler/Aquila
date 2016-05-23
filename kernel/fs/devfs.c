@@ -26,8 +26,10 @@ static size_t devfs_write(inode_t *inode, size_t offset, size_t size, void *buf)
 static inode_t *devfs_create(inode_t *dir, const char *name)
 {
 	inode_t *inode = kmalloc(sizeof(inode_t));
+	memset(inode, 0, sizeof(inode_t));
 	
 	inode->name = strdup(name);
+	inode->type = FS_FILE;
 	inode->fs   = &devfs;
 	inode->size = 0;
 
@@ -41,6 +43,15 @@ static inode_t *devfs_create(inode_t *dir, const char *name)
 	dir->p = tmp;
 
 	return inode;
+}
+
+static inode_t *devfs_mkdir(inode_t *parent, const char *name)
+{
+	inode_t *d = devfs_create(parent, name);
+
+	d->type = FS_DIR;
+
+	return d;
 }
 
 static int devfs_open(inode_t *file, int flags)
@@ -77,15 +88,13 @@ void devfs_init()
 	dev_root->size = 0;
 	dev_root->fs   = &devfs;
 	dev_root->p    = NULL;
-
-	inode_t *dev = vfs.find(vfs_root, "dev");
-	vfs.mount(dev, dev_root);
 }
 
 fs_t devfs = 
 {
 	.name = "devfs",
 	.create = &devfs_create,
+	.mkdir = &devfs_mkdir,
 	.open = &devfs_open,
 	.find = &devfs_find,
 	.read = &devfs_read,
