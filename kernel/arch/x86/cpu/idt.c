@@ -4,7 +4,7 @@ struct idt_entry
 {
 	uint32_t offset_lo	: 16;	/* offset 0:15 */
 	uint32_t selector	: 16;	/* Code segment selector */
-	uint32_t __unused	: 8;	/* Unused, should be set to 0 */
+	uint32_t _unused	: 8;	/* Unused, should be set to 0 */
 	uint32_t flags		: 5;	/* Always set to 01110 */
 	uint32_t dpl		: 2;	/* Descriptor privellage level */
 	uint32_t p 			: 1;	/* Present */

@@ -39,10 +39,24 @@ static void sys_dum()
 	if(cur_proc->pid == 2) for(;;);
 }
 
+static void sys_open(const char *fn)
+{
+	inode_t *inode = vfs.find(vfs_root, fn);
+	if(!inode)
+		arch_user_return(cur_proc, -1);
+
+	int fd = get_fd(cur_proc);
+
+	cur_proc->fds[fd] = (file_list_t){.inode = inode, .offset = 0};
+	
+	arch_user_return(cur_proc, fd);
+}
+
 void (*syscall_table[])() = 
 {
 	NULL,
 	sys_exit,
 	sys_fork,
+	sys_open,
 	sys_dum,
 };

@@ -5,9 +5,11 @@
 /* THIS DEVICE IS NOT POPULATED */
 
 #include <core/system.h>
+#include <core/panic.h>
 #include <cpu/cpu.h>
 #include <cpu/io.h>
 
+#include <dev/dev.h>
 
 static void (*channel1_handler)(int) = NULL;
 static void (*channel2_handler)(int) = NULL;
@@ -59,3 +61,20 @@ void i8042_register_handler(int channel, void (*fun)(int))
 			break;
 	}
 }
+
+#define I8042_SYSTEM_FLAG	0x4
+
+int i8042_probe()
+{
+	if(!(inb(STAT_PORT)&I8042_SYSTEM_FLAG))
+		panic("No i8042 Controller found!");
+
+	install_i8042_handler();
+
+	return 0;
+}
+
+dev_t i8042dev = (dev_t)
+{
+	.probe = i8042_probe,
+};

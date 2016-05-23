@@ -129,9 +129,11 @@ void arch_sched_init()
 
 void arch_syscall(regs_t *r)
 {
+	printk("arch_syscall\n");
 	x86_proc_t *arch = cur_proc->arch;
 	memcpy((void *) &arch->stat, (void *) r, sizeof(x86_stat_t));
 
+	printk("syscall %d\n", r->eax);
 	void (*syscall)() = syscall_table[r->eax];
 	syscall(r->ebx, r->ecx, r->edx);
 }
