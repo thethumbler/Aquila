@@ -17,7 +17,7 @@ proc_t *load_elf(char *fn)
 	void *arch_specific_data = arch_load_elf();
 
 	printk("Loading file %s\n", fn);
-	inode_t *file = vfs.find(NULL, fn);
+	inode_t *file = vfs.find(vfs_root, fn);
 	if(!file) return NULL;
 
 	elf32_hdr_t hdr;
@@ -50,6 +50,8 @@ proc_t *load_elf(char *fn)
 	proc->name = strdup(file->name);
 	proc->pid = get_pid();
 	proc->heap = proc_heap;
+	proc->fds  = kmalloc(FDS_COUNT * sizeof(file_list_t));
+	memset(proc->fds, 0, FDS_COUNT * sizeof(file_list_t));
 
 	arch_init_proc(arch_specific_data, proc, hdr.entry);
 	arch_load_elf_end(arch_specific_data);
@@ -66,4 +68,13 @@ void kill_process(proc_t *proc)
 
 	kfree(proc->name);
 	kfree(proc);
+}
+
+int get_fd(proc_t *proc)
+{
+	for(int i = 0; i < FDS_COUNT; ++i)
+		if(!proc->fds[i].inode)
+			return i;
+
+	return -1;
 }

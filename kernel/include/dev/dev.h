@@ -17,10 +17,18 @@ struct dev_struct
 {
 	char		*name;
 	dev_type	type;
-	int 		(*probe)(inode_t *dev);
+	int 		(*probe)();
 	size_t		(*read) (inode_t *dev, size_t offset, size_t size, void *buf);
 	size_t		(*write)(inode_t *dev, size_t offset, size_t size, void *buf);
 	int			(*ioctl)(inode_t *dev, unsigned long request, va_list args);
 } __attribute__((packed));
+
+void devman_init();
+
+
+/* Devices */
+extern dev_t i8042dev;
+extern dev_t ttydev;
+extern dev_t ps2kbddev;
 
 #endif

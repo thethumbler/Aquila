@@ -72,3 +72,15 @@ void ps2kbd_register()
 	extern void i8042_register_handler(int channel, void (*fun)(int));
 	i8042_register_handler(1, ps2kbd_handler);
 }
+
+int ps2kbd_probe()
+{
+	ps2kbd_register();
+
+	return 0;
+}
+
+dev_t ps2kbddev = (dev_t)
+{
+	.probe = ps2kbd_probe,
+};

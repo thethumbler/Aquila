@@ -1,5 +1,6 @@
 #include <core/system.h>
 #include <core/string.h>
+#include <core/panic.h>
 #include <mm/mm.h>
 #include <fs/vfs.h>
 #include <fs/initramfs.h>
@@ -24,6 +25,7 @@ void load_ramdisk()
 	*node = (inode_t)
 	{
 		.name = "ram0",
+		.type = FS_DIR,
 		.fs   = &devfs,
 		.dev  = &ramdev,
 		.size = ramdisk_size,
@@ -31,6 +33,9 @@ void load_ramdisk()
 	};
 
 	inode_t *root = initramfs.load(node);
+	if(!root)
+		panic("Could not load ramdisk\n");
+
 	vfs.mount_root(root);
 }
 
@@ -93,7 +98,7 @@ static inode_t *cpiofs_find(inode_t *root, const char *path)
 	inode_t *cur = root;
 	inode_t *dir = ((cpiofs_private_t*)cur->p)->dir;
 
-	if(!cur)	/* Directory has no children */
+	if(!dir)	/* Directory has no children */
 	{
 		if(*tokens == '\0')
 			return root;

@@ -18,12 +18,16 @@
 void kmain()
 {
 	load_ramdisk();
-	extern void install_i8042_handler();
-	install_i8042_handler();
-	extern void ps2kbd_register();
-	ps2kbd_register();
-	asm("sti");
-	for(;;);
+
+	devfs_init();
+	devman_init();
+
+	inode_t *tty = vfs.find(vfs_root, "/dev/tty");
+
+	tty->fs->write(tty, 0, 13, "HEllo, World!");
+
+	/*asm("sti");
+	for(;;);*/
 
 	proc_t *init = load_elf("/bin/init");
 	spawn_init(init);
