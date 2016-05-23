@@ -48,8 +48,17 @@ static void sys_open(const char *fn)
 	int fd = get_fd(cur_proc);
 
 	cur_proc->fds[fd] = (file_list_t){.inode = inode, .offset = 0};
-	
+
 	arch_user_return(cur_proc, fd);
+}
+
+static void sys_read(int fd, void *buf, size_t count)
+{
+	inode_t *inode = cur_proc->fds[fd].inode;
+	size_t  offset = cur_proc->fds[fd].offset;
+	
+	int ret = vfs.read(inode, offset, count, buf);
+	arch_user_return(cur_proc, ret);
 }
 
 void (*syscall_table[])() = 
@@ -58,5 +67,6 @@ void (*syscall_table[])() =
 	sys_exit,
 	sys_fork,
 	sys_open,
+	sys_read,
 	sys_dum,
 };

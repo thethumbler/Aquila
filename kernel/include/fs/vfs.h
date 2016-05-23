@@ -12,8 +12,9 @@ typedef struct dentry dentry_t;
 
 struct filesystem
 {
-	char		*name;	
+	char		*name;
 	inode_t*	(*load) (inode_t *inode);
+	int			(*open)(inode_t *file, int flags);
 	inode_t*	(*create)(inode_t *dir, const char *name);
 	size_t 		(*read) (inode_t *inode, size_t offset, size_t size, void *buf);
 	size_t 		(*write)(inode_t *inode, size_t offset, size_t size, void *buf);
@@ -38,6 +39,7 @@ struct vfs
 {
 	void		(*mount_root) (inode_t *inode);
 	inode_t*	(*create)(inode_t *dir, const char *name);
+	int			(*open)(inode_t *file, int flags);
 	size_t 		(*read) (inode_t *inode, size_t offset, size_t size, void *buf);
 	size_t 		(*write)(inode_t *inode, size_t offset, size_t size, void *buf);
 	int 		(*ioctl)(inode_t *inode, unsigned long, ...);

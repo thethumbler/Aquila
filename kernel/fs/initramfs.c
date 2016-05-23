@@ -15,8 +15,6 @@ void load_ramdisk()
 	void *ramdisk = (void*) kernel_modules[0].addr;
 	size_t ramdisk_size = kernel_modules[0].size;
 
-	//printk("ramdisk %x [%d]\n", ramdisk, ramdisk_size);
-
 	ramdev_private_t *p = kmalloc(sizeof(ramdev_private_t));
 	*p = (ramdev_private_t){.addr = ramdisk};
 

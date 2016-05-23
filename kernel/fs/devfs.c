@@ -43,6 +43,13 @@ static inode_t *devfs_create(inode_t *dir, const char *name)
 	return inode;
 }
 
+static int devfs_open(inode_t *file, int flags)
+{
+	if(!file->dev)
+		return 0;
+	return file->dev->open(file, flags);
+}
+
 static inode_t *devfs_find(inode_t *dir, const char *fn)
 {
 	if(dir->type != FS_DIR)
@@ -79,6 +86,7 @@ fs_t devfs =
 {
 	.name = "devfs",
 	.create = &devfs_create,
+	.open = &devfs_open,
 	.find = &devfs_find,
 	.read = &devfs_read,
 	.write = &devfs_write,

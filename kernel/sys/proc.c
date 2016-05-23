@@ -16,7 +16,6 @@ proc_t *load_elf(char *fn)
 {
 	void *arch_specific_data = arch_load_elf();
 
-	printk("Loading file %s\n", fn);
 	inode_t *file = vfs.find(vfs_root, fn);
 	if(!file) return NULL;
 

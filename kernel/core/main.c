@@ -22,12 +22,11 @@ void kmain()
 	devfs_init();
 	devman_init();
 
-	inode_t *tty = vfs.find(vfs_root, "/dev/tty");
+	extern void devpts_init();
+	devpts_init();
 
-	tty->fs->write(tty, 0, 13, "HEllo, World!");
-
-	/*asm("sti");
-	for(;;);*/
+	//asm("sti");
+	for(;;);
 
 	proc_t *init = load_elf("/bin/init");
 	spawn_init(init);
