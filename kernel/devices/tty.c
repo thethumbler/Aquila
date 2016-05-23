@@ -1,4 +1,5 @@
 #include <core/system.h>
+#include <sys/proc.h>
 #include <mm/mm.h>
 #include <fs/vfs.h>
 #include <fs/devfs.h>
@@ -24,7 +25,8 @@
 
 #define BUF_SIZE	1024
 
-ring_t *tty_ring = NULL;
+ring_t *tty_in = NULL;
+proc_t *tty_fg = NULL;
 
 void tty_invoke(int chr)	/* Invoke the TTY driver, and send character */
 {
@@ -48,11 +50,16 @@ void tty_invoke(int chr)	/* Invoke the TTY driver, and send character */
 
 }
 
+static int tty_open(inode_t *inode)
+{
+	tty_fg = cur_proc;
+}
+
 static size_t tty_read(inode_t *dev __unused, size_t offset __unused, size_t size, void *buf)
 {
 	while(size != 0)
 	{
-		size_t read = ring_read(tty_ring, size, buf);
+		size_t read = ring_read(tty_in, size, buf);
 		buf += read;
 		size -= read;
 	}
@@ -63,13 +70,13 @@ static size_t tty_read(inode_t *dev __unused, size_t offset __unused, size_t siz
 static size_t tty_write(inode_t *dev __unused, size_t offset __unused, size_t size, void *buf)
 {
 	console.write(NULL, 0, size, buf);
-	ring_write(tty_ring, size, buf);
+	//ring_write(tty_in, size, buf);
 	return size;
 }
 
 static int tty_probe()
 {
-	tty_ring = new_ring(BUF_SIZE);
+	tty_in = new_ring(BUF_SIZE);
 
 	inode_t *tty = vfs.create(dev_root, "tty");
 	tty->dev = &ttydev;
@@ -82,6 +89,7 @@ dev_t ttydev =
 	.name = "tty",
 	.type = CHRDEV,
 	.probe = tty_probe,
+	.open = tty_open,
 	.read = tty_read,
 	.write = tty_write,
 };

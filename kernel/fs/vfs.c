@@ -59,10 +59,18 @@ static int vfs_mount(inode_t *parent, inode_t *child)
 	return 0;
 }
 
+static int vfs_open(inode_t *file, int flags)
+{
+	if(!file || !file->fs || !file->fs->open)
+		return -1;
+	return file->fs->open(file, flags);
+}
+
 struct vfs vfs = (struct vfs) 
 {
 	.mount_root = &vfs_mount_root,
 	.create = &vfs_create,
+	.open = &vfs_open,
 	.mount = &vfs_mount,
 	.read = &vfs_read,
 	.find = &vfs_find,
