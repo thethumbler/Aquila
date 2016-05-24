@@ -16,11 +16,21 @@ typedef struct
 	size_t  offset;
 } file_list_t;
 
+typedef enum 
+{
+	RUNNABLE,
+	ISLEEP,	/* Interruptable SLEEP (I/O) */
+	USLEEP,	/* Uninterruptable SLEEP (Waiting for event) */
+	ZOMBIE,
+	STOPPED,
+} state_t;
+
 typedef struct proc proc_t;
 struct proc
 {
 	char		*name;
 	int 		pid;	/* Process identifier */
+	state_t		state;
 	file_list_t *fds;	/* Open file descriptors */
 	proc_t 		*parent;
 	char 		*cwd;	/* Current Working Directory */

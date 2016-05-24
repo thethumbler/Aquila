@@ -34,7 +34,7 @@ void kmain()
 	extern inode_t *devpts_root;
 	vfs.mount(pts, devpts_root);
 	*/
-	
+
 	proc_t *init = load_elf("/bin/init");
 	spawn_init(init);
 	

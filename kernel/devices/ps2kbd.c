@@ -3,10 +3,14 @@
 #include <dev/dev.h>
 #include <ds/ring.h>
 #include <fs/devfs.h>
+#include <sys/proc.h>
+#include <sys/sched.h>
+#include <core/arch.h>
 
 #define BUF_SIZE	128
 
-ring_t *kbd_ring;
+static ring_t *kbd_ring;	/* Keboard Ring Buffer */
+static proc_t *proc = NULL;	/* Current process using Keboard */
 
 void ps2kbd_handler(int scancode)
 {
@@ -17,6 +21,15 @@ void ps2kbd_register()
 {
 	extern void i8042_register_handler(int channel, void (*fun)(int));
 	i8042_register_handler(1, ps2kbd_handler);
+}
+
+int ps2kbd_open(inode_t *inode __unused, int flags)
+{
+	if(proc) /* Only one process can open kbd */
+		return -1;
+
+	proc = cur_proc;
+	return vfs_generic_open(inode, flags);
 }
 
 size_t ps2kbd_read(inode_t *inode __unused, size_t offset __unused, size_t size, void *buf)
@@ -40,6 +53,6 @@ dev_t ps2kbddev = (dev_t)
 	.name  = "kbddev",
 	.type  = CHRDEV,
 	.probe = ps2kbd_probe,
-	.open  = vfs_generic_open,
+	.open  = ps2kbd_open,
 	.read  = ps2kbd_read,
 };

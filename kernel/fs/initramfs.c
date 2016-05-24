@@ -15,6 +15,8 @@ void load_ramdisk()
 	void *ramdisk = (void*) kernel_modules[0].addr;
 	size_t ramdisk_size = kernel_modules[0].size;
 
+	printk("ramdisk %x [%d]\n", ramdisk, ramdisk_size);
+
 	ramdev_private_t *p = kmalloc(sizeof(ramdev_private_t));
 	*p = (ramdev_private_t){.addr = ramdisk};
 
@@ -148,7 +150,10 @@ static inode_t *cpiofs_load(inode_t *inode)
 		inode->fs->read(inode, data_offset, sizeof(cpio_hdr_t), &cpio);
 
 		if(cpio.magic != CPIO_BIN_MAGIC) /* Invalid CPIO archive */
+		{
+			printk("Invalid CPIO archive\n");
 			return NULL;
+		}
 
 		size = cpio.filesize[0] * 0x10000 + cpio.filesize[1];
 		
