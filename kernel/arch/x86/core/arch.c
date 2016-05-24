@@ -63,7 +63,7 @@ void arch_init_proc(void *d, proc_t *p, uintptr_t entry)
 	arch->stat.ss  = 0x20 | 3;
 	arch->stat.eflags = 0x200;
 	arch->stat.esp = USER_STACK;
-	
+
 	p->arch = arch;
 }
 
@@ -89,9 +89,6 @@ void arch_idle()
 
 void arch_jump_userspace(x86_stat_t *s)
 {
-	/*extern char dum_var;
-	if(cur_proc->pid == 2)
-		dum_var = 0;*/
 	extern void x86_jump_userspace(x86_stat_t);
 	x86_jump_userspace(*s);
 }
@@ -99,7 +96,7 @@ void arch_jump_userspace(x86_stat_t *s)
 void arch_switch_process(proc_t *proc)
 {
 	x86_proc_t *arch = proc->arch;
-	printk("Switching %s (%d) [IP: %x, EBP:%x]\n", proc->name, proc->pid, arch->stat.eip, arch->stat.ebp);
+	printk("Switching %s (%d) [IP: %x]\n", proc->name, proc->pid, arch->stat.eip);
 	arch->stat.eflags |= 0x200;	/* Make sure interrupts are enabled */
 	switch_pd(arch->pd);
 	arch_jump_userspace(&arch->stat);
@@ -107,12 +104,12 @@ void arch_switch_process(proc_t *proc)
 
 void arch_sched()
 {
-
+	/* Literally nothing */
 }
 
 static void arch_sched_handler(regs_t *r)
 {
-	if(cur_proc)
+	if(!kidle && cur_proc)
 	{
 		x86_proc_t *arch = cur_proc->arch;
 		memcpy((void *) &arch->stat, (void *) r, sizeof(x86_stat_t));
@@ -129,13 +126,13 @@ void arch_sched_init()
 
 void arch_syscall(regs_t *r)
 {
-	printk("arch_syscall\n");
 	x86_proc_t *arch = cur_proc->arch;
 	memcpy((void *) &arch->stat, (void *) r, sizeof(x86_stat_t));
 
-	printk("syscall %d\n", r->eax);
 	void (*syscall)() = syscall_table[r->eax];
 	syscall(r->ebx, r->ecx, r->edx);
+
+	arch_jump_userspace(&arch->stat); /* Return to userspace */
 }
 
 void arch_sys_fork(proc_t *proc)

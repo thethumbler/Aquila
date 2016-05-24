@@ -83,6 +83,11 @@ static void build_multiboot_mmap(mmap_t *boot_mmap)	/* boot_mmap must be allocat
 	}
 }
 
+static int get_multiboot_modules_count()
+{
+	return multiboot_info->mods_count;
+}
+
 static void build_multiboot_modules(module_t *modules)	/* modules must be allocated beforehand */
 {
 	multiboot_module_t *mods = (multiboot_module_t *) multiboot_info->mods_addr;
@@ -98,6 +103,8 @@ static void build_multiboot_modules(module_t *modules)	/* modules must be alloca
 	}
 }
 
+module_t dummy_buf[20];
+
 void process_multiboot_info()
 {
 	kernel_cmdline = (char *) multiboot_info->cmdline;
@@ -105,6 +112,8 @@ void process_multiboot_info()
 	kernel_mmap_count = get_multiboot_mmap_count();
 	kernel_mmap = heap_alloc(kernel_mmap_count * sizeof(mmap_t), 1);
 	build_multiboot_mmap(kernel_mmap);
+	kernel_modules_count = get_multiboot_modules_count();
+	kernel_modules = dummy_buf; //heap_alloc(kernel_modules_count * sizeof(module_t), 1);
 	build_multiboot_modules(kernel_modules);
 }
 
@@ -126,6 +135,7 @@ void cpu_init()
 	x86_gdt_setup();
 	early_console_init();
 	printk("Hello, World!\n");
+
 	x86_idt_setup();
 	x86_isr_setup();
 	x86_pic_setup();
@@ -133,6 +143,7 @@ void cpu_init()
 	x86_vmm_setup();
 
 	for(int i = 0; BSP_PD[i] != 0; ++i) BSP_PD[i] = 0;	/* Unmap lower half */
+	TLB_flush();
 
 	extern void x86_set_tss_esp(uint32_t esp);
 	x86_set_tss_esp(VMA(0x100000));

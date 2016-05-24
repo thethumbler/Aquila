@@ -8,5 +8,6 @@
 #define TABLE_MASK	(TABLE_SIZE - 1)
 
 #define __unused	__attribute__((unused))
+#define __packed	__attribute__((packed))
 
 #endif /* !_X86_SYSTEM_H */

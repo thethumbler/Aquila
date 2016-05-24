@@ -45,8 +45,8 @@ void x86_mm_setup()
 	for(int i = 0; i < kernel_modules_count; ++i)
 	{
 		BITMAP_CLR_RANGE(pm_bitmap,
-					LMA(((uintptr_t)kernel_modules[i].addr + PAGE_MASK) / PAGE_SIZE),
-					LMA(((uintptr_t)kernel_modules[i].addr + kernel_modules[i].size + PAGE_MASK) / PAGE_SIZE));
+					(LMA((uintptr_t)kernel_modules[i].addr) + PAGE_MASK) / PAGE_SIZE,
+					(LMA((uintptr_t)kernel_modules[i].addr + kernel_modules[i].size) + PAGE_MASK) / PAGE_SIZE);
 	}
 }
 
@@ -352,20 +352,20 @@ pmman_t pmman = (pmman_t)
 
 typedef struct
 {
-	uint32_t addr : 26;	/* Offseting (256MiB), 4-bytes aligned objects */
+	uint32_t addr : 28;	/* Offseting (1GiB), 4-bytes aligned objects */
 	uint32_t free : 1;	/* Free or not flag */
-	uint32_t size : 24;	/* Size of one object can be up to 64MiB */
-	uint32_t next : 13; /* Index of the next node */
+	uint32_t size : 26;	/* Size of one object can be up to 256MiB */
+	uint32_t next : 25; /* Index of the next node */
 }__attribute__((packed)) vmm_node_t;
 
 
-#define VMM_NODES		(0xCFFF0000)
-#define VMM_NODES_SIZE	(0x00010000)
+#define VMM_NODES		(0xD0000000)
+#define VMM_NODES_SIZE	(0x00100000)
 #define VMM_BASE		(VMM_NODES + VMM_NODES_SIZE)
 #define NODE_ADDR(addr)	(VMM_BASE + (addr) * 4)
 #define NODE_SIZE(size)	((size) * 4)
-#define LAST_NODE_INDEX	((1 << 13) - 1)
-#define MAX_NODE_SIZE	((1 << 24) - 1)
+#define LAST_NODE_INDEX	(100000)
+#define MAX_NODE_SIZE	((1 << 26) - 1)
 
 vmm_node_t *nodes = (vmm_node_t *) VMM_NODES;
 void x86_vmm_setup()
@@ -386,13 +386,13 @@ void x86_vmm_setup()
 uint32_t first_free_node = 0;
 uint32_t get_node()
 {
-	unsigned i, flag = 0;
+	unsigned i;//, flag = 0;
 	for(i = first_free_node; i < LAST_NODE_INDEX; ++i)
 	{
-		if(!flag && nodes[i].free)
+		/*if(!flag && nodes[i].free)
 		{
 			first_free_node = flag = i;
-		}
+		}*/
 		
 		if(!nodes[i].size)
 			return i;
@@ -405,8 +405,8 @@ uint32_t get_node()
 void release_node(uint32_t i)
 {
 	nodes[i] = (vmm_node_t){0};
-	if(i < first_free_node)
-		first_free_node = i;
+	//if(i < first_free_node)
+	//	first_free_node = i;
 }
 
 uint32_t get_first_fit_free_node(uint32_t size)
@@ -434,7 +434,7 @@ void print_node(unsigned i)
 
 void *kmalloc(size_t size)
 {
-	size = (size + 3)/4;	/* Round size up to 4 bytes */
+	size = (size + 3)/4;	/* size in 4-bytes units */
 
 	/* Look for a first fit free node */
 	unsigned i = get_first_fit_free_node(size);

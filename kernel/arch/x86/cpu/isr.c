@@ -80,8 +80,9 @@ void interrupt(regs_t *regs)
 	
 	if(int_num == 0x80)	/* syscall */
 	{
-		arch_syscall(regs);
 		x86_proc_t *arch = cur_proc->arch;
+		arch_syscall(regs);
+
 		memcpy(regs, &arch->stat, sizeof(regs_t));
 		return;
 	}

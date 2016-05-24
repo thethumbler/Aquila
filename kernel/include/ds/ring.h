@@ -4,6 +4,8 @@
 #include <core/system.h>
 #include <mm/mm.h>
 
+#define INDEX(ring, i) ((i) % ((ring)->size))
+
 typedef struct 
 {
 	char *buf;
@@ -42,11 +44,12 @@ static inline size_t ring_write(ring_t *ring, size_t n, char *buf)
 
 	while(n)
 	{
-		//if(ring->head == ring->tail)	/* Ring is full */
-		//	break;
+		if(INDEX(ring, ring->head) == INDEX(ring, ring->tail) + 1)	/* Ring is full */
+			break;
 
 		if(ring->tail == ring->size)
 			ring->tail = 0;
+		
 		ring->buf[ring->tail++] = *buf++;
 		n--;
 	}

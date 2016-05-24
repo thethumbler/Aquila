@@ -74,7 +74,7 @@ isr\v:
 .global isr\v
 isr\v:
 	cli
-	movl %eax, (err_num)
+	popl (err_num)
 	movl $\v, (int_num)
 	jmp isr_handler
 .endm
@@ -131,7 +131,7 @@ ISR_NOERR 28
 ISR_NOERR 29
 ISR_NOERR 30
 ISR_NOERR 31
-ISR_ERR   128
+ISR_NOERR 128
 
 
 .extern interrupt
