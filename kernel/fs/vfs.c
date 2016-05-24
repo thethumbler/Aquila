@@ -89,6 +89,13 @@ int vfs_generic_open(inode_t *file, int flags __unused)
 	return fd;
 }
 
+static int vfs_ioctl(inode_t *file, unsigned long request, void *argp)
+{
+	if(!file || !file->fs || !file->fs->ioctl)
+		return -1;
+	return file->fs->ioctl(file, request, argp);
+}
+
 struct vfs vfs = (struct vfs) 
 {
 	.mount_root = &vfs_mount_root,
@@ -98,5 +105,6 @@ struct vfs vfs = (struct vfs)
 	.mount = &vfs_mount,
 	.read = &vfs_read,
 	.write = &vfs_write,
+	.ioctl = &vfs_ioctl,
 	.find = &vfs_find,
 };
