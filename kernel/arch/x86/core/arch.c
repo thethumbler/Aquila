@@ -173,12 +173,22 @@ void arch_sys_fork(proc_t *proc)
 
 	/* Copy stack */
 	pmman.map(USER_STACK_BASE, USER_STACK_SIZE, URWX);
-	void *stack_buf = kmalloc(USER_STACK_SIZE);
-	switch_pd(cur_proc_pd);
-	memcpy(stack_buf, (void *) USER_STACK_BASE, USER_STACK_SIZE);
-	switch_pd(new_proc_pd);
-	memcpy((void *) USER_STACK_BASE, stack_buf, USER_STACK_SIZE);
-	switch_pd(cur_proc_pd);
+	
+
+#define STACK_BUF	(1024UL*1024)
+
+	/* Copying stack in SATCK_BUF blocks */
+	void *stack_buf = kmalloc(STACK_BUF);
+	printk("stack_buf %x\n");
+
+	for(uint32_t i = 0; i < USER_STACK_SIZE/STACK_BUF; ++i)
+	{
+		switch_pd(cur_proc_pd);
+		memcpy(stack_buf, (void *) USER_STACK_BASE + i * STACK_BUF, STACK_BUF);
+		switch_pd(new_proc_pd);
+		memcpy((void *) USER_STACK_BASE + i * STACK_BUF, stack_buf, STACK_BUF);
+		switch_pd(cur_proc_pd);
+	}
 
 	kfree(stack_buf);
 

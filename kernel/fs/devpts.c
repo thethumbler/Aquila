@@ -3,6 +3,7 @@
 #include <fs/vfs.h>
 #include <fs/devfs.h>
 #include <fs/devpts.h>
+#include <fs/ioctl.h>
 #include <ds/ring.h>
 #include <sys/proc.h>
 #include <sys/sched.h>
@@ -28,28 +29,44 @@ typedef struct pty
 	proc_t	*fg;	/* Foreground Process */
 } pty_t;
 
-size_t ptsfs_read(inode_t *inode, size_t offset __unused, size_t size, void *buf)
+static size_t ptsfs_read(inode_t *inode, size_t offset __unused, size_t size, void *buf)
 {
 	pty_t *pty = (pty_t *) inode->p;
-	return ring_read(pty->in, size, buf);
+	return ring_read(pty->in, size, buf); 
 }
 
-size_t ptmfs_read(inode_t *inode, size_t offset __unused, size_t size, void *buf)
+static size_t ptmfs_read(inode_t *inode, size_t offset __unused, size_t size, void *buf)
 {
 	pty_t *pty = (pty_t *) inode->p;
 	return ring_read(pty->out, size, buf);	
 }
 
-size_t ptsfs_write(inode_t *inode, size_t offset __unused, size_t size, void *buf)
+static size_t ptsfs_write(inode_t *inode, size_t offset __unused, size_t size, void *buf)
 {
 	pty_t *pty = (pty_t *) inode->p;
-	return ring_write(pty->in, size, buf);
+	return ring_write(pty->out, size, buf);
 }
 
-size_t ptmfs_write(inode_t *inode, size_t offset __unused, size_t size, void *buf)
+static size_t ptmfs_write(inode_t *inode, size_t offset __unused, size_t size, void *buf)
 {
 	pty_t *pty = (pty_t *) inode->p;
-	return ring_write(pty->out, size, buf);	
+	return ring_write(pty->in, size, buf);	
+}
+
+static int ptmfs_ioctl(inode_t *inode, unsigned long request, void *argp)
+{
+	pty_t *pty = (pty_t *) inode->p;
+
+	switch(request)
+	{
+		case TIOCGPTN:
+			*(int *) argp = pty->id;
+			break;
+		default:
+			return -1;
+	}
+	
+	return 0;
 }
 
 static int get_pty_id()
@@ -78,8 +95,7 @@ inode_t *new_ptm(pty_t *pty)
 inode_t *new_pts(pty_t *pty)
 {
 	/* FIXME */
-	char *name = strdup("pts ");
-	name[3] = '0' + pty->id;
+	char name[2] = {'0' + pty->id, 0};
 
 	inode_t *pts = vfs.create(devpts_root, name);
 
@@ -90,7 +106,7 @@ inode_t *new_pts(pty_t *pty)
 	return pts;
 }
 
-void new_pty(proc_t *proc, inode_t **master, inode_t **slave)
+void new_pty(proc_t *proc, inode_t **master)
 {
 	pty_t *pty = kmalloc(sizeof(pty_t));
 	memset(pty, 0, sizeof(pty_t));
@@ -100,20 +116,21 @@ void new_pty(proc_t *proc, inode_t **master, inode_t **slave)
 	pty->out = new_ring(PTY_BUF);
 
 	*master = pty->master = new_ptm(pty);
-	*slave  = pty->slave  = new_pts(pty);
+	
+	pty->slave  = new_pts(pty);
 
 	pty->proc = proc;
 }
 
 int ptmxfs_open(inode_t *inode __unused, int flags __unused)
 {
-	int fdm = get_fd(cur_proc);
-	int fds = get_fd(cur_proc);
+	int fd = get_fd(cur_proc);
 
-	printk("Openinig pty at %d & %d for %s\n", fdm, fds, cur_proc->name);
-	new_pty(cur_proc, &(cur_proc->fds[fdm].inode), &(cur_proc->fds[fds].inode));
+	printk("Openinig ptm at %d for %s\n", fd, cur_proc->name);
+	
+	new_pty(cur_proc, &(cur_proc->fds[fd].inode));
 
-	return fdm;
+	return fd;
 }
 
 static dev_t ptmxdev = (dev_t)
@@ -125,6 +142,7 @@ static dev_t ptmxdev = (dev_t)
 void devpts_init()
 {
 	devpts.create = devfs.create;
+	devpts.find = devfs.find;
 
 	devpts_root = kmalloc(sizeof(inode_t));
 	memset(devpts_root, 0, sizeof(inode_t));
@@ -136,6 +154,10 @@ void devpts_init()
 	};
 
 	inode_t *ptmx = vfs.create(dev_root, "ptmx");
+	inode_t *pts_dir = vfs.mkdir(dev_root, "pts");
+
+	vfs.mount(pts_dir, devpts_root);
+
 	ptmx->dev = &ptmxdev;
 }
 
@@ -144,6 +166,7 @@ static dev_t ptsdev = (dev_t)
 	.name = "ptsfs",
 	.read = ptsfs_read,
 	.write = ptsfs_write,
+	.open = vfs_generic_open,
 };
 
 static dev_t ptmdev = (dev_t)
@@ -151,6 +174,7 @@ static dev_t ptmdev = (dev_t)
 	.name = "ptmfs",
 	.read = ptmfs_read,
 	.write = ptmfs_write,
+	.ioctl = ptmfs_ioctl,
 };
 
 fs_t devpts = (fs_t)

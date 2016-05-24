@@ -26,14 +26,12 @@ void kmain()
 
 	devman_init();
 
-	/*
 	extern void devpts_init();
 	devpts_init();
 
 	inode_t *pts = vfs.mkdir(dev_root, "pts");
 	extern inode_t *devpts_root;
 	vfs.mount(pts, devpts_root);
-	*/
 
 	proc_t *init = load_elf("/bin/init");
 	spawn_init(init);

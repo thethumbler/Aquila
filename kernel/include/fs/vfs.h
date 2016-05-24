@@ -19,7 +19,7 @@ struct filesystem
 	inode_t*	(*mkdir)(inode_t *dir, const char *name);
 	size_t 		(*read) (inode_t *inode, size_t offset, size_t size, void *buf);
 	size_t 		(*write)(inode_t *inode, size_t offset, size_t size, void *buf);
-	int 		(*ioctl)(inode_t *inode, unsigned long, ...);
+	int 		(*ioctl)(inode_t *inode, unsigned long request, void *argp);
 
 	inode_t*	(*find)(inode_t *dir, const char *name);
 };
@@ -44,7 +44,7 @@ struct vfs
 	int			(*open)(inode_t *file, int flags);
 	size_t 		(*read) (inode_t *inode, size_t offset, size_t size, void *buf);
 	size_t 		(*write)(inode_t *inode, size_t offset, size_t size, void *buf);
-	int 		(*ioctl)(inode_t *inode, unsigned long, ...);
+	int 		(*ioctl)(inode_t *inode, unsigned long request, void *argp);
 	int 		(*mount)(inode_t *parent, inode_t *child);
 
 	inode_t*	(*find) (inode_t *dir, const char *name);

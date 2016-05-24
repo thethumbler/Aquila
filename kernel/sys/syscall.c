@@ -44,6 +44,7 @@ static void sys_dum()
 static void sys_open(const char *fn, int flags)
 {
 	inode_t *inode = vfs.find(vfs_root, fn);
+
 	if(!inode)
 		arch_user_return(cur_proc, -1);
 
@@ -70,6 +71,14 @@ static void sys_write(int fd, void *buf, size_t count)
 	arch_user_return(cur_proc, ret);
 }
 
+static void sys_ioctl(int fd, unsigned long request, void *argp)
+{
+	inode_t *inode = cur_proc->fds[fd].inode;
+
+	int ret = vfs.ioctl(inode, request, argp);
+	arch_user_return(cur_proc, ret);
+}
+
 void (*syscall_table[])() = 
 {
 	NULL,
@@ -78,5 +87,6 @@ void (*syscall_table[])() =
 	sys_open,
 	sys_read,
 	sys_write,
+	sys_ioctl,
 	sys_dum,
 };

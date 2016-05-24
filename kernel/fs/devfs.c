@@ -61,6 +61,13 @@ static int devfs_open(inode_t *file, int flags)
 	return file->dev->open(file, flags);
 }
 
+static int devfs_ioctl(inode_t *file, unsigned long request, void *argp)
+{
+	if(!file || !file->dev || !file->dev->ioctl)
+		return 0;
+	return file->dev->ioctl(file, request, argp);
+}
+
 static inode_t *devfs_find(inode_t *dir, const char *fn)
 {
 	if(dir->type != FS_DIR)
@@ -99,4 +106,5 @@ fs_t devfs =
 	.find = &devfs_find,
 	.read = &devfs_read,
 	.write = &devfs_write,
+	.ioctl = &devfs_ioctl,
 };

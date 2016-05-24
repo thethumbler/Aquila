@@ -21,7 +21,7 @@ struct dev_struct
 	int			(*open)(inode_t *file, int flags);
 	size_t		(*read) (inode_t *dev, size_t offset, size_t size, void *buf);
 	size_t		(*write)(inode_t *dev, size_t offset, size_t size, void *buf);
-	int			(*ioctl)(inode_t *dev, unsigned long request, va_list args);
+	int			(*ioctl)(inode_t *dev, unsigned long request, void *argp);
 } __attribute__((packed));
 
 void devman_init();
