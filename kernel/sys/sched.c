@@ -17,6 +17,7 @@ void kernel_idle()
 
 void spawn_init(proc_t *init)
 {
+	init_process(init);
 	head = init;
 	cur_proc = init;
 	init->next = NULL;

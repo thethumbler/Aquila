@@ -8,6 +8,7 @@
 #define SYS_READ	4
 #define SYS_WRITE	5
 #define SYS_IOCTL	6
+#define SYS_EXECVE	7
 
 int syscall(int s, long arg1, long arg2, long arg3)
 {
@@ -41,6 +42,11 @@ int ioctl(int fd, unsigned long request, void *argp)
 	return syscall(SYS_IOCTL, fd, request, argp);
 }
 
+int execve(const char *name, char * const argp[], char * const envp[])
+{
+	return syscall(SYS_EXECVE, name, argp, envp);
+}
+
 char kbd_us[] = 
 {
 	'\0', 0, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
@@ -54,6 +60,13 @@ int printf(char *fmt, ...);
 
 void _start()
 {
+	int pid = fork();
+
+	if(!pid)	// child
+		execve("/bin/prog", 0, 0);
+
+	for(;;);
+#if 0
 	open("/dev/kbd", 0);		/* stdin */
 	open("/dev/console", 0);	/* stdout */
 	open("/dev/console", 0);	/* stderr */
@@ -85,6 +98,7 @@ void _start()
 	}
 
 	for(;;);
+#endif
 }
 
 static int putc(char c)

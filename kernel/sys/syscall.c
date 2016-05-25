@@ -15,21 +15,7 @@ static void sys_exit(int code __attribute__((unused)))
 
 static void sys_fork()
 {
-	printk("sys_fork\n");
-	proc_t *fork = kmalloc(sizeof(proc_t));
-	memcpy(fork, cur_proc, sizeof(proc_t));
-
-	fork->name = strdup(cur_proc->name);
-	fork->pid = get_pid();
-	
-	fork->fds = kmalloc(FDS_COUNT * sizeof(file_list_t));
-	memcpy(fork->fds, cur_proc->fds, FDS_COUNT * sizeof(file_list_t));
-
-	arch_sys_fork(fork);
-
-	arch_user_return(fork, 0);
-	arch_user_return(cur_proc, fork->pid);
-
+	proc_t *fork = fork_process(cur_proc);
 	enqueue_process(fork);
 }
 
@@ -79,6 +65,18 @@ static void sys_ioctl(int fd, unsigned long request, void *argp)
 	arch_user_return(cur_proc, ret);
 }
 
+static void sys_execve(const char *name, char * const argp[], char * const envp[])
+{
+	char *fn = strdup(name);
+	proc_t *p = execve_elf(cur_proc, fn, argp, envp);
+	kfree(fn);
+
+	if(!p)
+		arch_user_return(cur_proc, -1);
+	else
+		kernel_idle();
+}
+
 void (*syscall_table[])() = 
 {
 	NULL,
@@ -88,5 +86,6 @@ void (*syscall_table[])() =
 	sys_read,
 	sys_write,
 	sys_ioctl,
+	sys_execve,
 	sys_dum,
 };

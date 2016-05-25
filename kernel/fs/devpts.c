@@ -94,8 +94,9 @@ inode_t *new_ptm(pty_t *pty)
 
 inode_t *new_pts(pty_t *pty)
 {
-	/* FIXME */
-	char name[2] = {'0' + pty->id, 0};
+	char *name = kmalloc(12);
+	memset(name, 0, 12);
+	snprintf(name, 11, "%d", pty->id);
 
 	inode_t *pts = vfs.create(devpts_root, name);
 

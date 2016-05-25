@@ -74,6 +74,13 @@ void arch_load_elf_end(void *d)
 	kfree(p);
 }
 
+void arch_execve_proc(proc_t *proc, uintptr_t entry)
+{
+	x86_proc_t *arch = proc->arch;
+	arch->stat.esp = USER_STACK;
+	arch->stat.eip = entry;
+}
+
 void arch_kill_process(proc_t *proc)
 {
 	x86_proc_t *arch = proc->arch;
@@ -179,7 +186,6 @@ void arch_sys_fork(proc_t *proc)
 
 	/* Copying stack in SATCK_BUF blocks */
 	void *stack_buf = kmalloc(STACK_BUF);
-	printk("stack_buf %x\n");
 
 	for(uint32_t i = 0; i < USER_STACK_SIZE/STACK_BUF; ++i)
 	{
