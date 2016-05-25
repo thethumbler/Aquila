@@ -9,6 +9,8 @@
 #else
 #endif
 
+int snprintf(char *s, size_t n, char *fmt, ...);
+
 static inline int strcmp(const char *s1, const char *s2)
 {
 	while(*s1 && *s2 && *s1 == *s2) {s1++; s2++;}
