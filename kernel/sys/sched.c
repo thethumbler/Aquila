@@ -15,6 +15,12 @@ void kernel_idle()
 	arch_idle();
 }
 
+void spawn_proc(proc_t *proc)	/* Starts process execution */
+{
+	proc->spawned = 1;
+	arch_spawn_proc(proc);
+}
+
 void spawn_init(proc_t *init)
 {
 	init_process(init);
@@ -23,7 +29,7 @@ void spawn_init(proc_t *init)
 	init->next = NULL;
 	init->state = RUNNABLE;
 	arch_sched_init();
-	arch_switch_process(init);
+	spawn_proc(init);
 }
 
 void enqueue_process(proc_t *p)
@@ -49,10 +55,8 @@ void dequeue_process(proc_t *p)
 	}
 }
 
-void schedule()	/* Should not be called directly, better use kernel_idle() */
+void schedule()	/* Called from arch-specific timer event handler */
 {
-	arch_sched();
-
 	if(!cur_proc)
 		cur_proc = head;
 
@@ -76,5 +80,10 @@ void schedule()	/* Should not be called directly, better use kernel_idle() */
 		return;
 
 	kidle = 0;
-	arch_switch_process(cur_proc = proc);
+	
+	cur_proc = proc;
+	if(proc->spawned)
+		arch_switch_process(cur_proc = proc);
+	else
+		spawn_proc(cur_proc);
 }

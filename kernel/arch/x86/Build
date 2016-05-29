@@ -2,4 +2,4 @@ boot/
 cpu/
 console/
 mem/
-core/
+sys/

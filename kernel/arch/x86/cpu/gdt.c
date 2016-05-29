@@ -84,10 +84,16 @@ void x86_set_tss_esp(uint32_t esp)
     tss_entry = (typeof(tss_entry)){0};
     tss_entry.ss  = 0x10;
     tss_entry.esp = esp;
+    
     /* TSS Segment */
 	gdt[5] = (struct gdt_entry){TSS_LIMIT & 0xFFFF, TSS_BASE & 0xFFFF,
 		(TSS_BASE >> 16) & 0xFF, TSS_AVL, 0, DPL3, 1,
 		(TSS_LIMIT >> 16) & 0xF, 0, 0, 0, 0, (TSS_BASE >> 24 & 0xFF)};
 
     asm volatile ("ltr %%ax;"::"a"(0x28 | DPL3));
+}
+
+void x86_set_kernel_stack(uintptr_t esp)
+{
+	tss_entry.esp = esp;
 }

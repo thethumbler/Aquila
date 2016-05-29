@@ -1,5 +1,5 @@
 gcc -m32 -nostdlib -ffreestanding -Wl,-Tlink.ld -Wall -Werror \
-boot/boot.o cpu/cpu.o console/console.o mem/mem.o core/core.o ../../core/core.o \
+boot/boot.o cpu/cpu.o console/console.o mem/mem.o sys/sys.o ../../core/core.o \
 ../../devices/devices.o ../../fs/fs.o ../../sys/sys.o -lgcc -o iso/kernel.elf
 
 if [[ ! -d ramdisk/bin ]]; then mkdir ramdisk/bin; fi

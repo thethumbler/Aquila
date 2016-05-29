@@ -8,6 +8,7 @@ extern proc_t *cur_proc;
 
 extern int kidle;
 void kernel_idle();
+void spawn_proc(proc_t *proc);
 void spawn_init(proc_t *init);
 void schedule();
 void enqueue_process(proc_t *p);

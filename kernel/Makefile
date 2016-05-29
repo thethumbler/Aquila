@@ -26,8 +26,8 @@ $(dirs): $(patsubst %/,%/Makefile, $(dirs))
 	$(MAKE) -C $@ $(param)
 
 $(patsubst %/,%/Makefile, $(dirs)): $(patsubst %/,%/Build, $(dirs))
-	cd $(dir $@) && $(PERL) $(PDIR)/gen.pl > Makefile && \
-	for file in `ls *.[Sc]`; do $(CC) $(CFLAGS) -M $$file >> Makefile; done
+	cd $(dir $@) && $(PERL) $(PDIR)/gen.pl >> Makefile
+	
 
 .PHONY: distclean
 distclean: param = distclean

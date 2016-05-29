@@ -7,16 +7,28 @@
 #include <arch/x86/include/arch.h>
 #endif
 
+/* arch/ARCH/sys/elf.c */
 void *arch_load_elf();
-void arch_init_proc(void *arch, proc_t *proc, uintptr_t entry);
 void arch_load_elf_end(void *arch);
-void arch_execve_proc(proc_t *proc, uintptr_t entry);
-void arch_idle();
-void arch_switch_process(proc_t *proc);
-void arch_sched();
-void arch_sched_init();
-void arch_kill_process(proc_t *proc);
+
+/* arch/ARCH/sys/proc.c */
+void arch_init_proc(void *arch, proc_t *proc, uintptr_t entry);
+void arch_spawn_proc(proc_t *init);
+
+/* arch/ARCH/sys/fork.c */
 void arch_sys_fork(proc_t *proc);
-void arch_user_return(proc_t *proc, uintptr_t val);
+
+/* arch/ARCH/sys/syscall.c */
+void arch_syscall_return(proc_t *proc, uintptr_t val);
+
+/* arch/ARCH/sys/sched.c */
+void arch_sched_init();
+void arch_sched();
+
+/* arch/ARCH/sys/execve.c */
+void arch_sys_execve(proc_t *proc, uintptr_t entry);
+
+void arch_idle();
+void arch_switch_process(proc_t *proc) __attribute__((noreturn));
 
 #endif /* ! _ARCH_H */
