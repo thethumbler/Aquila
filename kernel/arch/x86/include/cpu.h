@@ -55,6 +55,8 @@ void x86_isr_setup();
 void x86_pic_setup();
 void x86_pic_disable();
 void x86_pit_setup(uint32_t);
+void x86_set_tss_esp(uint32_t esp);
+void x86_set_kernel_stack(uintptr_t esp);
 
 #include "msr.h"
 #include "sdt.h"

@@ -175,10 +175,10 @@ static void unmap_from_physical(uintptr_t ptr, size_t size)
 		if(cur_pd[tindex] & 1)
 		{
 			/* First, we mount the table */
-			uint32_t *PT = mount_page(cur_pd[tindex] & ~PAGE_MASK);
+			uint32_t *PT = mount_page(cur_pd[tindex]);
 
 			/* We unmap pages only, the table is not unmapped */
-			while(pages && pindex < 1024)
+			while(pages && (pindex < 1024))
 			{
 				BITMAP_CLR(pm_bitmap, PT[pindex] >> PAGE_SHIFT);
 				PT[pindex] = 0;
@@ -204,7 +204,7 @@ static void unmap_from_physical(uintptr_t ptr, size_t size)
 
 			/* iterate over pages, stop if we reach the final page or the number
 			   of pages left to unmap is zero */
-			while(pindex < 1024 && pages)
+			while((pindex < 1024) && pages)
 			{
 				BITMAP_CLR(pm_bitmap, PT[pindex] >> PAGE_SHIFT);
 				PT[pindex] = 0;
@@ -359,11 +359,11 @@ typedef struct
 }__attribute__((packed)) vmm_node_t;
 
 
-#define VMM_NODES		(0xD0000000)
+#define VMM_BASE		(0xD0000000)
 #define VMM_NODES_SIZE	(0x00100000)
-#define VMM_BASE		(VMM_NODES + VMM_NODES_SIZE)
-#define NODE_ADDR(addr)	(VMM_BASE + (addr) * 4)
-#define NODE_SIZE(size)	((size) * 4)
+#define VMM_NODES		(VMM_BASE - VMM_NODES_SIZE)
+#define NODE_ADDR(node)	(VMM_BASE + ((node).addr) * 4)
+#define NODE_SIZE(node)	(((node).size) * 4)
 #define LAST_NODE_INDEX	(100000)
 #define MAX_NODE_SIZE	((1 << 26) - 1)
 
@@ -376,11 +376,8 @@ void x86_vmm_setup()
 	/* Now we have to clear it */
 	memset((void*)VMM_NODES, 0, VMM_NODES_SIZE);
 
-	/* Setting up initial nodes */
-	nodes[0] = (vmm_node_t){0x000000, 1, -1, -1};
-	/*nodes[1] = (vmm_node_t){0x400000, 1, -1, 2};
-	nodes[2] = (vmm_node_t){0x800000, 1, -1, 3};
-	nodes[3] = (vmm_node_t){0xC00000, 1, -1, -1};*/
+	/* Setting up initial node */
+	nodes[0] = (vmm_node_t){0, 1, -1, LAST_NODE_INDEX};
 }
 
 uint32_t first_free_node = 0;
@@ -425,10 +422,10 @@ uint32_t get_first_fit_free_node(uint32_t size)
 void print_node(unsigned i)
 {
 	printk("Node[%d]\n", i);
-	printk("   |_ Addr   : %x\n", NODE_ADDR(nodes[i].addr));
+	printk("   |_ Addr   : %x\n", NODE_ADDR(nodes[i]));
 	printk("   |_ free ? : %s\n", nodes[i].free?"yes":"no");
 	printk("   |_ Size   : %d B [ %d KiB ]\n",
-		NODE_SIZE(nodes[i].size), NODE_SIZE(nodes[i].size)/1024 );
+		NODE_SIZE(nodes[i]), NODE_SIZE(nodes[i])/1024 );
 	printk("   |_ Next   : %d\n", nodes[i].next );
 }
 
@@ -458,28 +455,32 @@ void *kmalloc(size_t size)
 		nodes[i].size = size;
 	}
 
-	pmman.map(NODE_ADDR(nodes[i].addr), NODE_SIZE(size), KRW);
-	return (void*)NODE_ADDR(nodes[i].addr);
+	pmman.map(NODE_ADDR(nodes[i]), NODE_SIZE(nodes[i]), KRW);
+	return (void*)NODE_ADDR(nodes[i]);
 }
 
 void kfree(void *_ptr)
 {
-	if((uintptr_t)_ptr < VMM_BASE)	/* That's not even allocatable */
+	uintptr_t ptr = (uintptr_t) _ptr;
+
+	if(ptr < VMM_BASE)	/* That's not even allocatable */
 		return;
 
 	/* Look for the node containing _ptr */
 	/* NOTE: We don't use a function for looking for the node, since we also
 	   need to know the first free node of a sequence of free nodes before our
 	   target node */
-	uintptr_t ptr = ((uintptr_t)_ptr - VMM_BASE)/4;
 
 	unsigned i = 0, j = -1;
 
-	while(!(ptr >= nodes[i].addr
-		&& ptr < (uintptr_t)(nodes[i].addr + nodes[i].size)))
+	while(!(ptr >= NODE_ADDR(nodes[i])
+		&& ptr < (uintptr_t)(NODE_ADDR(nodes[i]) + NODE_SIZE(nodes[i]))))
 	{
-		if(nodes[i].free && j == -1U) j = i; /* Set first free node index */
-		if(!nodes[i].free) j = -1U;	/* Invalidate first free node index */
+		if(nodes[i].free)
+		{
+			if(j == -1U) 
+				j = i; /* Set first free node index */
+		} else j = -1U;	/* Invalidate first free node index */
 
 		i = nodes[i].next;
 		if(i == LAST_NODE_INDEX) /* Trying to free unallocated node */
@@ -499,14 +500,15 @@ void kfree(void *_ptr)
 			nodes[i].size += nodes[n].size;
 			nodes[i].next  = nodes[n].next;
 			release_node(n);
-		}
-		n = nodes[i].next;
+			n = nodes[i].next;
+		} else
+			break;
 	}
 
 	if(j != i && j != -1U)	/* I must be lucky, aren't I always ;) */
-		kfree((void*)NODE_ADDR(nodes[j].addr));
+		kfree((void*)NODE_ADDR(nodes[j]));
 	else
-		unmap_from_physical(NODE_ADDR(nodes[i].addr), NODE_SIZE(nodes[i].size));
+		unmap_from_physical(NODE_ADDR(nodes[i]), NODE_SIZE(nodes[i]));
 }
 
 void dump_nodes()

@@ -38,13 +38,19 @@ struct proc
 
 	void		*arch;	/* Arch specific data */
 
+	/* Process flags */
+	int			spawned : 1;
+
 	proc_t 		*next;	/* Processes queue next pointer */
 } __attribute__((packed));
 
 proc_t *load_elf(const char *fn);
 int get_pid();
 int get_fd(proc_t *proc);
-proc_t *fork_process(proc_t *proc);
+
+/* sys/fork.c */
+proc_t *fork_proc(proc_t *proc);
+
 void init_process(proc_t *proc);
 proc_t *execve_elf(proc_t *proc, const char *fn, char * const argv[], char * const env[]);
 

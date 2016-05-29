@@ -45,7 +45,6 @@ proc_t *load_elf(const char *fn)
 	}
 
 	pmman.map(USER_STACK_BASE, USER_STACK_SIZE, URW);
-	pmman.map(USER_ENV, USER_ENV_SIZE, URW);
 
 	proc_t *proc = kmalloc(sizeof(proc_t));
 	proc->name = strdup(file->name);
@@ -70,7 +69,7 @@ void kill_process(proc_t *proc)
 	pmman.unmap((uintptr_t) NULL, (uintptr_t) proc->heap);
 	pmman.unmap(USER_STACK_BASE, USER_STACK_BASE);
 
-	arch_kill_process(proc);
+	//arch_kill_proc(proc);
 
 	kfree(proc->name);
 	kfree(proc);
@@ -86,25 +85,6 @@ int get_fd(proc_t *proc)
 		}
 
 	return -1;
-}
-
-proc_t *fork_process(proc_t *proc)
-{
-	proc_t *fork = kmalloc(sizeof(proc_t));
-	memcpy(fork, proc, sizeof(proc_t));
-
-	fork->name = strdup(proc->name);
-	fork->pid = get_pid();
-	
-	fork->fds = kmalloc(FDS_COUNT * sizeof(file_list_t));
-	memcpy(fork->fds, proc->fds, FDS_COUNT * sizeof(file_list_t));
-
-	arch_sys_fork(fork);
-
-	arch_user_return(fork, 0);
-	arch_user_return(proc, fork->pid);
-
-	return fork;
 }
 
 proc_t *execve_elf(proc_t *proc, const char *fn, char * const argv[] __unused, char * const env[] __unused)
@@ -138,12 +118,13 @@ proc_t *execve_elf(proc_t *proc, const char *fn, char * const argv[] __unused, c
 
 	kfree(proc->name);
 	proc->name = strdup(file->name);
+	proc->spawned = 0;
 
 	if(proc->heap > proc_heap)
 		pmman.unmap((uintptr_t) proc_heap, proc->heap - proc_heap);
 	proc->heap = proc_heap;
 
-	arch_execve_proc(proc, hdr.entry);
+	arch_sys_execve(proc, hdr.entry);
 
 	return proc;
 }

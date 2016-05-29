@@ -197,3 +197,30 @@ x86_jump_userspace:
     movw %ax, %gs
     pop_context
     iret
+
+.global x86_jump_user
+x86_jump_user:	/* eip, cs, eflags, esp, ss */
+	pop  %eax 	/* Caller return address */
+	mov  $0x20 | 0x3, %ax
+    movw %ax, %ds
+    movw %ax, %es
+    movw %ax, %fs
+    movw %ax, %gs
+    iret
+
+.global x86_read_eip
+x86_read_eip:
+	mov (%esp), %eax
+	ret
+
+.global x86_goto
+x86_goto:
+	pop %ebx	/* Caller return address */
+	pop %ebx
+	pop %ebp
+	pop %esp
+	mov $-1, %eax /* Return -1 -> Done switching */
+	jmp *%ebx
+
+.global ____end
+____end:

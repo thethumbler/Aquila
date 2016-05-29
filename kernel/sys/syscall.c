@@ -15,16 +15,9 @@ static void sys_exit(int code __attribute__((unused)))
 
 static void sys_fork()
 {
-	proc_t *fork = fork_process(cur_proc);
-	enqueue_process(fork);
-}
-
-static void sys_dum()
-{
-	printk("sys_dum\n");
-	x86_proc_t *arch = cur_proc->arch;
-	printk("pid %d\n", arch->stat.ebx);
-	if(cur_proc->pid == 2) for(;;);
+	proc_t *fork = fork_proc(cur_proc);
+	if(fork)
+		enqueue_process(fork);
 }
 
 static void sys_open(const char *fn, int flags)
@@ -32,11 +25,11 @@ static void sys_open(const char *fn, int flags)
 	inode_t *inode = vfs.find(vfs_root, fn);
 
 	if(!inode)
-		arch_user_return(cur_proc, -1);
+		arch_syscall_return(cur_proc, -1);
 
 	int fd = vfs.open(inode, flags);
 
-	arch_user_return(cur_proc, fd);
+	arch_syscall_return(cur_proc, fd);
 }
 
 static void sys_read(int fd, void *buf, size_t count)
@@ -45,7 +38,7 @@ static void sys_read(int fd, void *buf, size_t count)
 	size_t  offset = cur_proc->fds[fd].offset;
 
 	int ret = vfs.read(inode, offset, count, buf);
-	arch_user_return(cur_proc, ret);
+	arch_syscall_return(cur_proc, ret);
 }
 
 static void sys_write(int fd, void *buf, size_t count)
@@ -54,7 +47,7 @@ static void sys_write(int fd, void *buf, size_t count)
 	size_t  offset = cur_proc->fds[fd].offset;
 
 	int ret = vfs.write(inode, offset, count, buf);
-	arch_user_return(cur_proc, ret);
+	arch_syscall_return(cur_proc, ret);
 }
 
 static void sys_ioctl(int fd, unsigned long request, void *argp)
@@ -62,7 +55,7 @@ static void sys_ioctl(int fd, unsigned long request, void *argp)
 	inode_t *inode = cur_proc->fds[fd].inode;
 
 	int ret = vfs.ioctl(inode, request, argp);
-	arch_user_return(cur_proc, ret);
+	arch_syscall_return(cur_proc, ret);
 }
 
 static void sys_execve(const char *name, char * const argp[], char * const envp[])
@@ -71,10 +64,14 @@ static void sys_execve(const char *name, char * const argp[], char * const envp[
 	proc_t *p = execve_elf(cur_proc, fn, argp, envp);
 	kfree(fn);
 
-	if(!p)
-		arch_user_return(cur_proc, -1);
-	else
-		kernel_idle();
+	// if(!p)
+	// 	arch_user_return(cur_proc, -1);
+	// else
+	{
+		printk("PROC %s\n", p->name);
+		for(;;);
+		spawn_proc(p);
+	}
 }
 
 void (*syscall_table[])() = 
@@ -87,5 +84,4 @@ void (*syscall_table[])() =
 	sys_write,
 	sys_ioctl,
 	sys_execve,
-	sys_dum,
 };

@@ -60,25 +60,22 @@ int printf(char *fmt, ...);
 
 void _start()
 {
-	int pid = fork();
-
-	if(!pid)	// child
-		execve("/bin/prog", 0, 0);
-
+	//if(!fork())
+	//	execve("/bin/prog", 0, 0);
 	for(;;);
-#if 0
-	open("/dev/kbd", 0);		/* stdin */
-	open("/dev/console", 0);	/* stdout */
-	open("/dev/console", 0);	/* stderr */
 
-	int pty = open("/dev/ptmx", 0);
-
+	int pty = open("/dev/ptmx", 0);;
 	int pid = fork();
-	if(pid)	// parent
+
+	if(pid)	/* parent */
 	{
-		char buf[] = "Hello, TTY!";
-		printf("parent write %d\n", write(pty, buf, 12));
-	} else
+		int console = open("/dev/console", 0); /* stdout */
+
+		char buf[50];
+		while(read(pty, buf, 50) == 0);
+		printf("Received from child %s\n", buf);
+
+	} else	/* child */
 	{
 		int pts_id;
 		ioctl(pty, TIOCGPTN, &pts_id);
@@ -86,19 +83,11 @@ void _start()
 		char pts_fn[] = "/dev/pts/ ";
 		pts_fn[9] = '0' + pts_id;
 
-		int pts_fd = open(pts_fn, 0);
-		printf("child pts_fd %d\n", pts_fd);
-
-		char buf[11] = {0};
-		
-		int r;
-		while((r = read(pts_fd, buf, 12) != 12));
-		
-		printf("read %d buf %s\n", r, buf);
+		int pts_fd = open(pts_fn, 0);	/* stdout */
+		execve("/bin/prog", 0, 0);
 	}
 
 	for(;;);
-#endif
 }
 
 static int putc(char c)
