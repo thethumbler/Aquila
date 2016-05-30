@@ -1,5 +1,8 @@
 OUTPUT_FORMAT(elf32-i386)
 ENTRY(_start)
+INPUT(boot/boot.o cpu/cpu.o console/console.o mem/mem.o sys/sys.o ../../core/core.o
+../../devices/devices.o ../../fs/fs.o ../../sys/sys.o)
+OUTPUT(kernel.elf)
 
 SECTIONS {
 

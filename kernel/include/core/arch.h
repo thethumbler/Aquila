@@ -12,8 +12,9 @@ void *arch_load_elf();
 void arch_load_elf_end(void *arch);
 
 /* arch/ARCH/sys/proc.c */
-void arch_init_proc(void *arch, proc_t *proc, uintptr_t entry);
+void arch_init_proc(void *arch, proc_t *proc);
 void arch_spawn_proc(proc_t *init);
+void arch_switch_proc(proc_t *proc) __attribute__((noreturn));
 
 /* arch/ARCH/sys/fork.c */
 void arch_sys_fork(proc_t *proc);
@@ -26,9 +27,8 @@ void arch_sched_init();
 void arch_sched();
 
 /* arch/ARCH/sys/execve.c */
-void arch_sys_execve(proc_t *proc, uintptr_t entry);
+void arch_sys_execve(proc_t *proc);
 
 void arch_idle();
-void arch_switch_process(proc_t *proc) __attribute__((noreturn));
 
 #endif /* ! _ARCH_H */

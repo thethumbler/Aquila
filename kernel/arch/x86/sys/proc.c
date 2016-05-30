@@ -1,23 +1,26 @@
 #include <core/system.h>
+#include <core/string.h>
 #include <core/arch.h>
 #include <sys/proc.h>
+#include <sys/sched.h>
 
 #include "sys.h"
 
-void arch_spawn_proc(proc_t *init)
+void arch_spawn_proc(proc_t *proc)
 {
-	x86_proc_t *arch = init->arch;
-	printk("Spawning: %s (%d) [IP: %x, SP: %x, F: %x, KSTACK: %x]\n", init->name, init->pid, arch->eip, arch->esp, arch->eflags, arch->kstack);
+	x86_proc_t *arch = proc->arch;
+	printk("Spawning: %s (%d) [IP: %x, SP: %x, F: %x, KSTACK: %x]\n", proc->name, proc->pid, arch->eip, arch->esp, arch->eflags, arch->kstack);
 	
-	switch_page_directory(arch->pd);
+	if(get_current_page_directory() != arch->pd)
+		switch_page_directory(arch->pd);
 
 	x86_set_kernel_stack(arch->kstack);
 
-	extern void x86_jump_user(uintptr_t eip, uintptr_t cs, uintptr_t eflags, uintptr_t esp, uintptr_t ss);
-	x86_jump_user(arch->eip, X86_CS, arch->eflags, arch->esp, X86_SS);
+	extern void x86_jump_user(uintptr_t eax, uintptr_t eip, uintptr_t cs, uintptr_t eflags, uintptr_t esp, uintptr_t ss) __attribute__((noreturn));
+	x86_jump_user(arch->eax, arch->eip, X86_CS, arch->eflags, arch->esp, X86_SS);
 }
 
-void arch_init_proc(void *d, proc_t *p, uintptr_t entry)
+void arch_init_proc(void *d, proc_t *p)
 {
 	x86_proc_t *arch = kmalloc(sizeof(x86_proc_t));
 	struct arch_load_elf *s = d;
@@ -26,14 +29,14 @@ void arch_init_proc(void *d, proc_t *p, uintptr_t entry)
 
 	uintptr_t kstack_base = (uintptr_t) kmalloc(KERN_STACK_SIZE);
 	arch->kstack = kstack_base + KERN_STACK_SIZE;	/* Kernel stack */
-	arch->eip = entry;
+	arch->eip = p->entry;
 	arch->esp = USER_STACK;
 	arch->eflags = X86_EFLAGS;
 
 	p->arch = arch;
 }
 
-void arch_switch_process(proc_t *proc)
+void arch_switch_proc(proc_t *proc)
 {
 	x86_proc_t *arch = proc->arch;
 	printk("Switching %s (%d) [KSTACK: %x, EIP: %x, ESP: %x, EBP: %x]\n", proc->name, proc->pid, arch->kstack, arch->eip, arch->esp, arch->ebp);

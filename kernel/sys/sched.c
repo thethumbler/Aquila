@@ -83,7 +83,7 @@ void schedule()	/* Called from arch-specific timer event handler */
 	
 	cur_proc = proc;
 	if(proc->spawned)
-		arch_switch_process(cur_proc = proc);
+		arch_switch_proc(cur_proc = proc);
 	else
 		spawn_proc(cur_proc);
 }

@@ -13,7 +13,7 @@ LDFLAGS := -nostdlib -melf_i386
 
 PERL := perl
 
-dirs = arch/ core/ fs/ devices/ sys/
+dirs = core/ fs/ devices/ sys/ arch/
 
 all: $(dirs)
 

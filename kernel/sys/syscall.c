@@ -61,17 +61,13 @@ static void sys_ioctl(int fd, unsigned long request, void *argp)
 static void sys_execve(const char *name, char * const argp[], char * const envp[])
 {
 	char *fn = strdup(name);
-	proc_t *p = execve_elf(cur_proc, fn, argp, envp);
+	proc_t *p = execve_proc(cur_proc, fn, argp, envp);
 	kfree(fn);
 
-	// if(!p)
-	// 	arch_user_return(cur_proc, -1);
-	// else
-	{
-		printk("PROC %s\n", p->name);
-		for(;;);
+	if(!p)
+		arch_syscall_return(cur_proc, -1);
+	else
 		spawn_proc(p);
-	}
 }
 
 void (*syscall_table[])() = 

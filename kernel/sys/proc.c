@@ -13,49 +13,6 @@ int get_pid()
 	return ++pid;
 }
 
-proc_t *load_elf(const char *fn)
-{
-	void *arch_specific_data = arch_load_elf();
-
-	inode_t *file = vfs.find(vfs_root, fn);
-	if(!file) return NULL;
-
-	elf32_hdr_t hdr;
-	vfs.read(file, 0, sizeof(hdr), &hdr);
-
-	void *proc_heap = NULL;
-	size_t offset = hdr.shoff;
-	
-	for(int i = 0; i < hdr.shnum; ++i)
-	{
-		elf32_section_hdr_t shdr;
-		vfs.read(file, offset, sizeof(shdr), &shdr);
-		
-		if(shdr.flags & SHF_ALLOC && shdr.type == SHT_PROGBITS)
-		{
-			/* FIXME add some out-of-bounds handling code here */
-			pmman.map(shdr.addr, shdr.size, URWX);	/* FIXME URWX, are you serious? */
-			vfs.read(file, shdr.off, shdr.size, (void*) shdr.addr);
-
-			if(shdr.addr + shdr.size > (uintptr_t) proc_heap)
-				proc_heap = (void *) (shdr.addr + shdr.size);
-		}
-
-		offset += hdr.shentsize;
-	}
-
-	pmman.map(USER_STACK_BASE, USER_STACK_SIZE, URW);
-
-	proc_t *proc = kmalloc(sizeof(proc_t));
-	proc->name = strdup(file->name);
-	proc->heap = proc_heap;
-
-	arch_init_proc(arch_specific_data, proc, hdr.entry);
-	arch_load_elf_end(arch_specific_data);
-
-	return proc;
-}
-
 void init_process(proc_t *proc)
 {
 	proc->pid = get_pid();
@@ -85,46 +42,4 @@ int get_fd(proc_t *proc)
 		}
 
 	return -1;
-}
-
-proc_t *execve_elf(proc_t *proc, const char *fn, char * const argv[] __unused, char * const env[] __unused)
-{
-	inode_t *file = vfs.find(vfs_root, fn);
-	if(!file) return NULL;
-
-	elf32_hdr_t hdr;
-	vfs.read(file, 0, sizeof(hdr), &hdr);
-
-	void *proc_heap = NULL;
-	size_t offset = hdr.shoff;
-	
-	for(int i = 0; i < hdr.shnum; ++i)
-	{
-		elf32_section_hdr_t shdr;
-		vfs.read(file, offset, sizeof(shdr), &shdr);
-		
-		if(shdr.flags & SHF_ALLOC && shdr.type == SHT_PROGBITS)
-		{
-			/* FIXME add some out-of-bounds handling code here */
-			pmman.map(shdr.addr, shdr.size, URWX);	/* FIXME URWX, are you serious? */
-			vfs.read(file, shdr.off, shdr.size, (void*) shdr.addr);
-
-			if(shdr.addr + shdr.size > (uintptr_t) proc_heap)
-				proc_heap = (void *) (shdr.addr + shdr.size);
-		}
-
-		offset += hdr.shentsize;
-	}
-
-	kfree(proc->name);
-	proc->name = strdup(file->name);
-	proc->spawned = 0;
-
-	if(proc->heap > proc_heap)
-		pmman.unmap((uintptr_t) proc_heap, proc->heap - proc_heap);
-	proc->heap = proc_heap;
-
-	arch_sys_execve(proc, hdr.entry);
-
-	return proc;
 }
