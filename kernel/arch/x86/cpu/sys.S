@@ -199,13 +199,14 @@ x86_jump_userspace:
     iret
 
 .global x86_jump_user
-x86_jump_user:	/* eip, cs, eflags, esp, ss */
+x86_jump_user:	/* eax, eip, cs, eflags, esp, ss */
 	pop  %eax 	/* Caller return address */
 	mov  $0x20 | 0x3, %ax
     movw %ax, %ds
     movw %ax, %es
     movw %ax, %fs
     movw %ax, %gs
+    pop	 %eax 	/* eax for sys_fork return */
     iret
 
 .global x86_read_eip

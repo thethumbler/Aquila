@@ -90,7 +90,7 @@ uintptr_t get_frame_no_clr()
 	return -1;
 }
 
-static uintptr_t get_cur_pd()
+static uintptr_t get_current_page_directory()
 {
 	uintptr_t cur_pd = 0;
 	asm("movl %%cr3, %%eax":"=a"(cur_pd));
@@ -102,7 +102,7 @@ static int map_to_physical(uintptr_t ptr, size_t size, int flags)
 	flags =  0x1 | ((flags & (KW | UW)) ? 0x2 : 0x0)
 		| ((flags & URWX) ? 0x4 : 0x0);
 
-	uint32_t *cur_pd_phys = (uint32_t *) get_cur_pd();
+	uint32_t *cur_pd_phys = (uint32_t *) get_current_page_directory();
 	uint32_t cur_pd[PAGE_SIZE/4];
 	pmman.memcpypv(cur_pd, cur_pd_phys, PAGE_SIZE);
 
@@ -152,7 +152,7 @@ static int map_to_physical(uintptr_t ptr, size_t size, int flags)
 
 static void unmap_from_physical(uintptr_t ptr, size_t size)
 {
-	uint32_t *cur_pd_phys = (uint32_t *) get_cur_pd();
+	uint32_t *cur_pd_phys = (uint32_t *) get_current_page_directory();
 	uint32_t cur_pd[PAGE_SIZE/4];
 	pmman.memcpypv(cur_pd, cur_pd_phys, PAGE_SIZE);
 
@@ -507,8 +507,8 @@ void kfree(void *_ptr)
 
 	if(j != i && j != -1U)	/* I must be lucky, aren't I always ;) */
 		kfree((void*)NODE_ADDR(nodes[j]));
-	else
-		unmap_from_physical(NODE_ADDR(nodes[i]), NODE_SIZE(nodes[i]));
+	// else
+	// 	unmap_from_physical(NODE_ADDR(nodes[i]), NODE_SIZE(nodes[i]));
 }
 
 void dump_nodes()

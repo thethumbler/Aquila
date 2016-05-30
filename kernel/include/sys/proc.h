@@ -34,7 +34,8 @@ struct proc
 	file_list_t *fds;	/* Open file descriptors */
 	proc_t 		*parent;
 	char 		*cwd;	/* Current Working Directory */
-	void		*heap;	/* Process heap pointer */
+	uintptr_t	heap;	/* Process heap pointer */
+	uintptr_t	entry;	/* Process entry point */	
 
 	void		*arch;	/* Arch specific data */
 
@@ -42,16 +43,20 @@ struct proc
 	int			spawned : 1;
 
 	proc_t 		*next;	/* Processes queue next pointer */
-} __attribute__((packed));
+} __packed;
 
+/* sys/elf.c */
 proc_t *load_elf(const char *fn);
-int get_pid();
-int get_fd(proc_t *proc);
+proc_t *load_elf_proc(proc_t *proc, const char *fn);
 
 /* sys/fork.c */
 proc_t *fork_proc(proc_t *proc);
 
+/* sys/execve.c */
+proc_t *execve_proc(proc_t *proc, const char *fn, char * const argv[], char * const env[]);
+
+int get_pid();
+int get_fd(proc_t *proc);
 void init_process(proc_t *proc);
-proc_t *execve_elf(proc_t *proc, const char *fn, char * const argv[], char * const env[]);
 
 #endif /* !_PROC_H */

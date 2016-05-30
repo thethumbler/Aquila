@@ -1,14 +1,7 @@
 #include <stdarg.h>
 #include <stdint.h>
 
-#define TIOCGPTN	0x80045430
-
-#define SYS_FORK	2	
-#define SYS_OPEN	3
-#define SYS_READ	4
 #define SYS_WRITE	5
-#define SYS_IOCTL	6
-#define SYS_EXECVE	7
 
 int syscall(int s, long arg1, long arg2, long arg3)
 {
@@ -17,78 +10,19 @@ int syscall(int s, long arg1, long arg2, long arg3)
 	return ret;
 }
 
-int fork()
-{
-	return syscall(SYS_FORK, 0, 0, 0);
-}
-
-int open(const char *fn, int flags)
-{
-	return syscall(SYS_OPEN, fn, flags, 0);
-}
-
-int read(int fd, void *buf, int size)
-{
-	return syscall(SYS_READ, fd, buf, size);
-}
-
 int write(int fd, void *buf, int size)
 {
 	return syscall(SYS_WRITE, fd, buf, size);
 }
 
-int ioctl(int fd, unsigned long request, void *argp)
-{
-	return syscall(SYS_IOCTL, fd, request, argp);
-}
-
-int execve(const char *name, char * const argp[], char * const envp[])
-{
-	return syscall(SYS_EXECVE, name, argp, envp);
-}
-
-char kbd_us[] = 
-{
-	'\0', 0, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
-	'\t', 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n',
-	'\0', 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'',
-	'\0', '\0', '\\', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/',
-	'\0', '\0', '\0', ' ',
-};
-
 int printf(char *fmt, ...);
 
 void _start()
 {
-	//if(!fork())
-	//	execve("/bin/prog", 0, 0);
-	for(;;);
-
-	int pty = open("/dev/ptmx", 0);;
-	int pid = fork();
-
-	if(pid)	/* parent */
-	{
-		int console = open("/dev/console", 0); /* stdout */
-
-		char buf[50];
-		while(read(pty, buf, 50) == 0);
-		printf("Received from child %s\n", buf);
-
-	} else	/* child */
-	{
-		int pts_id;
-		ioctl(pty, TIOCGPTN, &pts_id);
-
-		char pts_fn[] = "/dev/pts/ ";
-		pts_fn[9] = '0' + pts_id;
-
-		int pts_fd = open(pts_fn, 0);	/* stdout */
-		execve("/bin/prog", 0, 0);
-	}
-
+	printf("Hello, World!");
 	for(;;);
 }
+
 
 static int putc(char c)
 {
