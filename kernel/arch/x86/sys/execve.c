@@ -58,10 +58,11 @@ void arch_sys_execve(proc_t *proc, int argc, char * const _argp[], int envc, cha
 	stack -= argc * sizeof(char *);
 	memcpy((void *) stack, u_argp, argc * sizeof(char *));
 
-	printk("argv 0x%x\n", stack);
-
 	stack -= sizeof(int);
 	*(int *) stack = argc;
+
+	kfree(u_envp);
+	kfree(u_argp);
 
 	arch->esp = stack;
 }
