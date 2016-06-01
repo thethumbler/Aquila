@@ -27,7 +27,7 @@ void arch_sched_init();
 void arch_sched();
 
 /* arch/ARCH/sys/execve.c */
-void arch_sys_execve(proc_t *proc);
+void arch_sys_execve(proc_t *proc, int argc, char * const argp[], int envc, char * const envp[]);
 
 void arch_idle();
 

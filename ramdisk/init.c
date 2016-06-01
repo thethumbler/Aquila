@@ -67,9 +67,12 @@ void _start()
 	{
 		int console = open("/dev/console", 0); /* stdout */
 
-		char buf[50];
-		while(read(pty, buf, 50) == 0);
-		printf("Received from child %s\n", buf);
+		while(1)
+		{
+			char buf[50];
+			while(read(pty, buf, 50) == 0);
+			printf("%s", buf);
+		}
 
 	} else	/* child */
 	{
@@ -80,7 +83,8 @@ void _start()
 		pts_fn[9] = '0' + pts_id;
 
 		int pts_fd = open(pts_fn, 0);	/* stdout */
-		execve("/bin/prog", 0, 0);
+		char *argp[] = {"ABC", "DEF", 0};
+		execve("/bin/prog", argp, 0);
 	}
 
 	for(;;);

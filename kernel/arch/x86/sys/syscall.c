@@ -6,9 +6,6 @@
 
 void arch_syscall(regs_t *r)
 {
-	x86_proc_t *arch = cur_proc->arch;
-	arch->regs = r;	/* Store a pointer to registers on the stack */
-
 	/* FIXME: Add some out-of-bounds checking code here */
 	void (*syscall)() = syscall_table[r->eax];
 	syscall(r->ebx, r->ecx, r->edx);

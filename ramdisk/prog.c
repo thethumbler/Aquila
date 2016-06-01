@@ -17,11 +17,23 @@ int write(int fd, void *buf, int size)
 
 int printf(char *fmt, ...);
 
-void _start()
+int main(int argc, char **argv)
 {
-	printf("Hello, World!");
-	for(;;);
+	printf("argc %x\n", argc);
+	printf("argv %x\n", argv);
+	printf("%s\n", argv[0]);
 }
+
+asm(" \
+.globl _start \n\
+_start: \n\
+	pop %eax \n\
+	mov %esp, %ebx \n\
+	push %ebx \n\
+	push %ecx \n\
+	call main \n\
+	jmp . \n\
+");
 
 
 static int putc(char c)

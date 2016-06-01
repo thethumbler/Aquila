@@ -79,8 +79,6 @@ proc_t *load_elf_proc(proc_t *proc, const char *fn)
 		offset += hdr.shentsize;
 	}
 
-	//pmman.map(USER_STACK_BASE, USER_STACK_SIZE, URW);
-
 	kfree(proc->name);
 	proc->name = strdup(file->name);
 	proc->heap = proc_heap;

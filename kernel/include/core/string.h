@@ -29,7 +29,18 @@ static inline char *strdup(const char *s)
 	int len = strlen(s);
 	char *ret = kmalloc(len + 1);
 	memcpy(ret, s, len + 1);
-	return ret; //__builtin_strdup(s);
+	return ret;
+}
+
+static inline char *strcpy(char *dst, char *src)
+{
+	char *retval = dst;
+	
+	while(*src)
+		*dst++ = *src++;
+	*dst = *src;	/* NULL terminator */
+
+	return retval;
 }
 
 static inline char **tokenize(const char *s, char c)
