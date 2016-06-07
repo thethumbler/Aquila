@@ -2,6 +2,9 @@
 #include <core/arch.h>
 #include <sys/proc.h>
 #include <sys/sched.h>
+#include <mm/mm.h>
+
+#include "sys.h"
 
 static void x86_sched_handler(regs_t *r __unused)
 {

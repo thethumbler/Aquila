@@ -17,7 +17,7 @@ static void sys_fork()
 {
 	proc_t *fork = fork_proc(cur_proc);
 	if(fork)
-		enqueue_process(fork);
+		make_ready(fork);
 }
 
 static void sys_open(const char *fn, int flags)

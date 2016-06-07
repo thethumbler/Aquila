@@ -14,6 +14,7 @@
 #include <sys/sched.h>
 
 #include <dev/console.h>
+#include <ds/queue.h>
 
 void kmain()
 {

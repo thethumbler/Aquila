@@ -7,11 +7,11 @@
 extern proc_t *cur_proc;
 
 extern int kidle;
-void kernel_idle();
+void kernel_idle_proc();
+void scheduler_init();
 void spawn_proc(proc_t *proc);
 void spawn_init(proc_t *init);
 void schedule();
-void enqueue_process(proc_t *p);
-void dequeue_process(proc_t *p);
+void make_ready(proc_t *proc);
 
 #endif /* ! _SCHED_H */
