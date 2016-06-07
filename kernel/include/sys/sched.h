@@ -3,11 +3,13 @@
 
 #include <core/system.h>
 #include <sys/proc.h>
+#include <ds/queue.h>
 
+extern queue_t *ready_queue;
 extern proc_t *cur_proc;
 
 extern int kidle;
-void kernel_idle_proc();
+void kernel_idle();
 void scheduler_init();
 void spawn_proc(proc_t *proc);
 void spawn_init(proc_t *init);

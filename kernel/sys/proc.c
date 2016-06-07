@@ -6,6 +6,7 @@
 #include <sys/proc.h>
 #include <sys/elf.h>
 #include <sys/sched.h>
+#include <ds/queue.h>
 
 int get_pid()
 {
@@ -42,4 +43,21 @@ int get_fd(proc_t *proc)
 		}
 
 	return -1;
+}
+
+void sleep_on(queue_t *queue)
+{
+	printk("%s (%d) is going to sleep\n", cur_proc->name, cur_proc->pid);
+	enqueue(queue, cur_proc);
+	arch_sleep();
+}
+
+void wakeup_queue(queue_t *queue)
+{
+	while(queue->count > 0)
+	{
+		proc_t *proc = dequeue(queue);
+		printk("Waking up %s (%d)\n", proc->name, proc->pid);
+		make_ready(proc);
+	}
 }

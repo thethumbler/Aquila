@@ -1,3 +1,6 @@
+#ifndef _QUEUE_H
+#define _QUEUE_H
+
 #include <core/system.h>
 #include <mm/mm.h>
 
@@ -62,3 +65,5 @@ static inline void queue_traverse(queue_t *queue, void (*func) (void *))
 		func(node->value);
 }
 #endif
+
+#endif /* _QUEUE_H */

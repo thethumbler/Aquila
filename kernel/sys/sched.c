@@ -29,7 +29,6 @@ void spawn_proc(proc_t *proc)	/* Starts process execution */
 void spawn_init(proc_t *init)
 {
 	init_process(init);
-	make_ready(init);
 	init->state = RUNNABLE;
 	arch_sched_init();
 	cur_proc = init;
@@ -41,11 +40,11 @@ void schedule()	/* Called from arch-specific timer event handler */
 	if(!ready_queue)	/* How did we even get here? */
 		panic("Processes queue is not initialized");
 
-	if(!ready_queue->count)	/* No ready processes, idle */
-		kernel_idle();
-
 	if(!kidle) make_ready(cur_proc);
 	kidle = 0;
+
+	if(!ready_queue->count)	/* No ready processes, idle */
+		kernel_idle();
 
 	cur_proc = dequeue(ready_queue);
 

@@ -3,6 +3,7 @@
 
 #include <core/system.h>
 #include <fs/vfs.h>
+#include <ds/queue.h>
 
 #if ARCH==X86
 #include <arch/x86/include/proc.h>
@@ -14,6 +15,7 @@ typedef struct
 {
 	inode_t *inode;
 	size_t  offset;
+	int 	flags;
 } file_list_t;
 
 typedef enum 
@@ -41,8 +43,6 @@ struct proc
 
 	/* Process flags */
 	int			spawned : 1;
-
-	proc_t 		*next;	/* Processes queue next pointer */
 } __packed;
 
 /* sys/elf.c */
@@ -58,5 +58,7 @@ proc_t *execve_proc(proc_t *proc, const char *fn, char * const argv[], char * co
 int get_pid();
 int get_fd(proc_t *proc);
 void init_process(proc_t *proc);
+void sleep_on(queue_t *queue);
+void wakeup_queue(queue_t *queue);
 
 #endif /* !_PROC_H */

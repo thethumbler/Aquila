@@ -48,3 +48,30 @@ void arch_switch_proc(proc_t *proc)
 	extern void x86_goto(uintptr_t eip, uintptr_t ebp, uintptr_t esp) __attribute__((noreturn));
 	x86_goto(arch->eip,  arch->ebp, arch->esp);
 }
+
+void arch_sleep()
+{
+	extern void x86_sleep();
+	x86_sleep();
+}
+
+void internal_arch_sleep()
+{
+	x86_proc_t *arch = cur_proc->arch;
+	extern uintptr_t x86_read_eip();
+
+	uintptr_t eip = 0, esp = 0, ebp = 0;	
+	asm("mov %%esp, %0":"=r"(esp));	/* read esp */
+	asm("mov %%ebp, %0":"=r"(ebp));	/* read ebp */
+	eip = x86_read_eip();
+
+	if(eip == (uintptr_t) -1)	/* Done switching */
+	{
+		return;
+	}
+
+	arch->eip = eip;
+	arch->esp = esp;
+	arch->ebp = ebp;
+	kernel_idle();
+}
