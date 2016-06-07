@@ -3,12 +3,17 @@
 #include <core/arch.h>
 #include <sys/proc.h>
 #include <sys/sched.h>
+#include <ds/queue.h>
 
-proc_t *head = NULL;
+queue_t *ready_queue = &(queue_t){0};	/* Ready processes queue */
 proc_t *cur_proc = NULL;
 
-int kidle = 0;
+void make_ready(proc_t *proc)
+{
+	enqueue(ready_queue, proc);
+}
 
+int kidle = 0;
 void kernel_idle()
 {
 	kidle = 1;
@@ -24,66 +29,28 @@ void spawn_proc(proc_t *proc)	/* Starts process execution */
 void spawn_init(proc_t *init)
 {
 	init_process(init);
-	head = init;
-	cur_proc = init;
-	init->next = NULL;
+	make_ready(init);
 	init->state = RUNNABLE;
 	arch_sched_init();
+	cur_proc = init;
 	spawn_proc(init);
-}
-
-void enqueue_process(proc_t *p)
-{
-	p->next = head;
-	head = p;
-}
-
-void dequeue_process(proc_t *p)
-{
-	proc_t *tmp = head;
-	while(tmp)
-	{
-		if(tmp->next == p)
-		{
-			tmp->next = p->next;
-			if(head == p)
-				head = p->next;
-			cur_proc = head;
-			break;
-		}
-		tmp = tmp->next;
-	}
 }
 
 void schedule()	/* Called from arch-specific timer event handler */
 {
-	if(!cur_proc)
-		cur_proc = head;
-
-	if(!cur_proc)	/* How did we even get here? */
+	if(!ready_queue)	/* How did we even get here? */
 		panic("Processes queue is not initialized");
 
-	proc_t *proc = cur_proc->next ? cur_proc->next : head;
+	if(!ready_queue->count)	/* No ready processes, idle */
+		kernel_idle();
 
-	while(proc && proc->state != RUNNABLE)
-	{
-		if(!proc->next)
-			proc = head;
-		else 
-			proc = proc->next;
-
-		if(proc == cur_proc->next)	/* Couldn't find a RUNNABLE process */
-			return;
-	}
-
-	if(!proc)
-		return;
-
+	if(!kidle) make_ready(cur_proc);
 	kidle = 0;
-	
-	cur_proc = proc;
-	if(proc->spawned)
-		arch_switch_proc(cur_proc = proc);
+
+	cur_proc = dequeue(ready_queue);
+
+	if(cur_proc->spawned)
+		arch_switch_proc(cur_proc);
 	else
 		spawn_proc(cur_proc);
 }

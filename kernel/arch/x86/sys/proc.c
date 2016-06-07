@@ -39,7 +39,7 @@ void arch_init_proc(void *d, proc_t *p)
 void arch_switch_proc(proc_t *proc)
 {
 	x86_proc_t *arch = proc->arch;
-	//printk("Switching %s (%d) [KSTACK: %x, EIP: %x, ESP: %x, EBP: %x]\n", proc->name, proc->pid, arch->kstack, arch->eip, arch->esp, arch->ebp);
+	printk("Switching %s (%d) [KSTACK: %x, EIP: %x, ESP: %x]\n", proc->name, proc->pid, arch->kstack, arch->eip, arch->esp);
 	
 	switch_page_directory(arch->pd);
 
