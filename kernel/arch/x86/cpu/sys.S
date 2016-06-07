@@ -223,5 +223,11 @@ x86_goto:
 	mov $-1, %eax /* Return -1 -> Done switching */
 	jmp *%ebx
 
-.global ____end
-____end:
+
+.extern internal_arch_sleep
+.global x86_sleep
+x86_sleep:
+	push_context
+	call internal_arch_sleep
+	pop_context
+	ret

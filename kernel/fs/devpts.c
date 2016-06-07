@@ -32,7 +32,7 @@ typedef struct pty
 static size_t ptsfs_read(inode_t *inode, size_t offset __unused, size_t size, void *buf)
 {
 	pty_t *pty = (pty_t *) inode->p;
-	return ring_read(pty->in, size, buf); 
+	return ring_read(pty->in, size, buf);
 }
 
 static size_t ptmfs_read(inode_t *inode, size_t offset __unused, size_t size, void *buf)
@@ -44,7 +44,8 @@ static size_t ptmfs_read(inode_t *inode, size_t offset __unused, size_t size, vo
 static size_t ptsfs_write(inode_t *inode, size_t offset __unused, size_t size, void *buf)
 {
 	pty_t *pty = (pty_t *) inode->p;
-	return ring_write(pty->out, size, buf);
+	size_t retval = ring_write(pty->out, size, buf);
+	return retval;
 }
 
 static size_t ptmfs_write(inode_t *inode, size_t offset __unused, size_t size, void *buf)

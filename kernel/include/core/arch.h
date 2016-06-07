@@ -15,6 +15,7 @@ void arch_load_elf_end(void *arch);
 void arch_init_proc(void *arch, proc_t *proc);
 void arch_spawn_proc(proc_t *init);
 void arch_switch_proc(proc_t *proc) __attribute__((noreturn));
+void arch_sleep();
 
 /* arch/ARCH/sys/fork.c */
 void arch_sys_fork(proc_t *proc);

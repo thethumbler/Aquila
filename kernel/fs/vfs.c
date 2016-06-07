@@ -82,10 +82,11 @@ static int vfs_open(inode_t *file, int flags)
 	return file->fs->open(file, flags);
 }
 
-int vfs_generic_open(inode_t *file, int flags __unused)
+int vfs_generic_open(inode_t *file, int flags)
 {
 	int fd = get_fd(cur_proc);
 	cur_proc->fds[fd].inode = file;
+	cur_proc->fds[fd].flags = flags;
 	return fd;
 }
 
