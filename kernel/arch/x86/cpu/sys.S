@@ -231,3 +231,8 @@ x86_sleep:
 	call internal_arch_sleep
 	pop_context
 	ret
+
+.global x86_fork_return
+x86_fork_return:
+	pop_context
+	iret

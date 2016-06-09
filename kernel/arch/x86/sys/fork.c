@@ -44,10 +44,17 @@ void arch_sys_fork(proc_t *proc)
 	/* Setup kstack and fork state */
 	uintptr_t fork_kstack_base = (uintptr_t) kmalloc(KERN_STACK_SIZE);
 	fork_arch->kstack = fork_kstack_base + KERN_STACK_SIZE;
-	fork_arch->eip = orig_arch->regs->eip;
-	fork_arch->esp = orig_arch->regs->esp;
-	fork_arch->ebp = orig_arch->regs->ebp;
-	fork_arch->eflags = orig_arch->regs->eflags;
+
+	/* Copy registers */
+	void *fork_regs = (void *)(fork_arch->kstack - sizeof(regs_t));
+	memcpy(fork_regs, orig_arch->regs, sizeof(regs_t));
+	fork_arch->regs = fork_regs;
+	
+	extern void x86_fork_return();
+	fork_arch->eip = (uintptr_t) x86_fork_return;
+	fork_arch->esp = (uintptr_t) fork_regs;
+	//fork_arch->ebp = orig_arch->regs->ebp;
+	//fork_arch->eflags = orig_arch->regs->eflags;
 
 	/* Copy stack */
 	pmman.map(USER_STACK_BASE, USER_STACK_SIZE, URWX);
