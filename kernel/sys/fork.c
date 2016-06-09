@@ -12,10 +12,10 @@ proc_t *fork_proc(proc_t *proc)
 	fork->name = strdup(proc->name);
 	fork->pid = get_pid();
 	fork->parent = proc;
-	fork->spawned = 0;
+	fork->spawned = 1;
 	
-	fork->fds = kmalloc(FDS_COUNT * sizeof(file_list_t));
-	memcpy(fork->fds, proc->fds, FDS_COUNT * sizeof(file_list_t));
+	fork->fds = kmalloc(FDS_COUNT * sizeof(fd_t));
+	memcpy(fork->fds, proc->fds, FDS_COUNT * sizeof(fd_t));
 
 	arch_sys_fork(fork);
 

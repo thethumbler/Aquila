@@ -18,8 +18,8 @@ void init_process(proc_t *proc)
 {
 	proc->pid = get_pid();
 
-	proc->fds  = kmalloc(FDS_COUNT * sizeof(file_list_t));
-	memset(proc->fds, 0, FDS_COUNT * sizeof(file_list_t));
+	proc->fds  = kmalloc(FDS_COUNT * sizeof(fd_t));
+	memset(proc->fds, 0, FDS_COUNT * sizeof(fd_t));
 }
 
 void kill_process(proc_t *proc)
@@ -45,9 +45,17 @@ int get_fd(proc_t *proc)
 	return -1;
 }
 
+void release_fd(proc_t *proc, int fd)
+{
+	if(fd < FDS_COUNT)
+	{
+		proc->fds[fd].inode = NULL;
+	}
+}
+
 void sleep_on(queue_t *queue)
 {
-	printk("%s (%d) is going to sleep\n", cur_proc->name, cur_proc->pid);
+	printk("[%d] %s: Sleeping on queue %x\n", cur_proc->pid, cur_proc->name, queue);
 	enqueue(queue, cur_proc);
 	arch_sleep();
 }
@@ -57,7 +65,15 @@ void wakeup_queue(queue_t *queue)
 	while(queue->count > 0)
 	{
 		proc_t *proc = dequeue(queue);
-		printk("Waking up %s (%d)\n", proc->name, proc->pid);
+		printk("[%d] %s: Waking up from queue %x\n", proc->pid, proc->name, queue);
 		make_ready(proc);
 	}
+}
+
+int validate_ptr(proc_t *proc, void *ptr)
+{
+	uintptr_t uptr = (uintptr_t) ptr;
+	if(!(uptr >= proc->entry && uptr <= proc->heap))
+		return 0;
+	return 1;
 }
