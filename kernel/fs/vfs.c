@@ -4,6 +4,8 @@
 #include <fs/vfs.h>
 #include <sys/proc.h>
 #include <sys/sched.h>
+#include <bits/fcntl.h>
+#include <bits/errno.h>
 
 inode_t *vfs_root = NULL;
 
@@ -75,21 +77,6 @@ static int vfs_mount(inode_t *parent, inode_t *child)
 	return 0;
 }
 
-static int vfs_open(inode_t *file, int flags)
-{
-	if(!file || !file->fs || !file->fs->open)
-		return -1;
-	return file->fs->open(file, flags);
-}
-
-int vfs_generic_open(inode_t *file, int flags)
-{
-	int fd = get_fd(cur_proc);
-	cur_proc->fds[fd].inode = file;
-	cur_proc->fds[fd].flags = flags;
-	return fd;
-}
-
 static int vfs_ioctl(inode_t *file, unsigned long request, void *argp)
 {
 	if(!file || !file->fs || !file->fs->ioctl)
@@ -97,12 +84,91 @@ static int vfs_ioctl(inode_t *file, unsigned long request, void *argp)
 	return file->fs->ioctl(file, request, argp);
 }
 
+/*static int vfs_open(inode_t *file, int flags)
+{
+	if(!file || !file->fs || !file->fs->open)
+		return -1;
+	return file->fs->open(file, flags);
+}*/
+
+
+/* VFS Generic File function */
+
+int vfs_generic_file_open(fd_t *fd __unused)
+{
+	return 0;
+}
+
+size_t vfs_generic_file_read(fd_t *fd, void *buf, size_t size)
+{
+	if(fd->flags & O_NONBLOCK)	/* Non-blocking I/O */
+	{
+		size_t read = fd->inode->fs->read(fd->inode, fd->offset, size, buf);
+		
+		if(read == 0)	/* No data available -- FIXME handle EOF */
+			return -EAGAIN;
+
+		fd->offset += read;
+		if(fd->inode->write_queue)
+			wakeup_queue(fd->inode->write_queue);	/* Wakeup all sleeping writers */
+		return read;
+	} else	/* Blocking I/O */
+	{
+		size_t retval = size;
+		while(size)
+		{
+			size -= fd->inode->fs->read(fd->inode, fd->offset, size, buf);
+			if(!size)
+				break;
+
+			sleep_on(fd->inode->read_queue);
+		}
+		
+		fd->offset += retval;
+		if(fd->inode->write_queue)
+			wakeup_queue(fd->inode->write_queue);	/* Wakeup all sleeping writers */
+		return retval;
+	}
+}
+
+size_t vfs_generic_file_write(fd_t *fd, void *buf, size_t size)
+{
+	if(fd->flags & O_NONBLOCK)	/* Non-blocking I/O */
+	{
+		size_t written = fd->inode->fs->write(fd->inode, fd->offset, size, buf);
+		
+		if(written == 0)	/* Can't write data */
+			return -EAGAIN;
+
+		fd->offset += written;
+		if(fd->inode->read_queue)
+			wakeup_queue(fd->inode->read_queue);	/* Wakeup all sleeping readers */
+		return written;
+	} else	/* Blocking I/O */
+	{
+		size_t retval = size;
+		while(size)
+		{
+			size -= fd->inode->fs->write(fd->inode, fd->offset, size, buf);
+			if(!size)
+				break;
+
+			sleep_on(fd->inode->write_queue);
+		}
+
+		fd->offset += retval;
+		if(fd->inode->read_queue)
+			wakeup_queue(fd->inode->read_queue);	/* Wakeup all sleeping readers */
+		return retval;
+	}
+}
+
 struct vfs vfs = (struct vfs) 
 {
 	.mount_root = &vfs_mount_root,
 	.create = &vfs_create,
 	.mkdir = &vfs_mkdir,
-	.open = &vfs_open,
+	//.open = &vfs_open,
 	.mount = &vfs_mount,
 	.read = &vfs_read,
 	.write = &vfs_write,

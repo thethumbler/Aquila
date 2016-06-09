@@ -4,6 +4,7 @@
 #include <fs/vfs.h>
 #include <dev/dev.h>
 #include <fs/devfs.h>
+#include <bits/errno.h>
 
 inode_t *dev_root = NULL;
 
@@ -54,13 +55,6 @@ static inode_t *devfs_mkdir(inode_t *parent, const char *name)
 	return d;
 }
 
-static int devfs_open(inode_t *file, int flags)
-{
-	if(!file->dev)
-		return 0;
-	return file->dev->open(file, flags);
-}
-
 static int devfs_ioctl(inode_t *file, unsigned long request, void *argp)
 {
 	if(!file || !file->dev || !file->dev->ioctl)
@@ -86,6 +80,31 @@ static inode_t *devfs_find(inode_t *dir, const char *fn)
 	return NULL;	/* File not found */
 }
 
+/* File Operations */
+static int devfs_file_open(fd_t *fd)
+{
+	if(!fd->inode->dev)
+		return -ENXIO;
+	
+	return fd->inode->dev->f_ops.open(fd);
+}
+
+static size_t devfs_file_read(fd_t *fd, void *buf, size_t size)
+{
+	if(!fd->inode->dev)
+		return -EINVAL;
+
+	return fd->inode->dev->f_ops.read(fd, buf, size);
+}
+
+static size_t devfs_file_write(fd_t *fd, void *buf, size_t size)
+{
+	if(!fd->inode->dev)
+		return -EINVAL;
+	
+	return fd->inode->dev->f_ops.write(fd, buf, size);
+}
+
 void devfs_init()
 {
 	dev_root = kmalloc(sizeof(inode_t));
@@ -99,12 +118,18 @@ void devfs_init()
 
 fs_t devfs = 
 {
-	.name = "devfs",
-	.create = &devfs_create,
-	.mkdir = &devfs_mkdir,
-	.open = &devfs_open,
-	.find = &devfs_find,
-	.read = &devfs_read,
-	.write = &devfs_write,
-	.ioctl = &devfs_ioctl,
+	.name   = "devfs",
+	.create = devfs_create,
+	.mkdir  = devfs_mkdir,
+	.find   = devfs_find,
+	.read   = devfs_read,
+	.write  = devfs_write,
+	.ioctl  = devfs_ioctl,
+	
+	.f_ops = 
+	{
+		.open  = devfs_file_open,
+		.read  = devfs_file_read,
+		.write = devfs_file_write, 
+	},
 };

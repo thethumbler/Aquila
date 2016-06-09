@@ -4,6 +4,7 @@
 #include <cpu/io.h>
 #include <dev/dev.h>
 #include <fs/devfs.h>
+#include <ds/queue.h>
 
 #define VGA_START	(VMA((char*)0xB8000))
 
@@ -34,7 +35,6 @@ void set_cursor(unsigned pos)
 
 size_t console_write(inode_t *dev __unused, size_t offset __unused, size_t size, void *buf)
 {
-	printk("Got write\n");
 	for(size_t i = 0; i < size; ++i)
 	{
 		char c = ((char*)buf)[i];
@@ -82,7 +82,11 @@ dev_t condev =
 	.name = "condev",
 	.type = CHRDEV,
 	.probe = console_probe,
-	.open = vfs_generic_open,
-	.read = NULL,
 	.write = console_write,
+
+	.f_ops =
+	{
+		.open  = vfs_generic_file_open,
+		.write = vfs_generic_file_write,
+	},
 };

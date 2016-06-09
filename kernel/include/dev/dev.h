@@ -12,17 +12,21 @@ typedef enum
 typedef struct dev_struct dev_t;
 
 #include <fs/vfs.h>
+#include <sys/proc.h>
 
 struct dev_struct
 {
 	char		*name;
 	dev_type	type;
 	int 		(*probe)();
-	int			(*open)(inode_t *file, int flags);
 	size_t		(*read) (inode_t *dev, size_t offset, size_t size, void *buf);
 	size_t		(*write)(inode_t *dev, size_t offset, size_t size, void *buf);
 	int			(*ioctl)(inode_t *dev, unsigned long request, void *argp);
-} __attribute__((packed));
+
+	/* File Operations */
+	struct file_ops f_ops;
+
+} __packed;
 
 void devman_init();
 

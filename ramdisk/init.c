@@ -2,6 +2,8 @@
 #include <stdint.h>
 
 #define TIOCGPTN	0x80045430
+#define O_NONBLOCK    04000
+#define EAGAIN          11
 
 #define SYS_FORK	2	
 #define SYS_OPEN	3
@@ -60,7 +62,7 @@ int printf(char *fmt, ...);
 
 void _start()
 {
-	int pty = open("/dev/ptmx", 0);
+	int pty = open("/dev/ptmx", O_NONBLOCK);
 	int pid = fork();
 
 	if(pid)	/* parent */
@@ -70,7 +72,8 @@ void _start()
 		while(1)
 		{
 			char buf[50];
-			while(read(pty, buf, 50) == 0);
+			for(int i = 0; i < 50 && buf[i]; buf[i] = 0, ++i);
+			while(read(pty, buf, 50) == -EAGAIN);
 			printf("%s", buf);
 		}
 
