@@ -57,4 +57,12 @@ static inline size_t ring_write(ring_t *ring, size_t n, char *buf)
 	return size - n;
 }
 
+static inline size_t ring_available(ring_t *ring)
+{
+	if(ring->tail >= ring->head)
+		return ring->tail - ring->head;
+
+	return ring->tail + ring->size - ring->head;
+}
+
 #endif /* !_RING_H */

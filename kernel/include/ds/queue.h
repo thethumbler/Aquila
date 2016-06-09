@@ -2,6 +2,7 @@
 #define _QUEUE_H
 
 #include <core/system.h>
+#include <core/string.h>
 #include <mm/mm.h>
 
 typedef struct queue queue_t;
@@ -47,6 +48,11 @@ static inline void *dequeue(queue_t *queue)
 	void *value = head->value;
 	kfree(head);
 	return value;
+}
+
+static inline void *new_queue()
+{
+	return memset(kmalloc(sizeof(queue_t)), 0, sizeof(queue_t));
 }
 
 #if 0

@@ -11,13 +11,6 @@
 
 #define FDS_COUNT	64
 
-typedef struct
-{
-	inode_t *inode;
-	size_t  offset;
-	int 	flags;
-} file_list_t;
-
 typedef enum 
 {
 	RUNNABLE,
@@ -33,7 +26,7 @@ struct proc
 	char		*name;
 	int 		pid;	/* Process identifier */
 	state_t		state;
-	file_list_t *fds;	/* Open file descriptors */
+	fd_t 		*fds;	/* Open file descriptors */
 	proc_t 		*parent;
 	char 		*cwd;	/* Current Working Directory */
 	uintptr_t	heap;	/* Process heap pointer */
@@ -55,8 +48,12 @@ proc_t *fork_proc(proc_t *proc);
 /* sys/execve.c */
 proc_t *execve_proc(proc_t *proc, const char *fn, char * const argv[], char * const env[]);
 
-int get_pid();
+/* sys/proc.h */
+int validate_ptr(proc_t *proc, void *ptr);
 int get_fd(proc_t *proc);
+void release_fd(proc_t *proc, int fd);
+
+int get_pid();
 void init_process(proc_t *proc);
 void sleep_on(queue_t *queue);
 void wakeup_queue(queue_t *queue);
