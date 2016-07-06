@@ -4,13 +4,13 @@
 #include <dev/dev.h>
 #include <dev/ramdev.h>
 
-static size_t ramdev_read(inode_t *inode, size_t offset, size_t _size, void *buf)
+static ssize_t ramdev_read(struct fs_node * node, off_t offset, size_t _size, void * buf)
 {
-	/* Read ramdev private data from inode */
-    ramdev_private_t *p = (ramdev_private_t*) inode->p;
+	/* Read ramdev private data from node */
+    ramdev_private_t *p = (ramdev_private_t*) node->p;
     
     /* Maximum possible read size */
-    size_t size = MIN(_size, inode->size - offset);
+    ssize_t size = MIN(_size, node->size - offset);
     
     /* Copy `size' bytes from ramdev into buffer */
     memcpy(buf, (char*) p->addr + offset, size);
@@ -18,13 +18,13 @@ static size_t ramdev_read(inode_t *inode, size_t offset, size_t _size, void *buf
     return size;
 }
 
-static size_t ramdev_write(inode_t *inode, size_t offset, size_t _size, void *buf)
+static ssize_t ramdev_write(struct fs_node * node, off_t offset, size_t _size, void *buf)
 {
 	/* Read ramdev private data from inode */
-    ramdev_private_t *p = (ramdev_private_t*) inode->p;
+    ramdev_private_t *p = (ramdev_private_t*) node->p;
     
     /* Maximum possible write size */
-    size_t size = MIN(_size, inode->size - offset);
+    ssize_t size = MIN(_size, node->size - offset);
     
     /* Copy `size' bytes from buffer to ramdev */
     memcpy((char*) p->addr + offset, buf, size);

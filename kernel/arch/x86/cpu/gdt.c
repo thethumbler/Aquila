@@ -1,14 +1,25 @@
-#include <core/system.h>
+/**********************************************************************
+ *				Global Descriptor Table (GDT)
+ *
+ *
+ *	This file is part of Aquila OS and is released under the terms of
+ *	GNU GPLv3 - See LICENSE.
+ *
+ *	Copyright (C) 2016 Mohamed Anwar <mohamed_anwar@opmbx.org>
+ */
 
-struct
-{
+
+#include <core/system.h>
+#include <core/string.h>
+
+struct {
     uint32_t link;
     uint32_t esp;
     uint32_t ss;
     uint32_t _[23]; /* To know the actuall fields, consult Intel Manuals */
-} __attribute__((packed))  tss_entry;
+} __packed tss_entry;
 
-#define TSS_BASE    ((uintptr_t)&tss_entry)
+#define TSS_BASE    ((uintptr_t) &tss_entry)
 #define TSS_LIMIT   (sizeof(tss_entry))
 
 #define RW_DATA	0x2
@@ -21,8 +32,7 @@ struct
 #define DPL0 0
 #define DPL3 3
 
-struct gdt_entry
-{
+struct gdt_entry {
 	uint32_t limit_lo : 16;	/* Segment Limit 15:00 */
 	uint32_t base_lo  : 16;	/* Base Address 15:00 */
 	uint32_t base_mid : 8;	/* Base Address 23:16 */
@@ -36,9 +46,7 @@ struct gdt_entry
 	uint32_t db       : 1;	/* Default operation size / upper Bound */
 	uint32_t g        : 1;	/* Granularity */
 	uint32_t base_hi  : 8;	/* Base Address 31:24 */
-} __attribute__((packed, aligned(8)))
-gdt[256] =
-{
+} __packed __aligned(8) gdt[256] = {
 	/* Null Segment */
 	{0},
 
@@ -55,19 +63,17 @@ gdt[256] =
 	{LIMIT, BASE, BASE, RW_DATA, 1, DPL3, 1, LIMIT, 0, 0, 1, 1, BASE},
 };
 
-struct
-{
+struct {
 	uint16_t size;
 	uint32_t offset;
-} __attribute__((packed, aligned(8))) gdt_pointer =
-{
+} __packed __aligned(8) gdt_pointer = {
 	sizeof(gdt) - 1,
-	(uint32_t)gdt,
+	(uint32_t) gdt,
 };
 
-void x86_gdt_setup()
+void gdt_setup()
 {
-	asm volatile("\
+	asm("\
 	lgdtl (%0) \n\
 	ljmp $0x8,$1f \n\
 	1: \n\
@@ -79,9 +85,9 @@ void x86_gdt_setup()
 	"::"g"(gdt_pointer), "a"(0x10));
 }
 
-void x86_set_tss_esp(uint32_t esp)
+void set_tss_esp(uint32_t esp)
 {
-    tss_entry = (typeof(tss_entry)){0};
+	memset(&tss_entry, 0, sizeof(tss_entry));
     tss_entry.ss  = 0x10;
     tss_entry.esp = esp;
     
@@ -93,7 +99,7 @@ void x86_set_tss_esp(uint32_t esp)
     asm volatile ("ltr %%ax;"::"a"(0x28 | DPL3));
 }
 
-void x86_set_kernel_stack(uintptr_t esp)
+void set_kernel_stack(uintptr_t esp)
 {
 	tss_entry.esp = esp;
 }

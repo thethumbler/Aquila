@@ -22,7 +22,7 @@ ramdisk/initrd.img:
 	cd ramdisk; sh build.sh
 
 try: cd.iso
-	qemu-kvm -cdrom cd.iso -serial stdio -m 256M
+	qemu-kvm -cdrom cd.iso -serial stdio -m 256M -smp 4
 
 .PHONY: clean
 clean:

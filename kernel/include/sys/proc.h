@@ -24,9 +24,9 @@ typedef struct proc proc_t;
 struct proc
 {
 	char		*name;
-	int 		pid;	/* Process identifier */
+	pid_t 		pid;	/* Process identifier */
 	state_t		state;
-	fd_t 		*fds;	/* Open file descriptors */
+	struct file *fds;	/* Open file descriptors */
 	proc_t 		*parent;
 	char 		*cwd;	/* Current Working Directory */
 	uintptr_t	heap;	/* Process heap pointer */

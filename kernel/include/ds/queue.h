@@ -55,6 +55,8 @@ static inline void *new_queue()
 	return memset(kmalloc(sizeof(queue_t)), 0, sizeof(queue_t));
 }
 
+#define NEW_QUEUE &(struct queue){0}
+
 #if 0
 static inline void *queue_find(queue_t *queue, int (*check) (void *))
 {

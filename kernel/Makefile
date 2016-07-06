@@ -4,9 +4,12 @@ MAKEFLAGS += --no-print-directory
 
 include config
 
+CC := gcc
 PDIR != pwd
-CFLAGS := -I $(PDIR) -I $(PDIR)/include/ -nostdlib -ffreestanding -m32 \
-		  -O3 -Wall -Wextra -Werror -funsigned-bitfields
+CFLAGS := -std=gnu99 -I $(PDIR) -I $(PDIR)/include/ -nostdlib -ffreestanding -m32 \
+		  -O3 -Wall -Wextra -Werror -funsigned-bitfields 
+		  #-no-vec
+
 AS := $(CC)
 ASFLAGS := $(CFLAGS)
 LDFLAGS := -nostdlib -melf_i386

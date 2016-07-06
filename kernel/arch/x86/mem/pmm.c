@@ -1,16 +1,28 @@
+/**********************************************************************
+ *					Physical Memory Manager
+ *
+ *
+ *	This file is part of Aquila OS and is released under the terms of
+ *	GNU GPLv3 - See LICENSE.
+ *
+ *	Copyright (C) 2016 Mohamed Anwar <mohamed_anwar@opmbx.org>
+ */
+
 #include <core/system.h>
-#include <mm/mm.h>
 #include <core/string.h>
 #include <core/panic.h>
-#include <boot/boot.h>
-#include <ds/bitmap.h>
+#include <cpu/cpu.h>
 #include <boot/multiboot.h>
+#include <boot/boot.h>
+#include <mm/mm.h>
+#include <ds/bitmap.h>
 
-void *heap;
-static void *heap_alloc(size_t size, size_t align)
+static char *kheap = NULL;
+
+static inline void *heap_alloc(size_t size, size_t align)
 {
-	void *ret = (void*)((uintptr_t)(heap + align - 1) & (~(align - 1)));
-	heap = (void*)((uintptr_t)ret + size);
+	char *ret = (char *)((uintptr_t)(kheap + align - 1) & (~(align - 1)));
+	kheap = ret + size;
 
 	memset(ret, 0, size);	/* We always clear the allocated area */
 
@@ -21,50 +33,82 @@ static void *heap_alloc(size_t size, size_t align)
 static volatile bitmap_t pm_bitmap = NULL;
 static uint32_t bitmap_max_index = 0;
 
-void x86_mm_setup()
+static volatile uint32_t *BSP_PD = NULL;
+
+#define P  _BV(0)
+#define RW _BV(1)
+
+void pmm_setup(struct boot *boot)
 {
-	extern void *_kernel_heap;
-	heap = _kernel_heap;
+	printk("Total memory: %d KiB, %d MiB\n", boot->total_mem, boot->total_mem / 1024);
 
-	bitmap_max_index = kernel_total_mem / PAGE_SIZE;
-	pm_bitmap = heap_alloc(BITMAP_SIZE(bitmap_max_index), 4);
+	extern char *kernel_heap;
+	kheap = VMA(kernel_heap);
 
-	BITMAP_CLR_RANGE(pm_bitmap, 0, bitmap_max_index);
+	printk("kheap=%x\n", kheap);
 
-	for(int i = 0; i < kernel_mmap_count; ++i)
-	{
+	unsigned long buddies = boot->total_mem / 4096;
+	printk("#4 MiB Buddies=%dB\n", BITMAP_SIZE(buddies));
+	/*int size = 4096;
+	int large = boot->total_mem / size;
+	int total_buddies = large;
+
+	for (; size >= 4; size /= 2) {
+		printk("# %d KiB Buddies: %d\n", size, large *= 2);
+		total_buddies += large;
+	}
+
+	printk("Total buddies=%d [%d B]\n", total_buddies, total_buddies / 32);
+	*/
+	struct cpu_features features = get_cpu_features();
+
+	/* We can have either 4 KiB or 4 MiB pages -- We don't support PAE */
+	if (features.pse)
+		printk("PSE=%d\n", features.pse);
+
+	if (features.pge)
+		printk("PGE=%d\n", features.pge);
+
+	for (;;);
+
+	bitmap_max_index = boot->total_mem / PAGE_SIZE;
+	
+	for (int i = 0; i < boot->mmap_count; ++i) {
 		BITMAP_SET_RANGE(pm_bitmap,
-							(kernel_mmap[i].start + PAGE_MASK) / PAGE_SIZE,
-							kernel_mmap[i].end / PAGE_SIZE);
+							(boot->mmap[i].start + PAGE_MASK) / PAGE_SIZE,
+							boot->mmap[i].end / PAGE_SIZE);
 	}
 
 	extern char kernel_end;
 	BITMAP_CLR_RANGE(pm_bitmap, 0, (uintptr_t)&kernel_end/PAGE_SIZE);
 
 	/* Modules */
-	for(int i = 0; i < kernel_modules_count; ++i)
-	{
+	for (int i = 0; i < boot->modules_count; ++i) {
 		BITMAP_CLR_RANGE(pm_bitmap,
-					(LMA((uintptr_t)kernel_modules[i].addr) + PAGE_MASK) / PAGE_SIZE,
-					(LMA((uintptr_t)kernel_modules[i].addr + kernel_modules[i].size) + PAGE_MASK) / PAGE_SIZE);
+					(LMA((uintptr_t)boot->modules[i].addr) + PAGE_MASK) / PAGE_SIZE,
+					(LMA((uintptr_t)boot->modules[i].addr + boot->modules[i].size) + PAGE_MASK) / PAGE_SIZE);
 	}
+
+	/* Fix pointers to BSP_PD and BSP_LPT */
+	extern volatile uint32_t *_BSP_PD;
+
+	BSP_PD = VMA(_BSP_PD);
 }
 
-extern volatile uint32_t *BSP_LPT;
 static void *mount_page(uintptr_t paddr)
 {
-	*(BSP_LPT + 1023) = (paddr & (~PAGE_MASK)) | 3;
+	BSP_PD[1023] = (paddr & (~PAGE_MASK)) | P | RW;
 	asm("invlpg (%%eax)"::"a"(~PAGE_MASK));
+	for(;;);
 	return (void*)(~PAGE_MASK); /* Last page */
 }
 
-unsigned last_checked_index = 0;
+static uint32_t last_checked_index = 0;
 static uintptr_t get_frame()
 {
 	unsigned i;
-	for(i = last_checked_index; i < bitmap_max_index; ++i)
-		if(BITMAP_CHK(pm_bitmap, i))
-		{
+	for (i = last_checked_index; i < bitmap_max_index; ++i)
+		if (BITMAP_CHK(pm_bitmap, i)) {
 			last_checked_index = i;
 			void *p = mount_page(i * PAGE_SIZE);
 			memset(p, 0, PAGE_SIZE);
@@ -243,8 +287,11 @@ void arch_release_frame(uintptr_t p)
 	release_frame(p);
 }
 
-static void *memcpypv(void *virt_dest, void *phys_src, size_t n)
+static void *memcpypv(void *_virt_dest, void *_phys_src, size_t n)
 {
+	char *virt_dest = (char *) _virt_dest;
+	char *phys_src  = (char *) _phys_src;
+
 	void *ret = virt_dest;
 
 	/* Copy up to page boundary */
@@ -253,7 +300,7 @@ static void *memcpypv(void *virt_dest, void *phys_src, size_t n)
 	
 	if(size)
 	{
-		void *p = mount_page((uintptr_t) phys_src);
+		char *p = mount_page((uintptr_t) phys_src);
 		memcpy(virt_dest, p + offset, size);
 		
 		phys_src  += size;
@@ -264,7 +311,7 @@ static void *memcpypv(void *virt_dest, void *phys_src, size_t n)
 		size = n / PAGE_SIZE;
 		while(size--)
 		{
-			void *p = mount_page((uintptr_t) phys_src);
+			char *p = mount_page((uintptr_t) phys_src);
 			memcpy(virt_dest, p, PAGE_SIZE);
 			phys_src += PAGE_SIZE;
 			virt_dest += PAGE_SIZE;
@@ -281,9 +328,12 @@ static void *memcpypv(void *virt_dest, void *phys_src, size_t n)
 	return ret;
 }
 
-static void *memcpyvp(void *phys_dest, void *virt_src, size_t n)
+static void *memcpyvp(void *_phys_dest, void *_virt_src, size_t n)
 {
+	char *phys_dest = (char *) _phys_dest;
+	char *virt_src  = (char *) _virt_src;
 	void *ret = phys_dest;
+
 	size_t s = n / PAGE_SIZE;
 	while(s--)
 	{
@@ -301,16 +351,18 @@ static void *memcpyvp(void *phys_dest, void *virt_src, size_t n)
 }
 
 static char memcpy_pp_buf[PAGE_SIZE];
-static void *memcpypp(void *phys_dest, void *phys_src, size_t n)
+static void *memcpypp(void *_phys_dest, void *_phys_src, size_t n)
 {
 	/* XXX: This function is catastrophic */
+	char *phys_dest = (char *) _phys_dest;
+	char *phys_src  = (char *) _phys_src;
 	void *ret = phys_dest;
 
 	/* Copy up to page boundary */
 	size_t offset = (uintptr_t) phys_src % PAGE_SIZE;
 	size_t size = MIN(n, PAGE_SIZE - offset);
 
-	void *p = mount_page((uintptr_t) phys_src);
+	char *p = mount_page((uintptr_t) phys_src);
 	memcpy(memcpy_pp_buf + offset, p + offset, size);
 	p = mount_page((uintptr_t) phys_dest);
 	memcpy(p + offset, memcpy_pp_buf + offset, size);
@@ -349,193 +401,3 @@ pmman_t pmman = (pmman_t)
 	.memcpyvp = &memcpyvp,
 	.memcpypp = &memcpypp,
 };
-
-typedef struct
-{
-	uint32_t addr : 28;	/* Offseting (1GiB), 4-bytes aligned objects */
-	uint32_t free : 1;	/* Free or not flag */
-	uint32_t size : 26;	/* Size of one object can be up to 256MiB */
-	uint32_t next : 25; /* Index of the next node */
-}__attribute__((packed)) vmm_node_t;
-
-
-#define VMM_BASE		(0xD0000000)
-#define VMM_NODES_SIZE	(0x00100000)
-#define VMM_NODES		(VMM_BASE - VMM_NODES_SIZE)
-#define NODE_ADDR(node)	(VMM_BASE + ((node).addr) * 4)
-#define NODE_SIZE(node)	(((node).size) * 4)
-#define LAST_NODE_INDEX	(100000)
-#define MAX_NODE_SIZE	((1 << 26) - 1)
-
-vmm_node_t *nodes = (vmm_node_t *) VMM_NODES;
-void x86_vmm_setup()
-{
-	/* We start by mapping the space used for nodes into physical memory */
-	map_to_physical(VMM_NODES, VMM_NODES_SIZE, KRW);
-
-	/* Now we have to clear it */
-	memset((void*)VMM_NODES, 0, VMM_NODES_SIZE);
-
-	/* Setting up initial node */
-	nodes[0] = (vmm_node_t){0, 1, -1, LAST_NODE_INDEX};
-}
-
-uint32_t first_free_node = 0;
-uint32_t get_node()
-{
-	unsigned i;//, flag = 0;
-	for(i = first_free_node; i < LAST_NODE_INDEX; ++i)
-	{
-		/*if(!flag && nodes[i].free)
-		{
-			first_free_node = flag = i;
-		}*/
-		
-		if(!nodes[i].size)
-			return i;
-	}
-
-	panic("Can't find an unused node");
-	return -1;
-}
-
-void release_node(uint32_t i)
-{
-	nodes[i] = (vmm_node_t){0};
-	//if(i < first_free_node)
-	//	first_free_node = i;
-}
-
-uint32_t get_first_fit_free_node(uint32_t size)
-{
-	unsigned i = first_free_node;
-	while(!(nodes[i].free && nodes[i].size >= size))
-	{
-		if(nodes[i].next == LAST_NODE_INDEX)
-			panic("Can't find a free node");
-		i = nodes[i].next;
-	}
-
-	return i;
-}
-
-void print_node(unsigned i)
-{
-	printk("Node[%d]\n", i);
-	printk("   |_ Addr   : %x\n", NODE_ADDR(nodes[i]));
-	printk("   |_ free ? : %s\n", nodes[i].free?"yes":"no");
-	printk("   |_ Size   : %d B [ %d KiB ]\n",
-		NODE_SIZE(nodes[i]), NODE_SIZE(nodes[i])/1024 );
-	printk("   |_ Next   : %d\n", nodes[i].next );
-}
-
-void *kmalloc(size_t size)
-{
-	size = (size + 3)/4;	/* size in 4-bytes units */
-
-	/* Look for a first fit free node */
-	unsigned i = get_first_fit_free_node(size);
-
-	/* Mark it as used */
-	nodes[i].free = 0;
-
-	/* Split the node if necessary */
-	if(nodes[i].size > size)
-	{
-		unsigned n = get_node();
-		nodes[n] = (vmm_node_t)
-			{
-				.addr = nodes[i].addr + size,
-				.free = 1,
-				.size = nodes[i].size - size,
-				.next = nodes[i].next
-			};
-
-		nodes[i].next = n;
-		nodes[i].size = size;
-	}
-
-	pmman.map(NODE_ADDR(nodes[i]), NODE_SIZE(nodes[i]), KRW);
-	return (void*)NODE_ADDR(nodes[i]);
-}
-
-void kfree(void *_ptr)
-{
-	uintptr_t ptr = (uintptr_t) _ptr;
-
-	if(ptr < VMM_BASE)	/* That's not even allocatable */
-		return;
-
-	/* Look for the node containing _ptr */
-	/* NOTE: We don't use a function for looking for the node, since we also
-	   need to know the first free node of a sequence of free nodes before our
-	   target node */
-
-	unsigned i = 0, j = -1;
-
-	while(!(ptr >= NODE_ADDR(nodes[i])
-		&& ptr < (uintptr_t)(NODE_ADDR(nodes[i]) + NODE_SIZE(nodes[i]))))
-	{
-		if(nodes[i].free)
-		{
-			if(j == -1U) 
-				j = i; /* Set first free node index */
-		} else j = -1U;	/* Invalidate first free node index */
-
-		i = nodes[i].next;
-		if(i == LAST_NODE_INDEX) /* Trying to free unallocated node */
-			return;
-	}
-
-	/* First we mark our node as free */
-	nodes[i].free = 1;
-
-	/* Now we merge all free nodes ahead */
-	unsigned n = nodes[i].next;
-	while(n < LAST_NODE_INDEX && nodes[n].free)
-	{
-		/* Hello babe, we need to merge */
-		if((uintptr_t)(nodes[n].size + nodes[i].size) <= MAX_NODE_SIZE)
-		{
-			nodes[i].size += nodes[n].size;
-			nodes[i].next  = nodes[n].next;
-			release_node(n);
-			n = nodes[i].next;
-		} else
-			break;
-	}
-
-	if(j != i && j != -1U)	/* I must be lucky, aren't I always ;) */
-		kfree((void*)NODE_ADDR(nodes[j]));
-	// else
-	// 	unmap_from_physical(NODE_ADDR(nodes[i]), NODE_SIZE(nodes[i]));
-}
-
-void dump_nodes()
-{
-	printk("Nodes dump\n");
-	unsigned i = 0;
-	while(i < LAST_NODE_INDEX)
-	{
-		print_node(i);
-		if(nodes[i].next == LAST_NODE_INDEX) break;
-		i = nodes[i].next;
-	}
-}
-
-/*
-void x86_ap_mm_setup()
-{
-	int i;
-	for(i = 0; i < 1024; ++i)
-		AP_KPT[i] = (0x1000 * i) | 3;
-
-	AP_PD[0] = (uint32_t)AP_KPT | 3;
-	//PD[1] = 0x400083;
-	//AP_LKPT[1023] = (uint32_t)AP_PD | 3;
-
-	asm volatile("mov %%eax, %%cr3;"::"a"(AP_PD));
-	asm volatile("mov %%cr4, %%eax; or %0, %%eax; mov %%eax, %%cr4;"::"g"(0x10));
-	asm volatile("mov %%cr0, %%eax; or %0, %%eax; mov %%eax, %%cr0;"::"g"(0x80000000));
-}
-*/

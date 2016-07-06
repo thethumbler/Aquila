@@ -1,16 +1,28 @@
+/*
+ *			VFS => File System binding for CPIO archives
+ *
+ *
+ *	This file is part of Aquila OS and is released under
+ *	the terms of GNU GPLv3 - See LICENSE.
+ *
+ *	Copyright (C) 2016 Mohamed Anwar <mohamed_anwar@opmbx.org>
+ */
+
 #include <core/system.h>
 #include <core/string.h>
 #include <core/panic.h>
 #include <mm/mm.h>
+
+#include <dev/ramdev.h>
 #include <fs/vfs.h>
 #include <fs/initramfs.h>
+#include <fs/devfs.h>
 
 #include <boot/boot.h>
-#include <fs/devfs.h>
-#include <dev/ramdev.h>
 
 void load_ramdisk()
 {
+	#if 0
 	/* Ramdisk is the first module */
 	void *ramdisk = (void*) kernel_modules[0].addr;
 	size_t ramdisk_size = kernel_modules[0].size;
@@ -20,9 +32,9 @@ void load_ramdisk()
 	ramdev_private_t *p = kmalloc(sizeof(ramdev_private_t));
 	*p = (ramdev_private_t){.addr = ramdisk};
 
-	inode_t *node = kmalloc(sizeof(inode_t));
+	struct fs_node * node = kmalloc(sizeof(struct fs_node));
 
-	*node = (inode_t)
+	*node = (struct fs_node)
 	{
 		.name = "ram0",
 		.type = FS_DIR,
@@ -32,20 +44,22 @@ void load_ramdisk()
 		.p    = p,
 	};
 
-	inode_t *root = initramfs.load(node);
+	struct fs_node * root = initramfs.load(node);
+	
 	if(!root)
 		panic("Could not load ramdisk\n");
 
 	vfs.mount_root(root);
+	#endif
 }
 
 static
-inode_t *new_node(char *name, inode_type type, 
-	size_t sz, size_t data, inode_t *sp)
+struct fs_node * new_node(char * name, enum fs_node_type type, 
+	size_t sz, size_t data, struct fs_node * sp)
 {
-	inode_t *node = kmalloc(sizeof(inode_t));
+	struct fs_node * node = kmalloc(sizeof(struct fs_node));
 	
-	*node = (inode_t)
+	*node = (struct fs_node)
 	{
 		.name = name,
 		.size = sz,
@@ -70,7 +84,7 @@ inode_t *new_node(char *name, inode_type type,
 	return node;
 }
 
-static inode_t *cpiofs_new_child_node(inode_t *parent, inode_t *child)
+static struct fs_node * cpiofs_new_child_node(struct fs_node * parent, struct fs_node * child)
 {
 	if(!parent || !child)	/* Invalid inode */
 		return NULL;
@@ -78,7 +92,7 @@ static inode_t *cpiofs_new_child_node(inode_t *parent, inode_t *child)
 	if(parent->type != FS_DIR) /* Adding child to non directory parent */
 		return NULL;
 
-	inode_t *tmp = ((cpiofs_private_t*)parent->p)->dir;
+	struct fs_node *tmp = ((cpiofs_private_t*)parent->p)->dir;
 	((cpiofs_private_t*)child->p)->next = tmp;
 	((cpiofs_private_t*)parent->p)->dir = child;
 
@@ -88,15 +102,15 @@ static inode_t *cpiofs_new_child_node(inode_t *parent, inode_t *child)
 	return child;
 }
 
-static inode_t *cpiofs_find(inode_t *root, const char *path)
+static struct fs_node * cpiofs_find(struct fs_node * root, const char * path)
 {
 	char **tokens = tokenize(path, '/');
 
 	if(root->type != FS_DIR)	/* Not even a directory */
 		return NULL;
 
-	inode_t *cur = root;
-	inode_t *dir = ((cpiofs_private_t*)cur->p)->dir;
+	struct fs_node * cur = root;
+	struct fs_node * dir = ((cpiofs_private_t*)cur->p)->dir;
 
 	if(!dir)	/* Directory has no children */
 	{
@@ -133,21 +147,21 @@ static inode_t *cpiofs_find(inode_t *root, const char *path)
 	return cur;
 }
 
-static inode_t *cpiofs_load(inode_t *inode)
+static struct fs_node * cpiofs_load(struct fs_node * node)
 {
 	/* Allocate the root node */
-	inode_t *rootfs = new_node(NULL, FS_DIR, 0, 0, inode);
+	struct fs_node * rootfs = new_node(NULL, FS_DIR, 0, 0, node);
 
 	cpio_hdr_t cpio;
 	size_t offset = 0;
 	size_t size = 0;
 
-	for(; offset < inode->size; 
+	for(; offset < node->size; 
 		  offset += sizeof(cpio_hdr_t) + (cpio.namesize+1)/2*2 + (size+1)/2*2)
 	{
 		size_t data_offset = offset;
 
-		inode->fs->read(inode, data_offset, sizeof(cpio_hdr_t), &cpio);
+		node->fs->read(node, data_offset, sizeof(cpio_hdr_t), &cpio);
 
 		if(cpio.magic != CPIO_BIN_MAGIC) /* Invalid CPIO archive */
 		{
@@ -160,7 +174,7 @@ static inode_t *cpiofs_load(inode_t *inode)
 		data_offset += sizeof(cpio_hdr_t);
 		
 		char path[cpio.namesize];
-		inode->fs->read(inode, data_offset, cpio.namesize, path);
+		node->fs->read(node, data_offset, cpio.namesize, path);
 
 		if(!strcmp(path, ".")) continue;
 		if(!strcmp(path, "TRAILER!!!")) break;	/* End of archive */
@@ -187,33 +201,32 @@ static inode_t *cpiofs_load(inode_t *inode)
 		
 		data_offset += cpio.namesize + (cpio.namesize % 2);
 
-		inode_t *node = 
+		struct fs_node * _node = 
 			new_node(strdup(name), 
 				((cpio.mode & 0170000 ) == 0040000) ? FS_DIR : FS_FILE,
 				size,
 				data_offset,
-				inode
+				node
 				);
 
-		inode_t *parent = cpiofs_find(rootfs, dir);
+		struct fs_node * parent = cpiofs_find(rootfs, dir);
 
-		cpiofs_new_child_node(parent, node);
+		cpiofs_new_child_node(parent, _node);
 	}
 
 	return rootfs;
 }
 
-static size_t cpiofs_read(inode_t *inode, size_t offset, size_t len, void *buf_p)
+static ssize_t cpiofs_read(struct fs_node * node, off_t offset, size_t len, void * buf_p)
 {
-	cpiofs_private_t *p = inode->p;
+	cpiofs_private_t *p = node->p;
 
-	inode_t *super = p->super;
+	struct fs_node * super = p->super;
 
 	return super->fs->read(super, p->data + offset, len, buf_p);
 }
 
-fs_t initramfs = 
-(fs_t)
+struct fs initramfs = 
 {
 	.name = "initramfs",
 	.load = &cpiofs_load,

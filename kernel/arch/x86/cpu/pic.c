@@ -1,9 +1,14 @@
-/*
- *	Legacy PIC (8259) support
+/**********************************************************************
+ *				Programmable Interrupt Controller (PIC)
+ *					 (Legacy PIC (8259) support)
  *
- *	-- Should only be used when no APIC is avilable or APIC support isn't built
- *	   into the kernel
+ *	-- Should only be used when no APIC is avilable or APIC support 
+ *  isn't built into the kernel.
  *
+ *	This file is part of Aquila OS and is released under the terms of
+ *	GNU GPLv3 - See LICENSE.
+ *
+ *	Copyright (C) 2016 Mohamed Anwar <mohamed_anwar@opmbx.org>
  */
 
 #include <core/system.h>
@@ -63,7 +68,6 @@
  *
  */
 
-
 #define ICW1		0x11 /* Both Master and Slave use the same ICW1 */
 #define MASTER_ICW2	0x20 /* Interrupts (from Master) start from offset 32 */
 #define SLAVE_ICW2	0x28 /* Interrupts (from Slave)  start from offset 40 */
@@ -109,7 +113,7 @@ static irq_handler_t irq_handlers[16] = {0};
 
 void irq_install_handler(unsigned irq, irq_handler_t handler)
 {
-	if(irq < 16)
+	if (irq < 16)
 		irq_handlers[irq] = handler;
 }
 
@@ -147,32 +151,31 @@ void irq_handler(regs_t *r)
 
 static void irq_setup_gates(void)
 {
-	x86_idt_set_gate(32, (uint32_t) irq0);
-	x86_idt_set_gate(33, (uint32_t) irq1);
-	x86_idt_set_gate(34, (uint32_t) irq2);
-	x86_idt_set_gate(35, (uint32_t) irq3);
-	x86_idt_set_gate(36, (uint32_t) irq4);
-	x86_idt_set_gate(37, (uint32_t) irq5);
-	x86_idt_set_gate(38, (uint32_t) irq6);
-	x86_idt_set_gate(39, (uint32_t) irq7);
-	x86_idt_set_gate(40, (uint32_t) irq8);
-	x86_idt_set_gate(41, (uint32_t) irq9);
-	x86_idt_set_gate(42, (uint32_t) irq10);
-	x86_idt_set_gate(43, (uint32_t) irq11);
-	x86_idt_set_gate(44, (uint32_t) irq12);
-	x86_idt_set_gate(45, (uint32_t) irq13);
-	x86_idt_set_gate(46, (uint32_t) irq14);
-	x86_idt_set_gate(47, (uint32_t) irq15);
+	idt_set_gate(32, (uint32_t) irq0);
+	idt_set_gate(33, (uint32_t) irq1);
+	idt_set_gate(34, (uint32_t) irq2);
+	idt_set_gate(35, (uint32_t) irq3);
+	idt_set_gate(36, (uint32_t) irq4);
+	idt_set_gate(37, (uint32_t) irq5);
+	idt_set_gate(38, (uint32_t) irq6);
+	idt_set_gate(39, (uint32_t) irq7);
+	idt_set_gate(40, (uint32_t) irq8);
+	idt_set_gate(41, (uint32_t) irq9);
+	idt_set_gate(42, (uint32_t) irq10);
+	idt_set_gate(43, (uint32_t) irq11);
+	idt_set_gate(44, (uint32_t) irq12);
+	idt_set_gate(45, (uint32_t) irq13);
+	idt_set_gate(46, (uint32_t) irq14);
+	idt_set_gate(47, (uint32_t) irq15);
 }
 
-
-void x86_pic_setup()
+void pic_setup()
 {
 	irq_remap();
 	irq_setup_gates();
 }
 
-void x86_pic_disable()
+void pic_disable()
 {
 	/* Done by masking all IRQs */
 	outb(SLAVE_PIC_DATA, 0xFF);

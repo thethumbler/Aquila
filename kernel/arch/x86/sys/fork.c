@@ -68,9 +68,9 @@ void arch_sys_fork(proc_t *proc)
 	for(uint32_t i = 0; i < USER_STACK_SIZE/STACK_BUF; ++i)
 	{
 		switch_page_directory(cur_proc_pd);
-		memcpy(stack_buf, (void *) USER_STACK_BASE + i * STACK_BUF, STACK_BUF);
+		memcpy(stack_buf, (char *) USER_STACK_BASE + i * STACK_BUF, STACK_BUF);
 		switch_page_directory(new_proc_pd);
-		memcpy((void *) USER_STACK_BASE + i * STACK_BUF, stack_buf, STACK_BUF);
+		memcpy((char *) USER_STACK_BASE + i * STACK_BUF, stack_buf, STACK_BUF);
 		switch_page_directory(cur_proc_pd);
 	}
 

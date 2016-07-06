@@ -35,9 +35,9 @@ while($line = <$Build>)
 }
 
 print 'all: $(obj) $(dirs) $(out)', "\n";
-print 'ifneq ($(obj),)', "\n\t", '@echo -e "  LD      " ', "$dir_name.o;\n\t",
-	'@if [[ -e link.ld ]]; then $(LD) $(LDFLAGS) -r -T link.ld $(obj) -o ',
-	"$dir_name.o; \\\n", "\t", 'else $(LD) $(LDFLAGS) -r $(obj) -o ', "$dir_name.o; ", "fi;\n";
+print 'ifneq ($(obj),)', "\n\t", '@echo -e "  LD      " ', "objs.o;\n\t",
+	'@if [[ -e link.ld ]]; then $(LD) $(LDFLAGS) -r -T link.ld $(obj) $(patsubst %/,%/objs.o, $(dirs)) -o objs.o;', "\\\n",
+	"\t", 'else $(LD) $(LDFLAGS) -r $(obj) $(patsubst %/,%/objs.o, $(dirs)) -o objs.o; ', "fi;\n";
 print "endif\n";
 print '.PHONY: $(dirs)', "\n";
 print '$(dirs): $(patsubst %/,%/Makefile, $(dirs))', "\n";
@@ -48,7 +48,7 @@ print "%.o:%.c\n", "\t", '@echo -e "  CC      " $@;', "\n\t", '@ $(CC) $(CFLAGS)
 print "%.o:%.S\n", "\t", '@echo -e "  AS      " $@;', "\n\t", '@ $(AS) $(ASFLAGS) -c $< -o $@', "\n";
 print "%.elf:\n", "\t",  '@echo -e "  ELF     " $@;', "\n\t", '@ $(CC) $(CFLAGS) -Wl,-Tlink.ld -lgcc -o $@', "\n";
 print '.PHONY: clean', "\n", 'clean: param = clean', "\n", 'clean: $(dirs)', "\n\t",
-	'$(RM) $(obj) $(out)', " $dir_name.o\n";
+	'$(RM) $(obj) $(out)', " objs.o\n";
 
 print ".PHONY: distclean\n", "distclean: param = distclean\n", 'distclean: $(dirs) clean', "\n\t",
 	'$(RM) Makefile', "\n";

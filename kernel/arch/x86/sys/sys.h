@@ -32,5 +32,5 @@ static inline uintptr_t get_new_page_directory()
 
 static inline void switch_page_directory(uintptr_t pd)
 {
-	asm("mov %%eax, %%cr3;"::"eax"(pd));
+	asm("mov %%eax, %%cr3;"::"a"(pd));
 }

@@ -33,7 +33,7 @@ static void x86_sched_handler(regs_t *r __unused)
 
 void arch_sched_init()
 {
-	x86_pit_setup(10);
+	pit_setup(10);
 	irq_install_handler(PIT_IRQ, x86_sched_handler);
 }
 

@@ -1,7 +1,7 @@
 OUTPUT_FORMAT(elf32-i386)
 ENTRY(_start)
-INPUT(boot/boot.o cpu/cpu.o console/console.o mem/mem.o sys/sys.o ../../core/core.o
-../../devices/devices.o ../../fs/fs.o ../../sys/sys.o)
+INPUT(boot/objs.o cpu/objs.o console/objs.o mem/objs.o sys/objs.o ../../core/objs.o
+../../devices/objs.o ../../fs/objs.o ../../sys/objs.o)
 OUTPUT(kernel.elf)
 
 SECTIONS {
@@ -10,7 +10,7 @@ SECTIONS {
 	. = LMA;
 
 	.boot : AT(LMA) {
-		*boot.o(*)
+		*boot*.o(*)
 	}
 
 	boot_end = .;
