@@ -5,7 +5,7 @@
 #include <sys/sched.h>
 #include <ds/queue.h>
 
-queue_t *ready_queue = &(queue_t){0};	/* Ready processes queue */
+queue_t *ready_queue = NEW_QUEUE;	/* Ready processes queue */
 proc_t *cur_proc = NULL;
 
 void make_ready(proc_t *proc)

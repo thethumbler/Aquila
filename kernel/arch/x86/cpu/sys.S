@@ -1,59 +1,6 @@
 .code32
 
 //
-//	x86_check_cpuid
-//
-
-//	When CPUID instruction is supported, EFLAGS.ID (bit 21) is modifiable
-//	so we check if we can modify it
-
-.global x86_check_cpuid
-x86_check_cpuid:
-	pushf
-	pushf
-	xorl $1 << 21, (%esp)
-	popf
-	pushf
-	pop %eax
-	xorl (%esp), %eax
-	andl $1 << 21, %eax
-	popf
-	ret
-
-
-//
-//	x86_get_vendor_id
-//
-
-x86_vendor_id:	
-	.fill 13
-
-.global x86_get_vendor_id
-x86_get_vendor_id:
-	movl $0x0, %eax
-	cpuid
-	movl %ebx, (x86_vendor_id + 0x0)
-	movl %edx, (x86_vendor_id + 0x4)
-	movl %ecx, (x86_vendor_id + 0x8)
-	movl x86_vendor_id, %eax
-	ret
-
-//
-//	x86_get_features
-//
-
-x86_features: .long 0
-
-.global x86_get_features
-x86_get_features:
-	movl $0x1, %eax
-	cpuid
-	mov %edx, (x86_features)
-	mov x86_features, %eax
-	ret
-
-
-//
 // ISRs -- Interrupt Service Routines
 //
 

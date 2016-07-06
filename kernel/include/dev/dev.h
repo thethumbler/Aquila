@@ -9,19 +9,19 @@ typedef enum
 	BLKDEV = 2,
 } dev_type;
 
-typedef struct dev_struct dev_t;
+typedef struct device dev_t;
 
 #include <fs/vfs.h>
 #include <sys/proc.h>
 
-struct dev_struct
+struct device
 {
 	char		*name;
 	dev_type	type;
 	int 		(*probe)();
-	size_t		(*read) (inode_t *dev, size_t offset, size_t size, void *buf);
-	size_t		(*write)(inode_t *dev, size_t offset, size_t size, void *buf);
-	int			(*ioctl)(inode_t *dev, unsigned long request, void *argp);
+	ssize_t		(*read) (struct fs_node * dev, off_t offset, size_t size, void * buf);
+	ssize_t		(*write)(struct fs_node * dev, off_t offset, size_t size, void * buf);
+	int			(*ioctl)(struct fs_node * dev, unsigned long request, void * argp);
 
 	/* File Operations */
 	struct file_ops f_ops;

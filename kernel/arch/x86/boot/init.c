@@ -1,53 +1,70 @@
+/**********************************************************************
+ *					Early initalization of the kernel
+ *					 (Switch to higher half kernel)
+ *
+ *
+ *	This file is part of Aquila OS and is released under the terms of
+ *	GNU GPLv3 - See LICENSE.
+ *
+ *	Copyright (C) 2016 Mohamed Anwar <mohamed_anwar@opmbx.org>
+ */
+
 #include <core/system.h>
 #include <core/string.h>
+#include <core/log.h>
+#include <cpu/cpu.h>
 #include <mm/mm.h>
 #include <boot/multiboot.h>
 #include <boot/boot.h>
 
-/* FIXME */
-char scratch[8192 * 1024] __attribute__((aligned(0x1000)));	/* 8 MiB scratch area */
+/* Minimalistic Paging structure for BSP */
+volatile uint32_t _BSP_PD[1024] __aligned(PAGE_SIZE);
+/* volatile uint32_t _BSP_PT[1024] __aligned(PAGE_SIZE); */
 
-void *kernel_heap = (void*)scratch;
-static void *heap_alloc(size_t size, size_t align)
+#define P  _BV(0)
+#define RW _BV(1)
+
+extern char kernel_end;	/* Defined in linker script */
+char *kernel_heap = &kernel_end;	/* Start of kernel heap */
+
+static inline void *heap_alloc(size_t size, size_t align)
 {
-	void *ret = (void*)((uintptr_t)(kernel_heap + align - 1) & (~(align - 1)));
-	kernel_heap = (void*)((uintptr_t)ret + size);
+	char *ret = (char *)((uintptr_t)(kernel_heap + align - 1) & (~(align - 1)));
+	kernel_heap = ret + size;
 
 	memset(ret, 0, size);	/* We always clear the allocated area */
 
 	return ret;
 }
 
-extern char kernel_end; /* Defined in linker script */
-
-/* Page structure for BSP */
-volatile uint32_t *_BSP_PD  = NULL;
-volatile uint32_t *_BSP_LPT = NULL;
-
 void switch_to_higher_half()
 {
-	_BSP_PD = heap_alloc(PAGE_SIZE, PAGE_SIZE);
+	uint32_t i, entries;
 
-	uint32_t page_tables = ((uintptr_t)(&kernel_end) + TABLE_MASK) / TABLE_SIZE;
-	uint32_t *BSP_PT = heap_alloc(4096 * 1024 /*page_tables * PAGE_SIZE*/, PAGE_SIZE);
+	/* zero out paging structure */
+	memset((void *) _BSP_PD, 0, sizeof(_BSP_PD));
 
-	uint32_t i;
-	for(i = 0; i < page_tables * 1024; ++i)
-		BSP_PT[i] = (0x1000 * i) | 3;
+	/* entries count required to map the kernel */
+	entries = ((uint32_t)(&kernel_end) + KERNEL_HEAP_SIZE + TABLE_MASK) / TABLE_SIZE;
 
-	for(i = 0; i < page_tables; ++i)
-		_BSP_PD[i]       = (uint32_t)((uintptr_t)BSP_PT + i * PAGE_SIZE) | 3;
+	uint32_t *_BSP_PT = heap_alloc(entries * PAGE_SIZE, PAGE_SIZE);
 
-	for(i = 0; i < 256; ++i)	/* Permanently map the upper 1 GiB to Page Tables */
-		_BSP_PD[768 + i] = (uint32_t)((uintptr_t)BSP_PT + i * PAGE_SIZE) | 3;
+	/* identity map pages */
+	for (i = 0; i < entries * 1024; ++i)
+		_BSP_PT[i] = (i * PAGE_SIZE) | P | RW;
 
+	/* map the lower-half */
+	for (i = 0; i < entries; ++i)
+		_BSP_PD[i] = ((uint32_t) _BSP_PT + i * PAGE_SIZE) | P | RW;
 
-	_BSP_LPT = heap_alloc(PAGE_SIZE, PAGE_SIZE);
-	_BSP_PD[1023] = (uint32_t)_BSP_LPT | 3;
+	/* map the upper-half */
+	for (i = 0; i < entries; ++i)
+		_BSP_PD[768 + i] = ((uint32_t) _BSP_PT + i * PAGE_SIZE) | P | RW;
 
-	asm volatile("mov %%eax, %%cr3;"::"a"(_BSP_PD));
-	asm volatile("mov %%cr4, %%eax; or %0, %%eax; mov %%eax, %%cr4;"::"g"(0x10));
-	asm volatile("mov %%cr0, %%eax; or %0, %%eax; mov %%eax, %%cr0;"::"g"(0x80000000));
+	/* Enable paging */
+	write_cr3((uint32_t) _BSP_PD);
+	uint32_t cr0 = read_cr0();
+	write_cr0(cr0 | CR0_PG);
 }
 
 void early_init()
@@ -55,10 +72,14 @@ void early_init()
 	/* We assume that GrUB loaded a valid GDT */
 	/* Then we map the kernel to the higher half */
 	switch_to_higher_half();
+
 	/* Now we make SP in the higher half */
-	asm volatile("addl %0, %%esp"::"g"(VMA((uintptr_t)0)):"esp");
+	asm volatile("addl %0, %%esp"::"g"(VMA((uintptr_t) 0)):"esp");
+
 	/* Ready to get out of here */
 	extern void cpu_init();
 	cpu_init();
+
+	/* Why would we ever get back here? however we should be precautious */
 	for(;;);
 }

@@ -1,15 +1,27 @@
+/*
+ *			ELF format loader
+ *
+ *
+ *	This file is part of Aquila OS and is released under
+ *	the terms of GNU GPLv3 - See LICENSE.
+ *
+ *	Copyright (C) 2016 Mohamed Anwar <mohamed_anwar@opmbx.org>
+ */
+
+
 #include <core/system.h>
 #include <core/string.h>
 #include <core/arch.h>
+
 #include <sys/proc.h>
 #include <sys/elf.h>
 
 /* Loads an elf file into a new process skeleton */
-proc_t *load_elf(const char *fn)
+proc_t * load_elf(const char * fn)
 {
-	void *arch_specific_data = arch_load_elf();
+	void * arch_specific_data = arch_load_elf();
 
-	inode_t *file = vfs.find(vfs_root, fn);
+	struct fs_node * file = vfs.find(vfs_root, fn);
 	if(!file) return NULL;
 
 	elf32_hdr_t hdr;
@@ -38,7 +50,7 @@ proc_t *load_elf(const char *fn)
 
 	pmman.map(USER_STACK_BASE, USER_STACK_SIZE, URW);
 
-	proc_t *proc = kmalloc(sizeof(proc_t));
+	proc_t * proc = kmalloc(sizeof(proc_t));
 	proc->name = strdup(file->name);
 	proc->heap = proc_heap;
 	proc->entry = hdr.entry;
@@ -50,9 +62,9 @@ proc_t *load_elf(const char *fn)
 }
 
 /* Loads an elf file into an existing process skeleton */
-proc_t *load_elf_proc(proc_t *proc, const char *fn)
+proc_t * load_elf_proc(proc_t * proc, const char *fn)
 {
-	inode_t *file = vfs.find(vfs_root, fn);
+	struct fs_node * file = vfs.find(vfs_root, fn);
 	if(!file) return NULL;
 
 	elf32_hdr_t hdr;

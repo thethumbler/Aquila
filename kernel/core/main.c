@@ -22,7 +22,7 @@ void kmain()
 
 	devfs_init();
 
-	inode_t *dev = vfs.find(vfs_root, "dev");
+	struct fs_node *dev = vfs.find(vfs_root, "dev");
 	vfs.mount(dev, dev_root);
 
 	devman_init();
@@ -30,8 +30,8 @@ void kmain()
 	extern void devpts_init();
 	devpts_init();
 
-	inode_t *pts = vfs.mkdir(dev_root, "pts");
-	extern inode_t *devpts_root;
+	struct fs_node *pts = vfs.mkdir(dev_root, "pts");
+	extern struct fs_node *devpts_root;
 	vfs.mount(pts, devpts_root);
 
 	proc_t *init = load_elf("/bin/init");

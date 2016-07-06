@@ -6,7 +6,7 @@
 
 #define INDEX(ring, i) ((i) % ((ring)->size))
 
-typedef struct 
+typedef struct ring
 {
 	char *buf;
 	size_t size;

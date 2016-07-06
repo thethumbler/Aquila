@@ -40,7 +40,7 @@ static inline int strncmp(const char *s1, const char *s2, size_t n)
 		"cld;"
 		"repe cmpsd;"
 		"jnz 1f;"
-		"mov %1, %%ecx;"
+		"mov %4, %%ecx;"
 		"repe cmpsb;"
 		"jnz 2f;"
 		"1:"
@@ -58,7 +58,7 @@ static inline int strncmp(const char *s1, const char *s2, size_t n)
 			"mov (%%esi), %%cl;"
 			"subb (%%edi), %%cl;"
 			"mov %%cl, %0;"
-		:"=g"(ret)
+		:"=g"(ret), "=S"((int){0}), "=D"((int){0}), "=c"((int){0})
 		:"g"(n & 3), "S"(s1),"D"(s2), "c"(n >> 2));
 
 	return ret;

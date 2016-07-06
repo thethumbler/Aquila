@@ -4,6 +4,9 @@
 #define TIOCGPTN	0x80045430
 #define O_NONBLOCK    04000
 #define EAGAIN          11
+#define O_RDONLY  00
+#define O_WRONLY  01
+#define O_RDWR    02
 
 #define SYS_FORK	2	
 #define SYS_OPEN	3
@@ -62,20 +65,17 @@ int printf(char *fmt, ...);
 
 void _start()
 {
-	int pty = open("/dev/ptmx", O_NONBLOCK);
+	int pty = open("/dev/ptmx", O_RDWR);
 	int pid = fork();
 
-	if(pid)	/* parent */
-	{
-		int console = open("/dev/console", 0); /* stdout */
-
-		while(1)
-		{
-			char buf[50];
-			for(int i = 0; i < 50 && buf[i]; buf[i] = 0, ++i);
-			while(read(pty, buf, 50) == -EAGAIN);
-			printf("%s", buf);
-		}
+	if(pid) {	/* parent */
+		int console = open("/dev/console", O_WRONLY); /* stdout */
+		char buf[50];
+		for(int i = 0; i < 50 && buf[i]; buf[i] = 0, ++i);
+		int r;
+		while((r = read(pty, buf, 50)) <= 0)
+			printf("r = -%d\n", -r);
+		printf("%s", buf);
 
 	} else	/* child */
 	{
@@ -85,7 +85,8 @@ void _start()
 		char pts_fn[] = "/dev/pts/ ";
 		pts_fn[9] = '0' + pts_id;
 
-		int pts_fd = open(pts_fn, 0);	/* stdout */
+		int pts_fd = open(pts_fn, O_RDWR);	/* stdout */
+
 		char *argp[] = {"ABC", "DEF", 0};
 		execve("/bin/prog", argp, 0);
 	}

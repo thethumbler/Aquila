@@ -3,6 +3,8 @@
 
 #include <core/system.h>
 
+#define KERNEL_HEAP_SIZE	(1024 * 1024)	/* 1 MiB */
+
 extern char _VMA; /* Must be defined in linker script */
 #define VMA(obj)  ((typeof((obj)))((uintptr_t)(void*)&_VMA + (uintptr_t)(void*)(obj)))
 #define LMA(obj)  ((typeof((obj)))((uintptr_t)(void*)(obj)) - (uintptr_t)(void*)&_VMA)
@@ -12,8 +14,8 @@ static inline void TLB_flush()
 	asm volatile("mov %%cr3, %%eax; mov %%eax, %%cr3":::"eax");
 }
 
-void x86_mm_setup();
-void x86_vmm_setup();
+void pmm_setup();
+void vmm_setup();
 void *kmalloc(size_t);
 void kfree(void*);
 uintptr_t arch_get_frame();

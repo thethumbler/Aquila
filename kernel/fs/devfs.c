@@ -1,113 +1,138 @@
+/**********************************************************************
+ *					Device Filesystem (devfs) handler
+ *
+ *
+ *	This file is part of Aquila OS and is released under the terms of
+ *	GNU GPLv3 - See LICENSE.
+ *
+ *	Copyright (C) 2016 Mohamed Anwar <mohamed_anwar@opmbx.org>
+ */
+
 #include <core/system.h>
 #include <core/string.h>
+
 #include <mm/mm.h>
-#include <fs/vfs.h>
+
 #include <dev/dev.h>
+#include <fs/vfs.h>
 #include <fs/devfs.h>
+
 #include <bits/errno.h>
 
-inode_t *dev_root = NULL;
+/* devfs root directory (usually mounted on '/dev') */
+struct fs_node *dev_root = NULL;
 
-static size_t devfs_read(inode_t *inode, size_t offset, size_t size, void *buf)
+static ssize_t devfs_read(struct fs_node *node, off_t offset, size_t size, void *buf)
 {
-	if(!inode->dev)	/* is inode connected to a device handler? */
-		return -1;
+	if (!node->dev)	/* is node connected to a device handler? */
+		return -EINVAL;
 
-	return inode->dev->read(inode, offset, size, buf);
+	return node->dev->read(node, offset, size, buf);
 }
 
-static size_t devfs_write(inode_t *inode, size_t offset, size_t size, void *buf)
+static ssize_t devfs_write(struct fs_node *node, off_t offset, size_t size, void *buf)
 {
-	if(!inode->dev)	/* is inode connected to a device handler? */
-		return -1;
+	if (!node->dev)	/* is node connected to a device handler? */
+		return -EINVAL;
 
-	return inode->dev->write(inode, offset, size, buf);
+	return node->dev->write(node, offset, size, buf);
 }
 
-static inode_t *devfs_create(inode_t *dir, const char *name)
+static struct fs_node *devfs_create(struct fs_node *dir, const char *name)
 {
-	inode_t *inode = kmalloc(sizeof(inode_t));
-	memset(inode, 0, sizeof(inode_t));
+	struct fs_node *node = kmalloc(sizeof(struct fs_node));
+	memset(node, 0, sizeof(struct fs_node));
 	
-	inode->name = strdup(name);
-	inode->type = FS_FILE;
-	inode->fs   = &devfs;
-	inode->size = 0;
+	node->name = strdup(name);
+	node->type = FS_FILE;
+	node->fs   = &devfs;
+	node->size = 0;
 
-	devfs_dir_t *d = (devfs_dir_t*) dir->p;
+	struct devfs_dir *_dir = (struct devfs_dir *) dir->p;
+	struct devfs_dir *tmp  = kmalloc(sizeof(*tmp));
 
-	devfs_dir_t *tmp = kmalloc(sizeof(*tmp));
-
-	tmp->next = d;
-	tmp->inode = inode;
+	tmp->next = _dir;
+	tmp->node = node;
 
 	dir->p = tmp;
 
-	return inode;
+	return node;
 }
 
-static inode_t *devfs_mkdir(inode_t *parent, const char *name)
+static struct fs_node *devfs_mkdir(struct fs_node *parent, const char *name)
 {
-	inode_t *d = devfs_create(parent, name);
+	struct fs_node *d = devfs_create(parent, name);
 
 	d->type = FS_DIR;
 
 	return d;
 }
 
-static int devfs_ioctl(inode_t *file, unsigned long request, void *argp)
+static int devfs_ioctl(struct fs_node *file, unsigned long request, void *argp)
 {
 	if(!file || !file->dev || !file->dev->ioctl)
-		return 0;
+		return -EBADFD;
+
 	return file->dev->ioctl(file, request, argp);
 }
 
-static inode_t *devfs_find(inode_t *dir, const char *fn)
+static struct fs_node *devfs_find(struct fs_node *dir, const char *fn)
 {
-	if(dir->type != FS_DIR)
+	if (dir->type != FS_DIR)
 		return NULL;
 
-	devfs_dir_t *d = (devfs_dir_t *) dir->p;
-	if(!d)	/* Directory not initialized */
+	struct devfs_dir *_dir = (struct devfs_dir *) dir->p;
+
+	if (!_dir)	/* Directory not initialized */
 		return NULL;
 
-	forlinked(file, d, file->next)
+	forlinked(file, _dir, file->next)
 	{
-		if(!strcmp(file->inode->name, fn))
-			return file->inode;
+		if (!strcmp(file->node->name, fn))
+			return file->node;
 	}
 
 	return NULL;	/* File not found */
 }
 
-/* File Operations */
-static int devfs_file_open(fd_t *fd)
+
+/* ================ File Operations ================ */
+
+static int devfs_file_open(struct file *file)
 {
-	if(!fd->inode->dev)
+	if (!file->node->dev)
 		return -ENXIO;
 	
-	return fd->inode->dev->f_ops.open(fd);
+	return file->node->dev->f_ops.open(file);
 }
 
-static size_t devfs_file_read(fd_t *fd, void *buf, size_t size)
+static ssize_t devfs_file_read(struct file *file, void *buf, size_t size)
 {
-	if(!fd->inode->dev)
-		return -EINVAL;
+	if (!file->node->dev)
+		return -ENXIO;
 
-	return fd->inode->dev->f_ops.read(fd, buf, size);
+	return file->node->dev->f_ops.read(file, buf, size);
 }
 
-static size_t devfs_file_write(fd_t *fd, void *buf, size_t size)
+static ssize_t devfs_file_write(struct file *file, void *buf, size_t size)
 {
-	if(!fd->inode->dev)
-		return -EINVAL;
+	if (!file->node->dev)
+		return -ENXIO;
 	
-	return fd->inode->dev->f_ops.write(fd, buf, size);
+	return file->node->dev->f_ops.write(file, buf, size);
+}
+
+static int devfs_file_eof(struct file *file)
+{
+	if(!file->node->dev)
+		return -ENXIO;
+
+	return file->node->dev->f_ops.eof(file);
 }
 
 void devfs_init()
 {
-	dev_root = kmalloc(sizeof(inode_t));
+	dev_root = kmalloc(sizeof(struct fs_node));
 
 	dev_root->name = "dev";
 	dev_root->type = FS_DIR;
@@ -116,8 +141,7 @@ void devfs_init()
 	dev_root->p    = NULL;
 }
 
-fs_t devfs = 
-{
+struct fs devfs = {
 	.name   = "devfs",
 	.create = devfs_create,
 	.mkdir  = devfs_mkdir,
@@ -126,10 +150,11 @@ fs_t devfs =
 	.write  = devfs_write,
 	.ioctl  = devfs_ioctl,
 	
-	.f_ops = 
-	{
+	.f_ops = {
 		.open  = devfs_file_open,
 		.read  = devfs_file_read,
 		.write = devfs_file_write, 
+
+		.eof = devfs_file_eof,
 	},
 };

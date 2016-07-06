@@ -3,14 +3,14 @@
 
 #include <fs/vfs.h>
 
-typedef struct devfs_dir
+struct devfs_dir
 {
-	inode_t *inode;
-	struct devfs_dir *next;
-} devfs_dir_t;
+	struct fs_node   * node;
+	struct devfs_dir * next;
+};
 
-extern fs_t devfs;
-extern inode_t *dev_root;
+extern struct fs devfs;
+extern struct fs_node * dev_root;
 
 void devfs_init();
 

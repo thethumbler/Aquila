@@ -14,7 +14,7 @@ void arch_spawn_proc(proc_t *proc)
 	if(get_current_page_directory() != arch->pd)
 		switch_page_directory(arch->pd);
 
-	x86_set_kernel_stack(arch->kstack);
+	set_kernel_stack(arch->kstack);
 
 	extern void x86_jump_user(uintptr_t eax, uintptr_t eip, uintptr_t cs, uintptr_t eflags, uintptr_t esp, uintptr_t ss) __attribute__((noreturn));
 	x86_jump_user(arch->eax, arch->eip, X86_CS, arch->eflags, arch->esp, X86_SS);
@@ -43,7 +43,7 @@ void arch_switch_proc(proc_t *proc)
 	
 	switch_page_directory(arch->pd);
 
-	x86_set_kernel_stack(arch->kstack);
+	set_kernel_stack(arch->kstack);
 
 	extern void x86_goto(uintptr_t eip, uintptr_t ebp, uintptr_t esp) __attribute__((noreturn));
 	x86_goto(arch->eip,  arch->ebp, arch->esp);

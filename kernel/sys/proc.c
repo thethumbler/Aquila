@@ -1,11 +1,26 @@
+/*
+ *			Process managment helpers
+ *
+ *
+ *	This file is part of Aquila OS and is released under
+ *	the terms of GNU GPLv3 - See LICENSE.
+ *
+ *	Copyright (C) 2016 Mohamed Anwar <mohamed_anwar@opmbx.org>
+ */
+
+
 #include <core/system.h>
 #include <core/string.h>
 #include <core/arch.h>
+
 #include <mm/mm.h>
-#include <fs/vfs.h>
+
 #include <sys/proc.h>
 #include <sys/elf.h>
 #include <sys/sched.h>
+
+#include <fs/vfs.h>
+
 #include <ds/queue.h>
 
 int get_pid()
@@ -18,8 +33,8 @@ void init_process(proc_t *proc)
 {
 	proc->pid = get_pid();
 
-	proc->fds  = kmalloc(FDS_COUNT * sizeof(fd_t));
-	memset(proc->fds, 0, FDS_COUNT * sizeof(fd_t));
+	proc->fds  = kmalloc(FDS_COUNT * sizeof(struct file));
+	memset(proc->fds, 0, FDS_COUNT * sizeof(struct file));
 }
 
 void kill_process(proc_t *proc)
@@ -36,9 +51,9 @@ void kill_process(proc_t *proc)
 int get_fd(proc_t *proc)
 {
 	for(int i = 0; i < FDS_COUNT; ++i)
-		if(!proc->fds[i].inode)
+		if(!proc->fds[i].node)
 		{
-			proc->fds[i].inode = (void*) -1;	
+			proc->fds[i].node = (void *) -1;	
 			return i;
 		}
 
@@ -49,7 +64,7 @@ void release_fd(proc_t *proc, int fd)
 {
 	if(fd < FDS_COUNT)
 	{
-		proc->fds[fd].inode = NULL;
+		proc->fds[fd].node = NULL;
 	}
 }
 

@@ -19,9 +19,11 @@ int printf(char *fmt, ...);
 
 int main(int argc, char **argv)
 {
-	printf("argc %x\n", argc);
+	printf("Hi\n");
+	/*printf("argc %x\n", argc);
 	printf("argv %x\n", argv);
-	printf("%s\n", argv[0]);
+	printf("%s\n", argv[0]);*/
+	for(;;);
 }
 
 asm(" \

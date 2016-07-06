@@ -4,7 +4,7 @@
 #include <core/system.h>
 #include <fs/vfs.h>
 
-extern fs_t initramfs;
+extern struct fs initramfs;
 
 typedef struct
 {
@@ -23,13 +23,13 @@ typedef struct
 
 typedef struct
 {
-  inode_t *super;
-  inode_t *parent;
-  inode_t *dir;
-  size_t  count;
-  size_t  data; /* offset of data in the archive */
+  struct fs_node * super;
+  struct fs_node * parent;
+  struct fs_node * dir;
+  size_t count;
+  size_t data; /* offset of data in the archive */
 
-  inode_t *next;  /* For directories */
+  struct fs_node * next;  /* For directories */
 } cpiofs_private_t;
 
 #define CPIO_BIN_MAGIC  070707

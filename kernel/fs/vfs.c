@@ -7,14 +7,14 @@
 #include <bits/fcntl.h>
 #include <bits/errno.h>
 
-inode_t *vfs_root = NULL;
+struct fs_node *vfs_root = NULL;
 
-static void vfs_mount_root(inode_t *node)
+static void vfs_mount_root(struct fs_node *node)
 {
 	vfs_root = node;
 }
 
-static inode_t *vfs_find(inode_t *inode, const char *path)
+static struct fs_node *vfs_find(struct fs_node *inode, const char *path)
 {
 	/* if path is NULL pointer, or path is empty string, return NULL */
 	if(!path ||  !*path)
@@ -26,7 +26,7 @@ static inode_t *vfs_find(inode_t *inode, const char *path)
 	/* Tokenize slash seperated words in path into tokens */
 	char **tokens = tokenize(path, '/');
 
-	inode_t *cur = inode;
+	struct fs_node *cur = inode;
 
 	foreach(token, tokens)
 	{
@@ -43,19 +43,19 @@ static inode_t *vfs_find(inode_t *inode, const char *path)
 	return cur;
 }
 
-static size_t vfs_read(inode_t *inode, size_t offset, size_t size, void *buf)
+static size_t vfs_read(struct fs_node *inode, size_t offset, size_t size, void *buf)
 {
 	if(!inode) return 0;
 	return inode->fs->read(inode, offset, size, buf);
 }
 
-static size_t vfs_write(inode_t *inode, size_t offset, size_t size, void *buf)
+static size_t vfs_write(struct fs_node *inode, size_t offset, size_t size, void *buf)
 {
 	if(!inode) return 0;
 	return inode->fs->write(inode, offset, size, buf);
 }
 
-static inode_t *vfs_create(inode_t *dir, const char *name)
+static struct fs_node *vfs_create(struct fs_node *dir, const char *name)
 {
 	if(dir->type != FS_DIR)
 		return NULL;
@@ -63,7 +63,7 @@ static inode_t *vfs_create(inode_t *dir, const char *name)
 	return dir->fs->create(dir, name);
 }
 
-static inode_t *vfs_mkdir(inode_t *dir, const char *name)
+static struct fs_node *vfs_mkdir(struct fs_node *dir, const char *name)
 {
 	if(dir->type != FS_DIR)
 		return NULL;
@@ -71,20 +71,20 @@ static inode_t *vfs_mkdir(inode_t *dir, const char *name)
 	return dir->fs->mkdir(dir, name);
 }
 
-static int vfs_mount(inode_t *parent, inode_t *child)
+static int vfs_mount(struct fs_node *parent, struct fs_node *child)
 {
 	parent->mountpoint = child;
 	return 0;
 }
 
-static int vfs_ioctl(inode_t *file, unsigned long request, void *argp)
+static int vfs_ioctl(struct fs_node *file, unsigned long request, void *argp)
 {
 	if(!file || !file->fs || !file->fs->ioctl)
 		return -1;
 	return file->fs->ioctl(file, request, argp);
 }
 
-/*static int vfs_open(inode_t *file, int flags)
+/*static int vfs_open(struct fs_node *file, int flags)
 {
 	if(!file || !file->fs || !file->fs->open)
 		return -1;
@@ -93,82 +93,15 @@ static int vfs_ioctl(inode_t *file, unsigned long request, void *argp)
 
 
 /* VFS Generic File function */
-
-int vfs_generic_file_open(fd_t *fd __unused)
+int generic_file_open(struct file * file __unused)
 {
 	return 0;
 }
 
-size_t vfs_generic_file_read(fd_t *fd, void *buf, size_t size)
-{
-	if(fd->flags & O_NONBLOCK)	/* Non-blocking I/O */
-	{
-		size_t read = fd->inode->fs->read(fd->inode, fd->offset, size, buf);
-		
-		if(read == 0)	/* No data available -- FIXME handle EOF */
-			return -EAGAIN;
-
-		fd->offset += read;
-		if(fd->inode->write_queue)
-			wakeup_queue(fd->inode->write_queue);	/* Wakeup all sleeping writers */
-		return read;
-	} else	/* Blocking I/O */
-	{
-		size_t retval = size;
-		while(size)
-		{
-			size -= fd->inode->fs->read(fd->inode, fd->offset, size, buf);
-			if(!size)
-				break;
-
-			sleep_on(fd->inode->read_queue);
-		}
-		
-		fd->offset += retval;
-		if(fd->inode->write_queue)
-			wakeup_queue(fd->inode->write_queue);	/* Wakeup all sleeping writers */
-		return retval;
-	}
-}
-
-size_t vfs_generic_file_write(fd_t *fd, void *buf, size_t size)
-{
-	if(fd->flags & O_NONBLOCK)	/* Non-blocking I/O */
-	{
-		size_t written = fd->inode->fs->write(fd->inode, fd->offset, size, buf);
-		
-		if(written == 0)	/* Can't write data */
-			return -EAGAIN;
-
-		fd->offset += written;
-		if(fd->inode->read_queue)
-			wakeup_queue(fd->inode->read_queue);	/* Wakeup all sleeping readers */
-		return written;
-	} else	/* Blocking I/O */
-	{
-		size_t retval = size;
-		while(size)
-		{
-			size -= fd->inode->fs->write(fd->inode, fd->offset, size, buf);
-			if(!size)
-				break;
-
-			sleep_on(fd->inode->write_queue);
-		}
-
-		fd->offset += retval;
-		if(fd->inode->read_queue)
-			wakeup_queue(fd->inode->read_queue);	/* Wakeup all sleeping readers */
-		return retval;
-	}
-}
-
-struct vfs vfs = (struct vfs) 
-{
+struct vfs vfs = (struct vfs) {
 	.mount_root = &vfs_mount_root,
 	.create = &vfs_create,
 	.mkdir = &vfs_mkdir,
-	//.open = &vfs_open,
 	.mount = &vfs_mount,
 	.read = &vfs_read,
 	.write = &vfs_write,
