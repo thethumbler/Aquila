@@ -6,49 +6,84 @@
 
 /* All operations are uniform regardless of endianess */
 
-typedef uint32_t* bitmap_t;
+typedef struct {
+	uint32_t *map;
+	size_t   max_idx;	/* max index */
+} bitmap_t;
+
+/* Number of bits in block */
 #define BLOCK_SIZE (32)
+/* Block mask */
+#define BLOCK_MASK (BLOCK_SIZE - 1)
+/* Number of bits in index to encode offset in block */
 #define LOG2_BLOCK_SIZE	(5)
+/* Offset of the block in bitmap */
 #define BLOCK_OFFSET(__bitmap__i__)	((__bitmap__i__) >> LOG2_BLOCK_SIZE)
-#define BLOCK_MASK(__bitmap__i__)	((__bitmap__i__) & (BLOCK_SIZE - 1))
+/* Offset of bit in block */
+#define BIT_OFFSET(__bitmap__i__)	((__bitmap__i__) & (BLOCK_SIZE - 1))
 
-#define BITMAP_SIZE(n) \
-	((n + 31) / BLOCK_SIZE * sizeof(uint32_t))
+static inline size_t bitmap_size(size_t n)
+{
+	return (n + BLOCK_MASK) / BLOCK_SIZE * MEMBER_SIZE(bitmap_t, map[0]);
+}
 
-#define BITMAP_NEW(n) \
-	((uint32_t[(n + 31)/BLOCK_SIZE]){0})
+static inline void bitmap_set(bitmap_t *bitmap, size_t index)
+{
+	bitmap->map[BLOCK_OFFSET(index)] |= 1 << BIT_OFFSET(index);
+}
 
-#define BITMAP_SET(bitmap, index) \
-	bitmap[BLOCK_OFFSET(index)] |= _BV(BLOCK_MASK(index))
+static inline void bitmap_clear(bitmap_t *bitmap, size_t index)
+{
+	bitmap->map[BLOCK_OFFSET(index)] &= ~(1 << BIT_OFFSET(index));
+}
 
-#define BITMAP_CLR(bitmap, index) \
-	bitmap[BLOCK_OFFSET(index)] &= ~_BV(BLOCK_MASK(index))
+static inline int bitmap_check(bitmap_t *bitmap, size_t index)
+{
+	return bitmap->map[BLOCK_OFFSET(index)] & (1 << BIT_OFFSET(index));
+}
 
-#define BITMAP_CHK(bitmap, index) \
-	(bitmap[BLOCK_OFFSET(index)] & _BV(BLOCK_MASK(index)) ? 1 : 0)
+static inline void bitmap_set_range(bitmap_t *bitmap, size_t findex, size_t lindex)
+{
+	size_t i = findex;
 
-#define BITMAP_SET_RANGE(bitmap, findex, lindex) \
-{\
-	uint32_t __bitmap__i__ = (findex); \
-	while (__bitmap__i__ - (findex) < BLOCK_SIZE - 1 && __bitmap__i__ <= (lindex)) \
-	{BITMAP_SET(bitmap, __bitmap__i__); ++__bitmap__i__;} \
-	if (__bitmap__i__ < (lindex)) \
-		memset(&bitmap[BLOCK_OFFSET(__bitmap__i__)], -1, \
-			((lindex) - __bitmap__i__)/BLOCK_SIZE * sizeof(*bitmap)); \
-	__bitmap__i__ += ((lindex) - __bitmap__i__)/BLOCK_SIZE * BLOCK_SIZE; \
-	while (__bitmap__i__ <= (lindex)) {BITMAP_SET(bitmap, __bitmap__i__); ++__bitmap__i__;} \
-}\
+	/* Set non block-aligned indices */
+	while (i & BLOCK_MASK && i <= lindex) { 
+		bitmap_set(bitmap, i);
+	   	++i;
+	}
 
-#define BITMAP_CLR_RANGE(bitmap, findex, lindex) \
-{\
-	uint32_t __bitmap__i__ = (findex); \
-	while (__bitmap__i__ - (findex) < BLOCK_SIZE - 1 && __bitmap__i__ <= (lindex)) \
-	{BITMAP_CLR(bitmap, __bitmap__i__); ++__bitmap__i__;} \
-	if (__bitmap__i__ < (lindex)) \
-		memset(&bitmap[BLOCK_OFFSET(__bitmap__i__)], 0, \
-			((lindex) - __bitmap__i__)/BLOCK_SIZE * sizeof(*bitmap)); \
-	__bitmap__i__ += ((lindex) - __bitmap__i__)/BLOCK_SIZE * BLOCK_SIZE; \
-	while (__bitmap__i__ <= (lindex)) {BITMAP_CLR(bitmap, __bitmap__i__); ++__bitmap__i__;} \
-}\
+	/* Set block-aligned indices */
+	if (i < lindex) 
+		memset(&bitmap->map[BLOCK_OFFSET(i)], -1, (lindex - i)/BLOCK_SIZE * MEMBER_SIZE(bitmap_t, map[0]));
+
+	i += (lindex - i)/BLOCK_SIZE * BLOCK_SIZE;
+
+	/* Set non block-aligned indices */
+	while (i <= lindex) {
+		bitmap_set(bitmap, i); ++i;
+	}
+}
+
+static inline void bitmap_set_clear(bitmap_t *bitmap, size_t findex, size_t lindex)
+{
+	size_t i = findex;
+
+	/* Set non block-aligned indices */
+	while (i & BLOCK_MASK && i <= lindex) { 
+		bitmap_clear(bitmap, i);
+	   	++i;
+	}
+
+	/* Set block-aligned indices */
+	if (i < lindex) 
+		memset(&bitmap->map[BLOCK_OFFSET(i)], 0, (lindex - i)/BLOCK_SIZE * MEMBER_SIZE(bitmap_t, map[0]));
+
+	i += (lindex - i)/BLOCK_SIZE * BLOCK_SIZE;
+
+	/* Set non block-aligned indices */
+	while (i <= lindex) {
+		bitmap_clear(bitmap, i); ++i;
+	}
+}
 
 #endif /* !_BITMAP_H */
