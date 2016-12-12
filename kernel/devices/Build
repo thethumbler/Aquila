@@ -1,5 +1,0 @@
-ramdev.c
-i8042.c
-ps2kbd.c
-console.c
-devman.c

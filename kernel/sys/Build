@@ -1,6 +1,0 @@
-proc.c
-sched.c
-syscall.c
-fork.c
-elf.c
-execve.c

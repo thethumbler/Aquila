@@ -1,6 +1,0 @@
-vfs.c
-devfs.c
-initramfs.c
-read.c
-write.c
-devpts/

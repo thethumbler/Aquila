@@ -1,6 +1,0 @@
-boot/
-cpu/
-console/
-mem/
-sys/
-kernel.elf
