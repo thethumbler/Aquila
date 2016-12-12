@@ -1,0 +1,10 @@
+obj-y =
+obj-y += init.o
+obj-y += gdt.o
+obj-y += idt.o
+obj-y += isr.o
+obj-y += pic.o
+obj-y += pit.o
+obj-y += sdt.o
+obj-y += smp.o
+obj-y += sys.o

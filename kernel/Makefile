@@ -7,31 +7,33 @@ include config
 CC := gcc
 PDIR != pwd
 CFLAGS := -std=gnu99 -I $(PDIR) -I $(PDIR)/include/ -nostdlib -ffreestanding -m32 \
-		  -O3 -Wall -Wextra -Werror -funsigned-bitfields 
+		  -O3 -Wall -Wextra -Werror -funsigned-bitfields -fuse-ld=bfd
 		  #-no-vec
 
 AS := $(CC)
 ASFLAGS := $(CFLAGS)
+
+LD := /usr/bin/ld.bfd
 LDFLAGS := -nostdlib -melf_i386
 
 PERL := perl
 
-dirs = core/ fs/ devices/ sys/ arch/
+dirs-y = core/ fs/ devices/ sys/ mm/ arch/
 
-all: $(dirs)
+all: $(dirs-y)
 
 .PHONY: clean
 clean: param = clean
-clean: $(dirs)
+clean: $(dirs-y)
 
-.PHONY: $(dirs)
-$(dirs): $(patsubst %/,%/Makefile, $(dirs))
+.PHONY: $(dirs-y)
+$(dirs-y): $(patsubst %/,%/Makefile, $(dirs-y))
 	$(MAKE) -C $@ $(param)
 
-$(patsubst %/,%/Makefile, $(dirs)): $(patsubst %/,%/Build, $(dirs))
-	cd $(dir $@) && $(PERL) $(PDIR)/gen.pl >> Makefile
+$(patsubst %/,%/Makefile, $(dirs-y)): $(patsubst %/,%/Build.mk, $(dirs-y))
+	cd $(dir $@) && $(PERL) $(PDIR)/scripts/gen.pl >> Makefile
 	
 
 .PHONY: distclean
 distclean: param = distclean
-distclean: $(dirs)
+distclean: $(dirs-y)
