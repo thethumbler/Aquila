@@ -74,8 +74,7 @@ static void early_console_scroll(int n)
 	vga = vga_start + 160 * (25 - n);
 
 	int i;
-	for(i = 0; i < 80 * n; ++i)
-	{
+	for (i = 0; i < 80 * n; ++i) {
 		vga[2 * i + 0] = '\0';
 		vga[2 * i + 1] = 0x07;
 	}
@@ -89,8 +88,7 @@ int early_console_puts(char *s)
 	return 0;
 #else
 	char *_s = s;
-	while(*s)
-	{
+	while (*s) {
 		*vga = *s++;
 		vga += 2;
 	}
@@ -104,10 +102,8 @@ int early_console_putc(char c)
 #if EARLY_CONSOLE==SERIAL
 	serial_write(c);
 #else
-	if(c)
-	{
-		if(c == '\n')
-		{
+	if (c) {
+		if (c == '\n') {
 			vga = vga_start + (vga - vga_start) / 160 * 160 + 160;
 			if(vga - vga_start >= 160 * 25)
 				early_console_scroll(1);

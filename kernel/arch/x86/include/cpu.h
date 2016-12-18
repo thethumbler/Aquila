@@ -51,6 +51,9 @@ struct cpu {
 /* CR0 */
 #define CR0_PG	_BV(31)
 
+/* CR4 */
+#define CR4_PSE	_BV(4)
+
 /* CPU function */
 static inline uint32_t read_cr0()
 {
@@ -133,7 +136,7 @@ static inline struct cpu_features get_cpu_features()
 {
 	struct cpu_features features;
 	if (check_cpuid()) {
-		asm volatile ("cpuid":"=d"(features):"a"(1));
+		asm volatile ("cpuid":"=b"((int){0}), "=c"((int){0}), "=d"(features):"a"(1));
 	} else {
 		/* CPUID is not supported -- fall back to i386\n */
 		/* TODO */

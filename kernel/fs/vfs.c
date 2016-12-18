@@ -17,10 +17,10 @@ static void vfs_mount_root(struct fs_node *node)
 static struct fs_node *vfs_find(struct fs_node *inode, const char *path)
 {
 	/* if path is NULL pointer, or path is empty string, return NULL */
-	if(!path ||  !*path)
+	if (!path ||  !*path)
 		return NULL;
 
-	if(!inode)
+	if (!inode)
 		inode = vfs_root;
 
 	/* Tokenize slash seperated words in path into tokens */
@@ -28,14 +28,13 @@ static struct fs_node *vfs_find(struct fs_node *inode, const char *path)
 
 	struct fs_node *cur = inode;
 
-	foreach(token, tokens)
-	{
-		if(cur->mountpoint)
+	foreach (token, tokens) {
+		if (cur->mountpoint)
 			cur = cur->mountpoint;
 		
 		cur = cur->fs->find(cur, token);
 
-		if(!cur) return NULL;
+		if (!cur) return NULL;
 	}
 
 	free_tokens(tokens);
@@ -45,19 +44,19 @@ static struct fs_node *vfs_find(struct fs_node *inode, const char *path)
 
 static size_t vfs_read(struct fs_node *inode, size_t offset, size_t size, void *buf)
 {
-	if(!inode) return 0;
+	if (!inode) return 0;
 	return inode->fs->read(inode, offset, size, buf);
 }
 
 static size_t vfs_write(struct fs_node *inode, size_t offset, size_t size, void *buf)
 {
-	if(!inode) return 0;
+	if (!inode) return 0;
 	return inode->fs->write(inode, offset, size, buf);
 }
 
 static struct fs_node *vfs_create(struct fs_node *dir, const char *name)
 {
-	if(dir->type != FS_DIR)
+	if (dir->type != FS_DIR)
 		return NULL;
 
 	return dir->fs->create(dir, name);
@@ -65,7 +64,7 @@ static struct fs_node *vfs_create(struct fs_node *dir, const char *name)
 
 static struct fs_node *vfs_mkdir(struct fs_node *dir, const char *name)
 {
-	if(dir->type != FS_DIR)
+	if (dir->type != FS_DIR)
 		return NULL;
 
 	return dir->fs->mkdir(dir, name);
@@ -79,7 +78,7 @@ static int vfs_mount(struct fs_node *parent, struct fs_node *child)
 
 static int vfs_ioctl(struct fs_node *file, unsigned long request, void *argp)
 {
-	if(!file || !file->fs || !file->fs->ioctl)
+	if (!file || !file->fs || !file->fs->ioctl)
 		return -1;
 	return file->fs->ioctl(file, request, argp);
 }

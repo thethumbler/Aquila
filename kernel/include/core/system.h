@@ -16,6 +16,8 @@
 #define __packed	__attribute__((packed))
 #define __aligned(n) __attribute__((aligned(n)))
 
+#define MEMBER_SIZE(type, member) (sizeof(((type *)0)->member))
+
 #include <stdint.h>
 #include <stdarg.h>
 #include <stddef.h>
@@ -28,9 +30,8 @@ typedef long int ssize_t;
 #include <core/printk.h>
 
 #define ARCH_X86
-
 #define ARCH X86
-//#define X86_4MB_PAGE
+//#define X86_PAE	1
 
 #if ARCH==X86
 #include <arch/x86/include/system.h>
