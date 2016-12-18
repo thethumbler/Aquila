@@ -35,6 +35,18 @@ typedef struct
 	void*	(*memcpyvp)(void *phys_dest, void *virt_src, size_t n);	/* Virt to Phys memcpy */
 } pmman_t;
 
+struct paging
+{
+	size_t	size;
+	int		(*map)  (uintptr_t addr, size_t nr, int flags);
+	void	(*unmap)(uintptr_t addr, size_t nr);
+	void*	(*mount)(uintptr_t addr);
+} __packed;
+
+extern struct paging paging[NR_PAGE_SIZE];
 extern pmman_t pmman;
+
+extern uintptr_t buddy_alloc(size_t);
+extern void buddy_free(uintptr_t, size_t);
 
 #endif /* !_MM_H */

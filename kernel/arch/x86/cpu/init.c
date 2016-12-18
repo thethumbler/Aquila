@@ -1,12 +1,12 @@
 /**********************************************************************
- *					Initalization of the kernel
- *			 (Setup CPU structures and memory managment)
+ *                  Initalization of the kernel
+ *           (Setup CPU structures and memory managment)
  *
  *
- *	This file is part of Aquila OS and is released under the terms of
- *	GNU GPLv3 - See LICENSE.
+ *  This file is part of Aquila OS and is released under the terms of
+ *  GNU GPLv3 - See LICENSE.
  *
- *	Copyright (C) 2016 Mohamed Anwar <mohamed_anwar@opmbx.org>
+ *  Copyright (C) 2016 Mohamed Anwar <mohamed_anwar@opmbx.org>
  */
 
 #include <core/system.h>
@@ -19,203 +19,190 @@
 #include <boot/multiboot.h>
 #include <boot/boot.h>
 
+#include <ds/bitmap.h>
+
 struct cpu cpus[32];
 int cpus_count;
 
 void cpu_init()
 {
-	early_console_init();
-	printk("Welcome to Aquila OS!\n");
+    early_console_init();
+    printk("Welcome to Aquila OS!\n");
 
-	printk("Installing GDT\n");
-	gdt_setup();
+    printk("Installing GDT\n");
+    gdt_setup();
 
-	printk("Installing IDT\n");
-	idt_setup();
+    printk("Installing IDT\n");
+    idt_setup();
 
-	printk("Installing ISRs\n");
-	isr_setup();
+    printk("Installing ISRs\n");
+    isr_setup();
 
-	printk("Setting up PIC\n");
-	pic_setup();
+    printk("Setting up PIC\n");
+    pic_setup();
 
-	printk("Processing multiboot info\n");
-	struct boot *boot = process_multiboot_info(multiboot_info);
+    printk("Processing multiboot info\n");
+    struct boot *boot = process_multiboot_info(multiboot_info);
 
-	printk("Setting up Physical Memory Manager (PMM)\n");
-	pmm_setup(boot);
+    printk("Setting up Physical Memory Manager (PMM)\n");
+    pmm_setup(boot);
 
-	for (;;);
+    printk("Setting up Virtual Memory Manager (VMM)\n");
+    vmm_setup();
 
-	printk("Setting up Virtual Memory Manager (VMM)\n");
-	vmm_setup();
-	for(;;);
+    extern volatile uint32_t *BSP_PD;
+    for (int i = 0; BSP_PD[i] != 0; ++i)
+        BSP_PD[i] = 0;  /* Unmap lower half */
 
-	#if 0
-	extern uint32_t *_BSP_PD;
-	extern uint32_t *_BSP_LPT;
-	BSP_PD = VMA(_BSP_PD);
-	BSP_LPT = VMA(_BSP_LPT);
+    TLB_flush();
 
+    set_tss_esp(VMA(0x100000));
 
+    pic_setup();
+    pit_setup(20);
 
-	//extern void *kernel_heap;
-	//_kernel_heap = VMA(kernel_heap);
-	
+    extern void kmain(struct boot *);
+    kmain(boot);
 
+#if 0
+    struct cpu_features *fp = x86_get_features();
+    if(fp->apic)
+    {
+        printk("CPU has Local APIC\n");
+        extern void trampoline();
+        extern void trampoline_end();
 
-	for(int i = 0; BSP_PD[i] != 0; ++i) BSP_PD[i] = 0;	/* Unmap lower half */
-	TLB_flush();
+        printk("Copying trampoline code [%d]\n", (char *) trampoline_end - (char *)  trampoline);
+        memcpy(0, trampoline, (char *)  trampoline_end - (char *)  trampoline);
 
-	extern void x86_set_tss_esp(uint32_t esp);
-	x86_set_tss_esp(VMA(0x100000));
+        for(;;);
+    }
+#endif
 
-	x86_pic_setup();
-	x86_pit_setup(20);
-
-	extern void kmain();
-	kmain();
-
-	for(;;);
-
-	struct cpu_features *fp = x86_get_features();
-	if(fp->apic)
-	{
-		printk("CPU has Local APIC\n");
-		extern void trampoline();
-		extern void trampoline_end();
-
-		printk("Copying trampoline code [%d]\n", (char *) trampoline_end - (char *)  trampoline);
-		memcpy(0, trampoline, (char *)  trampoline_end - (char *)  trampoline);
-
-		for(;;);
-	}
-	#endif
-
-	for(;;);
+    for(;;);
 }
 
 #if 0
 struct apic_icr
 {
-	uint32_t vector	: 8;
-	uint32_t dest	: 3;
-	uint32_t mode	: 1;
-	uint32_t status	: 1;
-	uint32_t _res	: 1;
-	uint32_t level	: 1;
-	uint32_t triger	: 1;
-	uint32_t __res	: 2;
-	uint32_t shorthand	: 2;
-	uint32_t ___res	: 12;
+    uint32_t vector : 8;
+    uint32_t dest   : 3;
+    uint32_t mode   : 1;
+    uint32_t status : 1;
+    uint32_t _res   : 1;
+    uint32_t level  : 1;
+    uint32_t triger : 1;
+    uint32_t __res  : 2;
+    uint32_t shorthand  : 2;
+    uint32_t ___res : 12;
 }__attribute__((packed));
 
 void x86_ap_init()
 {
-	x86_gdt_setup();
-	x86_idt_setup();
+    x86_gdt_setup();
+    x86_idt_setup();
 
-	void x86_ap_mm_setup();
-	x86_ap_mm_setup();
-	for(;;);
+    void x86_ap_mm_setup();
+    x86_ap_mm_setup();
+    for(;;);
 }
 
 void x86_cpu_init()
 {
-	for(;;);
-	early_console_init();
-	x86_gdt_setup();
-	x86_idt_setup();
-	x86_isr_setup();
+    for(;;);
+    early_console_init();
+    x86_gdt_setup();
+    x86_idt_setup();
+    x86_isr_setup();
 
-	x86_pic_setup();
-	x86_pit_setup(20);
+    x86_pic_setup();
+    x86_pit_setup(20);
 
-	void x86_mm_setup();
-	x86_mm_setup();
+    void x86_mm_setup();
+    x86_mm_setup();
 
-	for(;;);
+    for(;;);
 
-	extern void kmain();
-	//kmain();
+    extern void kmain();
+    //kmain();
 
-	void sleep(uint32_t ms);
+    void sleep(uint32_t ms);
 
-	struct cpu_features *fp = x86_get_features();
-	if(fp->apic)
-	{
-		printk("CPU has Local APIC\n");
+    struct cpu_features *fp = x86_get_features();
+    if(fp->apic)
+    {
+        printk("CPU has Local APIC\n");
 
-		extern void trampoline();
-		extern void trampoline_end();
+        extern void trampoline();
+        extern void trampoline_end();
 
-		printk("Copying trampoline code [%d]\n", trampoline_end - trampoline);
-		memcpy(0, trampoline, trampoline_end - trampoline);
+        printk("Copying trampoline code [%d]\n", trampoline_end - trampoline);
+        memcpy(0, trampoline, trampoline_end - trampoline);
 
-		for(;;);
+        for(;;);
 
-		extern uint32_t ap_done;
-		//x86_get_cpu_count();
+        extern uint32_t ap_done;
+        //x86_get_cpu_count();
 
-		printk("Init APs\n", trampoline);
-		//for(;;);
+        printk("Init APs\n", trampoline);
+        //for(;;);
 
-		asm("sti");
+        asm("sti");
 
-		uint32_t volatile *apic = (uint32_t*) (0xFFFFF000 & (uint32_t)x86_msr_read(X86_APIC_BASE));
+        uint32_t volatile *apic = (uint32_t*) (0xFFFFF000 & (uint32_t)x86_msr_read(X86_APIC_BASE));
 
-		apic[0xF0/4] = apic[0xF0/4] | 0x100;
+        apic[0xF0/4] = apic[0xF0/4] | 0x100;
 
-		apic[0x310/4] = 1 << 24;
-		apic[0x300/4] = 0x4500;
+        apic[0x310/4] = 1 << 24;
+        apic[0x300/4] = 0x4500;
 
-		sleep(10);
+        sleep(10);
 
-		apic[0x300/4] = 0x4600;// | ((uint32_t)(trampoline)/0x1000);
+        apic[0x300/4] = 0x4600;// | ((uint32_t)(trampoline)/0x1000);
 
-		sleep(100);
+        sleep(100);
 
-		if(ap_done > 0)
-		{
-			printk("AP is up\n");
-			goto done;
-		}
+        if(ap_done > 0)
+        {
+            printk("AP is up\n");
+            goto done;
+        }
 
-		apic[0x300/4] = 0x4600;	// | ((uint32_t)(trampoline)/0x1000);
+        apic[0x300/4] = 0x4600; // | ((uint32_t)(trampoline)/0x1000);
 
-		sleep(1000);
+        sleep(1000);
 
-		if(ap_done > 0)
-		{
-			printk("AP is up 2nd\n");
-			for(;;);
-		}
+        if(ap_done > 0)
+        {
+            printk("AP is up 2nd\n");
+            for(;;);
+        }
 
-		done:
+        done:
 
-		asm("cli");
-		x86_pic_disable();
+        asm("cli");
+        x86_pic_disable();
 
 
-		for(;;);
+        for(;;);
 
-		//x86_get_cpu_count();
+        //x86_get_cpu_count();
 
-		//x86_apic_setup();
-		//asm("sti;");
+        //x86_apic_setup();
+        //asm("sti;");
 
-		//*(uint32_t volatile *) 0xFEE00310 = 1 << 24;
-		//*(uint32_t volatile *) 0xFEE00300 = 2;// << 10;
-	}
+        //*(uint32_t volatile *) 0xFEE00310 = 1 << 24;
+        //*(uint32_t volatile *) 0xFEE00300 = 2;// << 10;
+    }
 
-	for(;;);
-	//printk("%x", x86_get_acpi_madt());
+    for(;;);
+    //printk("%x", x86_get_acpi_madt());
 
-	printk("%d", x86_get_cpu_count());
+    printk("%d", x86_get_cpu_count());
 
-	//x86_mm_setup();
-	//
-	//x86_idt_setup();
-	for(;;);
+    //x86_mm_setup();
+    //
+    //x86_idt_setup();
+    for(;;);
 }
 #endif

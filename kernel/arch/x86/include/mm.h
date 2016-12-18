@@ -3,7 +3,8 @@
 
 #include <core/system.h>
 
-#define KERNEL_HEAP_SIZE	(1024 * 1024)	/* 1 MiB */
+#define NR_PAGE_SIZE	2
+#define KERNEL_HEAP_SIZE	(512 * 1024)	/* 512 KiB */
 
 extern char _VMA; /* Must be defined in linker script */
 #define VMA(obj)  ((typeof((obj)))((uintptr_t)(void*)&_VMA + (uintptr_t)(void*)(obj)))
@@ -15,6 +16,7 @@ static inline void TLB_flush()
 }
 
 void pmm_setup();
+void arch_pmm_setup();
 void vmm_setup();
 void *kmalloc(size_t);
 void kfree(void*);

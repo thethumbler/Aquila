@@ -3,6 +3,7 @@
 
 #include <core/system.h>
 #include <boot/multiboot.h>
+#include <mm/mm.h>
 
 typedef struct {
 	void *addr;
@@ -66,6 +67,7 @@ build_multiboot_mmap(multiboot_info_t *info, mmap_t *boot_mmap)
 static inline void 
 build_multiboot_modules(multiboot_info_t *info, module_t *modules)
 {
+    extern char *lower_kernel_heap;
 	multiboot_module_t *mods = (multiboot_module_t *) info->mods_addr;
 
 	for (unsigned i = 0; i < info->mods_count; ++i) {
@@ -74,6 +76,9 @@ build_multiboot_modules(multiboot_info_t *info, module_t *modules)
 			.size = mods[i].mod_end - mods[i].mod_start,
 			.cmdline = (char *) VMA(mods[i].cmdline)
 		};
+
+        if ((uint32_t) lower_kernel_heap < mods[i].mod_start)
+            lower_kernel_heap = (char *) mods[i].mod_end;
 	}
 }
 

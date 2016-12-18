@@ -19,25 +19,26 @@
 
 /* Minimalistic Paging structure for BSP */
 volatile uint32_t _BSP_PD[1024] __aligned(PAGE_SIZE);
-/* volatile uint32_t _BSP_PT[1024] __aligned(PAGE_SIZE); */
 
 #define P  _BV(0)
 #define RW _BV(1)
 
 extern char kernel_end;	/* Defined in linker script */
-char *kernel_heap = &kernel_end;	/* Start of kernel heap */
+char *lower_kernel_heap = &kernel_end;	/* Start of kernel heap */
 
-static inline void *heap_alloc(size_t size, size_t align)
+static inline void *init_heap_alloc(size_t size, size_t align)
 {
-	char *ret = (char *)((uintptr_t)(kernel_heap + align - 1) & (~(align - 1)));
-	kernel_heap = ret + size;
+	char *ret = (char *)((uintptr_t)(lower_kernel_heap + align - 1) & (~(align - 1)));
+	lower_kernel_heap = ret + size;
 
 	memset(ret, 0, size);	/* We always clear the allocated area */
 
 	return ret;
 }
 
-void switch_to_higher_half()
+char scratch[1024 * 1024] __aligned(PAGE_SIZE); /* 1 MiB scratch area */
+
+static void switch_to_higher_half()
 {
 	uint32_t i, entries;
 
@@ -47,7 +48,7 @@ void switch_to_higher_half()
 	/* entries count required to map the kernel */
 	entries = ((uint32_t)(&kernel_end) + KERNEL_HEAP_SIZE + TABLE_MASK) / TABLE_SIZE;
 
-	uint32_t *_BSP_PT = heap_alloc(entries * PAGE_SIZE, PAGE_SIZE);
+	uint32_t *_BSP_PT = (uint32_t *) scratch; //init_heap_alloc(entries * PAGE_SIZE, PAGE_SIZE);
 
 	/* identity map pages */
 	for (i = 0; i < entries * 1024; ++i)
