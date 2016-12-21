@@ -139,10 +139,10 @@ static struct fs_node *cpiofs_find(struct fs_node *root, const char * path)
 	return cur;
 }
 
-static struct fs_node * cpiofs_load(struct fs_node * node)
+static struct fs_node *cpiofs_load(struct fs_node * node)
 {
 	/* Allocate the root node */
-	struct fs_node * rootfs = new_node(NULL, FS_DIR, 0, 0, node);
+	struct fs_node *rootfs = new_node(NULL, FS_DIR, 0, 0, node);
 
 	cpio_hdr_t cpio;
 	size_t offset = 0;

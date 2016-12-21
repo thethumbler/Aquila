@@ -6,6 +6,7 @@
 
 struct buddy {
 	size_t first_free_idx;
+    size_t usable;
 	bitmap_t bitmap;
 };
 

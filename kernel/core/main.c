@@ -37,10 +37,7 @@ void kmain(struct boot *boot)
     vfs.mount(pts, devpts_root);
 
     proc_t *init = load_elf("/bin/init");
-
-    for (;;);
-
     spawn_init(init);
-    
+
     for(;;);
 }

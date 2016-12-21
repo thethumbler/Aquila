@@ -1,4 +1,5 @@
 #include <core/system.h>
+#include <cpu/cpu.h>
 #include <mm/mm.h>
 
 /* Common types for sys */
@@ -11,14 +12,12 @@ struct arch_load_elf
 /* Common functions for sys */
 static inline uintptr_t get_current_page_directory()
 {
-	uintptr_t cur_pd = 0;
-	asm("movl %%cr3, %%eax":"=a"(cur_pd));
-	return cur_pd;
+    return read_cr3();
 }
 
 static inline uintptr_t get_new_page_directory()
 {
-	/* Get a free page frame for storing Page Directory*/
+	/* Get a free page frame for storing Page Directory */
 	uintptr_t pd = arch_get_frame();
 
 	/* Copy the Kernel Space to the new Page Directory */
@@ -32,5 +31,5 @@ static inline uintptr_t get_new_page_directory()
 
 static inline void switch_page_directory(uintptr_t pd)
 {
-	asm("mov %%eax, %%cr3;"::"a"(pd));
+    write_cr3(pd);
 }

@@ -50,20 +50,19 @@ void kill_process(proc_t *proc)
 
 int get_fd(proc_t *proc)
 {
-	for(int i = 0; i < FDS_COUNT; ++i)
-		if(!proc->fds[i].node)
-		{
+	for (int i = 0; i < FDS_COUNT; ++i) {
+		if (!proc->fds[i].node) {
 			proc->fds[i].node = (void *) -1;	
 			return i;
 		}
+    }
 
 	return -1;
 }
 
 void release_fd(proc_t *proc, int fd)
 {
-	if(fd < FDS_COUNT)
-	{
+	if (fd < FDS_COUNT) {
 		proc->fds[fd].node = NULL;
 	}
 }
@@ -77,8 +76,7 @@ void sleep_on(queue_t *queue)
 
 void wakeup_queue(queue_t *queue)
 {
-	while(queue->count > 0)
-	{
+	while (queue->count > 0) {
 		proc_t *proc = dequeue(queue);
 		printk("[%d] %s: Waking up from queue %x\n", proc->pid, proc->name, queue);
 		make_ready(proc);
@@ -88,7 +86,7 @@ void wakeup_queue(queue_t *queue)
 int validate_ptr(proc_t *proc, void *ptr)
 {
 	uintptr_t uptr = (uintptr_t) ptr;
-	if(!(uptr >= proc->entry && uptr <= proc->heap))
+	if (!(uptr >= proc->entry && uptr <= proc->heap))
 		return 0;
 	return 1;
 }

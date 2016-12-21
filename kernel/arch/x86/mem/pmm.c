@@ -34,10 +34,12 @@ static void *mount(uintptr_t paddr)
 
 static uintptr_t get_frame()
 {
+    printk("calling buddy_alloc(%d)\n", PAGE_SIZE);
     uintptr_t page = buddy_alloc(PAGE_SIZE);
     mount(page);
     memset(MOUNT_ADDR, 0, PAGE_SIZE);
 
+    printk("get_frame() => %x\n", page);
     return page;
 }
 
@@ -53,6 +55,7 @@ uintptr_t get_frame_no_clr()
 
 static int map_to_physical(uintptr_t ptr, size_t size, int flags)
 {
+    //printk("map_to_physical(%x, %d, %d)\n", ptr, size, flags);
     size += ptr & PAGE_MASK;
     ptr &= ~PAGE_MASK;
     size_t nr = (size + PAGE_MASK) / PAGE_SIZE;
@@ -63,6 +66,7 @@ static int map_to_physical(uintptr_t ptr, size_t size, int flags)
         | ((flags & URWX) ? 0x4 : 0x0);
 
     uint32_t *cur_pd_phys = (uint32_t *) read_cr3();
+    //printk("cur_pd_phys = %x\n", cur_pd_phys);
     uint32_t cur_pd[PAGE_SIZE/4];
     pmman.memcpypv(cur_pd, cur_pd_phys, PAGE_SIZE);
 
@@ -352,7 +356,6 @@ void arch_pmm_setup()
     extern char *lower_kernel_heap;
     extern char *kernel_heap;
     kernel_heap = VMA(lower_kernel_heap);
-    printk("%s: kernel_heap = %x\n", __func__, kernel_heap);
 
     struct cpu_features features = get_cpu_features();
 
