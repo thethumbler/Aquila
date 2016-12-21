@@ -119,7 +119,7 @@ void irq_install_handler(unsigned irq, irq_handler_t handler)
 
 void irq_uninstall_handler(unsigned irq)
 {
-	if(irq < 16)
+	if (irq < 16)
 		irq_handlers[irq] = (irq_handler_t) NULL;
 }
 

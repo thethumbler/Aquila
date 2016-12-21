@@ -4,7 +4,7 @@
 #include <core/system.h>
 
 #define NR_PAGE_SIZE	2
-#define KERNEL_HEAP_SIZE	(512 * 1024)	/* 512 KiB */
+#define KERNEL_HEAP_SIZE	(8 * 1024  * 1024)	/* 8 MiB */
 
 extern char _VMA; /* Must be defined in linker script */
 #define VMA(obj)  ((typeof((obj)))((uintptr_t)(void*)&_VMA + (uintptr_t)(void*)(obj)))

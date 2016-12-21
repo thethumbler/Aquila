@@ -9,6 +9,7 @@
  */
 
 #include <core/system.h>
+#include <core/panic.h>
 #include <ds/buddy.h>
 #include <ds/bitmap.h>
 #include <mm/heap.h>
@@ -26,9 +27,28 @@ size_t buddy_recursive_alloc(size_t order)
         return -1;
 
     /* Check if there is a free bit in current order */
-    if (buddies[order].first_free_idx > buddies[order].bitmap.max_idx) {
+    if (buddies[order].usable) {
+        /* Search for a free bit in current order */
+        for (size_t i = buddies[order].first_free_idx; i <= buddies[order].bitmap.max_idx; ++i) {
+
+            /* If bit at i is not checked */
+            if (!bitmap_check(&buddies[order].bitmap, i)) {
+
+                /* Mark the bit as used */
+                bitmap_set(&buddies[order].bitmap, i);
+                --buddies[order].usable;
+
+                /* Shift first_free_idx to search after child_idx */
+                buddies[order].first_free_idx = i + 1;
+
+                return i;
+            }                
+        }
+
+        return -1;
+    } else {
         /* Search for a buddy in higher order to split */
-        size_t idx = buddy_recursive_alloc(order+1);
+        size_t idx = buddy_recursive_alloc(order + 1);
 
         /* Could not find a free budy */
         if (idx == (size_t) -1) return -1;
@@ -41,33 +61,12 @@ size_t buddy_recursive_alloc(size_t order)
 
         /* Mark it's buddy as free */
         bitmap_clear(&buddies[order].bitmap, BUDDY_IDX(child_idx));
+        ++buddies[order].usable;
 
         /* Shift first_free_idx to search after child_idx */
         buddies[order].first_free_idx = child_idx + 1;
 
         return child_idx;
-    } else {
-        
-        /* Search for a free bit in current order */
-        for (size_t i = buddies[order].first_free_idx; i < buddies[order].bitmap.max_idx; ++i) {
-
-            /* If bit at i is not checked */
-            if (!bitmap_check(&buddies[order].bitmap, i)) {
-
-                /* Mark the bit as used */
-                bitmap_set(&buddies[order].bitmap, i);
-
-                /* Shift first_free_idx to search after child_idx */
-                buddies[order].first_free_idx = i + 1;
-
-                return i;
-            }                
-        }
-
-        /* If we reached this stage, that means our first_free_idx is invalid or we
-         * are out of memory, so we research in the higer order */
-        buddies[order].first_free_idx = buddies[order].bitmap.max_idx + 1;
-        return buddy_recursive_alloc(order);
     }
 
     return -1;
@@ -78,14 +77,18 @@ void buddy_recursive_free(size_t order, size_t idx)
     if (order > BUDDY_MAX_ORDER) return;
     if (idx > buddies[order].bitmap.max_idx) return;
 
+    /* Can't free an already free bit */
+    if (!bitmap_check(&buddies[order].bitmap, idx)) return;
+
     /* Check if buddy bit is free, then combine */
     if (order < BUDDY_MAX_ORDER && !bitmap_check(&buddies[order].bitmap, BUDDY_IDX(idx))) {
-        bitmap_set(&buddies[order].bitmap, idx);    /* Just in case */
         bitmap_set(&buddies[order].bitmap, BUDDY_IDX(idx));
+        --buddies[order].usable;
 
         buddy_recursive_free(order + 1, idx >> 1);
     } else {
         bitmap_clear(&buddies[order].bitmap, idx);
+        ++buddies[order].usable;
 
         /* Update first_free_idx */
         if (buddies[order].first_free_idx > idx)
@@ -95,11 +98,14 @@ void buddy_recursive_free(size_t order, size_t idx)
 
 uintptr_t buddy_alloc(size_t _sz)
 {
+    if (_sz > BUDDY_MAX_BS)
+        panic("Cannot allocate buddy");
+
     size_t sz = BUDDY_MIN_BS;
 
     /* FIXME */
     size_t order = 0;
-    for (; order < BUDDY_MAX_ORDER; ++order) {
+    for (; order <= BUDDY_MAX_ORDER; ++order) {
         if (sz >= _sz)
             break;
         sz <<= 1;
@@ -110,11 +116,14 @@ uintptr_t buddy_alloc(size_t _sz)
     if (idx != (size_t) -1)
         return (uintptr_t) (idx * (BUDDY_MIN_BS << order));
     else
-        return (uintptr_t) NULL;
+        panic("Cannot find free buddy");
+        //return (uintptr_t) NULL;
 }
 
 void buddy_free(uintptr_t addr, size_t size)
 {
+    //printk("buddy_free(%x, %d) => ", addr, size);
+
     size_t sz = BUDDY_MIN_BS;
 
     /* FIXME */
@@ -127,14 +136,16 @@ void buddy_free(uintptr_t addr, size_t size)
 
     size_t idx = (addr / (BUDDY_MIN_BS << order)) & (sz - 1);
 
+    //printk("order = %d, idx = %d\n", order, idx);
+
     buddy_recursive_free(order, idx);
 }
 
 void buddy_dump()
 {
     for (size_t i = 0; i <= BUDDY_MAX_ORDER; ++i) {
-        size_t blocks = bitmap_size(buddies[i].bitmap.max_idx)/MEMBER_SIZE(bitmap_t, map[0]);
-        printk("Order %d: [%d blocks]\n", i, blocks);
+        size_t blocks = bitmap_size(buddies[i].bitmap.max_idx + 1)/MEMBER_SIZE(bitmap_t, map[0]);
+        printk("Order %d: [%d blocks][%d free bit(s)]\n", i, blocks, buddies[i].usable);
         for (size_t j = 0; j < blocks; ++j) {
             printk("map[%d] = %x\n", j, buddies[i].bitmap.map[j]);
         }
@@ -147,26 +158,28 @@ void buddy_setup(size_t total_mem)
     printk("Setting up Buddy System\n");
 
     size_t total_size = 0;
-    size_t blocks = total_mem / BUDDY_MAX_BS;
+    size_t bits_cnt = total_mem / BUDDY_MAX_BS;
 
     for (int i = BUDDY_MAX_ORDER; i >= 0; --i) {
-        size_t bmsize = bitmap_size(blocks);
+        size_t bmsize = bitmap_size(bits_cnt);
 
         buddies[i].bitmap.map = heap_alloc(bmsize, 4);
-        buddies[i].bitmap.max_idx = blocks;
+        buddies[i].bitmap.max_idx = bits_cnt - 1;
 
         total_size += bmsize;
             
-        blocks <<= 1;
+        bits_cnt <<= 1;
     }
 
     /* Set the heighst order as free and the rest as unusable */
     bitmap_clear_range(&buddies[BUDDY_MAX_ORDER].bitmap, 0, buddies[BUDDY_MAX_ORDER].bitmap.max_idx);
     buddies[BUDDY_MAX_ORDER].first_free_idx = 0;
+    buddies[BUDDY_MAX_ORDER].usable = buddies[BUDDY_MAX_ORDER].bitmap.max_idx + 1;
 
     for (int i = 0; i < BUDDY_MAX_ORDER; ++i) {
         bitmap_set_range(&buddies[i].bitmap, 0, buddies[i].bitmap.max_idx);
         buddies[i].first_free_idx = -1;
+        buddies[i].usable = 0;
     }
 
     /* FIXME */

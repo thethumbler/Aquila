@@ -19,7 +19,7 @@ int printf(char *fmt, ...);
 
 int main(int argc, char **argv)
 {
-	printf("Hi\n");
+	printf("Hello Norhan, from Aquila OS :D\n");
 	/*printf("argc %x\n", argc);
 	printf("argv %x\n", argv);
 	printf("%s\n", argv[0]);*/

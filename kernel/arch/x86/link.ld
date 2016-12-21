@@ -19,7 +19,7 @@ SECTIONS {
 	. += _VMA;
 
 	.text : AT(ADDR(.text) - _VMA) ALIGN(0x1000) {
-		*(.text)
+		*(.text*)
 		*(.rodata*)
 	}
 	

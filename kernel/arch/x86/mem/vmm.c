@@ -123,50 +123,58 @@ void kfree(void *_ptr)
     if(ptr < VMM_BASE)  /* That's not even allocatable */
         return;
 
-    /* Look for the node containing _ptr */
-    /* NOTE: We don't use a function for looking for the node, since we also
-       need to know the first free node of a sequence of free nodes before our
-       target node */
+    /* Look for the node containing _ptr -- merge sequential free nodes */
+    size_t cur_node = 0, prev_node = 0;
 
-    unsigned i = 0, j = -1;
-
-    while (!(ptr >= NODE_ADDR(nodes[i])
-            && ptr < (uintptr_t) (NODE_ADDR(nodes[i]) + NODE_SIZE(nodes[i])))) {
-        if (nodes[i].free) {
-            if(j == -1U) 
-                j = i; /* Set first free node index */
-        } else {
-            j = -1U; /* Invalidate first free node index */
+    while (ptr > NODE_ADDR(nodes[cur_node])) {
+        /* check if current and previous node are free */
+        if (cur_node && nodes[cur_node].free && nodes[prev_node].free) {
+            /* check for overflow */
+            if ((uintptr_t) (nodes[cur_node].size + nodes[prev_node].size) <= MAX_NODE_SIZE) {
+                nodes[prev_node].size += nodes[cur_node].size;
+                nodes[prev_node].next  = nodes[cur_node].next;
+                release_node(cur_node);
+                cur_node = nodes[prev_node].next;
+                continue;
+            }
         }
 
-        i = nodes[i].next;
-        if (i == LAST_NODE_INDEX) { /* Trying to free unallocated node */
+        prev_node = cur_node;
+        cur_node = nodes[cur_node].next;
+
+        if (cur_node == LAST_NODE_INDEX) { /* Trying to free unallocated node */
             return;
         }
     }
 
     /* First we mark our node as free */
-    nodes[i].free = 1;
+    nodes[cur_node].free = 1;
 
-    /* Now we merge all free nodes ahead */
-    unsigned n = nodes[i].next;
-    while (n < LAST_NODE_INDEX && nodes[n].free) {
-
-        /* Hello babe, we need to merge */
-        if ((uintptr_t) (nodes[n].size + nodes[i].size) <= MAX_NODE_SIZE) {
-            nodes[i].size += nodes[n].size;
-            nodes[i].next  = nodes[n].next;
-            release_node(n);
-            n = nodes[i].next;
-        } else {
-            break;
+    /* Now we merge all free nodes ahead -- except the last node */
+    while (nodes[cur_node].next < LAST_NODE_INDEX && nodes[cur_node].free) {
+        /* check if current and previous node are free */
+        if (nodes[cur_node].free && nodes[prev_node].free) {
+            /* check for overflow */
+            if ((uintptr_t) (nodes[cur_node].size + nodes[prev_node].size) <= MAX_NODE_SIZE) {
+                nodes[prev_node].size += nodes[cur_node].size;
+                nodes[prev_node].next  = nodes[cur_node].next;
+                release_node(cur_node);
+                cur_node = nodes[prev_node].next;
+                continue;
+            }
         }
+
+        prev_node = cur_node;
+        cur_node = nodes[cur_node].next;
     }
 
-    if (j != i && j != -1U)  /* I must be lucky, aren't I always ;) */
-        kfree((void *) NODE_ADDR(nodes[j]));
-    else
-        pmman.unmap(NODE_ADDR(nodes[i]), NODE_SIZE(nodes[i]));
+    cur_node = 0;
+    while (nodes[cur_node].next < LAST_NODE_INDEX) {
+        if (nodes[cur_node].free) {
+            pmman.unmap(NODE_ADDR(nodes[cur_node]), NODE_SIZE(nodes[cur_node]));
+        }
+        cur_node = nodes[cur_node].next;
+    }
 }
 
 void dump_nodes()
