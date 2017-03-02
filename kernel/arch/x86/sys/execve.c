@@ -24,30 +24,24 @@ void arch_sys_execve(proc_t *proc, int argc, char * const _argp[], int envc, cha
 	
 	int tmp_envc = envc;
 
-	for(int i = envc - 1; i >= 0; --i)
-	{
-		if(envp[i])
-		{
+	for (int i = envc - 1; i >= 0; --i) {
+		if (envp[i]) {
 			stack -= strlen(envp[i]) + 1;
 			strcpy((char *) stack, envp[i]);
 			u_envp[--tmp_envc] = (char *) stack;
-		} else
-		{
+		} else {
 			u_envp[--tmp_envc] = (char *) NULL;
 		}
 	}
 
 	int tmp_argc = argc;
 
-	for(int i = argc - 1; i >= 0; --i)
-	{
-		if(argp[i])
-		{
+	for (int i = argc - 1; i >= 0; --i) {
+		if (argp[i]) {
 			stack -= strlen(argp[i]) + 1;
 			strcpy((char *) stack, argp[i]);
 			u_argp[--tmp_argc] = (char *) stack;
-		} else
-		{
+		} else {
 			u_argp[--tmp_argc] = (char *) NULL;
 		}
 	}
