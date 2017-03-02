@@ -34,7 +34,7 @@ void ps2kbd_handler(int scancode)
 {
 	ring_write(kbd_ring, sizeof(scancode), (char*)&scancode);
 	
-	if(kbd_read_queue->count)
+	if (kbd_read_queue->count)
 		wakeup_queue(kbd_read_queue);
 }
 
@@ -44,7 +44,7 @@ void ps2kbd_register()
 	i8042_register_handler(1, ps2kbd_handler);
 }
 
-static ssize_t ps2kbd_read(struct fs_node * node __unused, off_t offset __unused, size_t size, void * buf)
+static ssize_t ps2kbd_read(struct fs_node *node __unused, off_t offset __unused, size_t size, void *buf)
 {
 	return ring_read(kbd_ring, size, buf);
 }
@@ -54,34 +54,36 @@ int ps2kbd_probe()
 	ps2kbd_register();
 	kbd_ring = new_ring(BUF_SIZE);
 
-	struct fs_node * kbd = vfs.create(dev_root, "kbd");
+	struct fs_node *kbd = vfs.create(dev_root, "kbd");
 
 	kbd->dev = &ps2kbddev;
+    kbd->read_queue = kbd_read_queue;
 
 	return 0;
 }
 
 /* File Operations */
 
-static int ps2kbd_file_open(struct file * file)
+static int ps2kbd_file_open(struct file *file)
 {
-	if(proc) /* Only one process can open kbd */
+	if (proc) /* Only one process can open kbd */
 		return -EACCES;
 
 	proc = cur_proc;
 	return generic_file_open(file);
 }
 
-dev_t ps2kbddev = (dev_t)
-{
+dev_t ps2kbddev = (dev_t) {
 	.name  = "kbddev",
 	.type  = CHRDEV,
 	.probe = ps2kbd_probe,
 	.read  = ps2kbd_read,
 
-	.f_ops = 
-	{
+	.f_ops = {
 		.open = ps2kbd_file_open,
 		.read = generic_file_read,
+        .can_read = __can_always,
+        .can_write = __can_never,
+        .eof = __eof_never
 	},
 };
