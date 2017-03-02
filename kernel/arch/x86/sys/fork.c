@@ -62,7 +62,6 @@ void arch_sys_fork(proc_t *proc)
 
     /* Copying stack in SATCK_BUF blocks */
     void *stack_buf = kmalloc(STACK_BUF);
-    printk("stack_buf = %x => %x\n", stack_buf, (char *) stack_buf + STACK_BUF);
 
     for (uint32_t i = 0; i < USER_STACK_SIZE/STACK_BUF; ++i) {
         switch_page_directory(cur_proc_pd);
