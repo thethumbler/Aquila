@@ -34,12 +34,10 @@ static void *mount(uintptr_t paddr)
 
 static uintptr_t get_frame()
 {
-    printk("calling buddy_alloc(%d)\n", PAGE_SIZE);
     uintptr_t page = buddy_alloc(PAGE_SIZE);
     mount(page);
     memset(MOUNT_ADDR, 0, PAGE_SIZE);
 
-    printk("get_frame() => %x\n", page);
     return page;
 }
 
