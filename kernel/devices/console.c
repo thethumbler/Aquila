@@ -29,8 +29,7 @@ static void scroll(int n)
 	memcpy(VGA_START, VGA_START + 160 * n, 160 * (25 - n));
 	vga = VGA_START + 160 * (25 - n);
 
-	for(int i = 0; i < 80 * n; ++i)
-	{
+	for (int i = 0; i < 80 * n; ++i) {
 		vga[2 * i + 0] = '\0';
 		vga[2 * i + 1] = 0x07;
 	}
@@ -49,7 +48,7 @@ static ssize_t console_write(struct fs_node *dev __unused, off_t offset __unused
 {
 	for (size_t i = 0; i < size; ++i) {
 		
-		char c = ((char *)buf)[i];
+		char c = ((char *) buf)[i];
 
 		switch (c) {
 			case '\0':	/* Null-character */
@@ -81,7 +80,6 @@ static ssize_t console_write(struct fs_node *dev __unused, off_t offset __unused
 static int console_probe()
 {
 	struct fs_node *console = vfs.create(dev_root, "console");
-
 	console->dev = &condev;
 
 	return 0;
