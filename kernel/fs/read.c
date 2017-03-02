@@ -54,8 +54,7 @@ ssize_t generic_file_read(struct file *file, void *buf, size_t size)
 			/* Can not satisfy read operation, would block */
 			return -EAGAIN;
 		}
-	}
-	else {	/* Blocking I/O */
+	} else {	/* Blocking I/O */
 		
 		size_t retval = size;
 		
@@ -63,11 +62,11 @@ ssize_t generic_file_read(struct file *file, void *buf, size_t size)
 
 			size -= file->node->fs->read(file->node, file->offset, size, buf);
 
-			if(file->node->type == FS_PIPE && size != retval)
+			if (file->node->type == FS_PIPE && size != retval)
 				break;
 
 			/* No bytes left to read, or reached END-OF-FILE */
-			if(!size || file->node->fs->f_ops.eof(file))	/* Done reading */
+			if (!size || file->node->fs->f_ops.eof(file))	/* Done reading */
 				break;
 
 			/* Sleep on the file readers queue */
@@ -81,7 +80,7 @@ ssize_t generic_file_read(struct file *file, void *buf, size_t size)
 		file->offset += retval;
 
 		/* Wake up all sleeping writers if a `write_queue' is attached */
-		if(file->node->write_queue)
+		if (file->node->write_queue)
 			wakeup_queue(file->node->write_queue);
 
 		return retval;
