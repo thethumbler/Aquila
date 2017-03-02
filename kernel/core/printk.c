@@ -118,6 +118,13 @@ int vprintk(char *fmt, va_list args)
 				case 'x': /* Hexadecimal */
 					ret += putx((uint32_t)va_arg(args, uint32_t));
 					break;
+                case 'p': /* Pointer */
+#if ARCH_BITS == 32
+                    ret += putx((uint32_t)va_arg(args, uint32_t));
+#elif ARCH_BITS == 64 
+                    ret += putlx((uint64_t)va_arg(args, uint64_t));
+#endif
+                    break;
 				default:
 					ret += putc(*(--fmt));
 			}
