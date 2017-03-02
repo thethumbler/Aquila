@@ -23,10 +23,10 @@
 void load_ramdisk(module_t *rd_module)
 {
 	/* Ramdisk is the first module */
-	void *ramdisk = (void*) rd_module->addr;
+	void *ramdisk = (void *) rd_module->addr;
 	size_t ramdisk_size = rd_module->size;
 
-	printk("ramdisk %x [%d]\n", ramdisk, ramdisk_size);
+	printk("ramdisk 0x%p [%d]\n", ramdisk, ramdisk_size);
 
 	ramdev_private_t *p = kmalloc(sizeof(ramdev_private_t));
 	*p = (ramdev_private_t){.addr = ramdisk};
@@ -34,7 +34,7 @@ void load_ramdisk(module_t *rd_module)
 	struct fs_node * node = kmalloc(sizeof(struct fs_node));
 
 	*node = (struct fs_node) {
-		.name = "ram0",
+		.name = "ramdisk",
 		.type = FS_DIR,
 		.fs   = &devfs,
 		.dev  = &ramdev,
@@ -42,7 +42,7 @@ void load_ramdisk(module_t *rd_module)
 		.p    = p,
 	};
 
-	struct fs_node * root = initramfs.load(node);
+	struct fs_node *root = initramfs.load(node);
 	
 	if (!root)
 		panic("Could not load ramdisk\n");

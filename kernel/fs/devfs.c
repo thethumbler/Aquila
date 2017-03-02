@@ -86,8 +86,7 @@ static struct fs_node *devfs_find(struct fs_node *dir, const char *fn)
 	if (!_dir)	/* Directory not initialized */
 		return NULL;
 
-	forlinked(file, _dir, file->next)
-	{
+	forlinked (file, _dir, file->next) {
 		if (!strcmp(file->node->name, fn))
 			return file->node;
 	}
@@ -124,7 +123,7 @@ static ssize_t devfs_file_write(struct file *file, void *buf, size_t size)
 
 static int devfs_file_eof(struct file *file)
 {
-	if(!file->node->dev)
+	if (!file->node->dev)
 		return -ENXIO;
 
 	return file->node->dev->f_ops.eof(file);
