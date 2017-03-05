@@ -20,9 +20,10 @@ int printf(char *fmt, ...);
 int main(int argc, char **argv)
 {
 	printf("Hello World!, from Aquila OS :D\n");
-	/*printf("argc %x\n", argc);
+	printf("argc %d\n", argc);
 	printf("argv %x\n", argv);
-	printf("%s\n", argv[0]);*/
+    for (int i = 0; i < argc; ++i)
+        printf("argv[%d]: %s\n", i, argv[i]);
 	for(;;);
 }
 
@@ -32,7 +33,7 @@ _start: \n\
 	pop %eax \n\
 	mov %esp, %ebx \n\
 	push %ebx \n\
-	push %ecx \n\
+	push %eax \n\
 	call main \n\
 	jmp . \n\
 ");

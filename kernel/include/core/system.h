@@ -31,6 +31,7 @@ typedef long int ssize_t;
 
 #define ARCH_X86
 #define ARCH X86
+#define ARCH_BITS 32
 //#define X86_PAE	1
 
 #if ARCH==X86

@@ -8,12 +8,15 @@
 #define O_WRONLY  01
 #define O_RDWR    02
 
-#define SYS_FORK	2	
-#define SYS_OPEN	3
-#define SYS_READ	4
-#define SYS_WRITE	5
-#define SYS_IOCTL	6
-#define SYS_EXECVE	7
+#define SYS_FORK	4	
+#define SYS_OPEN	11
+#define SYS_READ	12
+#define SYS_WRITE	18
+#define SYS_IOCTL	19
+#define SYS_EXECVE	3
+#define SYS_GETPID  6
+#define SYS_KILL    8 
+#define SYS_SIGNAL  20 
 
 int syscall(int s, long arg1, long arg2, long arg3)
 {
@@ -52,8 +55,26 @@ int execve(const char *name, char * const argp[], char * const envp[])
 	return syscall(SYS_EXECVE, name, argp, envp);
 }
 
-char kbd_us[] = 
+int getpid()
 {
+    return syscall(SYS_GETPID, 0, 0, 0);
+}
+
+int kill(int pid, int sig)
+{
+	int ret;
+	asm("int $0x80;":"=a"(ret):"a"(SYS_KILL), "b"(pid), "c"(sig));
+	return ret;
+    //for (;;);
+    //return syscall(SYS_KILL, pid, sig, 0);
+}
+
+int signal(int sig, void (*func)(int))
+{
+    return syscall(SYS_SIGNAL, sig, func, 0);
+}
+
+char kbd_us[] = {
 	'\0', 0, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
 	'\t', 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n',
 	'\0', 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'',
@@ -63,22 +84,44 @@ char kbd_us[] =
 
 int printf(char *fmt, ...);
 
+void sig_handler(int sig)
+{
+    printf("sig_handler(%d)\n", sig);
+}
+
 void _start()
 {
 	int pty = open("/dev/ptmx", O_RDWR);
+    int con = open("/dev/console", O_WRONLY);
+    int kbd = open("/dev/kbd", O_RDONLY);
+
+    printf("Hello, World\n");
+    printf("pid = %d\n", getpid());
+    signal(1, sig_handler);
+    kill(1, 1);
+
+    for (;;);
+
+    for (;;) {
+        int scancode;
+        while(read(kbd, &scancode, sizeof(scancode)) <= 0);
+        printf("%d ", scancode);
+    }
+
+    for (;;);
 	int pid = fork();
 
-	if(pid) {	/* parent */
+	if (pid) {	/* parent */
 		int console = open("/dev/console", O_WRONLY); /* stdout */
 		char buf[50];
-		for(int i = 0; i < 50 && buf[i]; buf[i] = 0, ++i);
 		int r;
-		while((r = read(pty, buf, 50)) <= 0)
-			printf("r = -%d\n", -r);
-		printf("%s", buf);
+        for (;;) {
+            for (int i = 0; i < 50; ++i) buf[i] = 0;
+            while((r = read(pty, buf, 50)) <= 0);
+            printf("%s", buf);
+        }
 
-	} else	/* child */
-	{
+	} else {	/* child */
 		int pts_id;
 		ioctl(pty, TIOCGPTN, &pts_id);
 

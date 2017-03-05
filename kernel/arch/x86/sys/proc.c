@@ -45,6 +45,11 @@ void arch_switch_proc(proc_t *proc)
 
     set_kernel_stack(arch->kstack);
 
+    if (proc->signals_queue->count) {
+        printk("There are %d pending signals\n", proc->signals_queue->count);
+        for (;;);
+    }
+
     extern void x86_goto(uintptr_t eip, uintptr_t ebp, uintptr_t esp) __attribute__((noreturn));
     x86_goto(arch->eip,  arch->ebp, arch->esp);
 }

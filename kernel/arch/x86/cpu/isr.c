@@ -95,6 +95,16 @@ void interrupt(regs_t *regs)
 		return;
 	}
 
+    if (regs->eip == 0x0FFF) {  /* Signal return */
+        printk("Returned from signal [regs=0x%p]\n", regs);
+        extern void return_from_signal(void) __attribute__((noreturn));
+        return_from_signal();
+        //memcpy(regs, (regs_t *)((uintptr_t) regs + 0xb4), sizeof(regs_t));
+        //set_kernel_stack((uintptr_t) regs + 0xb4);
+        //return;
+        //regs = (regs_t *)((uintptr_t) regs + 0xb4);
+    }
+
 	const char *msg = int_msg[int_num];
 	printk("Recieved interrupt [%d] [err:%d] : %s\n", int_num, err_num, msg);
 	printk("Kernel exception\n"); /* That's bad */
@@ -111,7 +121,7 @@ void interrupt(regs_t *regs)
 	printk("eflags = %x\n", regs->eflags);
 	printk("esp = %x\n", regs->esp);
 	printk("ss  = %x\n", regs->ss);
-	for(;;);
+	for (;;);
 }
 
 void isr_setup()
