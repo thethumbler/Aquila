@@ -6,14 +6,12 @@
 #include <mm/mm.h>
 
 typedef struct queue queue_t;
-struct queue_node
-{
+struct queue_node {
 	void *value;
 	struct queue_node *next;
 } __packed;
 
-struct queue
-{
+struct queue {
 	size_t count;
 	struct queue_node *head;
 	struct queue_node *tail;
@@ -25,11 +23,9 @@ static inline void enqueue(queue_t *queue, void *value)
 	node->value = value;
 	node->next = NULL;
 
-	if(!queue->count)	/* Queue is not initalized */
-	{
+	if (!queue->count) {	/* Queue is not initalized */
 		queue->head = queue->tail = node;
-	} else
-	{
+	} else {
 		queue->tail->next = node;
 		queue->tail = node;
 	}
@@ -39,7 +35,7 @@ static inline void enqueue(queue_t *queue, void *value)
 
 static inline void *dequeue(queue_t *queue)
 {
-	if(!queue->count)	/* Queue is empty! */
+	if (!queue->count)	/* Queue is empty! */
 		return NULL;
 
 	--queue->count;
