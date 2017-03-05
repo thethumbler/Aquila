@@ -7,7 +7,7 @@ include config
 CC := gcc
 PDIR != pwd
 CFLAGS := -std=gnu99 -I $(PDIR) -I $(PDIR)/include/ -nostdlib -ffreestanding -m32 \
-		  -O3 -Wall -Wextra -Werror -funsigned-bitfields -fuse-ld=bfd -fdump-rtl-expand
+		  -O3 -Wall -Wextra -Werror -funsigned-bitfields -fuse-ld=bfd
 		  #-no-vec
 
 AS := $(CC)

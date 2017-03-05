@@ -360,13 +360,13 @@ void arch_pmm_setup()
 #if !defined(X86_PAE) || !X86_PAE
     if (features.pse) {
         //write_cr4(read_cr4() | CR4_PSE);
-        printk("Found PSE support\n");
+        printk("[0] Kernel: PMM -> Found PSE support\n");
     }
 #else   /* PAE -- not yet implemented */
     if (features.pae) {
-        printk("Found PAE support\n");
+        printk("[0] Kernel: PMM -> Found PAE support\n");
     } else if(features.pse) {
-        printk("Found PSE support\n");
+        printk("[0] Kernel: PMM -> Found PSE support\n");
     }
 #endif
 

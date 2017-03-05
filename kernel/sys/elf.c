@@ -19,7 +19,6 @@
 /* Loads an elf file into a new process skeleton */
 proc_t *load_elf(const char *fn)
 {
-    printk("load_elf(%s)\n", fn);
     void *arch_specific_data = arch_load_elf();
 
     struct fs_node *file = vfs.find(vfs_root, fn);
