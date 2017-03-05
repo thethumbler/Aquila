@@ -37,18 +37,18 @@ void spawn_init(proc_t *init)
 
 void schedule() /* Called from arch-specific timer event handler */
 {
-    if(!ready_queue)    /* How did we even get here? */
+    if (!ready_queue)    /* How did we even get here? */
         panic("Processes queue is not initialized");
 
-    if(!kidle) make_ready(cur_proc);
+    if (!kidle) make_ready(cur_proc);
     kidle = 0;
 
-    if(!ready_queue->count) /* No ready processes, idle */
+    if (!ready_queue->count) /* No ready processes, idle */
         kernel_idle();
 
     cur_proc = dequeue(ready_queue);
 
-    if(cur_proc->spawned)
+    if (cur_proc->spawned)
         arch_switch_proc(cur_proc);
     else
         spawn_proc(cur_proc);

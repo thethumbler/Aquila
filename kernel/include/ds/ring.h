@@ -6,8 +6,7 @@
 
 #define INDEX(ring, i) ((i) % ((ring)->size))
 
-typedef struct ring
-{
+typedef struct ring {
 	char *buf;
 	size_t size;
 	size_t head;
@@ -25,11 +24,10 @@ static inline size_t ring_read(ring_t *ring, size_t n, char *buf)
 {
 	size_t size = n;
 
-	while(n)
-	{
-		if(ring->head == ring->tail)	/* Ring is empty */
+	while (n) {
+		if (ring->head == ring->tail)	/* Ring is empty */
 			break;
-		if(ring->head == ring->size)
+		if (ring->head == ring->size)
 			ring->head = 0;
 		*buf++ = ring->buf[ring->head++];
 		n--;
