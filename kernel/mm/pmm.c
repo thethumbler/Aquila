@@ -18,7 +18,7 @@ char *kernel_heap = NULL;
 
 void pmm_setup(struct boot *boot)
 {
-    printk("Total memory: %d KiB, %d MiB\n", boot->total_mem, boot->total_mem / 1024);
+    printk("[0] Kernel: PMM -> Total memory: %d KiB, %d MiB\n", boot->total_mem, boot->total_mem / 1024);
 
     arch_pmm_setup();
 

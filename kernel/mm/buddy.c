@@ -155,7 +155,7 @@ void buddy_dump()
 
 void buddy_setup(size_t total_mem)
 {
-    printk("Setting up Buddy System\n");
+    printk("[0] Kernel: PMM -> Setting up Buddy System\n");
 
     size_t total_size = 0;
     size_t bits_cnt = total_mem / BUDDY_MAX_BS;

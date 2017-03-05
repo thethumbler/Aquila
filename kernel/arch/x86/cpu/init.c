@@ -27,27 +27,27 @@ int cpus_count;
 void cpu_init()
 {
     early_console_init();
-    printk("Welcome to Aquila OS!\n");
+    printk("[0] Kernel: Welcome to Aquila OS!\n");
 
-    printk("Installing GDT\n");
+    printk("[0] Kernel: Installing GDT\n");
     gdt_setup();
 
-    printk("Installing IDT\n");
+    printk("[0] Kernel: Installing IDT\n");
     idt_setup();
 
-    printk("Installing ISRs\n");
+    printk("[0] Kernel: Installing ISRs\n");
     isr_setup();
 
-    printk("Setting up PIC\n");
+    printk("[0] Kernel: Setting up PIC\n");
     pic_setup();
 
-    printk("Processing multiboot info\n");
+    printk("[0] Kernel: Processing multiboot info\n");
     struct boot *boot = process_multiboot_info(multiboot_info);
 
-    printk("Setting up Physical Memory Manager (PMM)\n");
+    printk("[0] Kernel: Setting up Physical Memory Manager (PMM)\n");
     pmm_setup(boot);
 
-    printk("Setting up Virtual Memory Manager (VMM)\n");
+    printk("[0] Kernel: Setting up Virtual Memory Manager (VMM)\n");
     vmm_setup();
 
     extern volatile uint32_t *BSP_PD;
