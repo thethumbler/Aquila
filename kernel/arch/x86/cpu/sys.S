@@ -183,3 +183,11 @@ x86_sleep:
 x86_fork_return:
 	pop_context
 	iret
+
+.global return_from_signal
+return_from_signal:
+    addl $0xdc, %esp    /* Fix stack pointer */
+    pop_context
+    iret
+
+// vim: ft=gas:

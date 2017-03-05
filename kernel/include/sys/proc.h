@@ -11,8 +11,7 @@
 
 #define FDS_COUNT	64
 
-typedef enum 
-{
+typedef enum {
 	RUNNABLE,
 	ISLEEP,	/* Interruptable SLEEP (I/O) */
 	USLEEP,	/* Uninterruptable SLEEP (Waiting for event) */
@@ -21,8 +20,7 @@ typedef enum
 } state_t;
 
 typedef struct proc proc_t;
-struct proc
-{
+struct proc {
 	char		*name;
 	pid_t 		pid;	/* Process identifier */
 	state_t		state;
@@ -33,6 +31,8 @@ struct proc
 	uintptr_t	entry;	/* Process entry point */	
 
 	void		*arch;	/* Arch specific data */
+    queue_t     *signals_queue; /* Recieved Signals Queue */
+    uintptr_t   signal_handler[22];
 
 	/* Process flags */
 	int			spawned : 1;
@@ -49,6 +49,7 @@ proc_t *fork_proc(proc_t *proc);
 proc_t *execve_proc(proc_t *proc, const char *fn, char * const argv[], char * const env[]);
 
 /* sys/proc.h */
+proc_t *get_proc_by_pid(pid_t pid);
 int validate_ptr(proc_t *proc, void *ptr);
 int get_fd(proc_t *proc);
 void release_fd(proc_t *proc, int fd);

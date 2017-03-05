@@ -15,6 +15,7 @@
 
 #include <sys/proc.h>
 #include <sys/sched.h>
+#include <sys/signal.h>
 
 #include <bits/errno.h>
 
@@ -27,6 +28,25 @@ static void sys_exit(int code __unused)
     //kernel_idle();
 }
 
+static void sys_close()
+{
+
+}
+
+static void sys_execve(const char *name, char *const argp[], char *const envp[])
+{
+    printk("[%d] %s: execve(name=%s, argp=0x%p, envp=0x%p)\n", cur_proc->pid, cur_proc->name, name, argp, envp);
+
+    char *fn = strdup(name);
+    proc_t *p = execve_proc(cur_proc, fn, argp, envp);
+    kfree(fn);
+
+    if (!p)
+        arch_syscall_return(cur_proc, -1);
+    else
+        spawn_proc(p);
+}
+
 static void sys_fork()
 {
     printk("[%d] %s: fork()\n", cur_proc->pid, cur_proc->name);
@@ -36,9 +56,43 @@ static void sys_fork()
         make_ready(fork);
 }
 
+static void sys_fstat()
+{
+
+}
+
+static void sys_getpid()
+{
+    printk("[%d] %s: getpid()\n", cur_proc->pid, cur_proc->name);
+    arch_syscall_return(cur_proc, cur_proc->pid);
+}
+
+static void sys_isatty()
+{
+
+}
+
+static void sys_kill(pid_t pid, int sig)
+{
+    printk("[%d] %s: kill(pid=%d, sig=%d)\n", cur_proc->pid, cur_proc->name, pid, sig);
+    int ret = send_signal(pid, sig);
+    arch_syscall_return(cur_proc, ret);
+    return;
+}
+
+static void sys_link()
+{
+
+}
+
+static void sys_lseek()
+{
+
+}
+
 static void sys_open(const char *fn, int flags)
 {
-    printk("[%d] %s: open(file=%s, flags=%x)\n", cur_proc->pid, cur_proc->name, fn, flags);
+    printk("[%d] %s: open(file=%s, flags=0x%x)\n", cur_proc->pid, cur_proc->name, fn, flags);
     
     /* Look up the file */
     struct fs_node *node = vfs.find(vfs_root, fn);
@@ -76,7 +130,7 @@ static void sys_open(const char *fn, int flags)
 
 static void sys_read(int fd, void *buf, size_t count)
 {
-    printk("[%d] %s: read(fd=%d, buf=%x, count=%d)\n", cur_proc->pid, cur_proc->name, fd, buf, count);
+    printk("[%d] %s: read(fd=%d, buf=0x%p, count=%d)\n", cur_proc->pid, cur_proc->name, fd, buf, count);
     
     if (fd >= FDS_COUNT) {  /* Out of bounds */
         arch_syscall_return(cur_proc, -EBADFD);
@@ -96,11 +150,36 @@ static void sys_read(int fd, void *buf, size_t count)
     return;
 }
 
+static void sys_sbrk()
+{
+
+}
+
+static void sys_stat()
+{
+
+}
+
+static void sys_times()
+{
+
+}
+
+static void sys_unlink()
+{
+
+}
+
+static void sys_wait()
+{
+
+}
+
 static void sys_write(int fd, void *buf, size_t count)
 {
-    printk("[%d] %s: write(fd=%d, buf=%x, count=%d)\n", cur_proc->pid, cur_proc->name, fd, buf, count);
+    printk("[%d] %s: write(fd=%d, buf=0x%p, count=%d)\n", cur_proc->pid, cur_proc->name, fd, buf, count);
     
-    if(fd >= FDS_COUNT) {   /* Out of bounds */
+    if (fd >= FDS_COUNT) {   /* Out of bounds */
         arch_syscall_return(cur_proc, -EBADFD);
         return; 
     }
@@ -108,7 +187,6 @@ static void sys_write(int fd, void *buf, size_t count)
     struct fs_node *node = cur_proc->fds[fd].node;
     
     if (!node) {    /* Invalid File Descriptor */
-        printk("Wooh!\n");
         arch_syscall_return(cur_proc, -EBADFD);
         return;
     }
@@ -121,33 +199,42 @@ static void sys_write(int fd, void *buf, size_t count)
 
 static void sys_ioctl(int fd, unsigned long request, void *argp)
 {
+    printk("[%d] %s: ioctl(fd=%d, request=%ld, argp=0x%p)\n", cur_proc->pid, cur_proc->name, fd, request, argp);
+
     struct fs_node *node = cur_proc->fds[fd].node;
 
     int ret = vfs.ioctl(node, request, argp);
     arch_syscall_return(cur_proc, ret);
 }
 
-static void sys_execve(const char *name, char *const argp[], char *const envp[])
+static void sys_signal(int sig, void (*func)(int))
 {
-    printk("[%d] %s: execve(name=%s, argp=%x, envp=%x)\n", cur_proc->pid, cur_proc->name, name, argp, envp);
-
-    char *fn = strdup(name);
-    proc_t *p = execve_proc(cur_proc, fn, argp, envp);
-    kfree(fn);
-
-    if (!p)
-        arch_syscall_return(cur_proc, -1);
-    else
-        spawn_proc(p);
+    printk("[%d] %s: signal(sig=%d, func=0x%p)\n", cur_proc->pid, cur_proc->name, sig, func);
+    uintptr_t ret = cur_proc->signal_handler[sig];
+    cur_proc->signal_handler[sig] = (uintptr_t) func;
+    arch_syscall_return(cur_proc, ret);
 }
 
 void (*syscall_table[])() =  {
-    NULL,
-    sys_exit,
-    sys_fork,
-    sys_open,
-    sys_read,
-    sys_write,
-    sys_ioctl,
-    sys_execve,
+    /* 00 */    NULL,
+    /* 01 */    sys_exit,
+    /* 02 */    sys_close,
+    /* 03 */    sys_execve,
+    /* 04 */    sys_fork,
+    /* 05 */    sys_fstat,
+    /* 06 */    sys_getpid,
+    /* 07 */    sys_isatty,
+    /* 08 */    sys_kill,
+    /* 09 */    sys_link,
+    /* 10 */    sys_lseek,
+    /* 11 */    sys_open,
+    /* 12 */    sys_read,
+    /* 13 */    sys_sbrk,
+    /* 14 */    sys_stat,
+    /* 15 */    sys_times,
+    /* 16 */    sys_unlink,
+    /* 17 */    sys_wait,
+    /* 18 */    sys_write,
+    /* 19 */    sys_ioctl,
+    /* 20 */    sys_signal,
 };
