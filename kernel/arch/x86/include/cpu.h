@@ -42,6 +42,23 @@ typedef struct {
 	eip, cs, eflags, esp, ss;
 } __packed regs_t;
 
+static inline void x86_dump_registers(regs_t *regs)
+{
+	printk("Registers dump:\n");
+	printk("edi = %x\n", regs->edi);
+	printk("esi = %x\n", regs->esi);
+	printk("ebp = %x\n", regs->ebp);
+	printk("ebx = %x\n", regs->ebx);
+	printk("ecx = %x\n", regs->ecx);
+	printk("edx = %x\n", regs->edx);
+	printk("eax = %x\n", regs->eax);
+	printk("eip = %x\n", regs->eip);
+	printk("cs  = %x\n", regs->cs );
+	printk("eflags = %x\n", regs->eflags);
+	printk("esp = %x\n", regs->esp);
+	printk("ss  = %x\n", regs->ss);
+}
+
 struct cpu {
 	int id;
 	struct cpu_features features;

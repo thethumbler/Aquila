@@ -96,6 +96,8 @@ void interrupt(regs_t *regs)
 	}
 
     if (regs->eip == 0x0FFF) {  /* Signal return */
+		//x86_proc_t *arch = cur_proc->arch;
+        //arch->kstack += 0xb4;
         printk("Returned from signal [regs=0x%p]\n", regs);
         extern void return_from_signal(void) __attribute__((noreturn));
         return_from_signal();
@@ -108,19 +110,7 @@ void interrupt(regs_t *regs)
 	const char *msg = int_msg[int_num];
 	printk("Recieved interrupt [%d] [err:%d] : %s\n", int_num, err_num, msg);
 	printk("Kernel exception\n"); /* That's bad */
-	printk("Registers dump:\n");
-	printk("edi = %x\n", regs->edi);
-	printk("esi = %x\n", regs->esi);
-	printk("ebp = %x\n", regs->ebp);
-	printk("ebx = %x\n", regs->ebx);
-	printk("ecx = %x\n", regs->ecx);
-	printk("edx = %x\n", regs->edx);
-	printk("eax = %x\n", regs->eax);
-	printk("eip = %x\n", regs->eip);
-	printk("cs  = %x\n", regs->cs );
-	printk("eflags = %x\n", regs->eflags);
-	printk("esp = %x\n", regs->esp);
-	printk("ss  = %x\n", regs->ss);
+    x86_dump_registers(regs);
 	for (;;);
 }
 

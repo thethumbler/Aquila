@@ -86,7 +86,7 @@ int printf(char *fmt, ...);
 
 void sig_handler(int sig)
 {
-    printf("sig_handler(%d)\n", sig);
+    printf("%s(%d)\n", "sig_handler", sig);
 }
 
 void _start()
@@ -99,6 +99,7 @@ void _start()
     printf("pid = %d\n", getpid());
     signal(1, sig_handler);
     kill(1, 1);
+    printf("After kill\n");
 
     for (;;);
 

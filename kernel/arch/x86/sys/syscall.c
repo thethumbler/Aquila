@@ -6,9 +6,6 @@
 
 void arch_syscall(regs_t *r)
 {
-    if (r->eax == 8) {
-        printk("Current esp: 0x%p\n", r->esp);
-    }
 	/* FIXME: Add some out-of-bounds checking code here */
 	void (*syscall)() = syscall_table[r->eax];
 	syscall(r->ebx, r->ecx, r->edx);
