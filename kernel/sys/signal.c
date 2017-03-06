@@ -20,8 +20,6 @@
 int send_signal(pid_t pid, int signal)
 {
     if (cur_proc->pid == pid) {
-        printk("Process signaled itself\n");
-        printk("Shall execute function 0x%p\n", cur_proc->signal_handler[signal]);
         arch_handle_signal(signal);
         return 0;
     } else {

@@ -3,6 +3,7 @@
 #include <sys/signal.h>
 #include <sys/proc.h>
 #include <sys/sched.h>
+#include <cpu/cpu.h>
 
 void arch_handle_signal(int sig)
 {
@@ -17,17 +18,20 @@ void arch_handle_signal(int sig)
     asm("mov %%esp, %0":"=r"(esp)); /* read esp */
     asm("mov %%ebp, %0":"=r"(ebp)); /* read ebp */
 
+    //arch->kstack = esp;
     set_kernel_stack(esp);
 
+    uintptr_t sig_esp = arch->regs->esp;
+
     /* Push signal number */
-    arch->esp -= sizeof(int);
-    *(int *) arch->esp = sig;
+    sig_esp -= sizeof(int);
+    *(int *) sig_esp = sig;
 
     /* Push return address */
-    arch->esp -= sizeof(uintptr_t);
-    *(uintptr_t *) arch->esp = 0x0FFF;
-    printk("arch->esp = 0x%p\n", arch->esp);
+    sig_esp -= sizeof(uintptr_t);
+    *(uintptr_t *) sig_esp = 0x0FFF;
+    x86_dump_registers(arch->regs);
 
     extern void x86_jump_user(uintptr_t eax, uintptr_t eip, uintptr_t cs, uintptr_t eflags, uintptr_t esp, uintptr_t ss) __attribute__((noreturn));
-    x86_jump_user(arch->eax, handler, X86_CS, arch->eflags, arch->esp, X86_SS);
+    x86_jump_user(0, handler, X86_CS, arch->eflags, sig_esp, X86_SS);
 }
