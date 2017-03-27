@@ -35,6 +35,12 @@ static void *mount(uintptr_t paddr)
 static uintptr_t get_frame()
 {
     uintptr_t page = buddy_alloc(PAGE_SIZE);
+
+    if (!page) {
+        //buddy_dump();
+        panic("Could not allocate frame");
+    }
+
     mount(page);
     memset(MOUNT_ADDR, 0, PAGE_SIZE);
 
@@ -43,7 +49,9 @@ static uintptr_t get_frame()
 
 void release_frame(uintptr_t i)
 {
-    buddy_free(i, PAGE_SIZE);
+    /* Release frame if it's mapped */
+    if (i & 0x1)
+        buddy_free(i, PAGE_SIZE);
 }
 
 uintptr_t get_frame_no_clr()
@@ -53,7 +61,7 @@ uintptr_t get_frame_no_clr()
 
 static int map_to_physical(uintptr_t ptr, size_t size, int flags)
 {
-    //printk("map_to_physical(%x, %d, %d)\n", ptr, size, flags);
+    //printk("map_to_physical(ptr=%p, size=0x%x, flags=%x)\n", ptr, size, flags);
     size += ptr & PAGE_MASK;
     ptr &= ~PAGE_MASK;
     size_t nr = (size + PAGE_MASK) / PAGE_SIZE;
@@ -95,11 +103,11 @@ static int map_to_physical(uintptr_t ptr, size_t size, int flags)
         while (pages--) {   /* Repeat as long as we still have pages to allocate */
             /* Allocate page if it is not already allocated
                Note that get_frame_no_clr() does not mount the page */
-            if(!(page_table[pindex] & 1))
+            if (!(page_table[pindex] & 1))
                 page_table[pindex] = get_frame_no_clr() | flags;
 
             ++pindex;
-            if(pindex == 1024) break; /* Get out once the table is filled */
+            if (pindex == 1024) break; /* Get out once the table is filled */
         }
 
         pindex = 0; /* Now we are pointing to a new table so we clear pindex */
@@ -355,14 +363,15 @@ void arch_pmm_setup()
     extern char *kernel_heap;
     kernel_heap = VMA(lower_kernel_heap);
 
-    struct cpu_features features = get_cpu_features();
+    struct cpu_features features;
+    get_cpu_features(&features);
 
 #if !defined(X86_PAE) || !X86_PAE
     if (features.pse) {
         //write_cr4(read_cr4() | CR4_PSE);
         printk("[0] Kernel: PMM -> Found PSE support\n");
     }
-#else   /* PAE -- not yet implemented */
+#else   /* PAE */
     if (features.pae) {
         printk("[0] Kernel: PMM -> Found PAE support\n");
     } else if(features.pse) {
@@ -370,10 +379,9 @@ void arch_pmm_setup()
     }
 #endif
 
-    /* Fix pointer to BSP_PD */
-    //extern volatile uint32_t *_BSP_PD;
-
     BSP_PD = (uint32_t *) VMA(read_cr3());
-    BSP_PD[1023] = LMA((uint32_t) BSP_LPT) | 3;
+    BSP_PD[1023] = LMA((uint32_t) BSP_LPT) | P | RW;
     TLB_flush();
+
+    for (;;);
 }

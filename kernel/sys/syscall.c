@@ -28,14 +28,23 @@ static void sys_exit(int code __unused)
     //kernel_idle();
 }
 
-static void sys_close()
+static void sys_close(int fd)
 {
+    printk("[%d] %s: close(fd=%d)\n", cur_proc->pid, cur_proc->name, fd);
 
+    if (fd >= FDS_COUNT) {  /* Out of bounds */
+        arch_syscall_return(cur_proc, -EBADFD);
+        return; 
+    }
+
+    cur_proc->fds[fd].node = NULL;  /* FIXME */
+    arch_syscall_return(cur_proc, 0);
+    return;
 }
 
 static void sys_execve(const char *name, char *const argp[], char *const envp[])
 {
-    printk("[%d] %s: execve(name=%s, argp=0x%p, envp=0x%p)\n", cur_proc->pid, cur_proc->name, name, argp, envp);
+    printk("[%d] %s: execve(name=%s, argp=%p, envp=%p)\n", cur_proc->pid, cur_proc->name, name, argp, envp);
 
     char *fn = strdup(name);
     proc_t *p = execve_proc(cur_proc, fn, argp, envp);
@@ -52,6 +61,9 @@ static void sys_fork()
     printk("[%d] %s: fork()\n", cur_proc->pid, cur_proc->name);
 
     proc_t *fork = fork_proc(cur_proc);
+
+    /* Returns are handled inside fork_proc */
+
     if (fork)
         make_ready(fork);
 }
@@ -130,7 +142,7 @@ static void sys_open(const char *fn, int flags)
 
 static void sys_read(int fd, void *buf, size_t count)
 {
-    printk("[%d] %s: read(fd=%d, buf=0x%p, count=%d)\n", cur_proc->pid, cur_proc->name, fd, buf, count);
+    printk("[%d] %s: read(fd=%d, buf=%p, count=%d)\n", cur_proc->pid, cur_proc->name, fd, buf, count);
     
     if (fd >= FDS_COUNT) {  /* Out of bounds */
         arch_syscall_return(cur_proc, -EBADFD);
@@ -150,9 +162,13 @@ static void sys_read(int fd, void *buf, size_t count)
     return;
 }
 
-static void sys_sbrk()
+static void sys_sbrk(intptr_t inc)
 {
-
+    printk("[%d] %s: sbrk(inc=%d)\n", cur_proc->pid, cur_proc->name, inc);
+    uintptr_t ret = cur_proc->heap;
+    cur_proc->heap += inc;
+    arch_syscall_return(cur_proc, ret);
+    return;
 }
 
 static void sys_stat()
@@ -177,7 +193,7 @@ static void sys_wait()
 
 static void sys_write(int fd, void *buf, size_t count)
 {
-    printk("[%d] %s: write(fd=%d, buf=0x%p, count=%d)\n", cur_proc->pid, cur_proc->name, fd, buf, count);
+    printk("[%d] %s: write(fd=%d, buf=%p, count=%d)\n", cur_proc->pid, cur_proc->name, fd, buf, count);
     
     if (fd >= FDS_COUNT) {   /* Out of bounds */
         arch_syscall_return(cur_proc, -EBADFD);
@@ -197,9 +213,9 @@ static void sys_write(int fd, void *buf, size_t count)
     return;
 }
 
-static void sys_ioctl(int fd, unsigned long request, void *argp)
+static void sys_ioctl(int fd, int request, void *argp)
 {
-    printk("[%d] %s: ioctl(fd=%d, request=%ld, argp=0x%p)\n", cur_proc->pid, cur_proc->name, fd, request, argp);
+    printk("[%d] %s: ioctl(fd=%d, request=0x%x, argp=%p)\n", cur_proc->pid, cur_proc->name, fd, request, argp);
 
     struct fs_node *node = cur_proc->fds[fd].node;
 
@@ -209,7 +225,7 @@ static void sys_ioctl(int fd, unsigned long request, void *argp)
 
 static void sys_signal(int sig, void (*func)(int))
 {
-    printk("[%d] %s: signal(sig=%d, func=0x%p)\n", cur_proc->pid, cur_proc->name, sig, func);
+    printk("[%d] %s: signal(sig=%d, func=%p)\n", cur_proc->pid, cur_proc->name, sig, func);
     uintptr_t ret = cur_proc->signal_handler[sig];
     cur_proc->signal_handler[sig] = (uintptr_t) func;
     arch_syscall_return(cur_proc, ret);

@@ -9,10 +9,12 @@
  */
 
 #include <core/system.h>
+#include <core/panic.h>
 #include <core/string.h>
 #include <cpu/cpu.h>
 #include <core/arch.h>
 #include <sys/sched.h>
+#include <mm/mm.h>
 
 extern void isr0 (void);
 extern void isr1 (void);
@@ -48,45 +50,58 @@ extern void isr30(void);
 extern void isr31(void);
 extern void isr128(void);
 
+/* Refer to 
+ * - Intel 64 and IA-32 Architectures Software Developer’s Manual
+ * - Volume 3: System Programming Guide
+ * - Table 6-1. Protected-Mode Exceptions and Interrupts
+ */
+
 static const char *int_msg[32] = {
-	"Division by zero",				/* 0 */
-	"Debug",
-	"Non-maskable interrupt",
-	"Breakpoint",
-	"Detected overflow",
-	"Out-of-bounds",				/* 5 */
-	"Invalid opcode",
-	"No coprocessor",
-	"Double fault",
-	"Coprocessor segment overrun",
-	"Bad TSS",						/* 10 */
-	"Segment not present",
-	"Stack fault",
-	"General protection fault",
-	"Page fault",
-	"Unknown interrupt",			/* 15 */
-	"Coprocessor fault",
-	"Alignment check",
-	"Machine check",
-	"Reserved",
-	"Reserved",
-	"Reserved",
-	"Reserved",
-	"Reserved",
-	"Reserved",
-	"Reserved",
-	"Reserved",
-	"Reserved",
-	"Reserved",
-	"Reserved",
-	"Reserved",
-	"Reserved"
+	/* 0x00 */ "#DE: Divide Error",
+	/* 0x01 */ "#DB: Debug Exception",
+	/* 0x02 */ "NMI Interrupt",
+	/* 0x03 */ "#BP: Breakpoint",
+	/* 0x04 */ "#OF: Overflow",
+	/* 0x05 */ "#BR: BOUND Range Exceeded",
+	/* 0x06 */ "#UD: Invalid Opcode (Undefined Opcode)",
+	/* 0x07 */ "#NM: Device Not Available (No Math Coprocessor)",
+	/* 0x08 */ "#DF: Double Fault",
+	/* 0x09 */ "Coprocessor Segment Overrun (reserved)",
+	/* 0x0a */ "#TS: Invalid TSS",
+	/* 0x0b */ "#NP: Segment Not Present",
+	/* 0x0C */ "#SS: Stack-Segment Fault",
+	/* 0x0D */ "#GP: General Protection",
+	/* 0x0E */ "#PF: Page Fault",
+	/* 0x0F */ "Reserved",
+	/* 0x10 */ "#MF: x87 FPU Floating-Point Error (Math Fault)",
+	/* 0x11 */ "#AC: Alignment Check",
+	/* 0x12 */ "#MC: Machine Check",
+	/* 0x13 */ "#XM: SIMD Floating-Point Exception",
+	/* 0x14 */ "#VE: Virtualization Exception",
+	/* 0x15 */ "Reserved",
+	/* 0x16 */ "Reserved",
+	/* 0x17 */ "Reserved",
+	/* 0x18 */ "Reserved",
+	/* 0x19 */ "Reserved",
+	/* 0x1A */ "Reserved",
+	/* 0x1B */ "Reserved",
+	/* 0x1C */ "Reserved",
+	/* 0x1D */ "Reserved",
+	/* 0x1E */ "Reserved",
+	/* 0x1F */ "Reserved"
 };
 
 void interrupt(regs_t *regs)
 {
 	extern uint32_t int_num;
 	extern uint32_t err_num;
+
+#if 0
+    if (int_num == 0xE && cur_proc) {   /* Page fault */
+        pmm_lazy_alloc(read_cr2());
+        return;
+    }
+#endif
 	
 	if (int_num == 0x80) {	/* syscall */
 		x86_proc_t *arch = cur_proc->arch;
@@ -95,23 +110,26 @@ void interrupt(regs_t *regs)
 		return;
 	}
 
+#if 0
     if (regs->eip == 0x0FFF) {  /* Signal return */
-		//x86_proc_t *arch = cur_proc->arch;
-        //arch->kstack += 0xb4;
         printk("Returned from signal [regs=0x%p]\n", regs);
         extern void return_from_signal(void) __attribute__((noreturn));
         return_from_signal();
-        //memcpy(regs, (regs_t *)((uintptr_t) regs + 0xb4), sizeof(regs_t));
-        //set_kernel_stack((uintptr_t) regs + 0xb4);
-        //return;
-        //regs = (regs_t *)((uintptr_t) regs + 0xb4);
     }
+#endif
 
-	const char *msg = int_msg[int_num];
-	printk("Recieved interrupt [%d] [err:%d] : %s\n", int_num, err_num, msg);
-	printk("Kernel exception\n"); /* That's bad */
-    x86_dump_registers(regs);
-	for (;;);
+    if (int_num < 32) {
+        const char *msg = int_msg[int_num];
+        printk("Recieved interrupt %d [err=%d]: %s\n", int_num, err_num, msg);
+        if (int_num == 0x0E) { /* Page Fault */
+            printk("CR2 = %p\n", read_cr2());
+        }
+        x86_dump_registers(regs);
+        panic("Kernel Exception");
+    } else {
+        printk("Unhandled interrupt %d\n", int_num);
+        panic("Kernel Exception");
+    }
 }
 
 void isr_setup()

@@ -30,10 +30,17 @@ proc_t *fork_proc(proc_t *proc)
     fork->fds = kmalloc(FDS_COUNT * sizeof(struct file));
     memcpy(fork->fds, proc->fds, FDS_COUNT * sizeof(struct file));
 
-    arch_sys_fork(fork);
+    int retval = arch_sys_fork(fork);
 
-    arch_syscall_return(fork, 0);
-    arch_syscall_return(proc, fork->pid);
+    if (!retval) {
+        arch_syscall_return(fork, 0);
+        arch_syscall_return(proc, fork->pid);
+    } else {
+        arch_syscall_return(proc, retval);
+        kfree(fork->fds);
+        kfree(fork);
+        return NULL;
+    }
 
     return fork;
 }

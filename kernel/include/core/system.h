@@ -29,10 +29,7 @@ typedef long int ssize_t;
 
 #include <core/printk.h>
 
-#define ARCH_X86
-#define ARCH X86
-#define ARCH_BITS 32
-//#define X86_PAE	1
+#include <config.h>
 
 #if ARCH==X86
 #include <arch/x86/include/system.h>

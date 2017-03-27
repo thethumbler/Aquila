@@ -46,6 +46,12 @@ isr\v:
 	pop %eax
 .endm
 
+/* Refer to 
+ * - Intel 64 and IA-32 Architectures Software Developer’s Manual
+ * - Volume 3: System Programming Guide
+ * - Table 6-1. Protected-Mode Exceptions and Interrupts
+ */
+
 ISR_NOERR 0
 ISR_NOERR 1
 ISR_NOERR 2
@@ -63,7 +69,7 @@ ISR_ERR   13
 ISR_ERR   14
 ISR_NOERR 15
 ISR_NOERR 16
-ISR_NOERR 17
+ISR_ERR   17
 ISR_NOERR 18
 ISR_NOERR 19
 ISR_NOERR 20

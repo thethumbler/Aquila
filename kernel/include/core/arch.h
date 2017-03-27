@@ -18,7 +18,7 @@ void arch_switch_proc(proc_t *proc) __attribute__((noreturn));
 void arch_sleep();
 
 /* arch/ARCH/sys/fork.c */
-void arch_sys_fork(proc_t *proc);
+int arch_sys_fork(proc_t *proc);
 
 /* arch/ARCH/sys/syscall.c */
 void arch_syscall_return(proc_t *proc, uintptr_t val);

@@ -8,7 +8,7 @@ static int putc(char c)
 
 static int puts(char *s)
 {
-	return early_console_puts(s ? s : "(null)");
+	return early_console_puts(s? s : "(null)");
 }
 
 static int putx(uint32_t val)
@@ -99,8 +99,7 @@ int vprintk(char *fmt, va_list args)
 					ret += putud((uint32_t)va_arg(args, uint32_t));
 					break;
 				case 'l':	/* long */
-					switch(*++fmt)
-					{
+					switch (*++fmt) {
 						case 'x':	/* long hex */
 							ret += putlx((uint64_t)va_arg(args, uint64_t));
 							break;
@@ -119,6 +118,7 @@ int vprintk(char *fmt, va_list args)
 					ret += putx((uint32_t)va_arg(args, uint32_t));
 					break;
                 case 'p': /* Pointer */
+                    ret += puts("0x");
 #if ARCH_BITS == 32
                     ret += putx((uint32_t)va_arg(args, uint32_t));
 #elif ARCH_BITS == 64 

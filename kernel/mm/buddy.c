@@ -120,9 +120,13 @@ uintptr_t buddy_alloc(size_t _sz)
         //return (uintptr_t) NULL;
 }
 
+static uintptr_t kernel_bound = 0;
 void buddy_free(uintptr_t addr, size_t size)
 {
     //printk("buddy_free(%x, %d) => ", addr, size);
+    
+    if (addr < kernel_bound)
+        panic("Trying to free from kernel code");
 
     size_t sz = BUDDY_MIN_BS;
 
@@ -184,6 +188,7 @@ void buddy_setup(size_t total_mem)
 
     /* FIXME */
     size_t kernel_buddies = ((uintptr_t) LMA(kernel_heap) + BUDDY_MAX_BS - 1)/BUDDY_MAX_BS;
+    kernel_bound = kernel_buddies * BUDDY_MAX_BS;
 
     for (size_t i = 0; i < kernel_buddies; ++i) {
         buddy_alloc(BUDDY_MAX_BS);

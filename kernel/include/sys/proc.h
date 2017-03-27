@@ -5,7 +5,7 @@
 #include <fs/vfs.h>
 #include <ds/queue.h>
 
-#if ARCH==X86
+#if ARCH == X86
 #include <arch/x86/include/proc.h>
 #endif
 
@@ -21,14 +21,19 @@ typedef enum {
 
 typedef struct proc proc_t;
 struct proc {
-	char		*name;
+	char		*name;  /* Process name */
 	pid_t 		pid;	/* Process identifier */
-	state_t		state;
+	state_t		state;  /* Process current state */
 	struct file *fds;	/* Open file descriptors */
-	proc_t 		*parent;
+	proc_t 		*parent;    /* Parent process */
 	char 		*cwd;	/* Current Working Directory */
 	uintptr_t	heap;	/* Process heap pointer */
 	uintptr_t	entry;	/* Process entry point */	
+
+    struct {
+        uintptr_t start;    /* Start of process image in memory */
+        uintptr_t end;  /* End of process image in memory */
+    } __packed image;
 
 	void		*arch;	/* Arch specific data */
     queue_t     *signals_queue; /* Recieved Signals Queue */
@@ -37,10 +42,6 @@ struct proc {
 	/* Process flags */
 	int			spawned : 1;
 } __packed;
-
-/* sys/elf.c */
-proc_t *load_elf(const char *fn);
-proc_t *load_elf_proc(proc_t *proc, const char *fn);
 
 /* sys/fork.c */
 proc_t *fork_proc(proc_t *proc);

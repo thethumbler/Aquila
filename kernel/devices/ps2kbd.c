@@ -26,13 +26,13 @@
 
 #define BUF_SIZE	128
 
-static ring_t *kbd_ring;	/* Keboard Ring Buffer */
+static ring_t *kbd_ring = NEW_RING(BUF_SIZE);  	/* Keboard Ring Buffer */
 static proc_t *proc = NULL;	/* Current process using Keboard */
 static queue_t *kbd_read_queue = NEW_QUEUE;	/* Keyboard read queue */
 
 void ps2kbd_handler(int scancode)
 {
-	ring_write(kbd_ring, sizeof(scancode), (char*)&scancode);
+	ring_write(kbd_ring, sizeof(scancode), (char *) &scancode);
 	
 	if (kbd_read_queue->count)
 		wakeup_queue(kbd_read_queue);
@@ -52,7 +52,7 @@ static ssize_t ps2kbd_read(struct fs_node *node __unused, off_t offset __unused,
 int ps2kbd_probe()
 {
 	ps2kbd_register();
-	kbd_ring = new_ring(BUF_SIZE);
+	//kbd_ring = new_ring(BUF_SIZE);
 
 	struct fs_node *kbd = vfs.create(dev_root, "kbd");
 

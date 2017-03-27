@@ -48,5 +48,8 @@ extern pmman_t pmman;
 
 extern uintptr_t buddy_alloc(size_t);
 extern void buddy_free(uintptr_t, size_t);
+extern void buddy_dump();
+
+extern void pmm_lazy_alloc(uintptr_t addr);
 
 #endif /* !_MM_H */

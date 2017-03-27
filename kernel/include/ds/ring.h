@@ -13,10 +13,17 @@ typedef struct ring {
 	size_t tail;
 } ring_t;
 
+#define NEW_RING(sz) (&(ring_t){.buf = (char[sz]){0}, .size = sz, .head = 0, .tail = 0})
+
 static inline ring_t *new_ring(size_t size)
 {
 	ring_t *ring = kmalloc(sizeof(ring_t));
-	*ring = (ring_t){kmalloc(size), size, 0, 0};
+	*ring = (ring_t) {
+        .buf = kmalloc(size),
+        .size = size,
+        .head = 0,
+        .tail = 0
+    };
 	return ring;
 }
 
@@ -40,12 +47,11 @@ static inline size_t ring_write(ring_t *ring, size_t n, char *buf)
 {
 	size_t size = n;
 
-	while(n)
-	{
-		if(INDEX(ring, ring->head) == INDEX(ring, ring->tail) + 1)	/* Ring is full */
+	while (n) {
+		if (INDEX(ring, ring->head) == INDEX(ring, ring->tail) + 1)	/* Ring is full */
 			break;
 
-		if(ring->tail == ring->size)
+		if (ring->tail == ring->size)
 			ring->tail = 0;
 		
 		ring->buf[ring->tail++] = *buf++;
@@ -57,7 +63,7 @@ static inline size_t ring_write(ring_t *ring, size_t n, char *buf)
 
 static inline size_t ring_available(ring_t *ring)
 {
-	if(ring->tail >= ring->head)
+	if (ring->tail >= ring->head)
 		return ring->tail - ring->head;
 
 	return ring->tail + ring->size - ring->head;

@@ -1,6 +1,6 @@
 OUTPUT_FORMAT(elf32-i386)
 ENTRY(_start)
-INPUT(boot/builtin.o cpu/builtin.o console/builtin.o mem/builtin.o sys/builtin.o ../../core/builtin.o
+INPUT(boot/builtin.o cpu/builtin.o console/builtin.o mm/builtin.o sys/builtin.o ../../core/builtin.o
 ../../devices/builtin.o ../../fs/builtin.o ../../sys/builtin.o ../../mm/builtin.o)
 OUTPUT(kernel.elf)
 
