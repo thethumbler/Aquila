@@ -1,4 +1,5 @@
 #include <core/printk.h>
+#include <core/panic.h>
 #include <core/string.h>
 #include <mm/mm.h>
 
@@ -12,6 +13,7 @@
 
 #include <sys/proc.h>
 #include <sys/sched.h>
+#include <sys/elf.h>
 
 #include <dev/console.h>
 #include <ds/queue.h>
@@ -36,7 +38,11 @@ void kmain(struct boot *boot)
     extern struct fs_node *devpts_root;
     vfs.mount(pts, devpts_root);
 
-    proc_t *init = load_elf("/bin/init");
+    proc_t *init = load_elf("/init");
+
+    if (!init)
+        panic("Can not load init process");
+
     spawn_init(init);
 
     for(;;);

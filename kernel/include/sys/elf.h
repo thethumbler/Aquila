@@ -2,6 +2,7 @@
 #define _ELF_H
 
 #include <core/system.h>
+#include <sys/proc.h>
 
 #define SHT_NULL		0
 #define SHT_PROGBITS	1
@@ -85,5 +86,9 @@ typedef struct
 	uint64_t addralign;
 	uint64_t entsize;
 } elf64_section_hdr_t;
+
+/* sys/elf.c */
+proc_t *load_elf(const char *fn);
+proc_t *load_elf_proc(proc_t *proc, const char *fn);
 
 #endif

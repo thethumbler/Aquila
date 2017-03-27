@@ -1,6 +1,8 @@
 #ifndef _X86_CPU_H
 #define _X86_CPU_H
 
+#include <core/panic.h>
+
 struct cpu_features {
 	int fpu   : 1;	/* onboard x87 FPU */
 	int vme   : 1;	/* Virtual 8086 Mode Extensions */
@@ -45,18 +47,18 @@ typedef struct {
 static inline void x86_dump_registers(regs_t *regs)
 {
 	printk("Registers dump:\n");
-	printk("edi = %x\n", regs->edi);
-	printk("esi = %x\n", regs->esi);
-	printk("ebp = %x\n", regs->ebp);
-	printk("ebx = %x\n", regs->ebx);
-	printk("ecx = %x\n", regs->ecx);
-	printk("edx = %x\n", regs->edx);
-	printk("eax = %x\n", regs->eax);
-	printk("eip = %x\n", regs->eip);
-	printk("cs  = %x\n", regs->cs );
-	printk("eflags = %x\n", regs->eflags);
-	printk("esp = %x\n", regs->esp);
-	printk("ss  = %x\n", regs->ss);
+	printk("edi = %p\n", regs->edi);
+	printk("esi = %p\n", regs->esi);
+	printk("ebp = %p\n", regs->ebp);
+	printk("ebx = %p\n", regs->ebx);
+	printk("ecx = %p\n", regs->ecx);
+	printk("edx = %p\n", regs->edx);
+	printk("eax = %p\n", regs->eax);
+	printk("eip = %p\n", regs->eip);
+	printk("cs  = %p\n", regs->cs );
+	printk("eflags = %p\n", regs->eflags);
+	printk("esp = %p\n", regs->esp);
+	printk("ss  = %p\n", regs->ss);
 }
 
 struct cpu {
@@ -149,14 +151,14 @@ static inline int check_cpuid()
 	return retval;
 }
 
-static inline struct cpu_features get_cpu_features()
+static inline struct cpu_features *get_cpu_features(struct cpu_features *features)
 {
-	struct cpu_features features;
 	if (check_cpuid()) {
 		asm volatile ("cpuid":"=b"((int){0}), "=c"((int){0}), "=d"(features):"a"(1));
 	} else {
 		/* CPUID is not supported -- fall back to i386\n */
 		/* TODO */
+        panic("i386 Support not implemented");
 	}
 	return features;
 }

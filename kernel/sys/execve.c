@@ -2,6 +2,7 @@
 #include <core/string.h>
 #include <core/arch.h>
 #include <sys/proc.h>
+#include <sys/elf.h>
 #include <mm/mm.h>
 
 proc_t *execve_proc(proc_t *proc, const char *fn, char * const _argp[], char * const _envp[])

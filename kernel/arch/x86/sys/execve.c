@@ -49,11 +49,16 @@ void arch_sys_execve(proc_t *proc, int argc, char * const _argp[], int envc, cha
 	stack -= envc * sizeof(char *);
 	memcpy((void *) stack, u_envp, envc * sizeof(char *));
 
+    uintptr_t env_ptr = stack;
+
 	stack -= argc * sizeof(char *);
 	memcpy((void *) stack, u_argp, argc * sizeof(char *));
 
 	stack -= sizeof(int);
 	*(int *) stack = argc;
+
+	stack -= sizeof(uintptr_t);
+	*(uintptr_t *) stack = env_ptr;
 
 	kfree(u_envp);
 	kfree(u_argp);

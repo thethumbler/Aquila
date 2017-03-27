@@ -26,7 +26,7 @@ ramdisk/initrd.img:
 
 try: cd.iso
 	#qemu-kvm -cdrom cd.iso -serial stdio -m 256M -smp 4
-	qemu-kvm -cdrom cd.iso -serial stdio -m 256M -d cpu_reset -no-reboot
+	qemu-kvm -cdrom cd.iso -serial stdio -m 512M -d cpu_reset -no-reboot
 
 .PHONY: clean
 clean:

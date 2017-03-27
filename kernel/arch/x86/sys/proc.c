@@ -9,7 +9,7 @@
 void arch_spawn_proc(proc_t *proc)
 {
     x86_proc_t *arch = proc->arch;
-    printk("[%d] %s: Spawning [IP: 0x%p, SP: 0x%p, F: 0x%x, KSTACK: 0x%p]\n", proc->pid, proc->name, arch->eip, arch->esp, arch->eflags, arch->kstack);
+    printk("[%d] %s: Spawning [IP: %p, SP: %p, F: 0x%x, KSTACK: %p]\n", proc->pid, proc->name, arch->eip, arch->esp, arch->eflags, arch->kstack);
     
     if (get_current_page_directory() != arch->pd)
         switch_page_directory(arch->pd);
@@ -39,8 +39,9 @@ void arch_init_proc(void *d, proc_t *p)
 void arch_switch_proc(proc_t *proc)
 {
     x86_proc_t *arch = proc->arch;
-    //printk("[%d] %s: Switching [KSTACK: %x, EIP: %x, ESP: %x]\n", proc->pid, proc->name, arch->kstack, arch->eip, arch->esp);
-    
+    printk("[%d] %s: Switching [KSTACK: %p, EIP: %p, ESP: %p]\n", proc->pid, proc->name, arch->kstack, arch->eip, arch->esp);
+    printk("arch->pd = %p\n", arch->pd);
+
     switch_page_directory(arch->pd);
 
     set_kernel_stack(arch->kstack);

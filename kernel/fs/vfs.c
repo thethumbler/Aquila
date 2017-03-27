@@ -92,7 +92,7 @@ static int vfs_ioctl(struct fs_node *file, unsigned long request, void *argp)
 
 
 /* VFS Generic File function */
-int generic_file_open(struct file * file __unused)
+int generic_file_open(struct file *file __unused)
 {
 	return 0;
 }

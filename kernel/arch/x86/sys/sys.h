@@ -21,10 +21,12 @@ static inline uintptr_t get_new_page_directory()
 	uintptr_t pd = arch_get_frame();
 
 	/* Copy the Kernel Space to the new Page Directory */
+    /*
 	void *pd_kernel_dst = (void *) (pd + 768 * 4);
-	void *pd_kernel_src = (void * ) (get_current_page_directory() + 768 * 4);
+	void *pd_kernel_src = (void *) (get_current_page_directory() + 768 * 4);
 	size_t pd_kernel_size = PAGE_SIZE - 768 * 4;
 	pmman.memcpypp(pd_kernel_dst, pd_kernel_src, pd_kernel_size);
+    */
 
 	return pd;
 }

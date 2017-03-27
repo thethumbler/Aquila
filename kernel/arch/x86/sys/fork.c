@@ -1,18 +1,31 @@
 #include <core/system.h>
 #include <core/string.h>
 #include <core/arch.h>
+
 #include <sys/proc.h>
 #include <sys/sched.h>
 
+#include <bits/errno.h>
+
 #include "sys.h"
 
-void arch_sys_fork(proc_t *proc)
+int arch_sys_fork(proc_t *proc)
 {
     x86_proc_t *orig_arch = cur_proc->arch;
     x86_proc_t *fork_arch = kmalloc(sizeof(x86_proc_t));
 
+    if (!fork_arch) {   /* Failed to allocate fork arch structure */
+        return -ENOMEM;
+    }
+
     uintptr_t cur_proc_pd = get_current_page_directory();
     uintptr_t new_proc_pd = get_new_page_directory();
+    
+    if (!new_proc_pd) { /* Failed to allocate page directory */
+        kfree(fork_arch);
+        return -ENOMEM;
+    }
+
     switch_page_directory(new_proc_pd);
 
     int tables_count = ((uintptr_t) proc->heap + TABLE_MASK)/TABLE_SIZE;
@@ -40,7 +53,7 @@ void arch_sys_fork(proc_t *proc)
     kfree(tables_buf);
     kfree(page_buf);
 
-    /* Setup kstack and fork state */
+    /* Setup kstack */
     uintptr_t fork_kstack_base = (uintptr_t) kmalloc(KERN_STACK_SIZE);
     fork_arch->kstack = fork_kstack_base + KERN_STACK_SIZE;
 
@@ -71,9 +84,10 @@ void arch_sys_fork(proc_t *proc)
         switch_page_directory(cur_proc_pd);
     }
 
-
     kfree(stack_buf);
 
     fork_arch->pd = new_proc_pd;
     proc->arch = fork_arch;
+
+    return 0;
 }

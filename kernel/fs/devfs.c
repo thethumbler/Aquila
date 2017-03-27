@@ -121,6 +121,22 @@ static ssize_t devfs_file_write(struct file *file, void *buf, size_t size)
 	return file->node->dev->f_ops.write(file, buf, size);
 }
 
+static int devfs_file_can_read(struct file *file, size_t size)
+{
+	if (!file->node->dev)
+		return -ENXIO;
+
+	return file->node->dev->f_ops.can_read(file, size);
+}
+
+static int devfs_file_can_write(struct file *file, size_t size)
+{
+	if (!file->node->dev)
+		return -ENXIO;
+
+	return file->node->dev->f_ops.can_write(file, size);
+}
+
 static int devfs_file_eof(struct file *file)
 {
 	if (!file->node->dev)
@@ -131,6 +147,7 @@ static int devfs_file_eof(struct file *file)
 
 void devfs_init()
 {
+    printk("[0] Kernel: devfs -> init()\n");
 	dev_root = kmalloc(sizeof(struct fs_node));
 
 	dev_root->name = "dev";
@@ -154,6 +171,8 @@ struct fs devfs = {
 		.read  = devfs_file_read,
 		.write = devfs_file_write, 
 
+        .can_read = devfs_file_can_read,
+        .can_write = devfs_file_can_write,
 		.eof = devfs_file_eof,
 	},
 };
