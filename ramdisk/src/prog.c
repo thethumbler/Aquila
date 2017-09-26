@@ -3,6 +3,6 @@
 int main(int argc, char **argv)
 {
 	printf("Hello World!, from Aquila OS :D\n");
-	for(;;);
+    fflush(stdout);
+    return 0;
 }
-

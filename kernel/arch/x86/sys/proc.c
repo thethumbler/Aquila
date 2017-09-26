@@ -3,6 +3,8 @@
 #include <core/arch.h>
 #include <sys/proc.h>
 #include <sys/sched.h>
+#include <sys/signal.h>
+#include <ds/queue.h>
 
 #include "sys.h"
 
@@ -11,8 +13,7 @@ void arch_spawn_proc(proc_t *proc)
     x86_proc_t *arch = proc->arch;
     printk("[%d] %s: Spawning [IP: %p, SP: %p, F: 0x%x, KSTACK: %p]\n", proc->pid, proc->name, arch->eip, arch->esp, arch->eflags, arch->kstack);
     
-    if (get_current_page_directory() != arch->pd)
-        switch_page_directory(arch->pd);
+    switch_page_directory(arch->pd);
 
     set_kernel_stack(arch->kstack);
 
@@ -39,20 +40,21 @@ void arch_init_proc(void *d, proc_t *p)
 void arch_switch_proc(proc_t *proc)
 {
     x86_proc_t *arch = proc->arch;
-    printk("[%d] %s: Switching [KSTACK: %p, EIP: %p, ESP: %p]\n", proc->pid, proc->name, arch->kstack, arch->eip, arch->esp);
-    printk("arch->pd = %p\n", arch->pd);
+    //printk("[%d] %s: Switching [KSTACK: %p, EIP: %p, ESP: %p]\n", proc->pid, proc->name, arch->kstack, arch->eip, arch->esp);
 
     switch_page_directory(arch->pd);
 
     set_kernel_stack(arch->kstack);
 
     if (proc->signals_queue->count) {
-        printk("There are %d pending signals\n", proc->signals_queue->count);
+        //printk("There are %d pending signals\n", proc->signals_queue->count);
+        int sig = (int) dequeue(proc->signals_queue);
+        arch_handle_signal(sig);
         for (;;);
     }
 
     extern void x86_goto(uintptr_t eip, uintptr_t ebp, uintptr_t esp) __attribute__((noreturn));
-    x86_goto(arch->eip,  arch->ebp, arch->esp);
+    x86_goto(arch->eip, arch->ebp, arch->esp);
 }
 
 void arch_sleep()
@@ -71,8 +73,7 @@ void internal_arch_sleep()
     asm("mov %%ebp, %0":"=r"(ebp)); /* read ebp */
     eip = x86_read_eip();
 
-    if(eip == (uintptr_t) -1)   /* Done switching */
-    {
+    if (eip == (uintptr_t) -1) {  /* Done switching */
         return;
     }
 

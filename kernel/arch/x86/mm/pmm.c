@@ -43,6 +43,7 @@ static uintptr_t get_frame()
 
     mount(page);
     memset(MOUNT_ADDR, 0, PAGE_SIZE);
+    for (;;);
 
     return page;
 }
@@ -327,6 +328,7 @@ static void *memcpypp(void *_phys_dest, void *_phys_src, size_t n)
  *  Archeticture Interface
  */
 
+#if 0
 uintptr_t arch_get_frame()
 {
     return get_frame();
@@ -341,20 +343,20 @@ void arch_release_frame(uintptr_t p)
 {
     release_frame(p);
 }
+#endif
 
 
 /*
  *  Physical Memory Manger Setup
  */
 
-pmman_t pmman = (pmman_t) {
+pmman_t _pmman = (pmman_t) {
     .map = &map_to_physical,
     .unmap = &unmap_from_physical,
     .memcpypv = &memcpypv,
     .memcpyvp = &memcpyvp,
-    .memcpypp = &memcpypp,
+    .memcpypp = (void *(*)(uintptr_t, uintptr_t, size_t)) memcpypp,
 };
-
 
 void arch_pmm_setup()
 {
@@ -367,11 +369,14 @@ void arch_pmm_setup()
     get_cpu_features(&features);
 
 #if !defined(X86_PAE) || !X86_PAE
-    if (features.pse) {
-        //write_cr4(read_cr4() | CR4_PSE);
-        printk("[0] Kernel: PMM -> Found PSE support\n");
-    }
+    extern void setup_32_bit_paging();
+    setup_32_bit_paging();
+    //if (features.pse) {
+    //    //write_cr4(read_cr4() | CR4_PSE);
+    //    printk("[0] Kernel: PMM -> Found PSE support\n");
+    //}
 #else   /* PAE */
+    panic("PAE Not supported");
     if (features.pae) {
         printk("[0] Kernel: PMM -> Found PAE support\n");
     } else if(features.pse) {
@@ -379,9 +384,8 @@ void arch_pmm_setup()
     }
 #endif
 
-    BSP_PD = (uint32_t *) VMA(read_cr3());
-    BSP_PD[1023] = LMA((uint32_t) BSP_LPT) | P | RW;
-    TLB_flush();
+    //BSP_PD = (uint32_t *) VMA(read_cr3());
+    //BSP_PD[1023] = LMA((uint32_t) BSP_LPT) | P | RW;
+    //TLB_flush();
 
-    for (;;);
 }

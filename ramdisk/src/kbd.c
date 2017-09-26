@@ -79,24 +79,22 @@ void handle_keyboard(int fd, int scancode)
 
     if (scancode < 60) {
         if (shift) {
-            dprintf(fd, "%c", kbd_us_shift[scancode]);
+            write(fd, &kbd_us_shift[scancode], 1);
         } else {
-            dprintf(fd, "%c", kbd_us[scancode]);
+            write(fd, &kbd_us[scancode], 1);
         }
     }
 }
 
-#define STDIN  0
-#define STDOUT 1
+#define STDIN  1
+#define STDOUT 0
 
 int main()
 {
-    int kbd = open("/dev/kbd", O_RDONLY);
-
     for (;;) {
         int scancode;
-        if (read(kbd, &scancode, sizeof(scancode)) > 0) {
-            handle_keyboard(0, scancode);
+        if (read(STDIN, &scancode, sizeof(scancode)) > 0) {
+            handle_keyboard(STDOUT, scancode);
         }
     }
 }

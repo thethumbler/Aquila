@@ -38,6 +38,7 @@ void kmain(struct boot *boot)
     extern struct fs_node *devpts_root;
     vfs.mount(pts, devpts_root);
 
+    printk("[0] Kernel: Loading init process\n");
     proc_t *init = load_elf("/init");
 
     if (!init)

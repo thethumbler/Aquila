@@ -96,12 +96,26 @@ void interrupt(regs_t *regs)
 	extern uint32_t int_num;
 	extern uint32_t err_num;
 
-#if 0
-    if (int_num == 0xE && cur_proc) {   /* Page fault */
-        pmm_lazy_alloc(read_cr2());
+    //x86_dump_registers(regs);
+
+    if (int_num == 0xE && cur_proc && regs->cs == X86_CS) {   /* Page fault from user-space */
+
+        if (regs->eip == 0x0FFF) {  /* Signal return */
+            //printk("Returned from signal [regs=%p]\n", regs);
+            x86_proc_t *arch = cur_proc->arch;
+
+            /* Fix kstack and regs pointers*/
+            arch->regs = (regs_t *) arch->kstack;
+            arch->kstack += sizeof(regs_t); 
+            set_kernel_stack(arch->kstack);
+
+            extern void return_from_signal(uintptr_t) __attribute__((noreturn));
+            return_from_signal((uintptr_t) arch->regs);
+        }
+
+        pmman.handle_page_fault(read_cr2());
         return;
     }
-#endif
 	
 	if (int_num == 0x80) {	/* syscall */
 		x86_proc_t *arch = cur_proc->arch;
@@ -110,13 +124,6 @@ void interrupt(regs_t *regs)
 		return;
 	}
 
-#if 0
-    if (regs->eip == 0x0FFF) {  /* Signal return */
-        printk("Returned from signal [regs=0x%p]\n", regs);
-        extern void return_from_signal(void) __attribute__((noreturn));
-        return_from_signal();
-    }
-#endif
 
     if (int_num < 32) {
         const char *msg = int_msg[int_num];

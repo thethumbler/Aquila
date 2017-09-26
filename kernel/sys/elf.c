@@ -49,8 +49,9 @@ proc_t *load_elf(const char *fn)
 
     pmman.map(USER_STACK_BASE, USER_STACK_SIZE, URW);
 
-    proc_t *proc = kmalloc(sizeof(proc_t));
+    proc_t *proc = new_proc();
     proc->name = strdup(file->name);
+    proc->heap_start = proc_heap;
     proc->heap = proc_heap;
     proc->entry = hdr.entry;
 
@@ -65,6 +66,8 @@ proc_t *load_elf_proc(proc_t *proc, const char *fn)
 {
     struct fs_node *file = vfs.find(vfs_root, fn);
     if (!file) return NULL;
+
+    pmman.unmap_full(0, proc->heap);
 
     elf32_hdr_t hdr;
     vfs.read(file, 0, sizeof(hdr), &hdr);
@@ -90,6 +93,7 @@ proc_t *load_elf_proc(proc_t *proc, const char *fn)
 
     kfree(proc->name);
     proc->name = strdup(file->name);
+    proc->heap_start = proc_heap;
     proc->heap = proc_heap;
     proc->entry = hdr.entry;
 

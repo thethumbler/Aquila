@@ -21,9 +21,13 @@ void pmm_setup(struct boot *boot)
 {
     printk("[0] Kernel: PMM -> Total memory: %d KiB, %d MiB\n", boot->total_mem, boot->total_mem / 1024);
 
-    arch_pmm_setup();
-
+    /* XXX */
+    /* Fix kernel heap pointer */
+    extern char *lower_kernel_heap;
+    extern char *kernel_heap;
+    kernel_heap = VMA(lower_kernel_heap);
     buddy_setup(boot->total_mem * 1024);
+    arch_pmm_setup();
 }
 
 void pmm_lazy_alloc(uintptr_t addr)

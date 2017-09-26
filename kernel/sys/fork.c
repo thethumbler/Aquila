@@ -12,14 +12,14 @@
 #include <core/system.h>
 #include <core/string.h>
 #include <core/arch.h>
-
 #include <mm/mm.h>
-
 #include <sys/proc.h>
+#include <ds/queue.h>
 
 proc_t *fork_proc(proc_t *proc)
 {
-    proc_t *fork = kmalloc(sizeof(proc_t));
+    /* Copy parent proc structure */
+    proc_t *fork = new_proc();
     memcpy(fork, proc, sizeof(proc_t));
 
     fork->name = strdup(proc->name);
@@ -27,9 +27,14 @@ proc_t *fork_proc(proc_t *proc)
     fork->parent = proc;
     fork->spawned = 1;
     
+    /* Allocate new signals queue */
+    fork->signals_queue = new_queue();
+
+    /* Copy open files descriptors */
     fork->fds = kmalloc(FDS_COUNT * sizeof(struct file));
     memcpy(fork->fds, proc->fds, FDS_COUNT * sizeof(struct file));
 
+    /* Call arch specific fork handler */
     int retval = arch_sys_fork(fork);
 
     if (!retval) {

@@ -16,7 +16,6 @@ typedef enum {
 	ISLEEP,	/* Interruptable SLEEP (I/O) */
 	USLEEP,	/* Uninterruptable SLEEP (Waiting for event) */
 	ZOMBIE,
-	STOPPED,
 } state_t;
 
 typedef struct proc proc_t;
@@ -27,6 +26,7 @@ struct proc {
 	struct file *fds;	/* Open file descriptors */
 	proc_t 		*parent;    /* Parent process */
 	char 		*cwd;	/* Current Working Directory */
+	uintptr_t	heap_start;	/* Process initial heap pointer */
 	uintptr_t	heap;	/* Process heap pointer */
 	uintptr_t	entry;	/* Process entry point */	
 
@@ -39,6 +39,9 @@ struct proc {
     queue_t     *signals_queue; /* Recieved Signals Queue */
     uintptr_t   signal_handler[22];
 
+    queue_t     wait_queue; /* Dummy queue for children wait */
+    int         exit_status; /* Exit status of child if zombie */
+
 	/* Process flags */
 	int			spawned : 1;
 } __packed;
@@ -49,15 +52,18 @@ proc_t *fork_proc(proc_t *proc);
 /* sys/execve.c */
 proc_t *execve_proc(proc_t *proc, const char *fn, char * const argv[], char * const env[]);
 
-/* sys/proc.h */
+/* sys/proc.c */
+proc_t *new_proc();
 proc_t *get_proc_by_pid(pid_t pid);
+void kill_proc(proc_t *proc);
+void reap_proc(proc_t *proc);
 int validate_ptr(proc_t *proc, void *ptr);
 int get_fd(proc_t *proc);
 void release_fd(proc_t *proc, int fd);
 
 int get_pid();
 void init_process(proc_t *proc);
-void sleep_on(queue_t *queue);
+int sleep_on(queue_t *queue);
 void wakeup_queue(queue_t *queue);
 
 #endif /* !_PROC_H */
