@@ -46,6 +46,33 @@ static inline void *dequeue(queue_t *queue)
 	return value;
 }
 
+static inline void queue_remove(queue_t *queue, void *value)
+{
+    if (!queue || !queue->count)
+        return;
+
+    struct queue_node *prev = NULL;
+    forlinked (node, queue->head, node->next) {
+        if (node->value == value) {
+            if (!prev) {    /* Head */
+                dequeue(queue);
+            } else if (!node->next) {   /* Tail */
+                --queue->count;
+                queue->tail = prev;
+                prev->next = NULL;
+                kfree(node);
+            } else {
+                --queue->count;
+                prev->next = node->next;
+                kfree(node);
+            }
+
+            break;
+        }
+        prev = node;
+    }
+}
+
 static inline void *new_queue()
 {
 	return memset(kmalloc(sizeof(queue_t)), 0, sizeof(queue_t));

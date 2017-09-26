@@ -9,7 +9,7 @@
 
 typedef struct
 {
-	uintptr_t	pd;
+	uintptr_t	pd; /* Page Directory */
 
 	uintptr_t	kstack;	/* Kernel stack */
 	uintptr_t	eip;

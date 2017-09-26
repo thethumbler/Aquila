@@ -50,11 +50,11 @@ void cpu_init()
     printk("[0] Kernel: Setting up Virtual Memory Manager (VMM)\n");
     vmm_setup();
 
-    extern volatile uint32_t *BSP_PD;
-    for (int i = 0; BSP_PD[i] != 0; ++i)
-        BSP_PD[i] = 0;  /* Unmap lower half */
+    //extern volatile uint32_t *BSP_PD;
+    //for (int i = 0; BSP_PD[i] != 0; ++i)
+    //    BSP_PD[i] = 0;  /* Unmap lower half */
 
-    TLB_flush();
+    //TLB_flush();
 
     set_tss_esp(VMA(0x100000));
 

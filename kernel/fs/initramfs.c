@@ -104,11 +104,11 @@ static struct fs_node *cpiofs_find(struct fs_node *root, const char * path)
 	if (root->type != FS_DIR)	/* Not even a directory */
 		return NULL;
 
-	struct fs_node * cur = root;
-	struct fs_node * dir = ((cpiofs_private_t*)cur->p)->dir;
+	struct fs_node *cur = root;
+	struct fs_node *dir = ((cpiofs_private_t *) cur->p)->dir;
 
 	if (!dir) {	/* Directory has no children */
-		if (*tokens == '\0')
+		if (*tokens == NULL)
 			return root;
 		else
             return NULL;

@@ -192,7 +192,8 @@ x86_fork_return:
 
 .global return_from_signal
 return_from_signal:
-    addl $0xec, %esp    /* Fix stack pointer */
+    mov 4(%esp), %edi
+    mov %edi, %esp    /* Fix stack pointer */
     pop_context
     iret
 

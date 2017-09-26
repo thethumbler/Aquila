@@ -5,7 +5,7 @@
  *  This file is part of Aquila OS and is released under the terms of
  *  GNU GPLv3 - See LICENSE.
  *
- *  Copyright (C) 2016 Mohamed Anwar <mohamed_anwar@opmbx.org>
+ *  Copyright (C) 2016-2017 Mohamed Anwar <mohamed_anwar@opmbx.org>
  */
 
 
@@ -19,13 +19,25 @@
 
 #include <bits/errno.h>
 
-static void sys_exit(int code __unused)
+static void sys_exit(int code)
 {
-    printk("Recieved sys_exit\n");
+    printk("[%d] %s: exit(code=%d)\n", cur_proc->pid, cur_proc->name, code);
+
+    if (cur_proc->pid == 1)
+        panic("init killed\n");
+
+    cur_proc->exit_status = code;
+    kill_proc(cur_proc);
+
+    /* Wakeup parent if it is waiting for children */
+    wakeup_queue(&cur_proc->parent->wait_queue);
+
+    /* XXX: We should signal the parent here? */
+
+    arch_sleep();
+
+    /* We should never reach this anyway */
     for (;;);
-    //kill_process(cur_proc);
-    /* We should signal the parent here */
-    //kernel_idle();
 }
 
 static void sys_close(int fd)
@@ -39,12 +51,14 @@ static void sys_close(int fd)
 
     cur_proc->fds[fd].node = NULL;  /* FIXME */
     arch_syscall_return(cur_proc, 0);
-    return;
 }
 
 static void sys_execve(const char *name, char *const argp[], char *const envp[])
 {
     printk("[%d] %s: execve(name=%s, argp=%p, envp=%p)\n", cur_proc->pid, cur_proc->name, name, argp, envp);
+
+    //if (!name || !strlen(name) || !vfs.find(name))
+    //    return -ENOENT;
 
     char *fn = strdup(name);
     proc_t *p = execve_proc(cur_proc, fn, argp, envp);
@@ -89,7 +103,6 @@ static void sys_kill(pid_t pid, int sig)
     printk("[%d] %s: kill(pid=%d, sig=%d)\n", cur_proc->pid, cur_proc->name, pid, sig);
     int ret = send_signal(pid, sig);
     arch_syscall_return(cur_proc, ret);
-    return;
 }
 
 static void sys_link()
@@ -186,9 +199,40 @@ static void sys_unlink()
 
 }
 
-static void sys_wait()
+static void sys_waitpid(int pid, int *stat_loc, int options)
 {
+    printk("[%d] %s: waitpid(pid=%d, stat_loc=%p, options=0x%x)\n", cur_proc->pid, cur_proc->name, pid, stat_loc, options);
 
+    proc_t *child = get_proc_by_pid(pid);
+
+    /* If pid is invalid or current process is not parent of child */
+    if (!child || child->parent != cur_proc) {
+        arch_syscall_return(cur_proc, -ECHILD);
+        return;
+    }
+
+    if (child->state == ZOMBIE) {  /* Child is killed */
+        *stat_loc = child->exit_status;
+        arch_syscall_return(cur_proc, child->pid);
+        reap_proc(child);
+        return;
+    }
+
+    //if (options | WNOHANG) {
+    //    arch_syscall_return(0);
+    //    return;
+    //}
+
+    while (child->state != ZOMBIE) {
+        if (sleep_on(&cur_proc->wait_queue)) {
+            arch_syscall_return(cur_proc, -EINTR);
+            return;
+        }
+    }
+
+    *stat_loc = child->exit_status;
+    arch_syscall_return(cur_proc, child->pid);
+    reap_proc(child);
 }
 
 static void sys_write(int fd, void *buf, size_t count)
@@ -249,7 +293,7 @@ void (*syscall_table[])() =  {
     /* 14 */    sys_stat,
     /* 15 */    sys_times,
     /* 16 */    sys_unlink,
-    /* 17 */    sys_wait,
+    /* 17 */    sys_waitpid,
     /* 18 */    sys_write,
     /* 19 */    sys_ioctl,
     /* 20 */    sys_signal,

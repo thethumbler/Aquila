@@ -155,7 +155,6 @@ static ssize_t ptm_write(struct fs_node *node, off_t offset __unused, size_t siz
                     ring_write(pty->in, pty->pos, pty->cook);
                     pty->pos = 0;
                     ret = ret - size + 1;
-                    printk("ret = %d\n", ret);
                     return ret;
                 default:
                     if (echo) ring_write(pty->out, 1, c);
@@ -175,12 +174,13 @@ static int ptm_ioctl(struct fs_node *node, unsigned long request, void *argp)
 {
     struct pty *pty = (struct pty *) node->p;
 
-    switch(request) {
+    switch (request) {
         case TIOCGPTN:
             *(int *) argp = pty->id;
             break;
         case TIOCSPTLCK:
             *(int *) argp = 0;  /* FIXME */
+            break;
         default:
             return -1;
     }

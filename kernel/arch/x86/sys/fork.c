@@ -18,13 +18,17 @@ int arch_sys_fork(proc_t *proc)
         return -ENOMEM;
     }
 
-    uintptr_t cur_proc_pd = get_current_page_directory();
+    uintptr_t cur_proc_pd = orig_arch->pd;
     uintptr_t new_proc_pd = get_new_page_directory();
     
     if (!new_proc_pd) { /* Failed to allocate page directory */
         kfree(fork_arch);
         return -ENOMEM;
     }
+
+    pmman.copy_fork_mapping(cur_proc_pd, new_proc_pd);
+
+#if 0
 
     switch_page_directory(new_proc_pd);
 
@@ -85,6 +89,24 @@ int arch_sys_fork(proc_t *proc)
     }
 
     kfree(stack_buf);
+#endif
+
+    /* Setup kstack */
+    uintptr_t fork_kstack_base = (uintptr_t) kmalloc(KERN_STACK_SIZE);
+    fork_arch->kstack = fork_kstack_base + KERN_STACK_SIZE;
+
+    /* Copy registers */
+    regs_t *fork_regs = (void *) (fork_arch->kstack - (orig_arch->kstack - (uintptr_t) orig_arch->regs));  //(fork_arch->kstack - sizeof(regs_t));
+    fork_arch->regs = fork_regs;
+
+    /* Copy kstack */
+    memcpy((void *) fork_kstack_base, (void *) (orig_arch->kstack - KERN_STACK_SIZE), KERN_STACK_SIZE);
+
+    extern void x86_fork_return();
+    fork_arch->eip = (uintptr_t) x86_fork_return;
+    fork_arch->esp = (uintptr_t) fork_regs;
+    //fork_arch->ebp = orig_arch->regs->ebp;
+    //fork_arch->eflags = orig_arch->regs->eflags;
 
     fork_arch->pd = new_proc_pd;
     proc->arch = fork_arch;
