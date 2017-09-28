@@ -3,6 +3,16 @@
 #include <string.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <dirent.h>
+
+/*
+ * Global variables 
+ */
+
+extern char **environ;
+char *hostname = "aquila";
+char *user = "root";
+char *pwd = "/";
 
 /*
  * Built-in Commands
@@ -19,10 +29,30 @@ int cmd_echo(int argc, char **args)
     return 0;
 }
 
-extern char **environ;
-char *hostname = "aquila";
-char *user = "root";
-char *pwd = "/";
+int cmd_ls(int argc, char **args)
+{
+    if (argc == 1) {
+        DIR *d = opendir(pwd);
+        struct dirent *ent;
+        while (ent = readdir(d)) {
+            printf("%s\n", ent->d_name);
+        }
+        closedir(d);
+    } else {
+        for (int i = 1; i < argc; ++i) {
+            printf("%s:\n", args[i]);
+            DIR *d = opendir(args[i]);
+            struct dirent *ent;
+            while (ent = readdir(d)) {
+                printf("%s\n", ent->d_name);
+            }
+            closedir(d);
+        }
+    }
+
+    return 0;
+}
+
 
 void print_prompt()
 {
@@ -53,6 +83,8 @@ void eval()
 
     if (!strcmp(args[0], "echo")) {
         cmd_echo(args_i, args);
+    } else if (!strcmp(args[0], "ls")) {
+        cmd_ls(args_i, args);
     } else if (!strcmp(args[0], "test")) {
         int cld;
         if (cld = fork()) {

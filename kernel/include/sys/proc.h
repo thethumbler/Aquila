@@ -20,8 +20,8 @@ typedef enum {
 
 typedef struct proc proc_t;
 struct proc {
-	char		*name;  /* Process name */
 	pid_t 		pid;	/* Process identifier */
+	char		*name;  /* Process name */
 	state_t		state;  /* Process current state */
 	struct file *fds;	/* Open file descriptors */
 	proc_t 		*parent;    /* Parent process */

@@ -57,7 +57,7 @@ static void sys_execve(const char *name, char *const argp[], char *const envp[])
 {
     printk("[%d] %s: execve(name=%s, argp=%p, envp=%p)\n", cur_proc->pid, cur_proc->name, name, argp, envp);
 
-    //if (!name || !strlen(name) || !vfs.find(name))
+    //if (!name || !strlen(name))
     //    return -ENOENT;
 
     char *fn = strdup(name);

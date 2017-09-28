@@ -133,6 +133,7 @@ int sleep_on(queue_t *queue)
 
 void wakeup_queue(queue_t *queue)
 {
+    //printk("wakeup_queue(queue=%p)\n", queue);
     while (queue->count > 0) {
         proc_t *proc = dequeue(queue);
         printk("[%d] %s: Waking up from queue %p\n", proc->pid, proc->name, queue);

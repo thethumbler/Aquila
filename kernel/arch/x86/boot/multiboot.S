@@ -36,6 +36,10 @@ _start:
 	movl %eax, (multiboot_signature)
 	movl %ebx, (multiboot_info)
 
+    and  $-16, %esp /* Align stack to 16 byte */
+
+    cli
+
 	.extern early_init
 	call early_init
 	jmp .

@@ -502,6 +502,7 @@ void handle_page_fault(uintptr_t addr)
 
         // Send signal
         printk("proc = [%d] %s\n", cur_proc->pid, cur_proc->name);
+        printk("-- heap %p\n", cur_proc->heap);
         x86_proc_t *arch = cur_proc->arch;
         x86_dump_registers(arch->regs);
         panic("Not implemented\n");

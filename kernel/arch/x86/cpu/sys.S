@@ -106,7 +106,7 @@ isr_handler:
 .global irq\n
 irq\n:
 	cli
-	movl %eax, (err_num)
+	//movl %eax, (err_num)
 	movl $\i, (int_num)
 	jmp irq_stub
 .endm

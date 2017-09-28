@@ -15,7 +15,6 @@
 #include <cpu/cpu.h>
 #include <cpu/io.h>
 
-
 #define MASTER_PIC_CMD	0x20
 #define MASTER_PIC_DATA	0x21
 #define SLAVE_PIC_CMD	0xA0
@@ -144,7 +143,8 @@ void irq_handler(regs_t *r)
 	else
 		handler = irq_handlers[int_num - 32];
 
-	irq_ack(int_num - 32);
+    irq_ack(int_num - 32);
+
 	if (handler) handler(r);
 }
 
