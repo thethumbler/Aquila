@@ -27,7 +27,7 @@ typedef struct {
 #define NODE_ADDR(node) (VMM_BASE + ((node).addr) * 4)
 #define NODE_SIZE(node) (((node).size) * 4)
 #define LAST_NODE_INDEX (100000)
-#define MAX_NODE_SIZE   ((1 << 26) - 1)
+#define MAX_NODE_SIZE   ((1UL << 26) - 1)
 
 vmm_node_t *nodes = (vmm_node_t *) VMM_NODES;
 void vmm_setup()
@@ -51,7 +51,7 @@ uint32_t get_node()
             first_free_node = flag = i;
         }*/
         
-        if(!nodes[i].size)
+        if (!nodes[i].size)
             return i;
     }
 
@@ -69,8 +69,9 @@ void release_node(uint32_t i)
 uint32_t get_first_fit_free_node(uint32_t size)
 {
     unsigned i = first_free_node;
+
     while (!(nodes[i].free && nodes[i].size >= size)) {
-        if(nodes[i].next == LAST_NODE_INDEX)
+        if (nodes[i].next == LAST_NODE_INDEX)
             panic("Can't find a free node");
         i = nodes[i].next;
     }
@@ -120,7 +121,7 @@ void kfree(void *_ptr)
 {
     uintptr_t ptr = (uintptr_t) _ptr;
 
-    if(ptr < VMM_BASE)  /* That's not even allocatable */
+    if (ptr < VMM_BASE)  /* That's not even allocatable */
         return;
 
     /* Look for the node containing _ptr -- merge sequential free nodes */
@@ -153,7 +154,7 @@ void kfree(void *_ptr)
     /* Now we merge all free nodes ahead -- except the last node */
     while (nodes[cur_node].next < LAST_NODE_INDEX && nodes[cur_node].free) {
         /* check if current and previous node are free */
-        if (nodes[cur_node].free && nodes[prev_node].free) {
+        if (cur_node && nodes[cur_node].free && nodes[prev_node].free) {
             /* check for overflow */
             if ((uintptr_t) (nodes[cur_node].size + nodes[prev_node].size) <= MAX_NODE_SIZE) {
                 nodes[prev_node].size += nodes[cur_node].size;

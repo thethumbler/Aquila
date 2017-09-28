@@ -3,6 +3,7 @@
 
 #include <core/system.h>
 #include <core/string.h>
+#include <core/printk.h>
 #include <mm/mm.h>
 
 typedef struct queue queue_t;

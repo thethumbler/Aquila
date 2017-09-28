@@ -40,7 +40,9 @@ void schedule() /* Called from arch-specific timer event handler */
     if (!ready_queue)    /* How did we even get here? */
         panic("Processes queue is not initialized");
 
-    if (!kidle) make_ready(cur_proc);
+    if (!kidle)
+        make_ready(cur_proc);
+
     kidle = 0;
 
     if (!ready_queue->count) /* No ready processes, idle */

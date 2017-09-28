@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <stdlib.h>
 
 #define TIOCGPTN	0x80045430
 #define EAGAIN			11
@@ -80,6 +81,7 @@ void _start()
             char *argp[] = {"ABC", "DEF", 0};
             char *envp[] = {"PWD=/", 0};
             execve("/bin/aqsh", argp, envp);
+            for (;;);
         }
     }
 }

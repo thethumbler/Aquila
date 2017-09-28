@@ -3,7 +3,13 @@
 #include <console/early_console.h>
 #include <cpu/io.h>
 
+#define SERIAL 1
+#define VGA 2
 #define EARLY_CONSOLE SERIAL
+
+#if VGA==SERIAL
+#error huh
+#endif
 
 #if EARLY_CONSOLE==SERIAL
 #define COM1 0x3F8
@@ -18,18 +24,6 @@ static void init_com1()
 	outb(COM1 + 4, 0x0B);	// IRQs enabled
 }
 
-/*
-static uint8_t serial_recieved()
-{
-	return inb(COM1 + 5) & 1;
-}
-
-static uint8_t serial_read()
-{
-	while(!serial_recieved());
-	return inb(COM1);
-}
-*/
 static uint8_t serial_transmit_empty()
 {
 	return inb(COM1 + 5) & 0x20;

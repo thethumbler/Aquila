@@ -15,6 +15,7 @@
 
 #include <bits/fcntl.h>
 #include <bits/errno.h>
+#include <bits/dirent.h>
 
 /**
  * generic_file_read

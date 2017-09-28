@@ -17,6 +17,7 @@
 #include <fs/vfs.h>
 #include <fs/initramfs.h>
 #include <fs/devfs.h>
+#include <bits/dirent.h>
 
 #include <boot/boot.h>
 
@@ -88,16 +89,16 @@ static struct fs_node *cpiofs_new_child_node(struct fs_node *parent, struct fs_n
 		return NULL;
 
 	struct fs_node *tmp = ((cpiofs_private_t*)parent->p)->dir;
-	((cpiofs_private_t*)child->p)->next = tmp;
-	((cpiofs_private_t*)parent->p)->dir = child;
+	((cpiofs_private_t *) child->p)->next = tmp;
+	((cpiofs_private_t *) parent->p)->dir = child;
 
-	((cpiofs_private_t*)parent->p)->count++;
-	((cpiofs_private_t*)child->p)->parent = parent;
+	((cpiofs_private_t *) parent->p)->count++;
+	((cpiofs_private_t *) child->p)->parent = parent;
 
 	return child;
 }
 
-static struct fs_node *cpiofs_find(struct fs_node *root, const char * path)
+static struct fs_node *cpiofs_find(struct fs_node *root, const char *path)
 {
 	char **tokens = tokenize(path, '/');
 
@@ -117,10 +118,10 @@ static struct fs_node *cpiofs_find(struct fs_node *root, const char * path)
 	int flag;
 	foreach (token, tokens) {
 		flag = 0;
-		forlinked (e, dir, ((cpiofs_private_t*)e->p)->next) {
+		forlinked (e, dir, ((cpiofs_private_t *) e->p)->next) {
 			if (e->name && !strcmp(e->name, token)) {
 				cur = e;
-				dir = ((cpiofs_private_t*)e->p)->dir;
+				dir = ((cpiofs_private_t *) e->p)->dir;
 				flag = 1;
 				goto next;
 			}
@@ -139,7 +140,7 @@ static struct fs_node *cpiofs_find(struct fs_node *root, const char * path)
 	return cur;
 }
 
-static struct fs_node *cpiofs_load(struct fs_node * node)
+static struct fs_node *cpiofs_load(struct fs_node *node)
 {
 	/* Allocate the root node */
 	struct fs_node *rootfs = new_node(NULL, FS_DIR, 0, 0, node);
@@ -205,11 +206,36 @@ static struct fs_node *cpiofs_load(struct fs_node * node)
 
 static ssize_t cpiofs_read(struct fs_node *node, off_t offset, size_t len, void *buf_p)
 {
-	cpiofs_private_t *p = node->p;
+    if (node->type == FS_DIR) {
+        if ((size_t) offset == ((cpiofs_private_t *) node->p)->count)
+            return 0;
 
-	struct fs_node *super = p->super;
+        int i = 0;
+        struct dirent *ent = (struct dirent *) buf_p;
+        struct fs_node *dir = ((cpiofs_private_t *) node->p)->dir;
 
-	return super->fs->read(super, p->data + offset, len, buf_p);
+		forlinked (e, dir, ((cpiofs_private_t *) e->p)->next) {
+			if (i == offset) {
+                strcpy(ent->d_name, e->name);   // FIXME
+                break;
+			}
+            ++i;
+		}
+        return i == offset;
+    } else {
+        cpiofs_private_t *p = node->p;
+        struct fs_node *super = p->super;
+        return super->fs->read(super, p->data + offset, len, buf_p);
+    }
+}
+
+static int cpiofs_eof(struct file *file)
+{
+    if (file->node->type == FS_DIR) {
+        return (size_t) file->offset >= ((cpiofs_private_t *) file->node->p)->count;
+    } else {
+        return (size_t) file->offset > file->node->size;
+    }
 }
 
 struct fs initramfs = {
@@ -224,6 +250,6 @@ struct fs initramfs = {
 		.read  = generic_file_read,
 		.write = generic_file_write,
 
-		.eof = __eof_never,	/* FIXME */
+		.eof = cpiofs_eof,
 	},
 };
