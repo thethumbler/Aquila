@@ -28,10 +28,12 @@ clean: $(dirs-y)
 
 .PHONY: $(dirs-y)
 $(dirs-y): $(patsubst %/,%/Makefile, $(dirs-y))
-	$(MAKE) -C $@ $(param)
+	@echo -e "  MK      " $@
+	@$(MAKE) -C $@ $(param)
 
 $(patsubst %/,%/Makefile, $(dirs-y)): $(patsubst %/,%/Build.mk, $(dirs-y))
-	cd $(dir $@) && $(PERL) $(PDIR)/scripts/gen.pl >> Makefile
+	@echo -e "  PL      " $<
+	@cd $(dir $@) && $(PERL) $(PDIR)/scripts/gen.pl >> Makefile
 	
 
 .PHONY: distclean

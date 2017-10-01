@@ -135,6 +135,7 @@ void irq_handler(regs_t *r)
 {
 	extern uint32_t int_num;
 	/* extern uint32_t err_num; */
+    //printk("irq_handler(%d)\n", int_num);
 
 	irq_handler_t handler = NULL;
 

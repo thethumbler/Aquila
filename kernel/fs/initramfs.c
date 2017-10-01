@@ -17,9 +17,10 @@
 #include <fs/vfs.h>
 #include <fs/initramfs.h>
 #include <fs/devfs.h>
-#include <bits/dirent.h>
 
 #include <boot/boot.h>
+
+struct fs_node *ramdisk_dev_node = NULL;
 
 void load_ramdisk(module_t *rd_module)
 {
@@ -32,9 +33,9 @@ void load_ramdisk(module_t *rd_module)
 	ramdev_private_t *p = kmalloc(sizeof(ramdev_private_t));
 	*p = (ramdev_private_t){.addr = ramdisk};
 
-	struct fs_node * node = kmalloc(sizeof(struct fs_node));
+	ramdisk_dev_node = kmalloc(sizeof(struct fs_node));
 
-	*node = (struct fs_node) {
+	*ramdisk_dev_node = (struct fs_node) {
 		.name = "ramdisk",
 		.type = FS_DIR,
 		.fs   = &devfs,
@@ -43,7 +44,7 @@ void load_ramdisk(module_t *rd_module)
 		.p    = p,
 	};
 
-	struct fs_node *root = initramfs.load(node);
+	struct fs_node *root = initramfs.load(ramdisk_dev_node);
 	
 	if (!root)
 		panic("Could not load ramdisk\n");
@@ -206,27 +207,28 @@ static struct fs_node *cpiofs_load(struct fs_node *node)
 
 static ssize_t cpiofs_read(struct fs_node *node, off_t offset, size_t len, void *buf_p)
 {
-    if (node->type == FS_DIR) {
-        if ((size_t) offset == ((cpiofs_private_t *) node->p)->count)
-            return 0;
+    cpiofs_private_t *p = node->p;
+    struct fs_node *super = p->super;
+    return super->fs->read(super, p->data + offset, len, buf_p);
+}
 
-        int i = 0;
-        struct dirent *ent = (struct dirent *) buf_p;
-        struct fs_node *dir = ((cpiofs_private_t *) node->p)->dir;
+static ssize_t cpiofs_readdir(struct fs_node *node, off_t offset, struct dirent *dirent)
+{
+    if ((size_t) offset == ((cpiofs_private_t *) node->p)->count)
+        return 0;
 
-		forlinked (e, dir, ((cpiofs_private_t *) e->p)->next) {
-			if (i == offset) {
-                strcpy(ent->d_name, e->name);   // FIXME
-                break;
-			}
-            ++i;
-		}
-        return i == offset;
-    } else {
-        cpiofs_private_t *p = node->p;
-        struct fs_node *super = p->super;
-        return super->fs->read(super, p->data + offset, len, buf_p);
+    int i = 0;
+    struct fs_node *dir = ((cpiofs_private_t *) node->p)->dir;
+
+    forlinked (e, dir, ((cpiofs_private_t *) e->p)->next) {
+        if (i == offset) {
+            strcpy(dirent->d_name, e->name);   // FIXME
+            break;
+        }
+        ++i;
     }
+
+    return i == offset;
 }
 
 static int cpiofs_eof(struct file *file)
@@ -243,12 +245,14 @@ struct fs initramfs = {
 	.load = &cpiofs_load,
 	.find = &cpiofs_find,
 	.read = &cpiofs_read,
+    .readdir = &cpiofs_readdir,
 	//.write = NULL,
 	
 	.f_ops = {
 		.open  = generic_file_open,
 		.read  = generic_file_read,
 		.write = generic_file_write,
+        .readdir = generic_file_readdir,
 
 		.eof = cpiofs_eof,
 	},

@@ -1,3 +1,6 @@
+#ifndef _BITS_DIRENT_H
+#define _BITS_DIRENT_H
+
 #include <stdint.h>
 
 #define MAXNAMELEN 256
@@ -14,3 +17,5 @@ typedef struct {
 DIR *opendir(const char *fn);
 int closedir(DIR *dir);
 struct dirent *readdir(DIR *dir);
+
+#endif
