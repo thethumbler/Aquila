@@ -18,15 +18,16 @@
 #include <sys/signal.h>
 
 #include <bits/errno.h>
+#include <bits/dirent.h>
 
-static void sys_exit(int code)
+static void sys_exit(int status)
 {
-    printk("[%d] %s: exit(code=%d)\n", cur_proc->pid, cur_proc->name, code);
+    printk("[%d] %s: exit(status=%d)\n", cur_proc->pid, cur_proc->name, status);
 
     if (cur_proc->pid == 1)
         panic("init killed\n");
 
-    cur_proc->exit_status = code;
+    cur_proc->exit_status = status;
     kill_proc(cur_proc);
 
     /* Wakeup parent if it is waiting for children */
@@ -40,27 +41,27 @@ static void sys_exit(int code)
     for (;;);
 }
 
-static void sys_close(int fd)
+static void sys_close(int fildes)
 {
-    printk("[%d] %s: close(fd=%d)\n", cur_proc->pid, cur_proc->name, fd);
+    printk("[%d] %s: close(fildes=%d)\n", cur_proc->pid, cur_proc->name, fildes);
 
-    if (fd >= FDS_COUNT) {  /* Out of bounds */
+    if (fildes >= FDS_COUNT) {  /* Out of bounds */
         arch_syscall_return(cur_proc, -EBADFD);
         return; 
     }
 
-    cur_proc->fds[fd].node = NULL;  /* FIXME */
+    cur_proc->fds[fildes].node = NULL;  /* FIXME */
     arch_syscall_return(cur_proc, 0);
 }
 
-static void sys_execve(const char *name, char *const argp[], char *const envp[])
+static void sys_execve(const char *path, char *const argp[], char *const envp[])
 {
-    printk("[%d] %s: execve(name=%s, argp=%p, envp=%p)\n", cur_proc->pid, cur_proc->name, name, argp, envp);
+    printk("[%d] %s: execve(path=%s, argp=%p, envp=%p)\n", cur_proc->pid, cur_proc->name, path, argp, envp);
 
     //if (!name || !strlen(name))
     //    return -ENOENT;
 
-    char *fn = strdup(name);
+    char *fn = strdup(path);
     proc_t *p = execve_proc(cur_proc, fn, argp, envp);
     kfree(fn);
 
@@ -70,7 +71,7 @@ static void sys_execve(const char *name, char *const argp[], char *const envp[])
         spawn_proc(p);
 }
 
-static void sys_fork()
+static void sys_fork(void)
 {
     printk("[%d] %s: fork()\n", cur_proc->pid, cur_proc->name);
 
@@ -115,12 +116,12 @@ static void sys_lseek()
 
 }
 
-static void sys_open(const char *fn, int flags)
+static void sys_open(const char *path, int oflags)
 {
-    printk("[%d] %s: open(file=%s, flags=0x%x)\n", cur_proc->pid, cur_proc->name, fn, flags);
+    printk("[%d] %s: open(path=%s, oflags=0x%x)\n", cur_proc->pid, cur_proc->name, path, oflags);
     
     /* Look up the file */
-    struct fs_node *node = vfs.find(vfs_root, fn);
+    struct fs_node *node = vfs.find(vfs_root, path);
 
     if (!node) {    /* File not found */
         arch_syscall_return(cur_proc, -ENOENT);
@@ -138,7 +139,7 @@ static void sys_open(const char *fn, int flags)
     cur_proc->fds[fd] = (struct file) {
         .node = node,
         .offset = 0,
-        .flags = flags,
+        .flags = oflags,
     };
 
     int ret = node->fs->f_ops.open(&cur_proc->fds[fd]);
@@ -153,34 +154,37 @@ static void sys_open(const char *fn, int flags)
     return;
 }
 
-static void sys_read(int fd, void *buf, size_t count)
+static void sys_read(int fildes, void *buf, size_t nbytes)
 {
-    printk("[%d] %s: read(fd=%d, buf=%p, count=%d)\n", cur_proc->pid, cur_proc->name, fd, buf, count);
+    printk("[%d] %s: read(fd=%d, buf=%p, count=%d)\n", cur_proc->pid, cur_proc->name, fildes, buf, nbytes);
     
-    if (fd >= FDS_COUNT) {  /* Out of bounds */
+    if (fildes < 0 || fildes >= FDS_COUNT) {  /* Out of bounds */
         arch_syscall_return(cur_proc, -EBADFD);
         return; 
     }
 
-    struct fs_node *node = cur_proc->fds[fd].node;
+    struct fs_node *node = cur_proc->fds[fildes].node;
 
     if (!node) {    /* Invalid File Descriptor */
         arch_syscall_return(cur_proc, -EBADFD);
         return;
     }
 
-    int ret = node->fs->f_ops.read(&cur_proc->fds[fd], buf, count);
+    ssize_t ret = node->fs->f_ops.read(&cur_proc->fds[fildes], buf, nbytes);
     arch_syscall_return(cur_proc, ret);
 
     return;
 }
 
-static void sys_sbrk(intptr_t inc)
+static void sys_sbrk(ptrdiff_t incr)
 {
-    printk("[%d] %s: sbrk(inc=%d)\n", cur_proc->pid, cur_proc->name, inc);
+    printk("[%d] %s: sbrk(incr=%d)\n", cur_proc->pid, cur_proc->name, incr);
+
     uintptr_t ret = cur_proc->heap;
-    cur_proc->heap += inc;
+    cur_proc->heap += incr;
+
     arch_syscall_return(cur_proc, ret);
+
     return;
 }
 
@@ -239,7 +243,7 @@ static void sys_write(int fd, void *buf, size_t count)
 {
     printk("[%d] %s: write(fd=%d, buf=%p, count=%d)\n", cur_proc->pid, cur_proc->name, fd, buf, count);
     
-    if (fd >= FDS_COUNT) {   /* Out of bounds */
+    if (fd < 0 || fd >= FDS_COUNT) {   /* Out of bounds */
         arch_syscall_return(cur_proc, -EBADFD);
         return; 
     }
@@ -275,6 +279,28 @@ static void sys_signal(int sig, void (*func)(int))
     arch_syscall_return(cur_proc, ret);
 }
 
+static void sys_readdir(int fd, struct dirent *dirent)
+{
+    printk("[%d] %s: readdir(fd=%d, dirent=%p)\n", cur_proc->pid, cur_proc->name, fd, dirent);
+
+    if (fd < 0 || fd >= FDS_COUNT) {  /* Out of bounds */
+        arch_syscall_return(cur_proc, -EBADFD);
+        return; 
+    }
+
+    struct fs_node *node = cur_proc->fds[fd].node;
+
+    if (!node) {    /* Invalid File Descriptor */
+        arch_syscall_return(cur_proc, -EBADFD);
+        return;
+    }
+    
+    int ret = node->fs->f_ops.readdir(&cur_proc->fds[fd], dirent);
+    arch_syscall_return(cur_proc, ret);
+
+    return;
+}
+
 void (*syscall_table[])() =  {
     /* 00 */    NULL,
     /* 01 */    sys_exit,
@@ -297,4 +323,5 @@ void (*syscall_table[])() =  {
     /* 18 */    sys_write,
     /* 19 */    sys_ioctl,
     /* 20 */    sys_signal,
+    /* 21 */    sys_readdir,
 };

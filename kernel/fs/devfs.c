@@ -18,16 +18,17 @@
 #include <fs/devfs.h>
 
 #include <bits/errno.h>
+#include <bits/dirent.h>
 
 /* devfs root directory (usually mounted on '/dev') */
 struct fs_node *dev_root = NULL;
 
 static ssize_t devfs_read(struct fs_node *node, off_t offset, size_t size, void *buf)
 {
-	if (!node->dev)	/* is node connected to a device handler? */
-		return -EINVAL;
+    if (!node->dev)	/* is node connected to a device handler? */
+        return -EINVAL;
 
-	return node->dev->read(node, offset, size, buf);
+    return node->dev->read(node, offset, size, buf);
 }
 
 static ssize_t devfs_write(struct fs_node *node, off_t offset, size_t size, void *buf)
@@ -49,7 +50,7 @@ static struct fs_node *devfs_create(struct fs_node *dir, const char *name)
 	node->size = 0;
 
 	struct devfs_dir *_dir = (struct devfs_dir *) dir->p;
-	struct devfs_dir *tmp  = kmalloc(sizeof(*tmp));
+	struct devfs_dir *tmp  = kmalloc(sizeof(struct devfs_dir));
 
 	tmp->next = _dir;
 	tmp->node = node;
@@ -94,23 +95,50 @@ static struct fs_node *devfs_find(struct fs_node *dir, const char *fn)
 	return NULL;	/* File not found */
 }
 
+static ssize_t devfs_readdir(struct fs_node *dir, off_t offset, struct dirent *dirent)
+{
+    //printk("devfs_readdir(dir=%p, offset=%d, dirent=%p)\n", dir, offset, dirent);
+    int i = 0;
+	struct devfs_dir *_dir = (struct devfs_dir *) dir->p;
+
+    if (!_dir)
+        return 0;
+
+    int found = 0;
+
+    forlinked (e, _dir, e->next) {
+        if (i == offset) {
+            found = 1;
+            strcpy(dirent->d_name, e->node->name);   // FIXME
+            break;
+        }
+        ++i;
+    }
+
+    return found;
+}
+
 
 /* ================ File Operations ================ */
 
 static int devfs_file_open(struct file *file)
 {
-	if (!file->node->dev)
-		return -ENXIO;
-	
-	return file->node->dev->f_ops.open(file);
+    if (file->node->type == FS_DIR) {
+        return 0;
+    } else {
+        if (!file->node->dev)
+            return -ENXIO;
+        
+        return file->node->dev->f_ops.open(file);
+    }
 }
 
 static ssize_t devfs_file_read(struct file *file, void *buf, size_t size)
 {
-	if (!file->node->dev)
-		return -ENXIO;
+    if (!file->node->dev)
+        return -ENXIO;
 
-	return file->node->dev->f_ops.read(file, buf, size);
+    return file->node->dev->f_ops.read(file, buf, size);
 }
 
 static ssize_t devfs_file_write(struct file *file, void *buf, size_t size)
@@ -165,11 +193,13 @@ struct fs devfs = {
 	.read   = devfs_read,
 	.write  = devfs_write,
 	.ioctl  = devfs_ioctl,
+    .readdir = devfs_readdir,
 	
 	.f_ops = {
 		.open  = devfs_file_open,
 		.read  = devfs_file_read,
 		.write = devfs_file_write, 
+        .readdir = generic_file_readdir,
 
         .can_read = devfs_file_can_read,
         .can_write = devfs_file_can_write,

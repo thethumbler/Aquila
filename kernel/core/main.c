@@ -3,10 +3,11 @@
 #include <core/string.h>
 #include <mm/mm.h>
 
-#include <fs/initramfs.h>
 #include <dev/dev.h>
-
 #include <dev/ramdev.h>
+#include <dev/console.h>
+
+#include <fs/initramfs.h>
 #include <fs/devfs.h>
 
 #include <boot/multiboot.h>
@@ -15,7 +16,6 @@
 #include <sys/sched.h>
 #include <sys/elf.h>
 
-#include <dev/console.h>
 #include <ds/queue.h>
 
 #include <boot/boot.h>
@@ -34,9 +34,9 @@ void kmain(struct boot *boot)
     extern void devpts_init();
     devpts_init();
 
-    struct fs_node *pts = vfs.mkdir(dev_root, "pts");
-    extern struct fs_node *devpts_root;
-    vfs.mount(pts, devpts_root);
+    //struct fs_node *pts = vfs.mkdir(dev_root, "pts");
+    //extern struct fs_node *devpts_root;
+    //vfs.mount(pts, devpts_root);
 
     printk("[0] Kernel: Loading init process\n");
     proc_t *init = load_elf("/init");

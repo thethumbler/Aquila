@@ -17,7 +17,7 @@ struct {
     uint32_t esp;
     uint32_t ss;
     uint32_t _[23]; /* To know the actuall fields, consult Intel Manuals */
-} __packed tss_entry;
+} __packed tss_entry __aligned(8);
 
 #define TSS_BASE    ((uintptr_t) &tss_entry)
 #define TSS_LIMIT   (sizeof(tss_entry))
@@ -73,7 +73,7 @@ struct {
 
 void gdt_setup()
 {
-	asm("\
+	asm volatile("\
 	lgdtl (%0) \n\
 	ljmp $0x8,$1f \n\
 	1: \n\

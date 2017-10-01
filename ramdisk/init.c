@@ -7,6 +7,8 @@
 #include <string.h>
 #include <stdlib.h>
 
+#include <sys/ioctl.h>
+
 #define TIOCGPTN	0x80045430
 #define EAGAIN			11
 

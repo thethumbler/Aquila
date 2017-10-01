@@ -5,6 +5,9 @@
 #include <errno.h>
 #include <dirent.h>
 
+#include <sys/wait.h>
+#include <unistd.h>
+
 /*
  * Global variables 
  */
@@ -18,10 +21,10 @@ char *pwd = "/";
  * Built-in Commands
  */
 
-int cmd_echo(int argc, char **args)
+int cmd_echo(int argc, char *argv[])
 {
     for (int i = 1; i < argc; ++i) {
-        printf("%s ", args[i]);
+        printf("%s ", argv[i]);
     }
 
     printf("\n");
@@ -33,6 +36,13 @@ int cmd_ls(int argc, char **args)
 {
     if (argc == 1) {
         DIR *d = opendir(pwd);
+        struct dirent *ent;
+        while (ent = readdir(d)) {
+            printf("%s\n", ent->d_name);
+        }
+        closedir(d);
+    } else if (argc == 2) {
+        DIR *d = opendir(args[1]);
         struct dirent *ent;
         while (ent = readdir(d)) {
             printf("%s\n", ent->d_name);
@@ -69,23 +79,23 @@ void eval()
     if (strlen(buf) < 2)
         return;
 
-    char **args[50];
+    char *argv[50];
     int args_i = 0;
 
     char *tok = strtok(buf, " \t\n");
 
     while (tok) {
-        args[args_i++] = tok;
+        argv[args_i++] = tok;
         tok = strtok(NULL, " \t\n");
     }
 
-    args[args_i] = NULL;
+    argv[args_i] = NULL;
 
-    if (!strcmp(args[0], "echo")) {
-        cmd_echo(args_i, args);
-    } else if (!strcmp(args[0], "ls")) {
-        cmd_ls(args_i, args);
-    } else if (!strcmp(args[0], "test")) {
+    if (!strcmp(argv[0], "echo")) {
+        cmd_echo(args_i, argv);
+    } else if (!strcmp(argv[0], "ls")) {
+        cmd_ls(args_i, argv);
+    } else if (!strcmp(argv[0], "test")) {
         int cld;
         if (cld = fork()) {
             int s, pid;
@@ -97,7 +107,7 @@ void eval()
             exit(x);
         }
     } else {
-        printf("aqsh: %s: command not found\n", args[0]);
+        printf("aqsh: %s: command not found\n", argv[0]);
     }
 }
 

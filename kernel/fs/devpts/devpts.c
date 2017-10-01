@@ -206,6 +206,10 @@ void devpts_init()
 {
     devpts.create = devfs.create;
     devpts.find = devfs.find;
+    devpts.readdir = devfs.readdir;
+
+    devpts.f_ops.open = devfs.f_ops.open;
+    devpts.f_ops.readdir = devfs.f_ops.readdir;
 
     devpts_root = kmalloc(sizeof(struct fs_node));
     memset(devpts_root, 0, sizeof(struct fs_node));
