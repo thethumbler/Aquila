@@ -4,6 +4,11 @@
 #include <core/system.h>
 #include <sys/proc.h>
 
+#define ELFMAG0 0x7f
+#define ELFMAG1 'E'
+#define ELFMAG2 'L'
+#define ELFMAG3 'F'
+
 #define SHT_NULL		0
 #define SHT_PROGBITS	1
 
