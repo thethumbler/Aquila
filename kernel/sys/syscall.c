@@ -20,6 +20,8 @@
 #include <bits/errno.h>
 #include <bits/dirent.h>
 
+#include <fs/devpts.h>
+
 static void sys_exit(int status)
 {
     printk("[%d] %s: exit(status=%d)\n", cur_proc->pid, cur_proc->name, status);
@@ -85,7 +87,7 @@ static void sys_fork(void)
 
 static void sys_fstat()
 {
-
+    //printk("[%d] %s: fstat(fildes=%d, buf=%p)\n", cur_proc->pid, cur_proc->name, fildes, buf);
 }
 
 static void sys_getpid()
@@ -94,9 +96,24 @@ static void sys_getpid()
     arch_syscall_return(cur_proc, cur_proc->pid);
 }
 
-static void sys_isatty()
+static void sys_isatty(int fildes)
 {
+    printk("[%d] %s: isatty(fildes=%d)\n", cur_proc->pid, cur_proc->name, fildes);
 
+    if (fildes < 0 || fildes >= FDS_COUNT) {  /* Out of bounds */
+        arch_syscall_return(cur_proc, -EBADFD);
+        return; 
+    }
+
+    struct fs_node *node = cur_proc->fds[fildes].node;
+
+    if (!node) {    /* Invalid File Descriptor */
+        arch_syscall_return(cur_proc, -EBADFD);
+        return;
+    }
+
+    // XXX
+    arch_syscall_return(cur_proc, !strcmp(node->dev->name, "pts"));
 }
 
 static void sys_kill(pid_t pid, int sig)
@@ -111,9 +128,10 @@ static void sys_link()
 
 }
 
-static void sys_lseek()
+static void sys_lseek(int fildes, off_t offset, int whence)
 {
-
+    printk("[%d] %s: lseek(fildes=%d, offset=%d, whence=%d)\n", cur_proc->pid, cur_proc->name, fildes, offset, whence);
+    for (;;);
 }
 
 static void sys_open(const char *path, int oflags)
@@ -178,7 +196,7 @@ static void sys_read(int fildes, void *buf, size_t nbytes)
 
 static void sys_sbrk(ptrdiff_t incr)
 {
-    printk("[%d] %s: sbrk(incr=%d)\n", cur_proc->pid, cur_proc->name, incr);
+    printk("[%d] %s: sbrk(incr=%d, 0x%x)\n", cur_proc->pid, cur_proc->name, incr, incr);
 
     uintptr_t ret = cur_proc->heap;
     cur_proc->heap += incr;
