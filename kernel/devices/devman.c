@@ -11,8 +11,9 @@ dev_t *devices[] =
 
 void devman_init()
 {
-	foreach(device, devices)
-	{
+    printk("[0] Kernel: devman -> init()\n");
+
+	foreach (device, devices) {
 		device->probe();
 	}
 }
