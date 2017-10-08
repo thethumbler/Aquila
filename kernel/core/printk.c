@@ -1,6 +1,7 @@
 #include <core/system.h>
 #include <console/early_console.h>
 
+#ifdef PRINTK_DEBUG
 static int putc(char c)
 {
 	return early_console_putc(c);
@@ -146,3 +147,4 @@ int printk(char *fmt, ...)
 	va_end(args);
 	return ret;
 }
+#endif
