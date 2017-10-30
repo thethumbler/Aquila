@@ -62,6 +62,10 @@ void init_process(proc_t *proc)
 void kill_proc(proc_t *proc)
 {
     /* Free resources */
+    //arch_kill_proc(proc);
+    extern proc_t *last_fpu_proc;
+    if (last_fpu_proc == proc)
+        last_fpu_proc = NULL;
 
     /* Unmap memory */
     pmman.unmap_full((uintptr_t) NULL, (uintptr_t) proc->heap);

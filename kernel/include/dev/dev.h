@@ -36,5 +36,7 @@ extern dev_t i8042dev;
 extern dev_t ps2kbddev;
 extern dev_t condev;
 extern dev_t ttydev;
+extern dev_t pcidev;
+extern dev_t atadev;
 
 #endif

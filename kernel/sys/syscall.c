@@ -130,8 +130,36 @@ static void sys_link()
 
 static void sys_lseek(int fildes, off_t offset, int whence)
 {
+    /* FIXME */
     printk("[%d] %s: lseek(fildes=%d, offset=%d, whence=%d)\n", cur_proc->pid, cur_proc->name, fildes, offset, whence);
-    for (;;);
+    if (fildes < 0 || fildes >= FDS_COUNT) {  /* Out of bounds */
+        arch_syscall_return(cur_proc, -EBADFD);
+        return; 
+    }
+
+    struct fs_node *node = cur_proc->fds[fildes].node;
+
+    if (!node) {    /* Invalid File Descriptor */
+        arch_syscall_return(cur_proc, -EBADFD);
+        return;
+    }
+
+    switch (whence) {
+        case 0: /* SEEK_SET */
+            cur_proc->fds[fildes].offset = offset;
+            break;
+        case 1: /* SEEK_CUR */
+            cur_proc->fds[fildes].offset += offset;
+            break;
+        case 2: /* SEEK_END */
+            cur_proc->fds[fildes].offset = cur_proc->fds[fildes].node->size;
+            break;
+    }
+
+    arch_syscall_return(cur_proc, cur_proc->fds[fildes].offset);
+    return;
+
+    //for (;;);
 }
 
 static void sys_open(const char *path, int oflags)

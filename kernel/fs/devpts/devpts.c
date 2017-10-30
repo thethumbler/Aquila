@@ -147,19 +147,30 @@ static ssize_t ptm_write(struct fs_node *node, off_t offset __unused, size_t siz
         int echo = pty->tios.c_lflag & ECHO;
         char *c = buf;
         while (size) {
-            pty->cook[pty->pos++] = *c;
 
             switch (*c) {
                 case '\n':
+                    pty->cook[pty->pos++] = *c;
                     if (echo) ring_write(pty->out, 1, "\n");
                     ring_write(pty->in, pty->pos, pty->cook);
                     pty->pos = 0;
                     ret = ret - size + 1;
                     return ret;
+                case '\b':
+                    if (pty->pos > 0) {
+                        --pty->pos;
+                        pty->cook[pty->pos] = 0;
+                        break;
+                    } else {
+                        goto skip_echo;
+                    }
                 default:
-                    if (echo) ring_write(pty->out, 1, c);
+                    pty->cook[pty->pos++] = *c;
             }
 
+            if (echo) ring_write(pty->out, 1, c);
+
+skip_echo:
             ++c;
             --size;
         }
@@ -228,6 +239,7 @@ void devpts_init()
 }
 
 static struct device ptsdev = (struct device) {
+    .name = "pts",
     .read = pts_read,
     .write = pts_write,
 

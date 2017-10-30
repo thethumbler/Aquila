@@ -77,6 +77,7 @@ struct fs_node
 	enum fs_node_type	type;
 	struct fs 	*fs;
 	dev_t		*dev;
+    off_t       offset; /* Offset to add to each operation on file */
 	void 		*p;		/* Filesystem handler private data */
 
 	queue_t		*read_queue;

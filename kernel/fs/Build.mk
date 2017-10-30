@@ -4,4 +4,6 @@ obj-y += initramfs.o
 obj-y += read.o
 obj-y += write.o
 obj-y += readdir.o
+obj-y += mbr.o
+obj-y += ext2.o
 dirs-y += devpts/
