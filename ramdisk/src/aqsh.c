@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -63,6 +64,64 @@ int cmd_ls(int argc, char **args)
     return 0;
 }
 
+int cmd_mem(int argc, char *argv[])
+{
+    size_t s = 0x1000;
+    for (int i = 0; i < 10; ++i) {
+        printf("malloc(%u) = %p\n", s, malloc(s));
+    }
+}
+
+int cmd_stat(int argc, char *argv[])
+{
+
+}
+
+int cmd_cat(int argc, char *argv[])
+{
+    char buf[1024];
+
+    for (int i = 1; i < argc; ++i) {
+        int fd = open(argv[i], O_RDONLY);
+        int r;
+
+        while ((r = read(fd, buf, 1024)) > 0) {
+            write(1, buf, r);
+        }
+
+        close(fd);
+    }
+}
+
+int cmd_float(int argc, char *argv[])
+{
+    float sum = 0;
+    for (int i = 1; i < argc; ++i) {
+        float v;
+        sscanf(argv[i], "%f", &v);
+        sum += v;
+    }
+
+    printf("%f\n", sum);
+
+    return 0;
+}
+
+int cmd_hd(int argc, char *argv[])
+{
+    char buf[1024];
+
+    int fd = open(argv[1], O_RDONLY);
+    int r;
+
+    r = read(fd, buf, 1024);
+    write(1, buf, r);
+
+    close(fd);
+}
+
+
+/***********/
 
 void print_prompt()
 {
@@ -95,7 +154,17 @@ void eval()
         cmd_echo(args_i, argv);
     } else if (!strcmp(argv[0], "ls")) {
         cmd_ls(args_i, argv);
-    } else if (!strcmp(argv[0], "test")) {
+    } else if (!strcmp(argv[0], "stat")) {
+        cmd_stat(args_i, argv);
+    } else if (!strcmp(argv[0], "cat")) {
+        cmd_cat(args_i, argv);
+    } else if (!strcmp(argv[0], "mem")) {
+        cmd_mem(args_i, argv);
+    } else if (!strcmp(argv[0], "float")) {
+        cmd_float(args_i, argv);
+    } else if (!strcmp(argv[0], "hd")) {
+        cmd_hd(args_i, argv);
+    } else if (!strcmp(argv[0], "lua")) {
         int cld;
         if (cld = fork()) {
             int s, pid;
@@ -103,7 +172,18 @@ void eval()
                 pid = waitpid(cld, &s, 0);
             } while (pid != cld);
         } else {
-            int x = execve("/bin/prog", 0, 0);
+            int x = execve("/etc/lua", argv, 0);
+            exit(x);
+        }
+    } else if (!strcmp(argv[0], "lua5")) {
+        int cld;
+        if (cld = fork()) {
+            int s, pid;
+            do {
+                pid = waitpid(cld, &s, 0);
+            } while (pid != cld);
+        } else {
+            int x = execve("/etc/lua5", argv, 0);
             exit(x);
         }
     } else {
