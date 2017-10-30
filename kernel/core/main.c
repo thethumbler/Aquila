@@ -9,6 +9,7 @@
 
 #include <fs/initramfs.h>
 #include <fs/devfs.h>
+#include <fs/ext2.h>
 
 #include <boot/multiboot.h>
 
@@ -37,6 +38,16 @@ void kmain(struct boot *boot)
     //struct fs_node *pts = vfs.mkdir(dev_root, "pts");
     //extern struct fs_node *devpts_root;
     //vfs.mount(pts, devpts_root);
+
+    /* Mount HD on /mnt .. FIXME */
+    struct fs_node *mnt = vfs.find(vfs_root, "mnt");
+    struct fs_node *hda1 = vfs.find(dev_root, "hda1");
+
+    if (!hda1)
+        panic("Could not load /dev/hda1");
+
+    struct fs_node *hd  = ext2fs.load(hda1);
+    vfs.mount(mnt, hd);
 
     printk("[0] Kernel: Loading init process\n");
     proc_t *init = load_elf("/init");

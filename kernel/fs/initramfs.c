@@ -207,6 +207,12 @@ static struct fs_node *cpiofs_load(struct fs_node *node)
 
 static ssize_t cpiofs_read(struct fs_node *node, off_t offset, size_t len, void *buf_p)
 {
+    //printk("cpiofs_read(node=%p, offset=%d, len=%d, buf_p=%p)\n", node, offset, len, buf_p);
+    if (offset >= (off_t) node->size)
+        return 0;
+
+    len = MIN(len, node->size - offset);
+
     cpiofs_private_t *p = node->p;
     struct fs_node *super = p->super;
     return super->fs->read(super, p->data + offset, len, buf_p);
@@ -236,7 +242,7 @@ static int cpiofs_eof(struct file *file)
     if (file->node->type == FS_DIR) {
         return (size_t) file->offset >= ((cpiofs_private_t *) file->node->p)->count;
     } else {
-        return (size_t) file->offset > file->node->size;
+        return (size_t) file->offset >= file->node->size;
     }
 }
 

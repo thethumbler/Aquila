@@ -24,14 +24,14 @@ static void (*channel2_handler)(int) = NULL;
 
 void i8042_read_wait()
 {
-	while(inb(STAT_PORT) & IN_BUF_FULL);
+	while (inb(STAT_PORT) & IN_BUF_FULL);
 }
 
 void i8042_first_handler(regs_t *r __attribute__((unused)))
 {
 	i8042_read_wait();
 	int scancode = inb(DATA_PORT);
-	if(channel1_handler)
+	if (channel1_handler)
 		channel1_handler(scancode);
 }
 
@@ -39,7 +39,7 @@ void i8042_second_handler(regs_t *r __attribute__((unused)))
 {
 	i8042_read_wait();
 	int scancode = inb(DATA_PORT);
-	if(channel2_handler)
+	if (channel2_handler)
 		channel2_handler(scancode);	
 }
 
@@ -51,8 +51,7 @@ void install_i8042_handler()
 
 void i8042_register_handler(int channel, void (*fun)(int))
 {
-	switch(channel)
-	{
+	switch (channel) {
 		case 1:
 			channel1_handler = fun;
 			break;
@@ -66,7 +65,7 @@ void i8042_register_handler(int channel, void (*fun)(int))
 
 int i8042_probe()
 {
-	if(!(inb(STAT_PORT)&I8042_SYSTEM_FLAG))
+	if (!(inb(STAT_PORT) & I8042_SYSTEM_FLAG))
 		panic("No i8042 Controller found!");
 
 	install_i8042_handler();
@@ -74,7 +73,6 @@ int i8042_probe()
 	return 0;
 }
 
-dev_t i8042dev = (dev_t)
-{
+dev_t i8042dev =  {
 	.probe = i8042_probe,
 };

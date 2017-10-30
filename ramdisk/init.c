@@ -80,7 +80,7 @@ void _start()
             int stdout_fd = open(pts_fn, O_WRONLY);
             int stderr_fd = open(pts_fn, O_WRONLY);
 
-            char *argp[] = {"ABC", "DEF", 0};
+            char *argp[] = {"/bin/aqsh", "DEF", 0};
             char *envp[] = {"PWD=/", 0};
             execve("/bin/aqsh", argp, envp);
             for (;;);

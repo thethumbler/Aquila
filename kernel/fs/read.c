@@ -33,6 +33,9 @@ ssize_t generic_file_read(struct file *file, void *buf, size_t size)
 {
     if (file->flags & O_WRONLY) /* File is not opened for reading */
         return -EBADFD;
+
+    if (!size)
+        return 0;
     
     int retval;
     for (;;) {
