@@ -13,20 +13,35 @@
 #define inw(port) \
 ({ \
 	uint16_t ret; \
-	asm volatile ("inb %%dx, %%ax":"=a"(ret):"d"(port)); \
+	asm volatile ("inw %1, %0":"=a"(ret):"dN"(port)); \
 	ret; \
 })
 
 #define inl(port) \
 ({ \
 	uint32_t ret; \
-	asm volatile ("inb %%dx, %%eax":"=a"(ret):"d"(port)); \
+	asm volatile ("inl %%dx, %%eax":"=a"(ret):"d"(port)); \
 	ret; \
+})
+
+#define insw(port, count, buf) \
+({ \
+	asm volatile ("rep insw"::"D"(buf), "c"(count), "d"(port)); \
 })
 
 #define outb(port, value) \
 ({ \
-	asm volatile ("outb %%al, %%dx"::"d"(port),"a"(value)); \
+	asm volatile ("outb %%al, %%dx"::"d"((port)),"a"((value))); \
+})
+
+#define outw(port, value) \
+({ \
+	asm volatile ("outw %%ax, %%dx"::"d"(port),"a"(value)); \
+})
+
+#define outl(port, value) \
+({ \
+	asm volatile ("outl %%eax, %%dx"::"d"(port),"a"(value)); \
 })
 
 #define io_wait() \

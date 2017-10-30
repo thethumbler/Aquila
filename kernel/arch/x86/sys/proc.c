@@ -23,7 +23,7 @@ void arch_spawn_proc(proc_t *proc)
 
 void arch_init_proc(void *d, proc_t *p)
 {
-    x86_proc_t *arch = kmalloc(sizeof(x86_proc_t));
+    x86_proc_t *arch = memset(kmalloc(sizeof(x86_proc_t)), 0, sizeof(x86_proc_t));
     struct arch_load_elf *s = d;
 
     arch->pd = s->new;
@@ -40,11 +40,11 @@ void arch_init_proc(void *d, proc_t *p)
 void arch_switch_proc(proc_t *proc)
 {
     x86_proc_t *arch = proc->arch;
-    printk("[%d] %s: Switching [KSTACK: %p, EIP: %p, ESP: %p]\n", proc->pid, proc->name, arch->kstack, arch->eip, arch->esp);
+    //printk("[%d] %s: Switching [KSTACK: %p, EIP: %p, ESP: %p]\n", proc->pid, proc->name, arch->kstack, arch->eip, arch->esp);
 
     switch_page_directory(arch->pd);
-
     set_kernel_stack(arch->kstack);
+    disable_fpu();
 
     if (proc->signals_queue->count) {
         //printk("There are %d pending signals\n", proc->signals_queue->count);
@@ -55,6 +55,11 @@ void arch_switch_proc(proc_t *proc)
 
     extern void x86_goto(uintptr_t eip, uintptr_t ebp, uintptr_t esp) __attribute__((noreturn));
     x86_goto(arch->eip, arch->ebp, arch->esp);
+}
+
+void arch_kill_proc(proc_t *proc)
+{
+
 }
 
 void arch_sleep()

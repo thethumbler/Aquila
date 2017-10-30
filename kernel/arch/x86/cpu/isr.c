@@ -116,6 +116,11 @@ void interrupt(regs_t *regs)
         pmman.handle_page_fault(read_cr2());
         return;
     }
+
+    if (int_num == 0x07) {  /* FPU Trap */
+        trap_fpu();
+        return;
+    }
 	
 	if (int_num == 0x80) {	/* syscall */
 		x86_proc_t *arch = cur_proc->arch;

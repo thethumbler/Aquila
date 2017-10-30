@@ -8,6 +8,16 @@
 void arch_handle_signal(int sig)
 {
     uintptr_t handler = cur_proc->signal_handler[sig];
+    if (!handler) handler = sig_default_action[sig];
+
+    switch (handler) {
+        case SIGACT_ABORT:
+        case SIGACT_TERMINATE:
+            kill_proc(cur_proc);
+            kernel_idle();
+            break;  /* We should never reach this anyway */
+    }
+
 
     x86_proc_t *arch = cur_proc->arch;
 

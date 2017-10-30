@@ -8,3 +8,4 @@ obj-y += pit.o
 obj-y += sdt.o
 obj-y += smp.o
 obj-y += sys.o
+obj-y += fpu.o

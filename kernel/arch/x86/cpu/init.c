@@ -50,12 +50,6 @@ void cpu_init()
     printk("[0] Kernel: Setting up Virtual Memory Manager (VMM)\n");
     vmm_setup();
 
-    //extern volatile uint32_t *BSP_PD;
-    //for (int i = 0; BSP_PD[i] != 0; ++i)
-    //    BSP_PD[i] = 0;  /* Unmap lower half */
-
-    //TLB_flush();
-
     set_tss_esp(VMA(0x100000));
 
     pic_setup();
@@ -63,23 +57,26 @@ void cpu_init()
 
     extern void kmain(struct boot *);
     kmain(boot);
+    
+    for (;;);
 
 #if 0
-    struct cpu_features *fp = x86_get_features();
-    if(fp->apic)
-    {
-        printk("CPU has Local APIC\n");
+    struct cpu_features fp = {0};
+    get_cpu_features(&fp);
+
+    if (fp.apic) {
+        printk("APIC On-Chip\n");
         extern void trampoline();
         extern void trampoline_end();
 
-        printk("Copying trampoline code [%d]\n", (char *) trampoline_end - (char *)  trampoline);
-        memcpy(0, trampoline, (char *)  trampoline_end - (char *)  trampoline);
+        printk("Copying trampoline code to %p [%d]\n", VMA(NULL), (char *) trampoline_end - (char *)  trampoline);
+        memcpy(VMA(NULL), trampoline, (char *)  trampoline_end - (char *)  trampoline);
 
         for(;;);
     }
-#endif
 
     for(;;);
+#endif
 }
 
 #if 0
