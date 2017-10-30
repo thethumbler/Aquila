@@ -18,6 +18,11 @@ typedef struct
 	uintptr_t	eflags;
 	uintptr_t	eax;	/* For syscall return if process is not spawned */
 	regs_t		*regs;	/* Pointer to registers on the stack */
+
+    void        *fpu_context;
+
+    /* Flags */
+    int fpu_enabled : 1;
 } __attribute__((packed)) x86_proc_t;
 
 void arch_syscall(regs_t *r);

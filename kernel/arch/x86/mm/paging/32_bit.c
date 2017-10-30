@@ -470,7 +470,7 @@ static void copy_fork_mapping(uintptr_t base, uintptr_t fork)
 
 void handle_page_fault(uintptr_t addr)
 {
-    printk("handle_page_fault(%p)\n", addr);
+    //printk("handle_page_fault(%p)\n", addr);
 
     uintptr_t page_addr = addr & ~PAGE_MASK;
     __page_t *page = get_page_mapping(page_addr);
@@ -497,6 +497,7 @@ void handle_page_fault(uintptr_t addr)
     } else {
         if (addr < cur_proc->heap && addr >= cur_proc->heap_start) {
             map_page(page_addr, URWX);  /* FIXME */
+            memset((void *) page_addr, 0, PAGE_SIZE);
             return;
         }
 

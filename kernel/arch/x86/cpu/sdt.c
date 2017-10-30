@@ -3,7 +3,7 @@
 
 #include <cpu/cpu.h>
 
-static int byte_checksum(const char *p, size_t s)
+static inline int byte_checksum(const char *p, size_t s)
 {
 	int8_t ret = 0;
 	while (s--) ret += (int8_t) *p++;
@@ -15,7 +15,7 @@ struct acpi_rsdp *get_acpi_rsdp()
 {
 	if (_rsdp) return _rsdp;
 
-	char *EBDA = (char *)(uint32_t) *(uint16_t *) (0x40E);
+	char *EBDA = (char *) (uintptr_t) *(uint16_t *) (0x40E);
 	
 	char *p = EBDA;
 
@@ -26,8 +26,8 @@ struct acpi_rsdp *get_acpi_rsdp()
 
 		p += 0x10;
 	}
-	
-	while (p < (char *) 0x000FFFFF) {
+
+	while (p < VMA((char *) 0x000FFFFF)) {
 		if (!strncmp(p, "RSD PTR ", 8))
 			if (!byte_checksum(p, sizeof(struct acpi_rsdp)))
 				return _rsdp = (struct acpi_rsdp *) p;
@@ -55,7 +55,6 @@ struct acpi_madt *get_acpi_madt()
 	if (_madt) return _madt;
 
 	struct acpi_rsdt *rsdt = get_acpi_rsdt();
-	printk("rsdt=%x\n", rsdt);
 	if (!rsdt) return NULL;
 
 	int entries = (rsdt->header.length - sizeof(rsdt->header))/sizeof(uint32_t);
@@ -76,20 +75,18 @@ int get_cpus_count()
 	struct acpi_madt *madt = get_acpi_madt();
 	struct acpi_madt_entry *entry = madt->entry;
 
-	printk("madt %x\n", madt);
-	for(;;);
-
 	while ((uint32_t) entry < ((uint32_t) madt + madt->header.length)) {
 		if (entry->type == ACPI_MADT_LOCAL_APIC) {
-			printk("CPU %d:  LAPIC_ID: %d FLAGS: %d\n",
-				entry->data.local_apic.processor_id,
-				entry->data.local_apic.apic_id,
-				entry->data.local_apic.flags
-			);
+			//printk("CPU %d:  LAPIC_ID: %d FLAGS: %d\n",
+			//	entry->data.local_apic.processor_id,
+			//	entry->data.local_apic.apic_id,
+			//	entry->data.local_apic.flags
+			//);
 
 			++ret;
 		}
-		entry = (struct acpi_madt_entry*)((uint32_t)entry + entry->length);
+
+		entry = (struct acpi_madt_entry *)((uint32_t) entry + entry->length);
 	}
 
 	return ret;

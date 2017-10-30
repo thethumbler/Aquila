@@ -39,7 +39,7 @@ static void x86_sched_handler(regs_t *r __unused)
 
 void arch_sched_init()
 {
-    //pit_setup(10);
+    pit_setup(1);
     irq_install_handler(PIT_IRQ, x86_sched_handler);
 }
 
@@ -57,6 +57,6 @@ void arch_idle()
     cur_proc = NULL;
     uintptr_t esp = VMA(0x100000);
     set_kernel_stack(esp);
-    //asm volatile("mov %0, %%esp; mov %0, %%ebp; jmp __arch_idle;"::"g"(esp), "g"(__arch_idle));
-    __arch_idle();
+    asm volatile("mov %0, %%esp; mov %0, %%ebp; jmp __arch_idle;"::"g"(esp), "g"(__arch_idle));
+    //__arch_idle();
 }
