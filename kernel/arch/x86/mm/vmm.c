@@ -91,6 +91,7 @@ void print_node(unsigned i)
 
 void *kmalloc(size_t size)
 {
+    //printk("kmalloc(%d)\n", size);
     size = (size + 3)/4;    /* size in 4-bytes units */
 
     /* Look for a first fit free node */
@@ -119,6 +120,7 @@ void *kmalloc(size_t size)
 
 void kfree(void *_ptr)
 {
+    //printk("kfree(%p)\n", _ptr);
     uintptr_t ptr = (uintptr_t) _ptr;
 
     if (ptr < VMM_BASE)  /* That's not even allocatable */
