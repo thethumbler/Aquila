@@ -145,6 +145,8 @@ struct ext2_dentry {
 #define EXT2_DENTRY_TYPE_SCKT  6
 #define EXT2_DENTRY_TYPE_SLINK 7
 
+#define EXT2_DIRECT_POINTERS 12
+
 extern struct fs ext2fs;
 
 #endif 
