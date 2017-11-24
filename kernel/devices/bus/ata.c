@@ -1,4 +1,5 @@
 #include <core/system.h>
+#include <core/panic.h>
 #include <cpu/io.h>
 #include <dev/dev.h>
 #include <dev/ata.h>
@@ -10,7 +11,7 @@
 static struct ata_device {
     uint16_t base;
     uint16_t ctrl;
-    uint8_t  slave : 1;
+    uint8_t  slave;
 } devices[4] = {0};
 
 void ata_wait(struct ata_device *dev)
@@ -26,31 +27,26 @@ void ata_soft_reset(struct ata_device *dev)
     outb(dev->ctrl, 0);
 }
 
-union status_reg ata_get_status(struct ata_device *dev)
-{
-    return (union status_reg){.raw = inb(dev->base + ATA_PORT_CMD)};
-}
-
-static void ata_poll(struct ata_device *dev)
+void ata_poll(struct ata_device *dev, int advanced_check)
 {
     ata_wait(dev);
 
-    union status_reg status;
-    do status = ata_get_status(dev);    //inb(dev->base + ATA_PORT_CMD);
-    while (status.bits.bsy);
+    uint8_t s;
+    /* Wait until busy clears */
+    while ((s = inb(dev->base + ATA_PORT_CMD)) & ATA_STATUS_BSY);
 
-retry:
-    status = ata_get_status(dev);
+    if (advanced_check) {
+        if ((s & ATA_STATUS_ERR) || (s & ATA_STATUS_DF)) {
+            ata_wait(dev);
+            uint8_t err = inb(dev->base + ATA_PORT_ERROR);
+            printk("DRIVE ERROR! %d\n", err);
+            panic("");
+        }
 
-    if (status.bits.err | status.bits.df) {
-        ata_wait(dev);
-        uint8_t err = inb(dev->base + ATA_PORT_ERROR);
-        printk("DRIVE ERROR!! %d\n", err);
-        for (;;);
+        if (!(s & ATA_STATUS_DRQ)) {
+            panic("DRQ NOT SET\n");
+        }
     }
-
-    if (!status.bits.drq)
-        goto retry;
 }
 
 static struct ata_device *__last_selected_dev = NULL;
@@ -65,9 +61,11 @@ static void ata_select_device(struct ata_device *dev)
 
 static ssize_t ata_read_sectors(struct ata_device *dev, uint64_t lba, size_t count, void *buf)
 {
-    printk("ata_read_sectors(dev=%p, lba=%lx, count=%d, buf=%p)\n", dev, lba, count, buf);
-    //asm volatile ("pushfd");
+    //printk("ata_read_sectors(dev=%p, lba=%x, count=%d, buf=%p)\n", dev, (uint32_t) lba, count, buf);    /* XXX */
     ata_select_device(dev);
+
+    /* Send NULL byte to error port */
+    outb(dev->base + ATA_PORT_ERROR, 0);
 
     /* Send sectors count and LBA */
     outb(dev->base + ATA_PORT_COUNT, (count >> 8) & 0xFF);
@@ -84,14 +82,12 @@ static ssize_t ata_read_sectors(struct ata_device *dev, uint64_t lba, size_t cou
     outb(dev->base + ATA_PORT_CMD, ATA_CMD_READ_SECOTRS_EXT);
 
     while (count--) {
-        ata_poll(dev);
+        ata_poll(dev, 1);
         insw(dev->base + ATA_PORT_DATA, 256, buf);
         buf += 512;
     }
 
-    ata_poll(dev);
-
-    //asm volatile ("popfd");
+    ata_poll(dev, 0);
 
     return 0;
 }
@@ -100,27 +96,29 @@ static ssize_t ata_read_sectors(struct ata_device *dev, uint64_t lba, size_t cou
 static char read_buf[BLOCK_SIZE] __aligned(16);
 static ssize_t ata_read(struct fs_node *node, off_t offset, size_t size, void *buf)
 {
-    printk("ata_read(node=%p, offset=%d, size=%d, buf=%p)\n", node, offset, size, buf);
+    //printk("ata_read(node=%p, offset=%x, size=%d, buf=%p)\n", node, offset, size, buf);
     ssize_t ret = 0;
     char *_buf = buf;
 
     struct ata_device *dev = node->p;
     offset += node->offset;
 
-    /* Read up to block boundary */
-    size_t start = MIN(BLOCK_SIZE - offset % BLOCK_SIZE, size);
+    if (offset % BLOCK_SIZE) {
+        /* Read up to block boundary */
+        size_t start = MIN(BLOCK_SIZE - offset % BLOCK_SIZE, size);
 
-    if (start) {
-        ata_read_sectors(dev, offset/BLOCK_SIZE, 1, read_buf);
-        memcpy(_buf, read_buf + (offset % BLOCK_SIZE), start);
+        if (start) {
+            ata_read_sectors(dev, offset/BLOCK_SIZE, 1, read_buf);
+            memcpy(_buf, read_buf + (offset % BLOCK_SIZE), start);
 
-        ret += start;
-        size -= start;
-        _buf += start;
-        offset += start;
+            ret += start;
+            size -= start;
+            _buf += start;
+            offset += start;
 
-        if (!size)
-            return ret;
+            if (!size)
+                return ret;
+        }
     }
 
 
@@ -136,10 +134,10 @@ static ssize_t ata_read(struct fs_node *node, off_t offset, size_t size, void *b
         _buf   += BLOCK_SIZE;
         offset += BLOCK_SIZE;
         --count;
-
-        if (!size)
-            return ret;
     }
+
+    if (!size)
+        return ret;
 
     size_t end = size % BLOCK_SIZE;
 
