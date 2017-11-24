@@ -26,7 +26,7 @@
 
 #define insw(port, count, buf) \
 ({ \
-	asm volatile ("rep insw"::"D"(buf), "c"(count), "d"(port)); \
+	asm volatile ("rep insw"::"D"(buf), "c"(count), "d"(port):"memory"); \
 })
 
 #define outb(port, value) \
