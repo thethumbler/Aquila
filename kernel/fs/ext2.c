@@ -1,9 +1,10 @@
+#include <core/panic.h>
 #include <fs/ext2.h>
 #include <bits/errno.h>
 
 typedef struct {
-    struct fs_node *super_node;
-	struct ext2_superblock *sb;
+    struct fs_node *supernode;
+	struct ext2_superblock *superblock;
 	uint32_t inode;
 } ext2_private_t;
 
@@ -14,20 +15,21 @@ static struct ext2_inode *ext2_get_inode(struct fs_node *node, struct ext2_super
     uint32_t bgd_table = bs == 1024? 2*1024 : bs;
 	uint32_t block_group = (inode - 1) / sb->inodes_per_block_group;
 	struct ext2_block_group_descriptor *bgd = kmalloc(sizeof(*bgd));
-	node->fs->read(node, bgd_table + block_group, sizeof(*bgd), bgd);
+	node->fs->read(node, bgd_table + block_group, sizeof(struct ext2_block_group_descriptor), bgd);
 
 	uint32_t index = (inode - 1) % sb->inodes_per_block_group;
-	struct ext2_inode *i = kmalloc(sizeof(*i));
+	struct ext2_inode *i = kmalloc(sizeof(struct ext2_inode));
 
-	node->fs->read(node, bgd->inode_table * bs + index * sb->inode_size, sizeof(*i), i);
+	node->fs->read(node, bgd->inode_table * bs + index * sb->inode_size, sizeof(struct ext2_inode), i);
     kfree(bgd);
 	return i;
 }
 
-static uint32_t *read_block(struct fs_node *node, struct ext2_superblock *sb, uint32_t number, void *buf)
+static void *read_block(struct fs_node *supernode, struct ext2_superblock *sb, uint32_t number, void *buf)
 {
+    printk("read_block(supernode=%p, sb=%p, number=%d, buf=%p)\n", supernode, sb, number, buf);
 	uint32_t bs = 1024UL << sb->block_size;
-	node->fs->read(node, number * bs, bs, buf);
+	supernode->fs->read(supernode, number * bs, bs, buf);
 	return buf;
 }
 
@@ -97,8 +99,10 @@ static struct fs_node *ext2_load(struct fs_node *node)
 	node->fs->read(node, 1024, sizeof(*sb), sb);
 
     /* Valid Ext2? */
-	if (sb->ext2_signature != 0xEF53)
+	if (sb->ext2_signature != 0xEF53) {
+        kfree(sb);
         return NULL;
+    }
 
     struct fs_node *root = kmalloc(sizeof(struct fs_node));
 	root->type = FS_DIR;
@@ -107,8 +111,8 @@ static struct fs_node *ext2_load(struct fs_node *node)
 
     ext2_private_t *p = kmalloc(sizeof(ext2_private_t));
     p->inode = 2;
-    p->sb = sb;
-    p->super_node = node;
+    p->superblock = sb;
+    p->supernode = node;
 	root->p    = p;
 
     return root;
@@ -191,13 +195,34 @@ static struct fs_node *ext2_load(struct fs_node *node)
 #endif
 }
 
+static size_t ext2_inode_get_block(struct fs_node *node, struct ext2_inode *inode, size_t idx, void *buf)
+{
+    printk("ext2_inode_get_block(node=%p, inode=%p, idx=%d, buf=%p)\n", node, inode, idx, buf);
+    ext2_private_t *priv = node->p;
+    size_t bs = 1024UL << priv->superblock->block_size;
+    size_t blocks_nr = inode->size / bs;
+    size_t ptrs_per_block = inode->size / bs;
+
+    if (idx >= blocks_nr) {
+        panic("Trying to get invalid block!\n");
+    }
+
+    if (idx < EXT2_DIRECT_POINTERS) {
+        read_block(priv->supernode, priv->superblock, inode->direct_pointer[idx], buf);
+    } else {
+        panic("Not impelemented\n");
+    }
+
+    return 0;
+}
+
 static ssize_t ext2_read(struct fs_node *node, off_t offset, size_t _size, void *_buf)
 {
 	printk("Reading file %s\n", node->name);
 	ext2_private_t *p = node->p;
 
-	uint32_t bs = 1024UL << p->sb->block_size;
-	struct ext2_inode *inode = ext2_get_inode(node, p->sb, p->inode);
+	uint32_t bs = 1024UL << p->superblock->block_size;
+	struct ext2_inode *inode = ext2_get_inode(node, p->superblock, p->inode);
     uint64_t size = inode->size | ((uint64_t) inode->size_high << 32);
 
     char *buf = _buf;
@@ -205,7 +230,7 @@ static ssize_t ext2_read(struct fs_node *node, off_t offset, size_t _size, void 
     /* Read direct pointers */
     size_t i = 0;
     while (i < 12 && size >= bs) {
-        read_block(node, p->sb, inode->direct_pointer[i++], buf);
+        read_block(node, p->superblock, inode->direct_pointer[i++], buf);
         buf += bs;
         size -= bs;
     }
@@ -253,6 +278,7 @@ static ssize_t ext2_read(struct fs_node *node, off_t offset, size_t _size, void 
 	return _size - size;
 }
 
+static char readdir_buf[4096] __aligned(16);
 static ssize_t ext2_readdir(struct fs_node *dir, off_t offset, struct dirent *dirent)
 {
     printk("ext2_readdir(dir=%p, offset=%d, dirent=%p)\n", dir, offset, dirent);
@@ -261,22 +287,41 @@ static ssize_t ext2_readdir(struct fs_node *dir, off_t offset, struct dirent *di
         return -ENOTDIR;
 
     ext2_private_t *p = dir->p;
-    struct ext2_inode *inode = ext2_get_inode(p->super_node, p->sb, p->inode);
-
-    printk("inode %d\n", p->inode);
-    printk("inode->type %d\n", inode->type);
-    printk("inode->size %d\n", inode->size);
+    struct ext2_inode *inode = ext2_get_inode(p->supernode, p->superblock, p->inode);
 
     if (inode->type != EXT2_INODE_TYPE_DIR) {
         kfree(inode);
         return -ENOTDIR;
     }
 
-    printk("OK, here we are\n");
+	size_t bs = 1024UL << p->superblock->block_size;
+    size_t blocks_nr = inode->size / bs;
 
-    for (;;);
+    char *buf = kmalloc(bs);    //readdir_buf;
+    struct ext2_dentry *d;
+    off_t idx = 0;
+    char found = 0;
 
-    return 0;
+    for (size_t i = 0; i < blocks_nr; ++i) {
+        ext2_inode_get_block(dir, inode, i, buf);
+        d = (struct ext2_dentry *) buf;
+        while ((char *) d < (char *) buf + bs) {
+            if (idx == offset) {
+                dirent->d_ino = d->inode;
+                strcpy(dirent->d_name, (char *) d->name);  /* FIXME */
+                found = 1;
+                break;
+            }
+
+            d = (struct ext2_dentry *) ((char *) d + d->size);
+            ++idx;
+        }
+    }
+
+    kfree(buf);
+    kfree(inode);
+
+    return found;
 }
 
 #if 0
@@ -290,18 +335,6 @@ static uint32_t ext2_mount(inode_t *dst, inode_t *src)
 	return 1;
 }
 #endif
-
-//fs_t ext2fs =
-//	(fs_t)
-//	{
-//		.name = "ext2",
-//		.load = ext2_load,
-//		//.open = NULL,
-//		.read = ext2_read,
-//		.write = NULL,
-//		.mount = &ext2_mount,
-//	};
-//
 
 struct fs ext2fs = {
     .name = "ext2",
