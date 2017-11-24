@@ -376,12 +376,14 @@ static void unmap_from_physical(uintptr_t ptr, size_t size)
     start = UPPER_TABLE_BOUNDARY(ptr);
     end   = LOWER_TABLE_BOUNDARY(ptr + size);
 
-    nr = (end - start)/TABLE_SIZE;
+    if (end > start) {
+        nr = (end - start)/TABLE_SIZE;
 
-    start /= TABLE_SIZE;
-    while (nr--) {
-        dealloc_table(start);
-        start += 1;
+        start /= TABLE_SIZE;
+        while (nr--) {
+            dealloc_table(start);
+            start += 1;
+        }
     }
 }
 
