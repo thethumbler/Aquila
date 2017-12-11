@@ -4,6 +4,8 @@
 #include <core/system.h>
 #include <fs/vfs.h>
 
+#define EXT2_SIGNATURE  0xEF53
+
 struct ext2_optional_features_flags {
     uint8_t preallocate_for_directories : 1;
     uint8_t afs_server_inodes : 1;

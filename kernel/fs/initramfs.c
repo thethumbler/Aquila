@@ -101,6 +101,7 @@ static struct fs_node *cpiofs_new_child_node(struct fs_node *parent, struct fs_n
 
 static struct fs_node *cpiofs_find(struct fs_node *root, const char *path)
 {
+    printk("cpiofs_find(root=%p, path=%s)\n", root, path);
 	char **tokens = tokenize(path, '/');
 
 	if (root->type != FS_DIR)	/* Not even a directory */
@@ -139,6 +140,20 @@ static struct fs_node *cpiofs_find(struct fs_node *root, const char *path)
 	free_tokens(tokens);
 
 	return cur;
+}
+
+static struct fs_node *cpiofs_traverse(struct vfs_path *path)
+{
+    printk("cpiofs_traverse(path=%p)\n", path);
+    struct fs_node *dir = path->mountpoint;
+
+    foreach (token, path->tokens) {
+        dir = cpiofs_find(dir, token);
+    }
+
+    printk("dir = %p\n", dir);
+
+    return dir;
 }
 
 static struct fs_node *cpiofs_load(struct fs_node *node)
@@ -250,6 +265,7 @@ struct fs initramfs = {
 	.name = "initramfs",
 	.load = &cpiofs_load,
 	.find = &cpiofs_find,
+    .traverse = &cpiofs_traverse,
 	.read = &cpiofs_read,
     .readdir = &cpiofs_readdir,
 	//.write = NULL,

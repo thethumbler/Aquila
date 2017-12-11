@@ -33,6 +33,11 @@ struct file_ops
 	int 		(*eof)(struct file *);
 } __packed;
 
+struct vfs_path {
+    struct fs_node *mountpoint;
+    char **tokens;
+};
+
 #include <dev/dev.h>
 #include <sys/proc.h>
 #include <ds/queue.h>
@@ -66,6 +71,9 @@ struct fs
 	/* find file/directory in directory */
 	struct fs_node *(*find) (struct fs_node *dir, const char *name);
 
+    /* Traverse path */
+	struct fs_node *(*traverse) (struct vfs_path *path);
+
 	/* File operations */
 	struct file_ops f_ops;
 };
@@ -93,6 +101,7 @@ struct file
 	int flags;
 };
 
+
 struct vfs
 {
 	void		(*mount_root) (struct fs_node *inode);
@@ -102,10 +111,11 @@ struct vfs
 	size_t 		(*read) (struct fs_node *inode, size_t offset, size_t size, void *buf);
 	size_t 		(*write)(struct fs_node *inode, size_t offset, size_t size, void *buf);
 	int 		(*ioctl)(struct fs_node *inode, unsigned long request, void *argp);
-	int 		(*mount)(struct fs_node *parent, struct fs_node *child);
+	int 		(*mount)(const char *path, struct fs_node *target);
     ssize_t     (*readdir)(struct fs_node *inode, off_t offset, struct dirent *dirent);
 
-	struct fs_node*	(*find) (struct fs_node *dir, const char *name);
+	struct fs_node*	(*find) (const char *name);
+	struct fs_node*	(*traverse) (struct vfs_path *path);
 };
 
 typedef struct 
@@ -114,6 +124,7 @@ typedef struct
 	enum   fs_node_type type;
 	void   *p;
 } vfs_mountpoint_t;
+
 
 extern struct vfs vfs;
 extern struct fs_node *vfs_root;

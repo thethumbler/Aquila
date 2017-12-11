@@ -167,7 +167,7 @@ static void sys_open(const char *path, int oflags)
     printk("[%d] %s: open(path=%s, oflags=0x%x)\n", cur_proc->pid, cur_proc->name, path, oflags);
     
     /* Look up the file */
-    struct fs_node *node = vfs.find(vfs_root, path);
+    struct fs_node *node = vfs.find(path);
 
     if (!node) {    /* File not found */
         arch_syscall_return(cur_proc, -ENOENT);

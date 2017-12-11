@@ -71,7 +71,7 @@ static struct fs_node *devfs_mkdir(struct fs_node *parent, const char *name)
 
 static int devfs_ioctl(struct fs_node *file, unsigned long request, void *argp)
 {
-	if(!file || !file->dev || !file->dev->ioctl)
+	if (!file || !file->dev || !file->dev->ioctl)
 		return -EBADFD;
 
 	return file->dev->ioctl(file, request, argp);
@@ -93,6 +93,18 @@ static struct fs_node *devfs_find(struct fs_node *dir, const char *fn)
 	}
 
 	return NULL;	/* File not found */
+}
+
+static struct fs_node *devfs_traverse(struct vfs_path *path)
+{
+    printk("devfs_traverse(path=%p)\n", path);
+    struct fs_node *dir = path->mountpoint;
+
+    foreach (token, path->tokens) {
+        dir = devfs_find(dir, token);
+    }
+
+    return dir;
 }
 
 static ssize_t devfs_readdir(struct fs_node *dir, off_t offset, struct dirent *dirent)
@@ -190,6 +202,7 @@ struct fs devfs = {
 	.create = devfs_create,
 	.mkdir  = devfs_mkdir,
 	.find   = devfs_find,
+    .traverse = devfs_traverse,
 	.read   = devfs_read,
 	.write  = devfs_write,
 	.ioctl  = devfs_ioctl,

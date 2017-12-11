@@ -27,8 +27,7 @@ void kmain(struct boot *boot)
 
     devfs_init();
 
-    struct fs_node *dev = vfs.find(vfs_root, "dev");
-    vfs.mount(dev, dev_root);
+    vfs.mount("/dev", dev_root);
 
     devman_init();
 
@@ -40,14 +39,13 @@ void kmain(struct boot *boot)
     //vfs.mount(pts, devpts_root);
 
     /* Mount HD on /mnt .. FIXME */
-    struct fs_node *mnt = vfs.find(vfs_root, "mnt");
-    struct fs_node *hda1 = vfs.find(dev_root, "hda1");
+    struct fs_node *hda1 = vfs.find("/dev/hda1");
 
     if (!hda1)
         panic("Could not load /dev/hda1");
 
     struct fs_node *hd  = ext2fs.load(hda1);
-    vfs.mount(mnt, hd);
+    vfs.mount("/mnt", hd);
 
     printk("[0] Kernel: Loading init process\n");
     proc_t *init = load_elf("/init");
