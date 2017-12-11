@@ -217,6 +217,7 @@ void devpts_init()
 {
     devpts.create = devfs.create;
     devpts.find = devfs.find;
+    devpts.traverse = devfs.traverse;
     devpts.readdir = devfs.readdir;
 
     devpts.f_ops.open = devfs.f_ops.open;
@@ -233,7 +234,7 @@ void devpts_init()
     struct fs_node *ptmx = vfs.create(dev_root, "ptmx");
     struct fs_node *pts_dir = vfs.mkdir(dev_root, "pts");
 
-    vfs.mount(pts_dir, devpts_root);
+    vfs.mount("/dev/pts", devpts_root);
 
     ptmx->dev = &ptmxdev;
 }
