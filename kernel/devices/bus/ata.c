@@ -92,6 +92,45 @@ static ssize_t ata_read_sectors(struct ata_device *dev, uint64_t lba, size_t cou
     return 0;
 }
 
+static ssize_t ata_write_sectors(struct ata_device *dev, uint64_t lba, size_t count, void *buf)
+{
+    //printk("ata_write_sectors(dev=%p, lba=%x, count=%d, buf=%p)\n", dev, (uint32_t) lba, count, buf);    /* XXX */
+    ata_select_device(dev);
+
+    /* Send NULL byte to error port */
+    outb(dev->base + ATA_PORT_ERROR, 0);
+
+    /* Send sectors count and LBA */
+    outb(dev->base + ATA_PORT_COUNT, (count >> 8) & 0xFF);
+    outb(dev->base + ATA_PORT_LBALO, (uint8_t) (lba >> (8 * 3)));
+    outb(dev->base + ATA_PORT_LBAMI, (uint8_t) (lba >> (8 * 4)));
+    outb(dev->base + ATA_PORT_LBAHI, (uint8_t) (lba >> (8 * 5)));
+    outb(dev->base + ATA_PORT_COUNT, count & 0xFF);
+    outb(dev->base + ATA_PORT_LBALO, (uint8_t) (lba >> (8 * 0)));
+    outb(dev->base + ATA_PORT_LBAMI, (uint8_t) (lba >> (8 * 1)));
+    outb(dev->base + ATA_PORT_LBAHI, (uint8_t) (lba >> (8 * 2)));
+
+    /* Send write command */
+    ata_wait(dev);
+    outb(dev->base + ATA_PORT_CMD, ATA_CMD_WRITE_SECOTRS_EXT);
+
+    while (count--) {
+        uint16_t *_buf = (uint16_t *) buf;
+
+        ata_poll(dev, 1);
+        for (int i = 0; i < 256; ++i)
+            outw(dev->base + ATA_PORT_DATA, _buf[i]);
+
+        buf += 512;
+    }
+
+    ata_poll(dev, 0);
+    outb(dev->base + ATA_PORT_CMD, ATA_CMD_CACHE_FLUSH);
+    ata_poll(dev, 0);
+
+    return 0;
+}
+
 #define BLOCK_SIZE  512UL
 static char read_buf[BLOCK_SIZE] __aligned(16);
 static ssize_t ata_read(struct fs_node *node, off_t offset, size_t size, void *buf)
@@ -144,6 +183,64 @@ static ssize_t ata_read(struct fs_node *node, off_t offset, size_t size, void *b
     if (end) {
         ata_read_sectors(dev, offset/BLOCK_SIZE, 1, read_buf);
         memcpy(_buf, read_buf, end);
+        ret += end;
+    }
+
+    return ret;
+}
+
+static ssize_t ata_write(struct fs_node *node, off_t offset, size_t size, void *buf)
+{
+    //printk("ata_write(node=%p, offset=%x, size=%d, buf=%p)\n", node, offset, size, buf);
+    ssize_t ret = 0;
+    char *_buf = buf;
+
+    struct ata_device *dev = node->p;
+    offset += node->offset;
+
+    if (offset % BLOCK_SIZE) {
+        /* Write up to block boundary */
+        size_t start = MIN(BLOCK_SIZE - offset % BLOCK_SIZE, size);
+
+        if (start) {
+            ata_read_sectors(dev, offset/BLOCK_SIZE, 1, read_buf);
+            memcpy(read_buf + (offset % BLOCK_SIZE), _buf, start);
+            ata_write_sectors(dev, offset/BLOCK_SIZE, 1, read_buf);
+
+            ret += start;
+            size -= start;
+            _buf += start;
+            offset += start;
+
+            if (!size)
+                return ret;
+        }
+    }
+
+
+    /* Write whole sectors */
+    size_t count = size/BLOCK_SIZE;
+
+    while (count) {
+        memcpy(read_buf, _buf, BLOCK_SIZE);
+        ata_write_sectors(dev, offset/BLOCK_SIZE, 1, read_buf);
+
+        ret    += BLOCK_SIZE;
+        size   -= BLOCK_SIZE;
+        _buf   += BLOCK_SIZE;
+        offset += BLOCK_SIZE;
+        --count;
+    }
+
+    if (!size)
+        return ret;
+
+    size_t end = size % BLOCK_SIZE;
+
+    if (end) {
+        ata_read_sectors(dev, offset/BLOCK_SIZE, 1, read_buf);
+        memcpy(read_buf, _buf, end);
+        ata_write_sectors(dev, offset/BLOCK_SIZE, 1, read_buf);
         ret += end;
     }
 
@@ -203,6 +300,7 @@ int ata_probe()
 dev_t atadev = {
     .probe = ata_probe,
     .read = ata_read,
+    .write = ata_write,
 
     .f_ops = {
         .open = generic_file_open,
