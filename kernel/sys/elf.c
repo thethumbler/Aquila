@@ -58,7 +58,8 @@ proc_t *load_elf(const char *fn)
     pmman.map(USER_STACK_BASE, USER_STACK_SIZE, URW);
 
     proc_t *proc = new_proc();
-    proc->name = strdup(file->name);
+    //proc->name = strdup(file->name);
+    proc->name = strdup(fn);
     proc->heap_start = proc_heap;
     proc->heap = proc_heap;
     proc->entry = hdr.entry;
@@ -101,7 +102,7 @@ proc_t *load_elf_proc(proc_t *proc, const char *fn)
                 memset((void *) shdr.addr, 0, shdr.size);
             }
 
-            if(shdr.addr + shdr.size > proc_heap)
+            if (shdr.addr + shdr.size > proc_heap)
                 proc_heap = shdr.addr + shdr.size;
         }
 
@@ -109,7 +110,8 @@ proc_t *load_elf_proc(proc_t *proc, const char *fn)
     }
 
     kfree(proc->name);
-    proc->name = strdup(file->name);
+    //proc->name = strdup(file->name);
+    proc->name = strdup(fn);
     proc->heap_start = proc_heap;
     proc->heap = proc_heap;
     proc->entry = hdr.entry;
