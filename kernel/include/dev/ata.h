@@ -21,6 +21,8 @@
 
 #define ATA_CMD_RESET   0x40
 #define ATA_CMD_READ_SECOTRS_EXT    0x24
+#define ATA_CMD_WRITE_SECOTRS_EXT   0x34
+#define ATA_CMD_CACHE_FLUSH   0xE7
 #define ATA_DRIVE_LBA48 0x40
 
 #define ATA_STATUS_BSY     0x80U    // Busy
