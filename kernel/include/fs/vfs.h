@@ -15,7 +15,9 @@ enum fs_node_type
 	FS_CHRDEV, 
 	FS_BLKDEV, 
 	FS_SYMLINK, 
-	FS_PIPE
+	FS_PIPE,
+    FS_FIFO,
+    FS_SOCKET,
 };
 
 typedef struct dentry dentry_t;
