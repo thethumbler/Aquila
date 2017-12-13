@@ -13,7 +13,7 @@
 #define inw(port) \
 ({ \
 	uint16_t ret; \
-	asm volatile ("inw %1, %0":"=a"(ret):"dN"(port)); \
+	asm volatile ("inw %%dx, %%ax":"=a"(ret):"dN"(port)); \
 	ret; \
 })
 
