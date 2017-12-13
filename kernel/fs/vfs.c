@@ -26,7 +26,7 @@ static void vfs_mount_root(struct fs_node *node)
 
 static char **canonicalize_path(const char * const path)
 {
-    printk("canonicalize_path(path=%s)\n", path);
+    //printk("canonicalize_path(path=%s)\n", path);
 
     /* Tokenize slash seperated words in path into tokens */
     char **tokens = tokenize(path, '/');
@@ -38,7 +38,7 @@ static char **canonicalize_path(const char * const path)
 
 static struct vfs_path *vfs_get_mountpoint(char **tokens)
 {
-    printk("vfs_get_mountpoint(tokens=%p)\n", tokens);
+    //printk("vfs_get_mountpoint(tokens=%p)\n", tokens);
     struct vfs_path *path = kmalloc(sizeof(struct vfs_path));
     path->tokens = tokens;
 
@@ -87,7 +87,7 @@ next:;
 
 static struct fs_node *vfs_traverse(struct vfs_path *path)
 {
-    printk("vfs_traverse(path=%p)\n", path);
+    //printk("vfs_traverse(path=%p)\n", path);
 
     /* if path is NULL pointer return NULL */
     if (!path)
@@ -98,7 +98,7 @@ static struct fs_node *vfs_traverse(struct vfs_path *path)
 
 static struct fs_node *vfs_find(const char *path)
 {
-    printk("vfs_find(path=%s)\n", path);
+    //printk("vfs_find(path=%s)\n", path);
 
     /* if path is NULL pointer, or path is empty string, return NULL */
     if (!path ||  !*path)
@@ -149,7 +149,7 @@ static struct fs_node *vfs_mkdir(struct fs_node *dir, const char *name)
 
 static int vfs_mount(const char *path, struct fs_node *target)
 {
-    printk("vfs_mount(path=%s, target=%p)\n", path, target);
+    //printk("vfs_mount(path=%s, target=%p)\n", path, target);
 
     /* if path is NULL pointer, or path is empty string, or no target return -1 */
     if (!path ||  !*path || !target)
@@ -177,14 +177,14 @@ static int vfs_mount(const char *path, struct fs_node *target)
             }
 
             /* Not found, create it */
-            printk("%s not found, creating it on %s\n", token, last_node->name);
+            //printk("%s not found, creating it on %s\n", token, last_node->name);
             struct mount_node *new_node = kmalloc(sizeof(struct mount_node));
             memset(new_node, 0, sizeof(struct mount_node));
             new_node->name = strdup(token);
             last_node->next = new_node;
             cur_node = new_node;
         } else {
-            printk("no children found, creating %s on %s\n", token, cur_node->name);
+            //printk("no children found, creating %s on %s\n", token, cur_node->name);
             struct mount_node *new_node = kmalloc(sizeof(struct mount_node));
             memset(new_node, 0, sizeof(struct mount_node));
             new_node->name = strdup(token);
