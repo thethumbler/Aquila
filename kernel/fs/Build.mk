@@ -1,9 +1,9 @@
 obj-y += vfs.o
 obj-y += devfs.o
-obj-y += initramfs.o
 obj-y += read.o
 obj-y += write.o
 obj-y += readdir.o
 obj-y += mbr.o
 dirs-y += devpts/
 dirs-y += ext2/
+dirs-y += initramfs/
