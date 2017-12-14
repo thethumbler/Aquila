@@ -422,6 +422,28 @@ static struct fs_node *ext2_load(struct fs_node *node)
     return ext2_inode_to_fs_node(desc, 2);
 }
 
+static int ext2_mount(const char *dir, int flags, void *data)
+{
+    //printk("ext2_mount(dir=%s, flags=%x, data=%p)\n", dir, flags, data);
+
+    struct {
+        char *dev;
+        char *opt;
+    } *sdata = data;
+
+    //printk("data{dev=%s, opt=%s}\n", sdata->dev, sdata->opt);
+
+    struct fs_node *dev = vfs.find(sdata->dev);
+
+    if (!dev)
+        panic("Could not load device");
+
+    struct fs_node *fs  = ext2fs.load(dev);
+    vfs.mount(dir, fs);
+
+    return 0;
+}
+
 static struct fs_node *ext2_traverse(struct vfs_path *path)
 {
     //printk("ext2_traverse(path=%p)\n", path);
@@ -601,23 +623,23 @@ free_resources:
     return ret;
 }
 
-static struct fs_node *ext2_create(struct fs_node *dir, const char *name)
+static int ext2_create(struct fs_node *dir, const char *name)
 {
     printk("ext2_create(dir=%p, name=%s)\n", dir, name);
 
     if (!name)
-        return NULL;
+        return -EINVAL;
 
     ext2_private_t *p = dir->p;
     struct ext2_inode *dir_inode = ext2_inode_read(p->desc, p->inode);
 
     if (!dir_inode) /* Invalid inode? */
-        return NULL;
+        return -ENOTDIR;
 
     if (ext2_dentry_find(p->desc, dir_inode, name)) {
         /* File exists */
         kfree(dir_inode);
-        return NULL;
+        return -EEXIST;
     }
 
     uint32_t inode_nr = ext2_inode_allocate(p->desc);
@@ -633,26 +655,27 @@ static struct fs_node *ext2_create(struct fs_node *dir, const char *name)
 
     kfree(dir_inode);
     kfree(inode);
-    return ext2_inode_to_fs_node(p->desc, inode_nr);
+    //return ext2_inode_to_fs_node(p->desc, inode_nr);
+    return 0;
 }
 
-static struct fs_node *ext2_mkdir(struct fs_node *dir, const char *name)
+static int ext2_mkdir(struct fs_node *dir, const char *name)
 {
     printk("ext2_mkdir(dir=%p, name=%s)\n", dir, name);
 
     if (!name)
-        return NULL;
+        return -EINVAL;
 
     ext2_private_t *p = dir->p;
     struct ext2_inode *dir_inode = ext2_inode_read(p->desc, p->inode);
 
     if (!dir_inode) /* Invalid inode? */
-        return NULL;
+        return -EINVAL;
 
     if (ext2_dentry_find(p->desc, dir_inode, name)) {
         /* Directory exists */
         kfree(dir_inode);
-        return NULL;
+        return -EEXIST;
     }
 
     uint32_t inode_nr = ext2_inode_allocate(p->desc);
@@ -687,7 +710,8 @@ static struct fs_node *ext2_mkdir(struct fs_node *dir, const char *name)
 
     kfree(dir_inode);
     kfree(inode);
-    return ext2_inode_to_fs_node(p->desc, inode_nr);
+    //return ext2_inode_to_fs_node(p->desc, inode_nr);
+    return 0;
 }
 
 static ssize_t ext2_readdir(struct fs_node *dir, off_t offset, struct dirent *dirent)
@@ -745,6 +769,7 @@ static int ext2_eof(struct file *file)
 struct fs ext2fs = {
     .name = "ext2",
     .load = ext2_load,
+    .mount = ext2_mount,
     .read = ext2_read,
     .write = ext2_write,
     .create = ext2_create,

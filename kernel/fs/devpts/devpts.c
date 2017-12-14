@@ -84,7 +84,18 @@ static struct fs_node *new_pts(struct pty *pty)
     memset(name, 0, 12);
     snprintf(name, 11, "%d", pty->id);
 
-    struct fs_node *pts = vfs.create(devpts_root, name);
+    vfs.create(devpts_root, name);
+
+    /* TODO: Handle errors */
+
+    struct vfs_path path = (struct vfs_path) {
+        .mountpoint = devpts_root,
+        .tokens = (char *[]) {name, NULL}
+    };
+
+    struct fs_node *pts = vfs.traverse(&path);
+
+    kfree(name);
 
     pts->type = FS_PIPE;
     pts->dev = &ptsdev;
@@ -231,8 +242,24 @@ void devpts_init()
         .fs   = &devpts,
     };
 
-    struct fs_node *ptmx = vfs.create(dev_root, "ptmx");
-    struct fs_node *pts_dir = vfs.mkdir(dev_root, "pts");
+    vfs.create(dev_root, "ptmx");
+    vfs.mkdir(dev_root, "pts");
+
+    /* TODO Handle errors */
+
+    struct vfs_path path = (struct vfs_path) {
+        .mountpoint = dev_root,
+        .tokens = (char *[]) {"ptmx", NULL}
+    };
+
+    struct fs_node *ptmx = vfs.traverse(&path);
+
+    //path = (struct vfs_path) {
+    //    .mountpoint = dev_root,
+    //    .tokens = (char *[]) {"pts", NULL}
+    //};
+
+    //struct fs_node *pts_dir = vfs.traverse(&path);
 
     vfs.mount("/dev/pts", devpts_root);
 

@@ -288,7 +288,15 @@ int ata_probe()
     //        break;
     //}
 
-	struct fs_node *hda = vfs.create(dev_root, "hda");
+    vfs.create(dev_root, "hda");
+
+    struct vfs_path path = (struct vfs_path) {
+        .mountpoint = dev_root,
+        .tokens = (char *[]) {"hda", NULL}
+    };
+
+	struct fs_node *hda = vfs.traverse(&path);
+
     hda->dev = &atadev;
     hda->p = &devices[0];
 

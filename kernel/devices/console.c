@@ -79,7 +79,14 @@ static ssize_t console_write(struct fs_node *dev __unused, off_t offset __unused
 
 static int console_probe()
 {
-	struct fs_node *console = vfs.create(dev_root, "console");
+    vfs.create(dev_root, "console");
+
+    struct vfs_path path = (struct vfs_path) {
+        .mountpoint = dev_root,
+        .tokens = (char *[]) {"console", NULL}
+    };
+
+	struct fs_node *console = vfs.traverse(&path);
 	console->dev = &condev;
 
 	return 0;
