@@ -4,18 +4,18 @@
 #include <core/system.h>
 #include <bits/dirent.h>
 
-struct fs;	/* File System Structure */
+struct fs;  /* File System Structure */
 struct fs_node;
 struct file;
 
 enum fs_node_type
 {
-	FS_FILE, 
-	FS_DIR, 
-	FS_CHRDEV, 
-	FS_BLKDEV, 
-	FS_SYMLINK, 
-	FS_PIPE,
+    FS_FILE, 
+    FS_DIR, 
+    FS_CHRDEV, 
+    FS_BLKDEV, 
+    FS_SYMLINK, 
+    FS_PIPE,
     FS_FIFO,
     FS_SOCKET,
 };
@@ -24,15 +24,15 @@ typedef struct dentry dentry_t;
 
 struct file_ops
 {
-	int			(*open) (struct file *file);
-	ssize_t		(*read) (struct file *file, void *buf, size_t size);	
-	ssize_t		(*write)(struct file *file, void *buf, size_t size);
-	ssize_t		(*readdir) (struct file *file, struct dirent *dirent);	
+    int         (*open) (struct file *file);
+    ssize_t     (*read) (struct file *file, void *buf, size_t size);    
+    ssize_t     (*write)(struct file *file, void *buf, size_t size);
+    ssize_t     (*readdir) (struct file *file, struct dirent *dirent);  
 
-	/* helpers */
-	int			(*can_read) (struct file * file, size_t size);
-	int			(*can_write)(struct file * file, size_t size);
-	int 		(*eof)(struct file *);
+    /* helpers */
+    int         (*can_read) (struct file * file, size_t size);
+    int         (*can_write)(struct file * file, size_t size);
+    int         (*eof)(struct file *);
 } __packed;
 
 struct vfs_path {
@@ -46,85 +46,91 @@ struct vfs_path {
 
 struct fs
 {
-	/* file system name */
-	char * name;
+    /* file system name */
+    char * name;
 
-	/* load filesystem from file */
-	struct fs_node * (*load) (struct fs_node *node);
+    /* load filesystem from file */
+    struct fs_node * (*load) (struct fs_node *node);
 
-	/* create a new file in directory */
-	struct fs_node * (*create) (struct fs_node *dir, const char *fn);
+    /* Mount filesystem */
+    int (*mount) (const char *dir, int flags, void *data);
 
-	/* create a new directory in directory */
-	struct fs_node * (*mkdir) (struct fs_node *dir, const char *dname);
+    /* create a new file in directory */
+    int (*create) (struct fs_node *dir, const char *fn);
 
-	/* kernel-level read */
-	ssize_t	(*read) (struct fs_node *node, off_t offset, size_t size, void *buf);
+    /* create a new directory in directory */
+    int (*mkdir) (struct fs_node *dir, const char *dname);
 
-	/* kernel-level write */
-	ssize_t (*write) (struct fs_node *node, off_t offset, size_t size, void *buf);
+    /* kernel-level read */
+    ssize_t (*read) (struct fs_node *node, off_t offset, size_t size, void *buf);
 
-	/* kernel-level ioctl */
-	int (*ioctl) (struct fs_node *node, unsigned long request, void *argp);
+    /* kernel-level write */
+    ssize_t (*write) (struct fs_node *node, off_t offset, size_t size, void *buf);
 
-	/* kernel-level readdir */
-	ssize_t	(*readdir) (struct fs_node *node, off_t offset, struct dirent *dirent);
+    /* kernel-level ioctl */
+    int (*ioctl) (struct fs_node *node, unsigned long request, void *argp);
 
-	/* find file/directory in directory */
-	struct fs_node *(*find) (struct fs_node *dir, const char *name);
+    /* kernel-level readdir */
+    ssize_t (*readdir) (struct fs_node *node, off_t offset, struct dirent *dirent);
+
+    /* find file/directory in directory */
+    struct fs_node *(*find) (struct fs_node *dir, const char *name);
 
     /* Traverse path */
-	struct fs_node *(*traverse) (struct vfs_path *path);
+    struct fs_node *(*traverse) (struct vfs_path *path);
 
-	/* File operations */
-	struct file_ops f_ops;
+    /* File operations */
+    struct file_ops f_ops;
 };
 
 struct fs_node
 {
-	char		*name;
-	size_t		size;
-	enum fs_node_type	type;
-	struct fs 	*fs;
-	dev_t		*dev;
+    char        *name;
+    size_t      size;
+    enum fs_node_type   type;
+    struct fs   *fs;
+    dev_t       *dev;
     off_t       offset; /* Offset to add to each operation on file */
-	void 		*p;		/* Filesystem handler private data */
+    void        *p;     /* Filesystem handler private data */
 
-	queue_t		*read_queue;
-	queue_t 	*write_queue;
+    queue_t     *read_queue;
+    queue_t     *write_queue;
 
-	struct fs_node 	*mountpoint;	/* Mount point to another inode */
+    struct fs_node  *mountpoint;    /* Mount point to another inode */
 };
 
 struct file
 {
-	struct fs_node *node;
-	off_t offset;
-	int flags;
+    struct fs_node *node;
+    off_t offset;
+    int flags;
 };
 
 
 struct vfs
 {
-	void		(*mount_root) (struct fs_node *inode);
-	struct fs_node*	(*create)(struct fs_node *dir, const char *name);
-	struct fs_node*	(*mkdir) (struct fs_node *dir, const char *name);
-	int			(*open)(struct fs_node *file, int flags);
-	size_t 		(*read) (struct fs_node *inode, size_t offset, size_t size, void *buf);
-	size_t 		(*write)(struct fs_node *inode, size_t offset, size_t size, void *buf);
-	int 		(*ioctl)(struct fs_node *inode, unsigned long request, void *argp);
-	int 		(*mount)(const char *path, struct fs_node *target);
-    ssize_t     (*readdir)(struct fs_node *inode, off_t offset, struct dirent *dirent);
+    void    (*init) (void);
+    void    (*install) (struct fs *fs);
+    void    (*mount_root) (struct fs_node *inode);
+    int     (*create)(struct fs_node *dir, const char *name);
+    int     (*mkdir) (struct fs_node *dir, const char *name);
+    int     (*open)(struct fs_node *file, int flags);
+    ssize_t (*read) (struct fs_node *inode, size_t offset, size_t size, void *buf);
+    ssize_t (*write)(struct fs_node *inode, size_t offset, size_t size, void *buf);
+    int     (*ioctl)(struct fs_node *inode, unsigned long request, void *argp);
+    int     (*mount)(const char *path, struct fs_node *target);
+    int     (*mount_type)(const char *type, const char *dir, int flags, void *data);
+    ssize_t (*readdir)(struct fs_node *inode, off_t offset, struct dirent *dirent);
 
-	struct fs_node*	(*find) (const char *name);
-	struct fs_node*	(*traverse) (struct vfs_path *path);
+    struct fs_node* (*find) (const char *name);
+    struct fs_node* (*traverse) (struct vfs_path *path);
 };
 
 typedef struct 
 {
-	struct fs_node *node;
-	enum   fs_node_type type;
-	void   *p;
+    struct fs_node *node;
+    enum   fs_node_type type;
+    void   *p;
 } vfs_mountpoint_t;
 
 

@@ -7,6 +7,12 @@
 #include <bits/fcntl.h>
 #include <bits/errno.h>
 
+struct fs_list {
+    const char *name;
+    struct fs  *fs;
+    struct fs_list *next;
+} *registered_fs = NULL;
+
 struct mount_node {
     const char *name;
     struct fs_node *target;
@@ -15,6 +21,27 @@ struct mount_node {
 } mount_graph = {
     .name = "/",
 };
+
+static void vfs_init(void)
+{
+    extern struct fs ext2fs;
+    struct fs *fs_list[] = {&ext2fs, NULL};
+
+    foreach (fs, fs_list) {
+        vfs.install(fs);
+    }
+}
+
+static void vfs_install(struct fs *fs)
+{
+    //printk("vfs_install(fs=%p @{.name = %s})\n", fs, fs->name);
+
+    struct fs_list *node = kmalloc(sizeof(struct fs_list));
+    node->name = fs->name;
+    node->fs = fs;
+    node->next = registered_fs;
+    registered_fs = node;
+}
 
 struct fs_node *vfs_root = NULL;
 
@@ -119,30 +146,30 @@ free_resources:
     return cur;
 }
 
-static size_t vfs_read(struct fs_node *inode, size_t offset, size_t size, void *buf)
+static ssize_t vfs_read(struct fs_node *inode, size_t offset, size_t size, void *buf)
 {
     if (!inode) return 0;
     return inode->fs->read(inode, offset, size, buf);
 }
 
-static size_t vfs_write(struct fs_node *inode, size_t offset, size_t size, void *buf)
+static ssize_t vfs_write(struct fs_node *inode, size_t offset, size_t size, void *buf)
 {
     if (!inode) return 0;
     return inode->fs->write(inode, offset, size, buf);
 }
 
-static struct fs_node *vfs_create(struct fs_node *dir, const char *name)
+static int vfs_create(struct fs_node *dir, const char *name)
 {
     if (dir->type != FS_DIR)
-        return NULL;
+        return -ENOTDIR;
 
     return dir->fs->create(dir, name);
 }
 
-static struct fs_node *vfs_mkdir(struct fs_node *dir, const char *name)
+static int vfs_mkdir(struct fs_node *dir, const char *name)
 {
     if (dir->type != FS_DIR)
-        return NULL;
+        return -ENOTDIR;
 
     return dir->fs->mkdir(dir, name);
 }
@@ -198,6 +225,26 @@ next:;
     return 0;
 }
 
+static int vfs_mount_type(const char *type, const char *dir, int flags, void *data)
+{
+    //printk("vfs_mount_type(type=%s, dir=%s, flags=%x, data=%p)\n", type, dir, flags, data);
+
+    struct fs *fs = NULL;
+
+    /* Look up filesystem */
+    forlinked (entry, registered_fs, entry->next) {
+        if (!strcmp(entry->name, type)) {
+            fs = entry->fs;
+            break;
+        }
+    }
+
+    if (!fs)
+        return -EINVAL;
+
+    return fs->mount(dir, flags, data);
+}
+
 static int vfs_ioctl(struct fs_node *file, unsigned long request, void *argp)
 {
     if (!file || !file->fs || !file->fs->ioctl)
@@ -220,6 +267,8 @@ int generic_file_open(struct file *file __unused)
 }
 
 struct vfs vfs = (struct vfs) {
+    .init       = vfs_init,
+    .install    = vfs_install,
     .mount_root = vfs_mount_root,
     .create     = vfs_create,
     .mkdir      = vfs_mkdir,
@@ -229,4 +278,5 @@ struct vfs vfs = (struct vfs) {
     .ioctl      = vfs_ioctl,
     .find       = vfs_find,
     .traverse   = vfs_traverse,
+    .mount_type = vfs_mount_type,
 };

@@ -347,6 +347,29 @@ static void sys_readdir(int fd, struct dirent *dirent)
     return;
 }
 
+struct mount_struct {
+    const char *type;
+    const char *dir;
+    int flags;
+    void *data;
+} __packed;
+
+static void sys_mount(struct mount_struct *args)
+{
+    const char *type = args->type;
+    const char *dir  = args->dir;
+    int flags = args->flags;
+    void *data = args->data;
+
+    printk("[%d] %s: mount(type=%s, dir=%s, flags=%x, data=%p)\n", cur_proc->pid, cur_proc->name, type, dir, flags, data);
+
+    int ret = vfs.mount_type(type, dir, flags, data);
+
+    arch_syscall_return(cur_proc, ret);
+
+    return;
+}
+
 void (*syscall_table[])() =  {
     /* 00 */    NULL,
     /* 01 */    sys_exit,
@@ -370,4 +393,5 @@ void (*syscall_table[])() =  {
     /* 19 */    sys_ioctl,
     /* 20 */    sys_signal,
     /* 21 */    sys_readdir,
+    /* 22 */    sys_mount,
 };

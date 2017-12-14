@@ -54,7 +54,14 @@ int ps2kbd_probe()
 	ps2kbd_register();
 	//kbd_ring = new_ring(BUF_SIZE);
 
-	struct fs_node *kbd = vfs.create(dev_root, "kbd");
+    vfs.create(dev_root, "kbd");
+
+    struct vfs_path path = (struct vfs_path) {
+        .mountpoint = dev_root,
+        .tokens = (char *[]) {"kbd", NULL}
+    };
+
+	struct fs_node *kbd = vfs.traverse(&path);
 
 	kbd->dev = &ps2kbddev;
     kbd->read_queue = kbd_read_queue;

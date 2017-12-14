@@ -23,6 +23,9 @@
 
 void kmain(struct boot *boot)
 {
+    printk("[0] Kernel: Initalizing Virtual Filesystem (VFS)\n");
+    vfs.init();
+
     load_ramdisk(&boot->modules[0]);
 
     devfs_init();
@@ -33,19 +36,6 @@ void kmain(struct boot *boot)
 
     extern void devpts_init();
     devpts_init();
-
-    //struct fs_node *pts = vfs.mkdir(dev_root, "pts");
-    //extern struct fs_node *devpts_root;
-    //vfs.mount(pts, devpts_root);
-
-    /* Mount HD on /mnt .. FIXME */
-    struct fs_node *hda1 = vfs.find("/dev/hda1");
-
-    if (!hda1)
-        panic("Could not load /dev/hda1");
-
-    struct fs_node *hd  = ext2fs.load(hda1);
-    vfs.mount("/mnt", hd);
 
     printk("[0] Kernel: Loading init process\n");
     proc_t *init = load_elf("/init");

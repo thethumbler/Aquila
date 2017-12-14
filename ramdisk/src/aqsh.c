@@ -7,6 +7,7 @@
 #include <dirent.h>
 
 #include <sys/wait.h>
+#include <sys/mount.h>
 #include <unistd.h>
 
 /*
@@ -120,6 +121,16 @@ int cmd_hd(int argc, char *argv[])
     close(fd);
 }
 
+int cmd_mount(int argc, char *argv[])
+{
+    // mount -t fstype dev dir
+    struct {
+        char *dev;
+        char *opt;
+    } data = {argv[3], ""};
+
+    mount(argv[2], argv[4], 0, &data);
+}
 
 /***********/
 
@@ -160,6 +171,8 @@ void eval()
         cmd_cat(args_i, argv);
     } else if (!strcmp(argv[0], "mem")) {
         cmd_mem(args_i, argv);
+    } else if (!strcmp(argv[0], "mount")) {
+        cmd_mount(args_i, argv);
     } else if (!strcmp(argv[0], "float")) {
         cmd_float(args_i, argv);
     } else if (!strcmp(argv[0], "hd")) {
@@ -172,7 +185,7 @@ void eval()
                 pid = waitpid(cld, &s, 0);
             } while (pid != cld);
         } else {
-            int x = execve("/etc/lua", argv, 0);
+            int x = execve("/mnt/lua", argv, 0);
             exit(x);
         }
     } else if (!strcmp(argv[0], "lua5")) {
