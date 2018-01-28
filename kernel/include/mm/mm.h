@@ -29,6 +29,7 @@
 typedef struct
 {
 	int		(*map)(uintptr_t addr, size_t size, int flags);
+	int		(*map_to)(uintptr_t phys, uintptr_t virt, size_t size, int flags);
 	void	(*unmap)(uintptr_t addr, size_t size);
 	void	(*unmap_full)(uintptr_t addr, size_t size);
 #if 0
@@ -56,6 +57,7 @@ extern pmman_t pmman;
 extern uintptr_t buddy_alloc(size_t);
 extern void buddy_free(uintptr_t, size_t);
 extern void buddy_dump();
+extern void buddy_set_unusable(uintptr_t, size_t);
 
 extern void pmm_lazy_alloc(uintptr_t addr);
 

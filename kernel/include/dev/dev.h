@@ -21,7 +21,7 @@ struct device
 	int 		(*probe)();
 	ssize_t		(*read) (struct fs_node * dev, off_t offset, size_t size, void * buf);
 	ssize_t		(*write)(struct fs_node * dev, off_t offset, size_t size, void * buf);
-	int			(*ioctl)(struct fs_node * dev, unsigned long request, void * argp);
+	int			(*ioctl)(struct fs_node * dev, int request, void * argp);
 
 	/* File Operations */
 	struct file_ops f_ops;
@@ -38,5 +38,6 @@ extern dev_t condev;
 extern dev_t ttydev;
 extern dev_t pcidev;
 extern dev_t atadev;
+extern dev_t fbdev;
 
 #endif

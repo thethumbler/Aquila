@@ -151,7 +151,7 @@ static struct fs_node *cpiofs_traverse(struct vfs_path *path)
         dir = cpiofs_find(dir, token);
     }
 
-    printk("dir = %p\n", dir);
+    //printk("dir = %p\n", dir);
 
     return dir;
 }

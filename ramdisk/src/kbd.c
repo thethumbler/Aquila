@@ -42,46 +42,26 @@ void handle_keyboard(int fd, int scancode)
 {
     static char shift = 0, alt = 0, ctl = 0;
 
-    if (scancode == LSHIFT || scancode == RSHIFT) {
-        shift = 1;
-        return;
-    }
+    switch (scancode) {
+        case  LSHIFT:
+        case  RSHIFT: shift = 1; return;
 
-	if (scancode == _LSHIFT || scancode == _RSHIFT) {
-        shift = 0;
-        return;
-    }
+        case _LSHIFT:
+        case _RSHIFT: shift = 0; return;
+        case    CAPS: shift = !shift; return;
 
-	if (scancode == CAPS) {
-        shift = !shift;
-        return;
-    }
+        case    LALT: alt = 1; return;
+        case   _LALT: alt = 0; return;
 
-	if (scancode == LALT) {
-        alt = 1;
-        return;
-    }
-
-	if (scancode == _LALT) {
-        alt = 0;
-        return;
-    }
-
-	if (scancode == LCTL) {
-        ctl = 1;
-        return; 
-    }
-
-	if (scancode == _LCTL) {
-        ctl = 0; 
-        return;
+        case    LCTL: ctl = 1; return;
+        case   _LCTL: ctl = 0; return;
     }
 
     if (scancode < 60) {
         if (shift) {
-            write(fd, &kbd_us_shift[scancode], 1);
+            write(fd, &(char){(ctl? 31: -1) & kbd_us_shift[scancode]}, 1);
         } else {
-            write(fd, &kbd_us[scancode], 1);
+            write(fd, &(char){(ctl? 31: -1) & kbd_us[scancode]}, 1);
         }
     }
 }

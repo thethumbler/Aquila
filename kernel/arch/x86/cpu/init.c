@@ -21,6 +21,8 @@
 
 #include <ds/bitmap.h>
 
+#include <video/vbe.h>
+
 struct cpu cpus[32];
 int cpus_count;
 

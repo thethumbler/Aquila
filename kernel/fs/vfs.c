@@ -13,42 +13,40 @@ struct fs_list {
     struct fs_list *next;
 } *registered_fs = NULL;
 
-struct mount_node {
+struct vfs_node {
     const char *name;
-    struct fs_node *target;
-    struct mount_node *children;
-    struct mount_node *next;
-} mount_graph = {
+    struct vfs_node *children;
+    struct vfs_node *next;
+
+    /* We cache type and access permissions of node */
+    enum fs_node_type   type;
+    uint32_t mask;
+    uint32_t uid;
+    uint32_t gid;
+
+    /* Reference to node */
+    struct fs_node *node;
+} vfs_graph = {
     .name = "/",
 };
 
-static void vfs_init(void)
-{
-    extern struct fs ext2fs;
-    struct fs *fs_list[] = {&ext2fs, NULL};
-
-    foreach (fs, fs_list) {
-        vfs.install(fs);
-    }
-}
-
-static void vfs_install(struct fs *fs)
-{
-    //printk("vfs_install(fs=%p @{.name = %s})\n", fs, fs->name);
-
-    struct fs_list *node = kmalloc(sizeof(struct fs_list));
-    node->name = fs->name;
-    node->fs = fs;
-    node->next = registered_fs;
-    registered_fs = node;
-}
+/* ================== VFS Graph helpers ================== */
 
 struct fs_node *vfs_root = NULL;
+
+static void vfs_graph_cache_node(struct vfs_node *vnode, struct fs_node *node)
+{
+    vnode->type = node->type;
+    vnode->mask = node->mask;
+    vnode->uid  = node->uid;
+    vnode->gid  = node->gid;
+}
 
 static void vfs_mount_root(struct fs_node *node)
 {
     vfs_root = node;
-    mount_graph.target = node;
+    vfs_graph.node = node;
+    vfs_graph_cache_node(&vfs_graph, node);
 }
 
 static char **canonicalize_path(const char * const path)
@@ -69,8 +67,8 @@ static struct vfs_path *vfs_get_mountpoint(char **tokens)
     struct vfs_path *path = kmalloc(sizeof(struct vfs_path));
     path->tokens = tokens;
 
-    struct mount_node *cur_node = &mount_graph;
-    struct mount_node *last_target_node = cur_node;
+    struct vfs_node *cur_node = &vfs_graph;
+    struct vfs_node *last_target_node = cur_node;
 
     size_t token_i = 0;
     int check_last_node = 0;
@@ -78,7 +76,7 @@ static struct vfs_path *vfs_get_mountpoint(char **tokens)
     foreach (token, tokens) {
         check_last_node = 0;
 
-        if (cur_node->target) {
+        if (cur_node->node) {
             last_target_node = cur_node;
             path->tokens = tokens + token_i;
         }
@@ -99,17 +97,99 @@ static struct vfs_path *vfs_get_mountpoint(char **tokens)
             break;
         }
 next:;
-     ++token_i;
+        ++token_i;
     }
 
-    if (check_last_node && cur_node->target) {
+    if (check_last_node && cur_node->node) {
         last_target_node = cur_node;
         path->tokens = tokens + token_i;
     }
 
-    path->mountpoint = last_target_node->target;
+    path->mountpoint = last_target_node->node;
 
     return path;
+}
+
+/*  Bind VFS path to node */
+static int vfs_bind(const char *path, struct fs_node *target)
+{
+    //printk("vfs_mount(path=%s, target=%p)\n", path, target);
+
+    /* if path is NULL pointer, or path is empty string, or no target return -1 */
+    if (!path ||  !*path || !target)
+        return -1;
+
+    /* Canonicalize Path */
+    char **tokens = canonicalize_path(path);
+    
+    /* FIXME: should check for existence */
+
+    struct vfs_node *cur_node = &vfs_graph;
+
+    foreach (token, tokens) {
+        if (cur_node->children) {
+            cur_node = cur_node->children;
+
+            /* Look for token in node children */
+            struct vfs_node *last_node = NULL;
+            forlinked (node, cur_node, node->next) {
+                last_node = node;
+                if (!strcmp(node->name, token)) {   /* Found */
+                    cur_node = node;
+                    goto next;
+                }
+            }
+
+            /* Not found, create it */
+            //printk("%s not found, creating it on %s\n", token, last_node->name);
+            struct vfs_node *new_node = kmalloc(sizeof(struct vfs_node));
+            memset(new_node, 0, sizeof(struct vfs_node));
+            new_node->name = strdup(token);
+            last_node->next = new_node;
+            cur_node = new_node;
+        } else {
+            //printk("no children found, creating %s on %s\n", token, cur_node->name);
+            struct vfs_node *new_node = kmalloc(sizeof(struct vfs_node));
+            memset(new_node, 0, sizeof(struct vfs_node));
+            new_node->name = strdup(token);
+            cur_node->children = new_node;
+            cur_node = new_node;
+        }
+next:;
+    }
+
+    cur_node->node = target;
+    return 0;
+}
+
+static void vfs_init(void)
+{
+    extern struct fs ext2fs;
+    extern struct fs devfs;
+    extern struct fs devpts;
+
+    struct fs *fs_list[] = {&devfs, &devpts, &ext2fs, NULL};
+
+    foreach (fs, fs_list) {
+        vfs.install(fs);
+    }
+}
+
+static void vfs_install(struct fs *fs)
+{
+    //printk("\tVFS install %s ... ", fs->name);
+
+    int err;
+    if ((err = fs->init())) {
+        //printk("Error %d\n", err);
+    } else {
+        struct fs_list *node = kmalloc(sizeof(struct fs_list));
+        node->name = fs->name;
+        node->fs = fs;
+        node->next = registered_fs;
+        registered_fs = node;
+        //printk("Success\n");
+    }
 }
 
 static struct fs_node *vfs_traverse(struct vfs_path *path)
@@ -174,58 +254,8 @@ static int vfs_mkdir(struct fs_node *dir, const char *name)
     return dir->fs->mkdir(dir, name);
 }
 
-static int vfs_mount(const char *path, struct fs_node *target)
-{
-    //printk("vfs_mount(path=%s, target=%p)\n", path, target);
 
-    /* if path is NULL pointer, or path is empty string, or no target return -1 */
-    if (!path ||  !*path || !target)
-        return -1;
-
-    /* Canonicalize Path */
-    char **tokens = canonicalize_path(path);
-    
-    /* FIXME: should check for existence */
-
-    struct mount_node *cur_node = &mount_graph;
-
-    foreach (token, tokens) {
-        if (cur_node->children) {
-            cur_node = cur_node->children;
-
-            /* Look for token in node children */
-            struct mount_node *last_node = NULL;
-            forlinked (node, cur_node, node->next) {
-                last_node = node;
-                if (!strcmp(node->name, token)) {   /* Found */
-                    cur_node = node;
-                    goto next;
-                }
-            }
-
-            /* Not found, create it */
-            //printk("%s not found, creating it on %s\n", token, last_node->name);
-            struct mount_node *new_node = kmalloc(sizeof(struct mount_node));
-            memset(new_node, 0, sizeof(struct mount_node));
-            new_node->name = strdup(token);
-            last_node->next = new_node;
-            cur_node = new_node;
-        } else {
-            //printk("no children found, creating %s on %s\n", token, cur_node->name);
-            struct mount_node *new_node = kmalloc(sizeof(struct mount_node));
-            memset(new_node, 0, sizeof(struct mount_node));
-            new_node->name = strdup(token);
-            cur_node->children = new_node;
-            cur_node = new_node;
-        }
-next:;
-    }
-
-    cur_node->target = target;
-    return 0;
-}
-
-static int vfs_mount_type(const char *type, const char *dir, int flags, void *data)
+static int vfs_mount(const char *type, const char *dir, int flags, void *data)
 {
     //printk("vfs_mount_type(type=%s, dir=%s, flags=%x, data=%p)\n", type, dir, flags, data);
 
@@ -272,11 +302,11 @@ struct vfs vfs = (struct vfs) {
     .mount_root = vfs_mount_root,
     .create     = vfs_create,
     .mkdir      = vfs_mkdir,
-    .mount      = vfs_mount,
+    .bind       = vfs_bind,
     .read       = vfs_read,
     .write      = vfs_write,
     .ioctl      = vfs_ioctl,
     .find       = vfs_find,
     .traverse   = vfs_traverse,
-    .mount_type = vfs_mount_type,
+    .mount      = vfs_mount,
 };

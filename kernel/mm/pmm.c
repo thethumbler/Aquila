@@ -28,6 +28,14 @@ void pmm_setup(struct boot *boot)
     kernel_heap = VMA(lower_kernel_heap);
     buddy_setup(boot->total_mem * 1024);
     arch_pmm_setup();
+
+    /* Setup memory regions */
+    for (int i = 0; i < boot->mmap_count; ++i) {
+        if (boot->mmap[i].type == MMAP_RESERVED) {
+            size_t size = boot->mmap[i].end - boot->mmap[i].start;
+            buddy_set_unusable(boot->mmap[i].start, size);
+        }
+    }
 }
 
 void pmm_lazy_alloc(uintptr_t addr)
