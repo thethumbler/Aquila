@@ -47,7 +47,7 @@ static void sys_close(int fildes)
 {
     printk("[%d] %s: close(fildes=%d)\n", cur_proc->pid, cur_proc->name, fildes);
 
-    if (fildes >= FDS_COUNT) {  /* Out of bounds */
+    if (fildes < 0 || fildes >= FDS_COUNT) {  /* Out of bounds */
         arch_syscall_return(cur_proc, -EBADFD);
         return; 
     }
@@ -152,14 +152,11 @@ static void sys_lseek(int fildes, off_t offset, int whence)
             cur_proc->fds[fildes].offset += offset;
             break;
         case 2: /* SEEK_END */
-            cur_proc->fds[fildes].offset = cur_proc->fds[fildes].node->size;
+            cur_proc->fds[fildes].offset = cur_proc->fds[fildes].node->size + offset;
             break;
     }
 
     arch_syscall_return(cur_proc, cur_proc->fds[fildes].offset);
-    return;
-
-    //for (;;);
 }
 
 static void sys_open(const char *path, int oflags)
@@ -311,7 +308,17 @@ static void sys_ioctl(int fd, int request, void *argp)
 {
     printk("[%d] %s: ioctl(fd=%d, request=0x%x, argp=%p)\n", cur_proc->pid, cur_proc->name, fd, request, argp);
 
+    if (fd < 0 || fd >= FDS_COUNT) {  /* Out of bounds */
+        arch_syscall_return(cur_proc, -EBADFD);
+        return; 
+    }
+
     struct fs_node *node = cur_proc->fds[fd].node;
+
+    if (!node) {    /* Invalid File Descriptor */
+        arch_syscall_return(cur_proc, -EBADFD);
+        return;
+    }
 
     int ret = vfs.ioctl(node, request, argp);
     arch_syscall_return(cur_proc, ret);
@@ -363,11 +370,34 @@ static void sys_mount(struct mount_struct *args)
 
     printk("[%d] %s: mount(type=%s, dir=%s, flags=%x, data=%p)\n", cur_proc->pid, cur_proc->name, type, dir, flags, data);
 
-    int ret = vfs.mount_type(type, dir, flags, data);
+    int ret = vfs.mount(type, dir, flags, data);
 
     arch_syscall_return(cur_proc, ret);
 
     return;
+}
+
+static void sys_mkdirat(int fd, const char *path, int mode)
+{
+    printk("[%d] %s: mkdirat(fd=%d, path=%s, mode=%x)\n", cur_proc->pid, cur_proc->name, fd, path, mode);
+
+    if (fd < 0 || fd >= FDS_COUNT) {  /* Out of bounds */
+        arch_syscall_return(cur_proc, -EBADFD);
+        return; 
+    }
+
+    struct fs_node *node = cur_proc->fds[fd].node;
+
+    if (!node) {    /* Invalid File Descriptor */
+        arch_syscall_return(cur_proc, -EBADFD);
+        return;
+    }
+    
+    int ret = vfs.mkdir(node, path);
+    arch_syscall_return(cur_proc, ret);
+
+    return;
+    for (;;);
 }
 
 void (*syscall_table[])() =  {
@@ -394,4 +424,5 @@ void (*syscall_table[])() =  {
     /* 20 */    sys_signal,
     /* 21 */    sys_readdir,
     /* 22 */    sys_mount,
+    /* 23 */    sys_mkdirat,
 };

@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <stdlib.h>
+#include <sys/mount.h>
 
 #include <sys/ioctl.h>
 
@@ -14,6 +15,8 @@
 
 void _start()
 {
+    /* Mount devfs */
+
     //open("/dev/console", O_WRONLY);
     //open("/dev/console", O_WRONLY);
 
@@ -50,42 +53,48 @@ void _start()
     //    write(stdout_fd, msg, strlen(msg));
     //}
 
-    int pty = open("/dev/ptmx", O_RDWR);
-    int pts_id;
-    ioctl(pty, TIOCGPTN, &pts_id);
-    char pts_fn[] = "/dev/pts/ ";
-    pts_fn[9] = '0' + pts_id;
+    //int pty = open("/dev/ptmx", O_RDWR);
+    //int pts_id;
+    //ioctl(pty, TIOCGPTN, &pts_id);
+    //char pts_fn[] = "/dev/pts/ ";
+    //pts_fn[9] = '0' + pts_id;
 
     int kbd_pid;
-    int aqsh_pid;
+    //int aqsh_pid;
 
     if (kbd_pid = fork()) {
+#if 1
+        /* Our fancy framebuffer terminal */
+        execve("/etc/fbterm", 0, 0);
+#else
         int console = open("/dev/console", O_WRONLY);
         for (;;) {
             char buf[50];
             memset(buf, 0, 50);
             if (read(pty, buf, 50) > 0) {
                 write(console, buf, 50);
-                //kill(3, 1);
             }
         }
-    } else {
-        if (aqsh_pid = fork()) {
-            int stdin_fd  = open("/dev/kbd", O_RDONLY);
-            //int stdout_fd = open(pts_fn, O_WRONLY);
-            execve("/bin/kbd", 0, 0);
-        } else {
-            close(pty);
-            int stdin_fd  = open(pts_fn, O_RDONLY);
-            int stdout_fd = open(pts_fn, O_WRONLY);
-            int stderr_fd = open(pts_fn, O_WRONLY);
+#endif
+    //} else {
+    //    if (aqsh_pid = fork()) {
+    //        int stdin_fd  = open("/dev/kbd", O_RDONLY);
+    //        //int stdout_fd = open(pts_fn, O_WRONLY);
+    //        execve("/bin/kbd", 0, 0);
+    //    } else {
+    //        close(pty);
+    //        int stdin_fd  = open(pts_fn, O_RDONLY);
+    //        int stdout_fd = open(pts_fn, O_WRONLY);
+    //        int stderr_fd = open(pts_fn, O_WRONLY);
 
-            char *argp[] = {"/bin/aqsh", "DEF", 0};
-            char *envp[] = {"PWD=/", 0};
-            execve("/bin/aqsh", argp, envp);
-            for (;;);
-        }
+    //        char *argp[] = {"/bin/aqsh", 0};
+    //        char *envp[] = {"PWD=/", 0};
+    //        execve("/bin/aqsh", argp, envp);
+    //        for (;;);
+    //    }
     }
+
+    for (;;);
 }
 
 #if 0

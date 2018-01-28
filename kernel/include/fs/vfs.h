@@ -28,6 +28,7 @@ struct file_ops
     ssize_t     (*read) (struct file *file, void *buf, size_t size);    
     ssize_t     (*write)(struct file *file, void *buf, size_t size);
     ssize_t     (*readdir) (struct file *file, struct dirent *dirent);  
+    ssize_t     (*close)(struct file *file);
 
     /* helpers */
     int         (*can_read) (struct file * file, size_t size);
@@ -46,10 +47,13 @@ struct vfs_path {
 
 struct fs
 {
-    /* file system name */
+    /* filesystem name */
     char * name;
 
-    /* load filesystem from file */
+    /* initalize filesystem */
+    int (*init)();
+
+    /* load filesystem from file/dev */
     struct fs_node * (*load) (struct fs_node *node);
 
     /* Mount filesystem */
@@ -68,7 +72,7 @@ struct fs
     ssize_t (*write) (struct fs_node *node, off_t offset, size_t size, void *buf);
 
     /* kernel-level ioctl */
-    int (*ioctl) (struct fs_node *node, unsigned long request, void *argp);
+    int (*ioctl) (struct fs_node *node, int request, void *argp);
 
     /* kernel-level readdir */
     ssize_t (*readdir) (struct fs_node *node, off_t offset, struct dirent *dirent);
@@ -90,13 +94,16 @@ struct fs_node
     enum fs_node_type   type;
     struct fs   *fs;
     dev_t       *dev;
-    off_t       offset; /* Offset to add to each operation on file */
+    off_t       offset; /* Offset to add to each operation on node */
     void        *p;     /* Filesystem handler private data */
 
+    uint32_t    mask;   /* File access mask */
+    uint32_t    uid;    /* User ID */
+    uint32_t    gid;    /* Group ID */
+
+    size_t      ref;    /* Number of processes referencing this node */
     queue_t     *read_queue;
     queue_t     *write_queue;
-
-    struct fs_node  *mountpoint;    /* Mount point to another inode */
 };
 
 struct file
@@ -118,8 +125,8 @@ struct vfs
     ssize_t (*read) (struct fs_node *inode, size_t offset, size_t size, void *buf);
     ssize_t (*write)(struct fs_node *inode, size_t offset, size_t size, void *buf);
     int     (*ioctl)(struct fs_node *inode, unsigned long request, void *argp);
-    int     (*mount)(const char *path, struct fs_node *target);
-    int     (*mount_type)(const char *type, const char *dir, int flags, void *data);
+    int     (*bind)(const char *path, struct fs_node *target);
+    int     (*mount)(const char *type, const char *dir, int flags, void *data);
     ssize_t (*readdir)(struct fs_node *inode, off_t offset, struct dirent *dirent);
 
     struct fs_node* (*find) (const char *name);

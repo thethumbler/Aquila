@@ -157,6 +157,21 @@ void buddy_dump()
     }
 }
 
+void buddy_set_unusable(uintptr_t addr, size_t size)
+{
+    size_t start_idx = addr / BUDDY_MAX_BS;
+    size_t end_idx   = (addr + size + BUDDY_MAX_BS - 1) / BUDDY_MAX_BS;
+
+    bitmap_set_range(&buddies[BUDDY_MAX_ORDER].bitmap, start_idx, end_idx);
+
+    size_t ffidx = buddies[BUDDY_MAX_ORDER].first_free_idx;
+
+    if (ffidx >= start_idx && ffidx <= end_idx)
+        buddies[BUDDY_MAX_ORDER].first_free_idx = end_idx + 1;
+
+    buddies[BUDDY_MAX_ORDER].usable -= (end_idx - start_idx + 1);
+}
+
 void buddy_setup(size_t total_mem)
 {
     printk("[0] Kernel: PMM -> Setting up Buddy System\n");

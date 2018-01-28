@@ -43,21 +43,21 @@ static void ext2_bgd_table_rewrite(ext2_desc_t *desc)
 
 static void *ext2_block_read(ext2_desc_t *desc, uint32_t number, void *buf)
 {
-    printk("ext2_block_read(desc=%p, number=%d, buf=%p)\n", desc, number, buf);
+    //printk("ext2_block_read(desc=%p, number=%d, buf=%p)\n", desc, number, buf);
     vfs.read(desc->supernode, number * desc->bs, desc->bs, buf);
     return buf;
 }
 
 static void *ext2_block_write(ext2_desc_t *desc, uint32_t number, void *buf)
 {
-    printk("ext2_block_write(desc=%p, number=%d, buf=%p)\n", desc, number, buf);
+    //printk("ext2_block_write(desc=%p, number=%d, buf=%p)\n", desc, number, buf);
     vfs.write(desc->supernode, number * desc->bs, desc->bs, buf);
     return buf;
 }
 
 static uint32_t ext2_block_allocate(ext2_desc_t *desc)
 {
-    printk("ext2_block_allocate(desc=%p)\n", desc);
+    //printk("ext2_block_allocate(desc=%p)\n", desc);
     uint32_t *buf = kmalloc(desc->bs);
     uint32_t block = 0, real_block = 0, group = 0;
     bitmap_t bm = {0};
@@ -83,7 +83,7 @@ static uint32_t ext2_block_allocate(ext2_desc_t *desc)
         return 0;
     }
 
-    printk("group %d, block %d, real_block %d\n", group, block, real_block);
+    //printk("group %d, block %d, real_block %d\n", group, block, real_block);
 
     /* Update bitmap */
     bitmap_set(&bm, block);
@@ -125,7 +125,7 @@ static struct ext2_inode *ext2_inode_read(ext2_desc_t *desc, uint32_t inode)
 
 static struct ext2_inode *ext2_inode_write(ext2_desc_t *desc, uint32_t inode, struct ext2_inode *i)
 {
-    printk("ext2_inode_write(desc=%p, inode=%d, i=%p)\n", desc, inode, i);
+    //printk("ext2_inode_write(desc=%p, inode=%d, i=%p)\n", desc, inode, i);
     if (inode >= desc->superblock->inodes_count)    /* Invalid inode */
         return NULL;
 
@@ -141,7 +141,7 @@ static struct ext2_inode *ext2_inode_write(ext2_desc_t *desc, uint32_t inode, st
 
 static size_t ext2_inode_read_block(ext2_desc_t *desc, struct ext2_inode *inode, size_t idx, void *buf)
 {
-    printk("ext2_inode_read_block(desc=%p, inode=%p, idx=%d, buf=%p)\n", desc, inode, idx, buf);
+    //printk("ext2_inode_read_block(desc=%p, inode=%p, idx=%d, buf=%p)\n", desc, inode, idx, buf);
     size_t bs = desc->bs;
     size_t blocks_nr = (inode->size + bs - 1) / bs;
     size_t p = desc->bs / 4;    /* Pointers per block */
@@ -167,7 +167,7 @@ static size_t ext2_inode_read_block(ext2_desc_t *desc, struct ext2_inode *inode,
 
 static size_t ext2_inode_write_block(ext2_desc_t *desc, struct ext2_inode *inode, uint32_t inode_nr, size_t idx, void *buf)
 {
-    printk("ext2_inode_write_block(desc=%p, inode=%p, inode_nr=%d, idx=%d, buf=%p)\n", desc, inode, inode_nr, idx, buf);
+    //printk("ext2_inode_write_block(desc=%p, inode=%p, inode_nr=%d, idx=%d, buf=%p)\n", desc, inode, inode_nr, idx, buf);
     size_t bs = desc->bs;
     size_t blocks_nr = (inode->size + bs - 1) / bs;
     size_t p = desc->bs / 4;    /* Pointers per block */
@@ -204,7 +204,7 @@ static size_t ext2_inode_write_block(ext2_desc_t *desc, struct ext2_inode *inode
 
 static uint32_t ext2_inode_allocate(ext2_desc_t *desc)
 {
-    printk("ext2_inode_allocate(desc=%p)\n", desc);
+    //printk("ext2_inode_allocate(desc=%p)\n", desc);
     uint32_t *buf = kmalloc(desc->bs);
     uint32_t inode = 0, real_inode = 0, group = 0;
     bitmap_t bm = {0};
@@ -230,7 +230,7 @@ static uint32_t ext2_inode_allocate(ext2_desc_t *desc)
         return 0;
     }
 
-    printk("group %d, inode %d, real_inode %d\n", group, inode, real_inode);
+    //printk("group %d, inode %d, real_inode %d\n", group, inode, real_inode);
 
     /* Update bitmap */
     bitmap_set(&bm, inode);
@@ -266,6 +266,10 @@ static struct fs_node *ext2_inode_to_fs_node(ext2_desc_t *desc, size_t inode)
     }
 
     node->size = i->size;
+    node->mask = i->permissions;
+    node->uid  = i->uid;
+    node->gid  = i->gid;
+
     node->fs   = &ext2fs;
 
     kfree(i);
@@ -319,7 +323,7 @@ found:
 
 static int ext2_dentry_create(struct fs_node *dir, const char *name, uint32_t inode, uint8_t type)
 {
-    printk("ext2_dentry_create(dir=%p, name=%s, inode=%d, type=%d)\n", dir, name, inode, type);
+    //printk("ext2_dentry_create(dir=%p, name=%s, inode=%d, type=%d)\n", dir, name, inode, type);
 
     if (dir->type != FS_DIR)    /* Not a directory */
         return -ENOTDIR;
@@ -393,6 +397,12 @@ done:
 
 /* ================== VFS routines ================== */
 
+static int ext2_init()
+{
+    //printk("ext2_init()\n");
+    return 0;
+}
+
 static struct fs_node *ext2_load(struct fs_node *node)
 {
     /* Read Superblock */
@@ -439,7 +449,7 @@ static int ext2_mount(const char *dir, int flags, void *data)
         panic("Could not load device");
 
     struct fs_node *fs  = ext2fs.load(dev);
-    vfs.mount(dir, fs);
+    vfs.bind(dir, fs);
 
     return 0;
 }
@@ -625,7 +635,7 @@ free_resources:
 
 static int ext2_create(struct fs_node *dir, const char *name)
 {
-    printk("ext2_create(dir=%p, name=%s)\n", dir, name);
+    //printk("ext2_create(dir=%p, name=%s)\n", dir, name);
 
     if (!name)
         return -EINVAL;
@@ -768,6 +778,7 @@ static int ext2_eof(struct file *file)
 
 struct fs ext2fs = {
     .name = "ext2",
+    .init = ext2_init,
     .load = ext2_load,
     .mount = ext2_mount,
     .read = ext2_read,

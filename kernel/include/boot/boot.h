@@ -1,9 +1,16 @@
 #ifndef _BOOT_H
 #define _BOOT_H
 
+#include <config.h>
 #include <core/system.h>
 #include <boot/multiboot.h>
 #include <mm/mm.h>
+
+#ifdef MULTIBOOT_GFX
+#include <dev/fbdev.h>
+#include <video/vbe.h>
+#include <video/vesa.h>
+#endif
 
 typedef struct {
 	void *addr;
@@ -11,7 +18,13 @@ typedef struct {
 	char *cmdline;
 } module_t;
 
+enum mmap_type {
+    MMAP_USABLE   = 1,
+    MMAP_RESERVED = 2
+};
+
 typedef struct {
+    enum mmap_type type;
 	uintptr_t start;
 	uintptr_t end;
 } mmap_t;
@@ -35,8 +48,8 @@ static inline int get_multiboot_mmap_count(multiboot_info_t *info)
 	uint32_t mmap_end = _mmap + info->mmap_length;
 
 	while (_mmap < mmap_end) {
-		if (mmap->type == MULTIBOOT_MEMORY_AVAILABLE)
-			++count;
+		//if (mmap->type == MULTIBOOT_MEMORY_AVAILABLE)
+        ++count;
 		_mmap += mmap->size + sizeof(uint32_t);
 		mmap   = (multiboot_mmap_t*) _mmap;
 	}
@@ -51,14 +64,14 @@ build_multiboot_mmap(multiboot_info_t *info, mmap_t *boot_mmap)
 	uint32_t mmap_end = _mmap + info->mmap_length;
 
 	while (_mmap < mmap_end) {
-		if (mmap->type == MULTIBOOT_MEMORY_AVAILABLE) {
-			*boot_mmap = (mmap_t) {
-				.start = mmap->addr,
-				.end = mmap->addr + mmap->len
-			};
 
-			++boot_mmap;
-		}
+        *boot_mmap = (mmap_t) {
+            .type  = mmap->type,
+            .start = mmap->addr,
+            .end = mmap->addr + mmap->len
+        };
+
+        ++boot_mmap;
 		_mmap += mmap->size + sizeof(uint32_t);
 		mmap   = (multiboot_mmap_t*) _mmap;
 	}
@@ -93,6 +106,26 @@ static inline struct boot *process_multiboot_info(multiboot_info_t *info)
 	static mmap_t mmap[32] = {0};
 	boot.mmap = mmap;
 	build_multiboot_mmap(info, boot.mmap);
+
+#ifdef MULTIBOOT_GFX
+    /* We report video memory as mmap region */
+    boot.mmap[boot.mmap_count].type = MMAP_RESERVED;
+
+    struct vbe_info_block  *vinfo = (struct vbe_info_block *) multiboot_info->vbe_control_info;
+    struct mode_info_block *minfo = (struct mode_info_block *) multiboot_info->vbe_mode_info;
+
+    boot.mmap[boot.mmap_count].start = minfo->phys_base_ptr;
+    boot.mmap[boot.mmap_count].end   = minfo->phys_base_ptr + minfo->y_resolution * minfo->lin_bytes_per_scanline;
+
+    boot.mmap_count++;
+
+    static struct __fbdev_vesa data;
+    data.vbe_info  = VMA(vinfo);
+    data.mode_info = VMA(minfo);
+
+    /* And register fbdev of type `vesa' */
+    fbdev_register(FBDEV_TYPE_VESA, &data);
+#endif
 
 	boot.modules_count = info->mods_count;
 	static module_t modules[32] = {0};

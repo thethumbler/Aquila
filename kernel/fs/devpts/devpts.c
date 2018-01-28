@@ -10,6 +10,7 @@
 
 #include <core/system.h>
 #include <core/string.h>
+#include <bits/errno.h>
 
 #include <fs/vfs.h>
 #include <fs/devfs.h>
@@ -192,7 +193,7 @@ skip_echo:
     return ret;
 }
 
-static int ptm_ioctl(struct fs_node *node, unsigned long request, void *argp)
+static int ptm_ioctl(struct fs_node *node, int request, void *argp)
 {
     struct pty *pty = (struct pty *) node->p;
 
@@ -224,7 +225,7 @@ static struct device ptmxdev = (struct device) {
     },
 };
 
-void devpts_init()
+int devpts_init()
 {
     devpts.create = devfs.create;
     devpts.find = devfs.find;
@@ -235,6 +236,10 @@ void devpts_init()
     devpts.f_ops.readdir = devfs.f_ops.readdir;
 
     devpts_root = kmalloc(sizeof(struct fs_node));
+
+    if (!devpts_root)
+        return -ENOMEM;
+
     memset(devpts_root, 0, sizeof(struct fs_node));
 
     *devpts_root = (struct fs_node) {
@@ -261,9 +266,11 @@ void devpts_init()
 
     //struct fs_node *pts_dir = vfs.traverse(&path);
 
-    vfs.mount("/dev/pts", devpts_root);
+    //vfs.mount("/dev/pts", devpts_root);
 
     ptmx->dev = &ptmxdev;
+
+    return 0;
 }
 
 static struct device ptsdev = (struct device) {
@@ -298,4 +305,5 @@ static struct device ptmdev = (struct device) {
 
 struct fs devpts = {
     .name = "devpts",
+    .init = devpts_init,
 };

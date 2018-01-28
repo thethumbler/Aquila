@@ -24,7 +24,6 @@
 /* devfs root directory (usually mounted on '/dev') */
 struct fs_node *dev_root = NULL;
 
-
 static struct fs_node *devfs_find(struct fs_node *dir, const char *fn)
 {
     if (dir->type != FS_DIR)
@@ -45,7 +44,7 @@ static struct fs_node *devfs_find(struct fs_node *dir, const char *fn)
 
 static struct fs_node *devfs_traverse(struct vfs_path *path)
 {
-    printk("devfs_traverse(path=%p)\n", path);
+    //printk("devfs_traverse(path=%p)\n", path);
     struct fs_node *dir = path->mountpoint;
 
     foreach (token, path->tokens) {
@@ -134,7 +133,7 @@ static int devfs_mkdir(struct fs_node *parent, const char *name)
     return 0;
 }
 
-static int devfs_ioctl(struct fs_node *file, unsigned long request, void *argp)
+static int devfs_ioctl(struct fs_node *file, int request, void *argp)
 {
     if (!file || !file->dev || !file->dev->ioctl)
         return -EBADFD;
@@ -220,20 +219,26 @@ static int devfs_file_eof(struct file *file)
     return file->node->dev->f_ops.eof(file);
 }
 
-void devfs_init()
+int devfs_init()
 {
-    printk("[0] Kernel: devfs -> init()\n");
+    //printk("[0] Kernel: devfs -> init()\n");
     dev_root = kmalloc(sizeof(struct fs_node));
+
+    if (!dev_root)
+        return -ENOMEM;
 
     dev_root->name = "dev";
     dev_root->type = FS_DIR;
     dev_root->size = 0;
     dev_root->fs   = &devfs;
     dev_root->p    = NULL;
+
+    return 0;
 }
 
 struct fs devfs = {
     .name   = "devfs",
+    .init   = devfs_init,
     .create = devfs_create,
     .mkdir  = devfs_mkdir,
     .find   = devfs_find,

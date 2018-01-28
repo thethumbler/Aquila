@@ -5,5 +5,6 @@
 #define ARCH X86
 #define ARCH_BITS 32
 //#define X86_PAE	1
+#define MULTIBOOT_GFX   1
 
 #endif /* ! _CONFIG_H */

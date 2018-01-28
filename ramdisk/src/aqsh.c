@@ -123,13 +123,63 @@ int cmd_hd(int argc, char *argv[])
 
 int cmd_mount(int argc, char *argv[])
 {
-    // mount -t fstype dev dir
+    // mount -t fstype [-o options] [dev] dir
+    char *type = NULL, opt = NULL, dev  = NULL, dir  = NULL;
+
+    for (int i = 1; i < argc; ++i) {
+        printf("argv[%d]= %s\n", i, argv[i]);
+        if (argv[i][0] == '-') {
+            switch (argv[i][1]) {
+                case 't':
+                    type = argv[++i];   // TODO Sanity check
+                    break;
+                case 'o':
+                    opt = argv[++i];   // TODO Sanity check
+                    break;
+                default:
+                    printf("Unrecognized option -%s\n", argv[i][1]);
+                    return -1;
+            }
+        }
+
+        if (dev)
+            dir = argv[i];
+        else
+            dev = argv[i];
+
+    }
+
+    if (!type) {
+        fprintf(stderr, "Filesystem type must be supplied");
+        return -1;
+    }
+
+    if (dev && !dir) {
+        dir = dev;
+        dev = NULL;
+    }
+
+    if (!dir) {
+        fprintf(stderr, "Directory must be supplied");
+        return -1;
+    }
+
     struct {
         char *dev;
         char *opt;
-    } data = {argv[3], ""};
+    } data = {dev, opt};
 
-    mount(argv[2], argv[4], 0, &data);
+    printf("mount -t %s -o %s %s %s\n", type, opt, dev, dir);
+
+    //mount(argv[2], argv[4], 0, &data);
+}
+
+int cmd_mkdir(int argc, char *argv[])
+{
+    // mkdir path 
+    DIR *dir = opendir("/dev");
+    mkdirat(dir->fd, argv[1], 0);
+    closedir(dir);
 }
 
 /***********/
@@ -173,6 +223,8 @@ void eval()
         cmd_mem(args_i, argv);
     } else if (!strcmp(argv[0], "mount")) {
         cmd_mount(args_i, argv);
+    } else if (!strcmp(argv[0], "mkdir")) {
+        cmd_mkdir(args_i, argv);
     } else if (!strcmp(argv[0], "float")) {
         cmd_float(args_i, argv);
     } else if (!strcmp(argv[0], "hd")) {
@@ -186,6 +238,28 @@ void eval()
             } while (pid != cld);
         } else {
             int x = execve("/mnt/lua", argv, 0);
+            exit(x);
+        }
+    } else if (!strcmp(argv[0], "kilo")) {
+        int cld;
+        if (cld = fork()) {
+            int s, pid;
+            do {
+                pid = waitpid(cld, &s, 0);
+            } while (pid != cld);
+        } else {
+            int x = execve("/etc/kilo", argv, 0);
+            exit(x);
+        }
+    } else if (!strcmp(argv[0], "aqbox")) {
+        int cld;
+        if (cld = fork()) {
+            int s, pid;
+            do {
+                pid = waitpid(cld, &s, 0);
+            } while (pid != cld);
+        } else {
+            int x = execve("/etc/aqbox", argv, environ);
             exit(x);
         }
     } else if (!strcmp(argv[0], "lua5")) {

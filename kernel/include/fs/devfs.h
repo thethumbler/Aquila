@@ -12,6 +12,4 @@ struct devfs_dir
 extern struct fs devfs;
 extern struct fs_node *dev_root;
 
-void devfs_init();
-
 #endif /* !_DEVFS_H */

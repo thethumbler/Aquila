@@ -9,6 +9,7 @@
 
 #include <fs/initramfs.h>
 #include <fs/devfs.h>
+#include <fs/devpts.h>
 #include <fs/ext2.h>
 
 #include <boot/multiboot.h>
@@ -28,14 +29,12 @@ void kmain(struct boot *boot)
 
     load_ramdisk(&boot->modules[0]);
 
-    devfs_init();
+    vfs.bind("/dev", dev_root);
 
-    vfs.mount("/dev", dev_root);
+    extern struct fs_node *devpts_root;
+    vfs.bind("/dev/pts", devpts_root);
 
     devman_init();
-
-    extern void devpts_init();
-    devpts_init();
 
     printk("[0] Kernel: Loading init process\n");
     proc_t *init = load_elf("/init");
