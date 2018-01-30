@@ -7,4 +7,11 @@
 //#define X86_PAE	1
 #define MULTIBOOT_GFX   1
 
+
+#define UTSNAME_SYSNAME  "AquilaOS"
+#define UTSNAME_RELEASE  "v0.0.1a"
+#define UTSNAME_NODENAME "(n/a)"
+#define UTSNAME_VERSION  (__DATE__ " " __TIME__)
+#define UTSNAME_MACHINE  "i386"
+
 #endif /* ! _CONFIG_H */

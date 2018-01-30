@@ -19,6 +19,7 @@
 
 #include <bits/errno.h>
 #include <bits/dirent.h>
+#include <bits/utsname.h>
 
 #include <fs/devpts.h>
 
@@ -400,6 +401,22 @@ static void sys_mkdirat(int fd, const char *path, int mode)
     for (;;);
 }
 
+static void sys_uname(struct utsname *name)
+{
+    printk("[%d] %s: uname(name=%p)\n", cur_proc->pid, cur_proc->name, name);
+
+    /* FIXME: Sanity checking */
+
+    strcpy(name->sysname,  UTSNAME_SYSNAME);
+    strcpy(name->nodename, UTSNAME_NODENAME);
+    strcpy(name->release,  UTSNAME_RELEASE);
+    strcpy(name->version,  UTSNAME_VERSION);
+    strcpy(name->machine,  UTSNAME_MACHINE);
+
+    arch_syscall_return(cur_proc, 0);
+    return;
+}
+
 void (*syscall_table[])() =  {
     /* 00 */    NULL,
     /* 01 */    sys_exit,
@@ -425,4 +442,5 @@ void (*syscall_table[])() =  {
     /* 21 */    sys_readdir,
     /* 22 */    sys_mount,
     /* 23 */    sys_mkdirat,
+    /* 24 */    sys_uname,
 };

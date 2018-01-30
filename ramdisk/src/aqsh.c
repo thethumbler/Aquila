@@ -8,6 +8,7 @@
 
 #include <sys/wait.h>
 #include <sys/mount.h>
+#include <sys/utsname.h>
 #include <unistd.h>
 
 /*
@@ -182,6 +183,14 @@ int cmd_mkdir(int argc, char *argv[])
     closedir(dir);
 }
 
+int cmd_uname()
+{
+    struct utsname name;
+    uname(&name);
+
+    printf("%s %s %s %s %s\n", name.sysname, name.nodename, name.release, name.version, name.machine);
+}
+
 /***********/
 
 void print_prompt()
@@ -227,6 +236,8 @@ void eval()
         cmd_mkdir(args_i, argv);
     } else if (!strcmp(argv[0], "float")) {
         cmd_float(args_i, argv);
+    } else if (!strcmp(argv[0], "uname")) {
+        cmd_uname(args_i, argv);
     } else if (!strcmp(argv[0], "hd")) {
         cmd_hd(args_i, argv);
     } else if (!strcmp(argv[0], "lua")) {
