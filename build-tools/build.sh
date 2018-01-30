@@ -2,7 +2,6 @@
 # Init
 #
 
-rm -rf sys libc
 mkdir -p sys
 mkdir -p libc/sysroot
 top_dir=$(pwd)
@@ -94,6 +93,8 @@ if [[ ! -d newlib-2.2.0-1 ]]; then
     ln sys/bin/i686-elf-gcc sys/bin/i686-aquila-gcc
     ln sys/bin/i686-elf-gcc sys/bin/i686-aquila-cc
     ln sys/bin/i686-elf-ranlib sys/bin/i686-aquila-ranlib
+
+    export PATH=$top_dir/sys/bin:$PATH;
 
     mkdir -p build-newlib && cd build-newlib;
     ../newlib-2.2.0-1/configure --prefix=/usr --target=i686-aquila;
