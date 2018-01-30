@@ -12,7 +12,7 @@ top_dir=$(pwd)
 #
 
 if [[ ! -f binutils-2.28.tar.gz ]]; then
-	wget https://ftp.gnu.org/gnu/binutils/binutils-2.28.1.tar.gz;
+	wget https://ftp.gnu.org/gnu/binutils/binutils-2.28.tar.gz;
 fi;
 
 if [[ ! -f gcc-7.3.0.tar.gz ]]; then
