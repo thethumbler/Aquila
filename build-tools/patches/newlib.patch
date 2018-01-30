@@ -1,0 +1,50 @@
+diff -bur newlib-2.2.0-1/config.sub ../newlib-2.2.0-1/config.sub
+--- newlib-2.2.0-1/config.sub	2014-12-16 22:47:40.000000000 +0200
++++ ../newlib-2.2.0-1/config.sub	2017-10-04 04:53:25.530752853 +0200
+@@ -1373,7 +1373,7 @@
+ 	      | -hpux* | -unos* | -osf* | -luna* | -dgux* | -auroraux* | -solaris* \
+ 	      | -sym* | -kopensolaris* | -plan9* \
+ 	      | -amigaos* | -amigados* | -msdos* | -newsos* | -unicos* | -aof* \
+-	      | -aos* | -aros* \
++	      | -aos* | -aros* | -aquila* \
+ 	      | -nindy* | -vxsim* | -vxworks* | -ebmon* | -hms* | -mvs* \
+ 	      | -clix* | -riscos* | -uniplus* | -iris* | -rtu* | -xenix* \
+ 	      | -hiux* | -386bsd* | -knetbsd* | -mirbsd* | -netbsd* \
+diff -bur newlib-2.2.0-1/newlib/configure.host ../newlib-2.2.0-1/newlib/configure.host
+--- newlib-2.2.0-1/newlib/configure.host	2014-12-15 15:27:37.000000000 +0200
++++ ../newlib-2.2.0-1/newlib/configure.host	2017-10-05 16:18:13.935566573 +0200
+@@ -548,6 +548,10 @@
+   z8k-*-coff)
+ 	sys_dir=z8ksim
+ 	;;
++  *-*-aquila*)
++	sys_dir=aquila
++    newlib_cflags="${newlib_cflags} -DSIGNAL_PROVIDED -DHAVE_MMAP=0 -DHAVE_MREMAP=0 -D_I386MACH_ALLOW_HW_INTERRUPTS"
++	;;
+ esac
+ 
+ # Host specific flag settings -- usually for features that are not
+diff -bur newlib-2.2.0-1/newlib/libc/stdlib/malign.c ../newlib-2.2.0-1/newlib/libc/stdlib/malign.c
+--- newlib-2.2.0-1/newlib/libc/stdlib/malign.c	2002-11-13 03:20:31.000000000 +0200
++++ ../newlib-2.2.0-1/newlib/libc/stdlib/malign.c	2017-10-04 07:57:16.387590676 +0200
+@@ -1,3 +1,4 @@
++#if 0
+ #ifndef MALLOC_PROVIDED
+ /* malign.c -- a wrapper for memalign_r.  */
+ 
+@@ -18,3 +19,4 @@
+ 
+ #endif
+ #endif
++#endif
+diff -bur newlib-2.2.0-1/newlib/libc/sys/configure.in ../newlib-2.2.0-1/newlib/libc/sys/configure.in
+--- newlib-2.2.0-1/newlib/libc/sys/configure.in	2014-04-04 23:40:58.000000000 +0200
++++ ../newlib-2.2.0-1/newlib/libc/sys/configure.in	2017-10-04 04:53:23.954739423 +0200
+@@ -48,6 +48,7 @@
+ 	tirtos) AC_CONFIG_SUBDIRS(tirtos) ;;
+ 	w65) AC_CONFIG_SUBDIRS(w65) ;;
+ 	z8ksim) AC_CONFIG_SUBDIRS(z8ksim) ;;
++	aquila) AC_CONFIG_SUBDIRS(aquila) ;;
+   esac;
+ fi
+ 

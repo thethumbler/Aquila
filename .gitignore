@@ -6,3 +6,5 @@ mnt/
 system/
 build-tools/*
 !build-tools/build.sh
+!build-tools/aquila/
+!build-tools/patches/
