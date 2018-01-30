@@ -1,8 +1,8 @@
 ARCH = x86
 CP = cp
 
-cd.iso: kernel ramdisk
-	grub2-mkrescue -o cd.iso iso/
+aquila.iso: kernel ramdisk
+	grub2-mkrescue -o aquila.iso iso/
 
 .PHONY: kernel ramdisk
 kernel: iso/kernel.elf
@@ -24,17 +24,15 @@ iso/initrd.img: ramdisk/initrd.img
 ramdisk/initrd.img:
 	cd ramdisk; sh build.sh
 
-try: cd.iso
-	#qemu-kvm -cdrom cd.iso -serial stdio -m 256M -smp 4
-	qemu-kvm -cdrom cd.iso -serial stdio -m 1G -d cpu_reset -no-reboot -hda hd.img -boot d
-	#qemu-kvm -cdrom cd.iso -m 1G -d cpu_reset -no-reboot -hda hd.img -boot d -display curses
+try: aquila.iso
+	qemu-kvm -cdrom aquila.iso -serial stdio -m 1G -d cpu_reset -no-reboot -hda hd.img -boot d
 
 .PHONY: clean
 clean:
 	$(MAKE) clean -C kernel
 	$(RM) -f ramdisk/out/* -r
 	$(RM) -f ramdisk/initrd.img
-	$(RM) -f iso/kernel.elf iso/initrd.img cd.iso
+	$(RM) -f iso/kernel.elf iso/initrd.img aquila.iso
 
 .PHONY: distclean
 distclean:
