@@ -1,5 +1,8 @@
 language: c
 install:
     - cd build-tools && bash build.sh && cd ..
+cache:
+    directories:
+        - build-tools
 script:
     - make aquila.iso
