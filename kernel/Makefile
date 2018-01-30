@@ -4,18 +4,16 @@ MAKEFLAGS += --no-print-directory
 
 include config
 
-CC := gcc
 PDIR != pwd
+CC := $(PDIR)/../build-tools/sys/bin/i686-elf-gcc
 CFLAGS := -std=gnu99 -I $(PDIR) -I $(PDIR)/include/ -nostdlib -ffreestanding -m32 \
 		  -O3 -Wall -Wextra -Werror -funsigned-bitfields -fuse-ld=bfd \
 		  -Wno-unused
-		  #-fdump-rtl-expand
-		  #-no-vec
 
 AS := $(CC)
 ASFLAGS := $(CFLAGS)
 
-LD := /usr/bin/ld.bfd
+LD := $(PDIR)/../build-tools/sys/bin/i686-elf-ld.bfd
 LDFLAGS := -nostdlib -melf_i386
 
 PERL := perl
