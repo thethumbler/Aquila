@@ -122,6 +122,27 @@ int cmd_hd(int argc, char *argv[])
     close(fd);
 }
 
+int cmd_cd(int argc, char *argv[])
+{
+    if (argc == 2) {
+        DIR *d = opendir(argv[1]);
+
+        if (!d) {
+            fprintf(stderr, "cd: %s: ", argv[1]);
+            perror("");
+            return errno;
+        }
+
+        char buf[512];
+        snprintf(buf, 512, "PWD=%s", argv[1]);
+        putenv(buf);
+        closedir(d);
+        return 0;
+    }
+
+    return 0;
+}
+
 int cmd_mount(int argc, char *argv[])
 {
     // mount -t fstype [-o options] [dev] dir
@@ -240,6 +261,8 @@ void eval()
         cmd_uname(args_i, argv);
     } else if (!strcmp(argv[0], "hd")) {
         cmd_hd(args_i, argv);
+    } else if (!strcmp(argv[0], "cd")) {
+        cmd_cd(args_i, argv);
     } else if (!strcmp(argv[0], "lua")) {
         int cld;
         if (cld = fork()) {
@@ -291,8 +314,8 @@ void eval()
 
 void shell()
 {
-    pwd = getenv("PWD");
     for (;;) {
+        pwd = getenv("PWD");
         print_prompt();
         eval();
     }

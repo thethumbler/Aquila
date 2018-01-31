@@ -1,3 +1,4 @@
+#!/bin/bash
 if [[ ! -d out/bin ]]; then mkdir out/bin; fi
 if [[ ! -d out/dev ]]; then mkdir out/dev; fi
 if [[ ! -d out/mnt ]]; then mkdir out/mnt; fi
