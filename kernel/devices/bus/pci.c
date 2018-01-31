@@ -20,7 +20,7 @@ static inline const char *get_device_name(uint16_t vendor_id, uint16_t device_id
     return NULL;
 }
 
-uint32_t pci_read_dword(uint8_t bus, uint8_t dev, uint8_t func, uint8_t reg)
+static inline uint32_t pci_read_dword(uint8_t bus, uint8_t dev, uint8_t func, uint8_t reg)
 {
     union pci_address adr = {0};
 
@@ -92,7 +92,7 @@ int pci_prope()
 {
     printk("pci_prope()\n");
 
-    scan_bus(0);
+    //scan_bus(0);
     return 0;
 
     //for (;;);
@@ -101,3 +101,31 @@ int pci_prope()
 dev_t pcidev = {
     .probe = pci_prope,
 };
+
+
+/*
+ * PCI Bus Interface
+ */
+
+int pci_scan_device(uint8_t class, uint8_t subclass, struct pci_dev *_dev)
+{
+    uint8_t bus = 0;
+    for (uint8_t dev = 0; dev < 32; ++dev) {
+        for (uint8_t func = 0; func < 8; ++func) {
+            uint16_t vendor_id = get_vendor_id(bus, dev, func);
+            if (vendor_id != 0xFFFF) {
+                uint32_t device_id = get_device_id(bus, dev, func);
+                uint32_t class_code = get_class_code(bus, dev, func);
+                uint32_t subclass_code = get_subclass_code(bus, dev, func);
+                if (class_code == class && subclass_code == subclass) {
+                    _dev->bus = bus;
+                    _dev->dev = dev;
+                    _dev->func = func;
+                    return 0;
+                }
+            }
+        }
+    }
+
+    return -1;
+}

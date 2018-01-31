@@ -8,6 +8,8 @@
 #include <fs/mbr.h>
 #include <bits/errno.h>
 
+#include <dev/pci.h>
+
 static struct ata_device {
     uint16_t base;
     uint16_t ctrl;
@@ -249,9 +251,11 @@ static ssize_t ata_write(struct fs_node *node, off_t offset, size_t size, void *
 
 uint8_t ata_detect_device(struct ata_device *dev)
 {
-    ata_soft_reset(dev);
-    outb(dev->base + ATA_PORT_DRIVE, 0xA0 | (dev->slave << 4));
-    ata_wait(dev);
+    ata_select_device(dev);
+
+    uint8_t status = inb(dev->base + ATA_PORT_CMD);
+    if (!status) /* No Device, bail */
+        return ATADEV_UNKOWN;
 
     uint8_t type_low  = inb(dev->base + ATA_PORT_LBAMI);
     uint8_t type_high = inb(dev->base + ATA_PORT_LBAHI);
@@ -268,39 +272,49 @@ uint8_t ata_detect_device(struct ata_device *dev)
     return ATADEV_UNKOWN;
 }
 
-void pata_init()
+static char pata_idx = 'a';
+void pata_init(struct ata_device *dev)
 {
-    printk("Initializing Parallel ATA Device\n");
+    char name[] = "hda";
+    name[2] = pata_idx;
+
+    printk("Initializing Parallel ATA Device %s\n", name);
+    ata_soft_reset(dev);
+
+    vfs.create(dev_root, name);
+
+    struct vfs_path path = (struct vfs_path) {
+        .mountpoint = dev_root,
+        .tokens = (char *[]) {name, NULL}
+    };
+
+	struct fs_node *hd = vfs.traverse(&path);
+
+    hd->dev = &atadev;
+    hd->p = dev;
+
+    readmbr(hd);
 }
 
 int ata_probe()
 {
+    printk("ide_prope()\n");
+
+    struct pci_dev ide;
+    if (pci_scan_device(0x01, 0x01, &ide)) {
+        panic("No IDE controller found\n"); /* FIXME */
+    }
+
     devices[0].base = ATA_PIO_PORT_BASE;
     devices[0].ctrl = ATA_PIO_PORT_CONTROL;
 
-    printk("ide_prope()\n");
-    ata_soft_reset(&devices[0]);
-    //uint8_t type = ata_detect_device(&devices[0]);
+    uint8_t type = ata_detect_device(&devices[0]);
 
-    //switch (type) {
-    //    case ATADEV_PATA:
-    //        pata_init();
-    //        break;
-    //}
-
-    vfs.create(dev_root, "hda");
-
-    struct vfs_path path = (struct vfs_path) {
-        .mountpoint = dev_root,
-        .tokens = (char *[]) {"hda", NULL}
-    };
-
-	struct fs_node *hda = vfs.traverse(&path);
-
-    hda->dev = &atadev;
-    hda->p = &devices[0];
-
-    readmbr(hda);
+    switch (type) {
+        case ATADEV_PATA:
+            pata_init(&devices[0]);
+            break;
+    }
 
     return 0;
 }
