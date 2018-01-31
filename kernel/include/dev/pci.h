@@ -19,6 +19,19 @@ union pci_address {
     uint32_t raw;
 } __packed;
 
+struct pci_dev {
+    uint8_t bus;
+    uint8_t dev;
+    uint8_t func;
+};
+
 extern dev_t pci_bus;
+
+
+/*
+ * PCI Interface
+ */
+
+int pci_scan_device(uint8_t class, uint8_t subclass, struct pci_dev *_dev);
 
 #endif /* ! _PCI_H */
