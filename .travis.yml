@@ -1,11 +1,20 @@
 language: c
 before_install:
-    - sudo apt-get update -qq
-    - sudo apt-get install -qq texinfo
+  - sudo apt-get update -qq
+  - sudo apt-get install -qq texinfo grub-pc-bin
 install:
-    - cd build-tools && bash build.sh && cd ..
+  - cd build-tools && bash build.sh && cd ..
 cache:
-    directories:
-        - build-tools
+  directories:
+  - build-tools
 script:
-    - make aquila.iso
+  - make aquila.iso
+deploy:
+  provider: releases
+  api_key:
+    secure: aFJAuaPBhCn7R+4Ymeu12E0WapPSQFDljtCrqFOSsq/vCOJ7QeXuKp0P6XEXEPpZ2mv4V9GVnGHjWflWCH1frWHbCCSZsWkR36Rxlv0sY8ufoMjWeJqkcn1BNUVluGoZSjXyYp9jzFei6kbkk4jsoh3ipfFj8VK/i3qIZuUl7DAz70y8cg9z1Ue3FGgSq010+QI6iH/+hYssn1hJgtyOLmM8Fe4rRADBeAZQ8XFohqj1yTQRCAyVnL96OGes5mBGfYSikwU8n6errx78FI9ei7CkZEqZtqwoBxyX9XKbCo5TcdIITZ/7vXfiEf/3u/G6623M5pPPXRrxZfWcU+Oon20eQU9CKlGnzaMlGXTU6KtqeT53ullkCBC3X6dWwflcFXel/rpSXfyJY5ihllB4CpD/kXWSEZaFm/ip2II+MrkIK+qm469WArMNWvx7NqdC9BujEJ2phrT667qPzoUe+O7XCPxlWrcHJa8veo2GN1f2O8pH1PEvHPMWZfK0Z9N3ZKpLLn3P9BtMh0Chw0Cy+qMEa9Q3joRGBrQAzVUhGcCl9RsSWb89W7v1kvc6C9oiGO1Q+SRcdJtWkFRsjqGGowbzocjakPgJ8NaEztsiZvM0Om7CB0HeJR1fNA2i4NWfLx3GKt81v8/ld4zWjuukIkzxshuXkRqrcYB50cgHXGg=
+  file: aquila.iso
+  skip_cleanup: true
+  on:
+    repo: mohamed-anwar/Aquila
+    tags: true
