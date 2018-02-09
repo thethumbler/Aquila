@@ -4,7 +4,7 @@ BASH = bash
 
 GRUB_MKRESCUE = $(shell command -v grub2-mkrescue 2> /dev/null)
 ifeq ($(GRUB_MKRESCUE),)
-GRUB_MKRESCUE = grub2-mkrescue
+GRUB_MKRESCUE = grub-mkrescue
 endif
 
 aquila.iso: kernel ramdisk
