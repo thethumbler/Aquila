@@ -1,5 +1,6 @@
 ARCH = x86
 CP = cp
+BASH = bash -c
 
 aquila.iso: kernel ramdisk
 	grub2-mkrescue -o aquila.iso iso/
@@ -11,7 +12,7 @@ ramdisk: iso/initrd.img
 .PHONY: iso/kernel.elf
 iso/kernel.elf: kernel/arch/$(ARCH)/kernel.elf
 	$(MAKE) -C kernel/
-	if [[ ! -e iso ]]; then mkdir iso; fi
+	$(BASH) "if [[ ! -e iso ]]; then mkdir iso; fi"
 	$(CP) kernel/arch/$(ARCH)/kernel.elf $@
 
 .PHONY: %$(ARCH)/kernel.elf
