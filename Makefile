@@ -1,6 +1,6 @@
 ARCH = x86
 CP = cp
-BASH = bash -c
+BASH = bash
 
 aquila.iso: kernel ramdisk
 	grub2-mkrescue -o aquila.iso iso/
@@ -12,7 +12,7 @@ ramdisk: iso/initrd.img
 .PHONY: iso/kernel.elf
 iso/kernel.elf: kernel/arch/$(ARCH)/kernel.elf
 	$(MAKE) -C kernel/
-	$(BASH) "if [[ ! -e iso ]]; then mkdir iso; fi"
+	$(BASH) -c "if [[ ! -e iso ]]; then mkdir iso; fi"
 	$(CP) kernel/arch/$(ARCH)/kernel.elf $@
 
 .PHONY: %$(ARCH)/kernel.elf
@@ -23,7 +23,7 @@ iso/initrd.img: ramdisk/initrd.img
 	cp ramdisk/initrd.img iso/initrd.img
 
 ramdisk/initrd.img:
-	cd ramdisk; sh build.sh
+	cd ramdisk; $(BASH) build.sh
 
 try: aquila.iso
 	qemu-kvm -cdrom aquila.iso -serial stdio -m 1G -d cpu_reset -no-reboot -hda hd.img -boot d
