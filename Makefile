@@ -2,8 +2,13 @@ ARCH = x86
 CP = cp
 BASH = bash
 
+GRUB_MKRESCUE = $(shell command -v grub2-mkrescue 2> /dev/null)
+ifeq ($(GRUB_MKRESCUE),)
+GRUB_MKRESCUE = grub2-mkrescue
+endif
+
 aquila.iso: kernel ramdisk
-	grub2-mkrescue -o aquila.iso iso/
+	$(GRUB_MKRESCUE) -o aquila.iso iso/
 
 .PHONY: kernel ramdisk
 kernel: iso/kernel.elf
