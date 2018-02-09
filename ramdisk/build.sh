@@ -1,7 +1,7 @@
 #!bash
-if [[ ! -d out/bin ]]; then mkdir out/bin; fi
-if [[ ! -d out/dev ]]; then mkdir out/dev; fi
-if [[ ! -d out/mnt ]]; then mkdir out/mnt; fi
+if [[ ! -d out/bin ]]; then mkdir -p out/bin; fi
+if [[ ! -d out/dev ]]; then mkdir -p out/dev; fi
+if [[ ! -d out/mnt ]]; then mkdir -p out/mnt; fi
 
 for f in `ls *.c`; do ../build-tools/sys/bin/i686-aquila-gcc -m32 -I../build-tools/libc/sysroot/usr/include -nostdlib -ffreestanding -Wl,-Ttext=0x1000 \
 `echo "-o out/$f $f"  | sed 's/\..//'` -lgcc ../build-tools/libc/sysroot/usr/lib/libc.a; done
