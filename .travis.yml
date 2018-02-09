@@ -1,7 +1,7 @@
 language: c
 before_install:
     - sudo apt-get update -qq
-    - sudo apt-get install -qq make-info
+    - sudo apt-get install -qq texinfo
 install:
     - cd build-tools && bash build.sh && cd ..
 cache:
