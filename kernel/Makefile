@@ -4,7 +4,12 @@ MAKEFLAGS += --no-print-directory
 
 include config
 
+PDIR := $(TRAVIS_BUILD_DIR)/kernel
+
+ifeq ($(PDIR),/kernel)
 PDIR != pwd
+endif
+
 CC := $(PDIR)/../build-tools/sys/bin/i686-elf-gcc
 CFLAGS := -std=gnu99 -I $(PDIR) -I $(PDIR)/include/ -nostdlib -ffreestanding -m32 \
 		  -O3 -Wall -Wextra -Werror -funsigned-bitfields -fuse-ld=bfd \
