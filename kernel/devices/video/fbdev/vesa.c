@@ -47,7 +47,6 @@ static int fbdev_vesa_prope(int i, struct fbdev *fb)
     };
 
     struct fs_node *fb_node = vfs.traverse(&path);
-    printk("fb_node %p (%s)\n", fb_node, fb_node->name);
 
     fb_node->dev = &fbdev;
     fb_node->size = size;

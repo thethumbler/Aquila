@@ -278,7 +278,6 @@ void pata_init(struct ata_device *dev)
     char name[] = "hda";
     name[2] = pata_idx;
 
-    printk("Initializing Parallel ATA Device %s\n", name);
     ata_soft_reset(dev);
 
     vfs.create(dev_root, name);
@@ -298,9 +297,8 @@ void pata_init(struct ata_device *dev)
 
 int ata_probe()
 {
-    printk("ide_prope()\n");
-
     struct pci_dev ide;
+
     if (pci_scan_device(0x01, 0x01, &ide)) {
         panic("No IDE controller found\n"); /* FIXME */
     }

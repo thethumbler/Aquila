@@ -21,8 +21,6 @@ void readmbr(struct fs_node *node)
             continue;
 
         snprintf(name, 20, "%s%d", node->name, i+1);
-        printk("/dev/%s [%x][%x]\n", name, mbr.ptab[i].status, mbr.ptab[i].type);
-        printk("%x => %x\n", mbr.ptab[i].start_lba, mbr.ptab[i].start_lba + mbr.ptab[i].sectors_count - 1);
 
         if (vfs.create(dev_root, name)) {
             panic("Could not create file");
