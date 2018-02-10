@@ -36,9 +36,7 @@ static ssize_t fbdev_write(struct fs_node *node, off_t offset, size_t size, void
 
 static int fbdev_ioctl(struct fs_node *node, int request, void *argp)
 {
-    printk("fbdev_ioctl(node=%p, request=%x, argp=%p)\n", node, request, argp);
     struct fbdev *fb = (struct fbdev *) node->p;
-    printk("fb %p\n", fb);
 
     switch (request) {
     case FBIOGET_FSCREENINFO:

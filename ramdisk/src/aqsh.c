@@ -37,24 +37,37 @@ int cmd_echo(int argc, char *argv[])
 
 int cmd_ls(int argc, char **args)
 {
+    DIR *d = NULL;
+    int ret = 0, print_name = 0;
+
     if (argc == 1) {
-        DIR *d = opendir(pwd);
-        struct dirent *ent;
-        while (ent = readdir(d)) {
-            printf("%s\n", ent->d_name);
+        /* Open directory */
+        if (!(d = opendir(pwd))) {
+            fprintf(stderr, "ls: cannot access '%s': ", args[1]);
+            perror("");
+            return errno;
         }
-        closedir(d);
-    } else if (argc == 2) {
-        DIR *d = opendir(args[1]);
+
+        /* Print enteries */
         struct dirent *ent;
         while (ent = readdir(d)) {
             printf("%s\n", ent->d_name);
         }
         closedir(d);
     } else {
+        print_name = argc > 2;
         for (int i = 1; i < argc; ++i) {
-            printf("%s:\n", args[i]);
+            print_name? printf("%s:\n", args[i]): 0;
+            /* Open directory */
             DIR *d = opendir(args[i]);
+            if (!(d = opendir(args[i]))) {
+                fprintf(stderr, "ls: cannot access '%s': ", args[i]);
+                perror("");
+                ret = -1;
+                continue;
+            }
+
+            /* Print enteries */
             struct dirent *ent;
             while (ent = readdir(d)) {
                 printf("%s\n", ent->d_name);
@@ -63,7 +76,7 @@ int cmd_ls(int argc, char **args)
         }
     }
 
-    return 0;
+    return ret;
 }
 
 int cmd_mem(int argc, char *argv[])

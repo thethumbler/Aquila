@@ -90,12 +90,8 @@ static void scan_bus(uint8_t bus)
 
 int pci_prope()
 {
-    printk("pci_prope()\n");
-
     //scan_bus(0);
     return 0;
-
-    //for (;;);
 }
 
 dev_t pcidev = {
