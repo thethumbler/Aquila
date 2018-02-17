@@ -23,7 +23,7 @@ description: POSIX compatible Operating System
 
 # List of links in the navigation bar
 navbar-links:
-  Home: "/"
+  Home: ""
   About Aquila: "aboutaquila"
   About Me: "aboutme"
   Blog: "blog/"
