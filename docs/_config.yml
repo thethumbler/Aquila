@@ -24,7 +24,7 @@ description: POSIX compatible Operating System
 # List of links in the navigation bar
 navbar-links:
   About Me: "aboutme"
-  Blog: "blog"
+  Blog: "blog/"
   Wiki: "https://github.com/mohamed-anwar/Aquila/wiki"
 
 # Image to show in the navigation bar - image must be a square (width = height)
@@ -138,6 +138,7 @@ markdown: kramdown
 highlighter: rouge
 permalink: /:year-:month-:day-:title/
 paginate: 5
+paginate_path: "/blog/page:num/"
 
 kramdown:
   input: GFM
