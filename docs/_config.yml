@@ -24,6 +24,7 @@ description: POSIX compatible Operating System
 # List of links in the navigation bar
 navbar-links:
   About Me: "aboutme"
+  Blog: "blog"
   #  Resources:
   #    - Beautiful Jekyll: "http://deanattali.com/beautiful-jekyll/"
   #    - Learn markdown: "http://www.markdowntutorial.com/"
