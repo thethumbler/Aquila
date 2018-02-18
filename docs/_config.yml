@@ -24,7 +24,7 @@ description: POSIX compatible Operating System
 # List of links in the navigation bar
 navbar-links:
   Home: ""
-  About Aquila: "aboutaquila"
+  Features: "features"
   About Me: "aboutme"
   Blog: "blog/"
   Wiki: "https://github.com/mohamed-anwar/Aquila/wiki"

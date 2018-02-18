@@ -10,23 +10,29 @@ Intended to be fully **POSIX** compatible.
 
 #### CPU-based Features:
 ##### Supported Archetictures:
-> - [X] x86
-> - [ ] IA64
-
-- [X] Multitasking
-- [ ] SMP
+- x86
 
 #### Kernel Features:
-- [X] Monolitihic kernel
-- [X] Virtual Filesystem
-- [ ] Supports loadable modules
-- [ ] Compatible with _Linux_ Syscalls (may never be implemented, this is **NOT** a Linux clone)
+- Monolitihic kernel
+- Virtual Filesystem
 
 #### Supported Filesystems:
-- [X] initramfs (CPIO Archive filesystem, used for Ramdisk, read only)
-- [X] ext2 (Basic Extended 2 filesystem, no caching, read/write)
-- [X] devfs (Virtual filesystem, used for device handlers, read/write (device dependent))
-- [X] devpts (Virtual filesystem, used for psudo-terminals)
+- initramfs (CPIO Archive filesystem, used for Ramdisk, read only)
+```
+kernel/fs/initramfs/
+```
+- ext2 (Basic Extended 2 filesystem, no caching, read/write)
+```
+kernel/fs/ext2/
+```
+- devfs (Virtual filesystem, used for device handlers, read/write (device dependent))
+```
+kernel/fs/devfs/
+```
+- devpts (Virtual filesystem, used for psudo-terminals)
+```
+kernel/fs/devpts/
+```
 
 #### Supported Devices:
 - [X] ramdev  (Memory mapped device, generic handler)
