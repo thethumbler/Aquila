@@ -93,13 +93,13 @@ if [[ ! -d newlib-2.2.0-1 ]]; then
     ln sys/bin/i686-elf-gcc sys/bin/i686-aquila-gcc
     ln sys/bin/i686-elf-gcc sys/bin/i686-aquila-cc
     ln sys/bin/i686-elf-ranlib sys/bin/i686-aquila-ranlib
-
-    export PATH=$top_dir/sys/bin:$PATH;
-
-    mkdir -p build-newlib && cd build-newlib;
-    ../newlib-2.2.0-1/configure --prefix=/usr --target=i686-aquila;
-    make all;
-    make DESTDIR=$top_dir/libc/sysroot install;
-    cd ..;
-    cp -ar $top_dir/libc/sysroot/usr/i686-aquila/* $top_dir/libc/sysroot/usr/
 fi;
+
+# Always rebuild newlib
+export PATH=$top_dir/sys/bin:$PATH;
+rm -rf build-newlib && mkdir -p build-newlib && cd build-newlib;
+../newlib-2.2.0-1/configure --prefix=/usr --target=i686-aquila;
+make all;
+make DESTDIR=$top_dir/libc/sysroot install;
+cd ..;
+cp -ar $top_dir/libc/sysroot/usr/i686-aquila/* $top_dir/libc/sysroot/usr/
