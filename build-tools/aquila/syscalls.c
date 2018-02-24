@@ -31,6 +31,7 @@
 #define SYS_MOUNT   22 
 #define SYS_MKDIRAT 23
 #define SYS_UNAME   24
+#define SYS_PIPE    25
 
 #define SYSCALL3(ret, v, arg1, arg2, arg3) \
 	asm volatile("int $0x80;":"=a"(ret):"a"(v), "b"(arg1), "c"(arg2), "d"(arg3));
@@ -333,6 +334,19 @@ int uname(struct utsname *name)
 {
     int ret;
     SYSCALL1(ret, SYS_UNAME, name);
+
+    if (ret < 0) {
+        errno = -ret;
+        return -1;
+    }
+
+    return 0;
+}
+
+int pipe(int fd[2])
+{
+    int ret;
+    SYSCALL1(ret, SYS_PIPE, fd);
 
     if (ret < 0) {
         errno = -ret;

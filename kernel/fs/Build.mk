@@ -7,3 +7,4 @@ obj-y += read.o
 obj-y += write.o
 obj-y += readdir.o
 obj-y += mbr.o
+obj-y += pipe.o

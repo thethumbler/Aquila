@@ -22,6 +22,7 @@
 #include <bits/utsname.h>
 
 #include <fs/devpts.h>
+#include <fs/pipe.h>
 
 static void sys_exit(int status)
 {
@@ -417,6 +418,17 @@ static void sys_uname(struct utsname *name)
     return;
 }
 
+static void sys_pipe(int fd[2])
+{
+    printk("[%d] %s: pipe(fd=%p)\n", cur_proc->pid, cur_proc->name, fd);
+    int fd1 = get_fd(cur_proc);
+    int fd2 = get_fd(cur_proc);
+    pipefs_pipe(&cur_proc->fds[fd1], &cur_proc->fds[fd2]);
+    fd[0] = fd1;
+    fd[1] = fd2;
+    arch_syscall_return(cur_proc, 0);
+}
+
 void (*syscall_table[])() =  {
     /* 00 */    NULL,
     /* 01 */    sys_exit,
@@ -443,4 +455,5 @@ void (*syscall_table[])() =  {
     /* 22 */    sys_mount,
     /* 23 */    sys_mkdirat,
     /* 24 */    sys_uname,
+    /* 25 */    sys_pipe,
 };
