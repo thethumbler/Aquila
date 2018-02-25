@@ -1,6 +1,6 @@
-# Aquila OS
+# Aquila OS ![https://travis-ci.org/mohamed-anwar/Aquila](https://api.travis-ci.org/mohamed-anwar/Aquila.svg?branch=master)
 UNIX-like Operating System, including the kernel and system tools.
-Intended to be fully **POSIX** compatible.
+Intended to be fully **POSIX** compliant. Oh, and it compiles with -O3.
 
 #### CPU-based Features:
 ##### Supported Archetictures:
@@ -14,7 +14,6 @@ Intended to be fully **POSIX** compatible.
 - [X] Monolitihic kernel
 - [X] Virtual Filesystem
 - [ ] Supports loadable modules
-- [ ] Compatible with _Linux_ Syscalls (may never be implemented, this is **NOT** a Linux clone)
 
 #### Supported Filesystems:
 - [X] initramfs (CPIO Archive filesystem, used for Ramdisk, read only)
@@ -33,6 +32,5 @@ Intended to be fully **POSIX** compatible.
 #### Supported video interfaces:
 - [X] VESA 3.0
 
-
 #### System Feautres:
-- [ ] Has _in house_ C library
+- [ ] Uses Newlib C
