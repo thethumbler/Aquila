@@ -7,22 +7,18 @@
 #include <bits/fcntl.h>
 #include <bits/errno.h>
 
+/* List of registered filesystems */
 struct fs_list {
     const char *name;
     struct fs  *fs;
     struct fs_list *next;
 } *registered_fs = NULL;
 
+/* VFS mountpoints graph */
 struct vfs_node {
     const char *name;
     struct vfs_node *children;
     struct vfs_node *next;
-
-    /* We cache type and access permissions of node */
-    enum fs_node_type   type;
-    uint32_t mask;
-    uint32_t uid;
-    uint32_t gid;
 
     /* Reference to node */
     struct fs_node *node;
@@ -34,31 +30,76 @@ struct vfs_node {
 
 struct fs_node *vfs_root = NULL;
 
-static void vfs_graph_cache_node(struct vfs_node *vnode, struct fs_node *node)
-{
-    vnode->type = node->type;
-    vnode->mask = node->mask;
-    vnode->uid  = node->uid;
-    vnode->gid  = node->gid;
-}
-
 static void vfs_mount_root(struct fs_node *node)
 {
+    /* TODO Flush mountpoints */
     vfs_root = node;
     vfs_graph.node = node;
-    vfs_graph_cache_node(&vfs_graph, node);
+    //vfs_graph_cache_node(&vfs_graph, node);
 }
 
 static char **canonicalize_path(const char * const path)
 {
-    //printk("canonicalize_path(path=%s)\n", path);
+    printk("canonicalize_path(path=%s)\n", path);
 
     /* Tokenize slash seperated words in path into tokens */
     char **tokens = tokenize(path, '/');
 
-    /* TODO : Handle ., .. and // */
-
     return tokens;
+}
+
+/* FIXME */
+char *parse_relative_path(char *rel, const char * const path)
+{
+    printk("parse_relative_path(rel=%s, path=%s)\n", rel, path);
+    size_t rel_len = strlen(rel), path_len = strlen(path);
+    char *buf = kmalloc(rel_len + path_len + 2);
+
+    memcpy(buf, rel, rel_len);
+    if (rel[rel_len-1] == '/') {
+        memcpy(buf + rel_len, path, path_len);
+        buf[rel_len + path_len] = 0;
+    } else {
+        buf[rel_len] = '/';
+        memcpy(buf + rel_len + 1, path, path_len);
+        buf[rel_len + path_len + 1] = 0;
+    }
+
+    /* Tokenize slash seperated words in path into tokens */
+    char **tokens = tokenize(buf, '/');
+    char *out = kmalloc(rel_len + path_len + 1);
+
+    char *valid_tokens[512];
+    size_t i = 0;
+
+    foreach (token, tokens) {
+        if (token[0] == '.') {
+            if (token[1] == '.' && i > 0)
+                valid_tokens[--i] = NULL;
+        } else {
+            valid_tokens[i++] = token;
+        }
+    }
+
+    valid_tokens[i] = NULL;
+
+    out[0] = '/';
+    size_t j = 1;
+    foreach (token, valid_tokens) {
+        size_t len = strlen(token);
+        memcpy(out + j, token, len);
+        j += len;
+        out[j] = '/';
+        ++j;
+    }
+
+    out[j > 1? --j : 1] = 0;
+
+    free_tokens(tokens);
+    kfree(tokens);
+    kfree(buf);
+
+    return out;
 }
 
 static struct vfs_path *vfs_get_mountpoint(char **tokens)

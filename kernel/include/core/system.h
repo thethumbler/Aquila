@@ -35,4 +35,7 @@ typedef long int ssize_t;
 #include <arch/x86/include/system.h>
 #endif
 
+static inline int __always(){return 1;}
+static inline int __never (){return 0;}
+
 #endif /* !_SYSTEM_H */

@@ -30,6 +30,7 @@ void spawn_init(proc_t *init)
 {
     init_process(init);
     init->state = RUNNABLE;
+    init->cwd = strdup("/");
     arch_sched_init();
     cur_proc = init;
     spawn_proc(init);

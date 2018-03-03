@@ -10,9 +10,11 @@ endif
 aquila.iso: kernel ramdisk
 	$(GRUB_MKRESCUE) -o aquila.iso iso/
 
-.PHONY: kernel ramdisk
+.PHONY: kernel ramdisk system
 kernel: iso/kernel.elf
 ramdisk: iso/initrd.img
+system:
+	$(MAKE) -C system/
 
 .PHONY: iso/kernel.elf
 iso/kernel.elf: kernel/arch/$(ARCH)/kernel.elf
@@ -27,7 +29,7 @@ iso/kernel.elf: kernel/arch/$(ARCH)/kernel.elf
 iso/initrd.img: ramdisk/initrd.img
 	cp ramdisk/initrd.img iso/initrd.img
 
-ramdisk/initrd.img:
+ramdisk/initrd.img: system
 	cd ramdisk; $(BASH) build.sh
 
 try: aquila.iso
@@ -36,6 +38,7 @@ try: aquila.iso
 .PHONY: clean
 clean:
 	$(MAKE) clean -C kernel
+	$(MAKE) clean -C system
 	$(RM) -f ramdisk/out/* -r
 	$(RM) -f ramdisk/initrd.img
 	$(RM) -f iso/kernel.elf iso/initrd.img aquila.iso
