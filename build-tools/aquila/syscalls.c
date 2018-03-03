@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <dirent.h>
 #include <string.h>
+#include <stdarg.h>
  
 #define SYS_EXIT    1
 #define SYS_CLOSE	2
@@ -32,6 +33,9 @@
 #define SYS_MKDIRAT 23
 #define SYS_UNAME   24
 #define SYS_PIPE    25
+#define SYS_FCNTL   26
+#define SYS_CHDIR   27
+#define SYS_GETCWD  28
 
 #define SYSCALL3(ret, v, arg1, arg2, arg3) \
 	asm volatile("int $0x80;":"=a"(ret):"a"(v), "b"(arg1), "c"(arg2), "d"(arg3));
@@ -347,6 +351,50 @@ int pipe(int fd[2])
 {
     int ret;
     SYSCALL1(ret, SYS_PIPE, fd);
+
+    if (ret < 0) {
+        errno = -ret;
+        return -1;
+    }
+
+    return 0;
+}
+
+int fcntl(int fildes, int cmd, ...)
+{
+    va_list ap;
+    va_start(ap, cmd);
+    void *arg = va_arg(ap, void *); /* FIXME */
+    va_end(ap);
+
+    int ret;
+    SYSCALL3(ret, SYS_PIPE, fildes, cmd, arg);
+
+    if (ret < 0) {
+        errno = -ret;
+        return -1;
+    }
+
+    return 0;
+}
+
+int chdir(const char *path)
+{
+    int ret;
+    SYSCALL1(ret, SYS_CHDIR, path);
+
+    if (ret < 0) {
+        errno = -ret;
+        return -1;
+    }
+
+    return 0;
+}
+
+int getcwd(char *buf, size_t size)
+{
+    int ret;
+    SYSCALL2(ret, SYS_GETCWD, buf, size);
 
     if (ret < 0) {
         errno = -ret;

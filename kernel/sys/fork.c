@@ -26,6 +26,7 @@ proc_t *fork_proc(proc_t *proc)
     fork->pid = get_pid();
     fork->parent = proc;
     fork->spawned = 1;
+    fork->cwd = strdup(proc->cwd);
     
     /* Allocate new signals queue */
     fork->signals_queue = new_queue();

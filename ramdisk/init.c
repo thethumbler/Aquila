@@ -65,7 +65,8 @@ void _start()
     if (kbd_pid = fork()) {
 #if 1
         /* Our fancy framebuffer terminal */
-        execve("/etc/fbterm", 0, 0);
+        //char *[] args = {"/bin/aqbox", "sh"};
+        execve("/bin/fbterm", 0, 0);
 #else
         int console = open("/dev/console", O_WRONLY);
         for (;;) {

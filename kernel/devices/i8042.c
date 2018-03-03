@@ -1,5 +1,10 @@
 /*
- *	Intel 8042 (PS/2 Controller) Driver
+ *	        Intel 8042 (PS/2 Controller) Driver
+ *
+ *
+ *  This file is part of Aquila OS and is released under
+ *  the terms of GNU GPLv3 - See LICENSE.
+ *
  */
 
 /* THIS DEVICE IS NOT POPULATED */
@@ -14,7 +19,6 @@
 static void (*channel1_handler)(int) = NULL;
 static void (*channel2_handler)(int) = NULL;
 
-
 #define FIRST_IRQ	1
 #define SECOND_IRQ	12
 
@@ -22,12 +26,12 @@ static void (*channel2_handler)(int) = NULL;
 #define STAT_PORT	0x64
 #define IN_BUF_FULL	0x02
 
-void i8042_read_wait()
+static void i8042_read_wait()
 {
 	while (inb(STAT_PORT) & IN_BUF_FULL);
 }
 
-void i8042_first_handler(regs_t *r __attribute__((unused)))
+static void i8042_first_handler(regs_t *r __attribute__((unused)))
 {
 	i8042_read_wait();
 	int scancode = inb(DATA_PORT);
@@ -35,7 +39,7 @@ void i8042_first_handler(regs_t *r __attribute__((unused)))
 		channel1_handler(scancode);
 }
 
-void i8042_second_handler(regs_t *r __attribute__((unused)))
+static void i8042_second_handler(regs_t *r __attribute__((unused)))
 {
 	i8042_read_wait();
 	int scancode = inb(DATA_PORT);
@@ -43,7 +47,7 @@ void i8042_second_handler(regs_t *r __attribute__((unused)))
 		channel2_handler(scancode);	
 }
 
-void install_i8042_handler()
+static void install_i8042_handler()
 {
 	irq_install_handler(FIRST_IRQ, i8042_first_handler);
 	irq_install_handler(SECOND_IRQ, i8042_second_handler);
@@ -63,7 +67,7 @@ void i8042_register_handler(int channel, void (*fun)(int))
 
 #define I8042_SYSTEM_FLAG	0x4
 
-int i8042_probe()
+static int i8042_probe()
 {
 	if (!(inb(STAT_PORT) & I8042_SYSTEM_FLAG))
 		panic("No i8042 Controller found!");

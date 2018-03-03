@@ -78,8 +78,8 @@ dev_t fbdev = {
 	.f_ops = {
 		.open  = generic_file_open,
 		.write = generic_file_write,
-		.can_write = __can_always,
-		.can_read  = __can_always,
-		.eof = __eof_never,
+		.can_write = __always,
+		.can_read  = __never,
+		.eof = __never,
 	},
 };

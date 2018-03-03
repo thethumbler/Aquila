@@ -3,8 +3,8 @@ graph.sh
 tags
 hd.img
 mnt/
-system/
 build-tools/*
+system/usr
 !build-tools/build.sh
 !build-tools/aquila/
 !build-tools/patches/

@@ -399,7 +399,6 @@ static void sys_mkdirat(int fd, const char *path, int mode)
     arch_syscall_return(cur_proc, ret);
 
     return;
-    for (;;);
 }
 
 static void sys_uname(struct utsname *name)
@@ -426,6 +425,75 @@ static void sys_pipe(int fd[2])
     pipefs_pipe(&cur_proc->fds[fd1], &cur_proc->fds[fd2]);
     fd[0] = fd1;
     fd[1] = fd2;
+    arch_syscall_return(cur_proc, 0);
+}
+
+static void sys_fcntl(int fildes, int cmd, uintptr_t arg)
+{
+    printk("[%d] %s: fcntl(fildes=%d, cmd=%d, arg=0x%x)\n", cur_proc->pid, cur_proc->name, fildes, cmd, arg);
+    for (;;);
+    arch_syscall_return(cur_proc, 0);
+}
+
+static void sys_chdir(const char *path)
+{
+    printk("[%d] %s: chdir(path=%s)\n", cur_proc->pid, cur_proc->name, path);
+
+    if (!path || !strlen(path) || path[0] == '\0') {
+        arch_syscall_return(cur_proc, -ENOENT);
+        return;
+    }
+
+    int rel = 0, ret = 0;
+    char *p = NULL;
+
+    if (path[0] == '/') { /* Absolute Path */
+        p = (char *) path;
+    } else {
+        extern char *parse_relative_path(char *, const char *);
+        p = parse_relative_path(cur_proc->cwd, path);
+        rel = 1;
+    }
+
+    struct fs_node *node = vfs.find(p);
+
+    if (!node) {
+        ret = -ENOENT;
+        goto free_resources;
+    }
+
+    if (node->type != FS_DIR) {
+        ret = -ENOTDIR;
+        goto free_resources;
+    }
+
+    kfree(cur_proc->cwd);
+    cur_proc->cwd = strdup(p);
+    printk("cur_proc->cwd %s\n", cur_proc->cwd);
+
+free_resources:
+    if (rel) kfree(p);
+    //if (node) kfree(node);
+    arch_syscall_return(cur_proc, ret);
+}
+
+static void sys_getcwd(char *buf, size_t size)
+{
+    printk("[%d] %s: getcwd(buf=%p, size=%d)\n", cur_proc->pid, cur_proc->name, buf, size);
+
+    if (!size) {
+        arch_syscall_return(cur_proc, -EINVAL);
+        return;
+    }
+
+    size_t len = strlen(cur_proc->cwd);
+
+    if (size < len + 1) {
+        arch_syscall_return(cur_proc, -ERANGE);
+        return;
+    }
+
+    memcpy(buf, cur_proc->cwd, len + 1);
     arch_syscall_return(cur_proc, 0);
 }
 
@@ -456,4 +524,7 @@ void (*syscall_table[])() =  {
     /* 23 */    sys_mkdirat,
     /* 24 */    sys_uname,
     /* 25 */    sys_pipe,
+    /* 26 */    sys_fcntl,
+    /* 27 */    sys_chdir,
+    /* 28 */    sys_getcwd,
 };
