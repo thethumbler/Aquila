@@ -5,6 +5,7 @@
 
 #include <fs/vfs.h>
 #include <fs/devfs.h>
+#include <fs/posix.h>
 
 #define MAX_FBDEV   2
 
@@ -22,19 +23,19 @@ int fbdev_register(int type, void *data)
     return 0;
 }
 
-static ssize_t fbdev_read(struct fs_node *node, off_t offset, size_t size, void *buf)
+static ssize_t fbdev_read(struct inode *node, off_t offset, size_t size, void *buf)
 {
     dev_t *dev = ((struct fbdev *)node->p)->dev;
     return dev->read(node, offset, size, buf);
 }
 
-static ssize_t fbdev_write(struct fs_node *node, off_t offset, size_t size, void *buf)
+static ssize_t fbdev_write(struct inode *node, off_t offset, size_t size, void *buf)
 {
     dev_t *dev = ((struct fbdev *)node->p)->dev;
     return dev->write(node, offset, size, buf);
 }
 
-static int fbdev_ioctl(struct fs_node *node, int request, void *argp)
+static int fbdev_ioctl(struct inode *node, int request, void *argp)
 {
     struct fbdev *fb = (struct fbdev *) node->p;
 
@@ -43,8 +44,6 @@ static int fbdev_ioctl(struct fs_node *node, int request, void *argp)
         memcpy(argp, fb->fix_screeninfo, sizeof(struct fb_fix_screeninfo));
         return 0;
     case FBIOGET_VSCREENINFO:
-        printk("%d\n", fb->var_screeninfo->xres);
-        printk("%d\n", fb->var_screeninfo->yres);
         memcpy(argp, fb->var_screeninfo, sizeof(struct fb_var_screeninfo));
         return 0;
     }
@@ -70,16 +69,20 @@ static int fbdev_probe()
 dev_t fbdev = {
 	.name = "fbdev",
 	.type = CHRDEV,
-	.probe = fbdev_probe,
-    .read  = fbdev_read,
-	.write = fbdev_write,
+
+	.probe  = fbdev_probe,
+    .read   = fbdev_read,
+	.write  = fbdev_write,
     .ioctl  = fbdev_ioctl,
 
-	.f_ops = {
+	.fops = {
 		.open  = generic_file_open,
-		.write = generic_file_write,
-		.can_write = __always,
-		.can_read  = __never,
-		.eof = __never,
+		.write = posix_file_write,
+        .ioctl = posix_file_ioctl,
+        .lseek = posix_file_lseek,
+
+		.can_write = __vfs_always,
+		.can_read  = __vfs_never,
+		.eof       = __vfs_never,
 	},
 };

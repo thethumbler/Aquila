@@ -5,11 +5,12 @@
 
 struct devfs_dir
 {
-	struct fs_node   *node;
+	struct inode     *node;
 	struct devfs_dir *next;
 };
 
 extern struct fs devfs;
-extern struct fs_node *dev_root;
+extern struct inode *dev_root;
+extern struct vnode vdev_root;
 
 #endif /* !_DEVFS_H */

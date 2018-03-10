@@ -6,8 +6,8 @@ dev_t *devices[] =
 	&i8042dev,
 	&ps2kbddev,
 	&condev,
-    &pcidev,
-    &atadev,
+    //&pcidev,
+    //&atadev,
     &fbdev,
 	NULL
 };

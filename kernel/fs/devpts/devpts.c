@@ -17,6 +17,7 @@
 #include <fs/devpts.h>
 #include <fs/ioctl.h>
 #include <fs/termios.h>
+#include <fs/posix.h>
 
 #include <ds/ring.h>
 #include <ds/queue.h>
@@ -26,13 +27,14 @@
 
 
 /* devpts root directory (usually mounted on /dev/pts) */
-struct fs_node *devpts_root = NULL; /* FIXME: should be static */
+struct inode *devpts_root = NULL;
+struct vnode vdevpts_root;
 
 struct pty {
     int     id;
 
-    struct fs_node *master;
-    struct fs_node *slave;
+    struct inode *master;
+    struct inode *slave;
 
     struct ring *in;    /* Slave Input, Master Output */
     struct ring *out;   /* Slave Output, Master Input */
@@ -54,18 +56,18 @@ struct pty {
 static struct device ptmdev;
 static struct device ptsdev;
 
-static int get_pty_id()
-{
-    static int id = 0;
-    return id++;
-}
+/*************************************
+ *
+ * Pseudo Terminal Master Helpers
+ *
+ *************************************/
 
-static struct fs_node *new_ptm(struct pty *pty)
+static struct inode *new_ptm(struct pty *pty)
 {
-    struct fs_node *ptm = kmalloc(sizeof(struct fs_node));
-    memset(ptm, 0, sizeof(struct fs_node));
+    struct inode *ptm = kmalloc(sizeof(struct inode));
+    memset(ptm, 0, sizeof(struct inode));
 
-    *ptm = (struct fs_node) {
+    *ptm = (struct inode) { /* Anonymous file, not populated */
         .fs = &devfs,
         .dev = &ptmdev,
         .type = FS_PIPE,
@@ -79,77 +81,13 @@ static struct fs_node *new_ptm(struct pty *pty)
     return ptm;
 }
 
-static struct fs_node *new_pts(struct pty *pty)
-{
-    char *name = kmalloc(12);
-    memset(name, 0, 12);
-    snprintf(name, 11, "%d", pty->id);
-
-    vfs.create(devpts_root, name);
-
-    /* TODO: Handle errors */
-
-    struct vfs_path path = (struct vfs_path) {
-        .mountpoint = devpts_root,
-        .tokens = (char *[]) {name, NULL}
-    };
-
-    struct fs_node *pts = vfs.traverse(&path);
-
-    kfree(name);
-
-    pts->type = FS_PIPE;
-    pts->dev = &ptsdev;
-    pts->size = PTY_BUF;
-    pts->p = pty;
-
-    pts->read_queue  = &pty->pts_read_queue;
-    pts->write_queue = &pty->pts_write_queue;
-
-    return pts;
-}
-
-static void new_pty(proc_t *proc, struct fs_node **master)
-{
-    struct pty *pty = kmalloc(sizeof(struct pty));
-    memset(pty, 0, sizeof(struct pty));
-
-    pty->id = get_pty_id();
-    pty->in = new_ring(PTY_BUF);
-    pty->out = new_ring(PTY_BUF);
-    pty->cook = kmalloc(PTY_BUF);
-    pty->pos = 0;
-
-    pty->tios.c_lflag |= ICANON | ECHO;
-
-    *master = pty->master = new_ptm(pty);
-    
-    pty->slave  = new_pts(pty);
-
-    pty->proc = proc;
-
-    printk("[%d] %s: Created ptm/pts pair id=%d\n", proc->pid, proc->name, pty->id);
-}
-
-static ssize_t pts_read(struct fs_node *node, off_t offset __unused, size_t size, void *buf)
-{
-    struct pty *pty = (struct pty *) node->p;
-    return ring_read(pty->in, size, buf);
-}
-
-static ssize_t ptm_read(struct fs_node *node, off_t offset __unused, size_t size, void *buf)
+static ssize_t ptm_read(struct inode *node, off_t offset __unused, size_t size, void *buf)
 {
     struct pty *pty = (struct pty *) node->p;
     return ring_read(pty->out, size, buf);  
 }
 
-static ssize_t pts_write(struct fs_node *node, off_t offset __unused, size_t size, void *buf)
-{
-    struct pty *pty = (struct pty *) node->p;
-    return ring_write(pty->out, size, buf);
-}
-
-static ssize_t ptm_write(struct fs_node *node, off_t offset __unused, size_t size, void *buf)
+static ssize_t ptm_write(struct inode *node, off_t offset __unused, size_t size, void *buf)
 {
     struct pty *pty = (struct pty *) node->p;
     ssize_t ret = size;
@@ -193,7 +131,7 @@ skip_echo:
     return ret;
 }
 
-static int ptm_ioctl(struct fs_node *node, int request, void *argp)
+static int ptm_ioctl(struct inode *node, int request, void *argp)
 {
     struct pty *pty = (struct pty *) node->p;
 
@@ -211,79 +149,171 @@ static int ptm_ioctl(struct fs_node *node, int request, void *argp)
     return 0;
 }
 
+/*************************************
+ *
+ * Pseudo Terminal Slave Helpers
+ *
+ *************************************/
+
+static struct inode *new_pts(struct pty *pty)
+{
+    char *name = kmalloc(12);
+    memset(name, 0, 12);
+    snprintf(name, 11, "%d", pty->id);
+
+    struct inode *pts = NULL;
+    vfs.create(&vdevpts_root, name, 1, 1, 0666, &pts);
+
+    kfree(name);
+
+    pts->type = FS_PIPE;
+    pts->dev = &ptsdev;
+    pts->size = PTY_BUF;
+    pts->p = pty;
+
+    pts->read_queue  = &pty->pts_read_queue;
+    pts->write_queue = &pty->pts_write_queue;
+
+    return pts;
+}
+
+static ssize_t pts_read(struct inode *node, off_t offset __unused, size_t size, void *buf)
+{
+    struct pty *pty = (struct pty *) node->p;
+    return ring_read(pty->in, size, buf);
+}
+
+static ssize_t pts_write(struct inode *node, off_t offset __unused, size_t size, void *buf)
+{
+    struct pty *pty = (struct pty *) node->p;
+    return ring_write(pty->out, size, buf);
+}
+
+static int pts_ioctl(struct inode *node, int request, void *argp)
+{
+    printk("pts_ioctl(node=%p, request=%x, argp=%p)\n", node, request, argp);
+    struct pty *pty = (struct pty *) node->p;
+
+    switch (request) {
+        case TCGETS:
+            memcpy(argp, &pty->tios, sizeof(struct termios));
+            break;
+        case TCSETS:
+            memcpy(&pty->tios, argp, sizeof(struct termios));
+            break;
+        default:
+            return -1;
+    }
+    
+    return 0;
+}
+
+/*************************************
+ *
+ * Pseudo Terminal Helpers
+ *
+ *************************************/
+
+static int get_pty_id()
+{
+    static int id = 0;
+    return id++;
+}
+
+static void new_pty(proc_t *proc, struct inode **master)
+{
+    struct pty *pty = kmalloc(sizeof(struct pty));
+    memset(pty, 0, sizeof(struct pty));
+
+    pty->id = get_pty_id();
+    pty->in = new_ring(PTY_BUF);
+    pty->out = new_ring(PTY_BUF);
+    pty->cook = kmalloc(PTY_BUF);
+    pty->pos = 0;
+
+    pty->tios.c_lflag |= ICANON | ECHO;
+
+    *master = pty->master = new_ptm(pty);
+    
+    pty->slave  = new_pts(pty);
+
+    pty->proc = proc;
+
+    printk("[%d] %s: Created ptm/pts pair id=%d\n", proc->pid, proc->name, pty->id);
+}
+
 /* File Operations */
 static int ptmx_open(struct file *file)
 {   
     new_pty(cur_proc, &(file->node));
-
     return 0;
 }
 
 static struct device ptmxdev = (struct device) {
-    .f_ops = {
+    .fops = {
         .open = ptmx_open,
     },
 };
 
+/*************************************
+ *
+ * devpts Helpers
+ *
+ *************************************/
+
 int devpts_init()
 {
-    devpts.create = devfs.create;
-    devpts.find = devfs.find;
-    devpts.traverse = devfs.traverse;
-    devpts.readdir = devfs.readdir;
+    /* devpts uses devfs handlers for directories and vnodes */
+    devpts.iops.create  = devfs.iops.create;
+    devpts.iops.readdir = devfs.iops.readdir;
+    devpts.iops.vfind   = devfs.iops.vfind;
+    devpts.iops.vget    = devfs.iops.vget;
 
-    devpts.f_ops.open = devfs.f_ops.open;
-    devpts.f_ops.readdir = devfs.f_ops.readdir;
+    //devpts.find     = devfs.find;
+    //devpts.traverse = devfs.traverse;
 
-    devpts_root = kmalloc(sizeof(struct fs_node));
+    devpts.fops.open    = devfs.fops.open;
+    devpts.fops.readdir = devfs.fops.readdir;
+
+    devpts_root = kmalloc(sizeof(struct inode));
 
     if (!devpts_root)
         return -ENOMEM;
 
-    memset(devpts_root, 0, sizeof(struct fs_node));
+    memset(devpts_root, 0, sizeof(struct inode));
 
-    *devpts_root = (struct fs_node) {
+    *devpts_root = (struct inode) {
         .type = FS_DIR,
+        .id   = (vino_t) devpts_root,
         .fs   = &devpts,
     };
 
-    vfs.create(dev_root, "ptmx");
-    vfs.mkdir(dev_root, "pts");
-
-    /* TODO Handle errors */
-
-    struct vfs_path path = (struct vfs_path) {
-        .mountpoint = dev_root,
-        .tokens = (char *[]) {"ptmx", NULL}
+    vdevpts_root = (struct vnode) {
+        .super = devpts_root,
+        .id    = (vino_t) devpts_root,
+        .type  = FS_DIR,
     };
 
-    struct fs_node *ptmx = vfs.traverse(&path);
-
-    //path = (struct vfs_path) {
-    //    .mountpoint = dev_root,
-    //    .tokens = (char *[]) {"pts", NULL}
-    //};
-
-    //struct fs_node *pts_dir = vfs.traverse(&path);
-
-    //vfs.mount("/dev/pts", devpts_root);
-
+    struct inode *ptmx = NULL;
+    vfs.create(&vdev_root, "ptmx", 1, 1, 0666, &ptmx);
+    vfs.mkdir(&vdev_root, "pts", 1, 1, 0666);
     ptmx->dev = &ptmxdev;
 
     return 0;
 }
 
 static struct device ptsdev = (struct device) {
-    .name = "pts",
-    .read = pts_read,
+    .name  = "pts",
+    .read  = pts_read,
     .write = pts_write,
+    .ioctl = pts_ioctl,
 
-    .f_ops = {
+    .fops = {
         .open  = generic_file_open,
-        .read  = generic_file_read,
-        .write = generic_file_write,
+        .read  = posix_file_read,
+        .write = posix_file_write,
 
-        .eof   = __eof_never,
+        .eof   = __vfs_never,
     }
 };
 
@@ -292,14 +322,14 @@ static struct device ptmdev = (struct device) {
     .write = ptm_write,
     .ioctl = ptm_ioctl,
 
-    .f_ops = {
+    .fops = {
         .open  = generic_file_open,
-        .read  = generic_file_read,
-        .write = generic_file_write,
+        .read  = posix_file_read,
+        .write = posix_file_write,
 
-        .can_read = __can_always,
-        .can_write = __can_always,
-        .eof = __eof_never,
+        .can_read  = __vfs_always,
+        .can_write = __vfs_always,
+        .eof       = __vfs_never,
     },
 };
 

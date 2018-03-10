@@ -42,6 +42,10 @@ struct proc {
     queue_t     wait_queue; /* Dummy queue for children wait */
     int         exit_status; /* Exit status of child if zombie */
 
+    uint32_t    mask;
+    uint32_t    uid;
+    uint32_t    gid;
+
 	/* Process flags */
 	int			spawned : 1;
 } __packed;

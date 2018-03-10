@@ -8,5 +8,6 @@
 #include <ds/queue.h>
 
 extern struct fs devpts;
+extern struct inode *devpts_root;
 
 #endif

@@ -16,7 +16,7 @@
 #include <bits/dirent.h>
 
 /**
- * generic_file_read
+ * posix_file_read
  *
  * Reads up to `size' bytes from a file to `buf'.
  * Conforming to `IEEE Std 1003.1, 2013 Edition'
@@ -27,7 +27,7 @@
  * @returns read bytes on success, or error-code on failure.
  */
 
-ssize_t generic_file_read(struct file *file, void *buf, size_t size)
+ssize_t posix_file_read(struct file *file, void *buf, size_t size)
 {
     if (file->flags & O_WRONLY) /* File is not opened for reading */
         return -EBADFD;
@@ -37,7 +37,7 @@ ssize_t generic_file_read(struct file *file, void *buf, size_t size)
     
     int retval;
     for (;;) {
-        if ((retval = file->node->fs->read(file->node, file->offset, size, buf))) {
+        if ((retval = vfs.read(file->node, file->offset, size, buf)) > 0) {
             /* Update file offset */
             file->offset += retval;
             
@@ -47,7 +47,9 @@ ssize_t generic_file_read(struct file *file, void *buf, size_t size)
 
             /* Return read bytes count */
             return retval;
-        } else if (file->node->fs->f_ops.eof(file)) {
+        } else if (retval < 0) {    /* Error */
+            return retval;
+        } else if (vfs.fops.eof(file)) {
             /* Reached end-of-file */
             return 0;
         } else if (file->flags & O_NONBLOCK) {

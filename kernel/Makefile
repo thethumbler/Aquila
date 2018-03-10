@@ -2,7 +2,7 @@ export
 
 MAKEFLAGS += --no-print-directory
 
-include config
+include config.mk
 
 PDIR := $(TRAVIS_BUILD_DIR)/kernel
 

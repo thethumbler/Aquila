@@ -17,10 +17,12 @@
 #include <fs/vfs.h>
 #include <fs/initramfs.h>
 #include <fs/devfs.h>
+#include <fs/posix.h>
+#include <bits/errno.h>
 
 #include <boot/boot.h>
 
-struct fs_node *ramdisk_dev_node = NULL;
+struct inode *ramdisk_dev_node = NULL;
 
 void load_ramdisk(module_t *rd_module)
 {
@@ -33,9 +35,9 @@ void load_ramdisk(module_t *rd_module)
     ramdev_private_t *p = kmalloc(sizeof(ramdev_private_t));
     *p = (ramdev_private_t){.addr = ramdisk};
 
-    ramdisk_dev_node = kmalloc(sizeof(struct fs_node));
+    ramdisk_dev_node = kmalloc(sizeof(struct inode));
 
-    *ramdisk_dev_node = (struct fs_node) {
+    *ramdisk_dev_node = (struct inode) {
         .name = "ramdisk",
         .type = FS_DIR,
         .fs   = &devfs,
@@ -44,44 +46,97 @@ void load_ramdisk(module_t *rd_module)
         .p    = p,
     };
 
-    struct fs_node *root = initramfs.load(ramdisk_dev_node);
+    struct inode *root = NULL;
+    int ret = initramfs.load(ramdisk_dev_node, &root);
     
-    if (!root)
+    if (ret) {
+        printk("Error code = %d\n", ret);
         panic("Could not load ramdisk\n");
+    }
 
     vfs.mount_root(root);
 }
 
-static
-struct fs_node *new_node(char *name, enum fs_node_type type, 
-    size_t sz, size_t data, struct fs_node *sp)
+static int cpio_roofs_inode(struct inode *sp, struct inode **inode)
 {
-    struct fs_node *node = kmalloc(sizeof(struct fs_node));
-    
-    *node = (struct fs_node) {
-        .name = name,
-        .size = sz,
-        .type = type,
-        .fs   = &initramfs,
-        .dev  = NULL,
-        .p    = kmalloc(sizeof(cpiofs_private_t))
-    };
+    struct inode *node = kmalloc(sizeof(struct inode));
+
+    if (!node)
+        return -ENOMEM;
+
+    node->id   = (vino_t) node;
+    node->name = NULL;
+    node->size = 0;
+    node->type = FS_DIR;
+    node->fs   = &initramfs;
+    node->dev  = NULL;
+    node->p    = kmalloc(sizeof(cpiofs_private_t));
+
+    node->uid  = 1;
+    node->gid  = 1;
+    node->mask = 0555;  /* r-xr-xr-x */
 
     cpiofs_private_t *p = node->p;
 
-    *p = (cpiofs_private_t) {
-        .super  = sp,
-        .parent = NULL,
-        .dir    = NULL,
-        .count  = 0,
-        .data   = data,
-        .next   = NULL
-    };
+    p->super  = sp;
+    p->parent = NULL;
+    p->dir    = NULL;
+    p->count  = 0;
+    p->data   = 0;
+    p->next   = NULL;
 
-    return node;
+    if (inode)
+        *inode = node;
+
+    return 0;
 }
 
-static struct fs_node *cpiofs_new_child_node(struct fs_node *parent, struct fs_node *child)
+static int cpio_new_inode(char *name, cpio_hdr_t *hdr, size_t sz, size_t data, struct inode *sp, struct inode **inode)
+{
+    struct inode *node = kmalloc(sizeof(struct inode));
+
+    if (!node)
+        return -ENOMEM;
+
+    uint32_t type = 0;
+    switch (hdr->mode & CPIO_TYPE_MASK) {
+        case CPIO_TYPE_RGL:    type = FS_RGL; break;
+        case CPIO_TYPE_DIR:    type = FS_DIR; break;
+        case CPIO_TYPE_SLINK:  type = FS_SYMLINK; break;
+        case CPIO_TYPE_BLKDEV: type = FS_BLKDEV; break;
+        case CPIO_TYPE_CHRDEV: type = FS_CHRDEV; break;
+        case CPIO_TYPE_FIFO:   type = FS_FIFO; break;
+        case CPIO_TYPE_SOCKET: type = FS_SOCKET; break;
+    }
+    
+    node->id   = (vino_t) node;
+    node->name = name;
+    node->size = sz;
+    node->type = type;
+    node->fs   = &initramfs;
+    node->dev  = NULL;
+    node->p    = kmalloc(sizeof(cpiofs_private_t));
+
+    node->uid  = 1;
+    node->gid  = 1;
+    node->mask = hdr->mode & CPIO_PERM_MASK;
+
+    cpiofs_private_t *p = node->p;
+
+    p->super  = sp;
+    p->parent = NULL;
+    p->dir    = NULL;
+    p->count  = 0;
+    p->data   = data;
+    p->next   = NULL;
+
+    if (inode)
+        *inode = node;
+
+    return 0;
+}
+
+static struct inode *cpiofs_new_child_node(struct inode *parent, struct inode *child)
 {
     if (!parent || !child)  /* Invalid inode */
         return NULL;
@@ -89,7 +144,7 @@ static struct fs_node *cpiofs_new_child_node(struct fs_node *parent, struct fs_n
     if (parent->type != FS_DIR) /* Adding child to non directory parent */
         return NULL;
 
-    struct fs_node *tmp = ((cpiofs_private_t*)parent->p)->dir;
+    struct inode *tmp = ((cpiofs_private_t*)parent->p)->dir;
     ((cpiofs_private_t *) child->p)->next = tmp;
     ((cpiofs_private_t *) parent->p)->dir = child;
 
@@ -99,7 +154,7 @@ static struct fs_node *cpiofs_new_child_node(struct fs_node *parent, struct fs_n
     return child;
 }
 
-static struct fs_node *cpiofs_find(struct fs_node *root, const char *path)
+static struct inode *cpiofs_find(struct inode *root, const char *path)
 {
     //printk("cpiofs_find(root=%p, path=%s)\n", root, path);
     char **tokens = tokenize(path, '/');
@@ -107,8 +162,8 @@ static struct fs_node *cpiofs_find(struct fs_node *root, const char *path)
     if (root->type != FS_DIR)   /* Not even a directory */
         return NULL;
 
-    struct fs_node *cur = root;
-    struct fs_node *dir = ((cpiofs_private_t *) cur->p)->dir;
+    struct inode *cur = root;
+    struct inode *dir = ((cpiofs_private_t *) cur->p)->dir;
 
     if (!dir) { /* Directory has no children */
         if (*tokens == NULL)
@@ -142,54 +197,79 @@ static struct fs_node *cpiofs_find(struct fs_node *root, const char *path)
     return cur;
 }
 
-static struct fs_node *cpiofs_traverse(struct vfs_path *path)
+static int cpiofs_vfind(struct vnode *parent, const char *name, struct vnode *child)
 {
-    //printk("cpiofs_traverse(path=%p)\n", path);
-    struct fs_node *dir = path->mountpoint;
+    printk("cpiofs_vfind(parent=%p, name=%s, child=%p)\n", parent, name, child);
 
-    foreach (token, path->tokens) {
-        dir = cpiofs_find(dir, token);
+    struct inode *root = (struct inode *) parent->id;
+
+    if (root->type != FS_DIR)   /* Not even a directory */
+        return -ENOTDIR;
+
+    struct inode *dir = ((cpiofs_private_t *) root->p)->dir;
+
+    if (!dir)   /* Directory has no children */
+        return -ENOENT;
+
+    forlinked (e, dir, ((cpiofs_private_t *) e->p)->next) {
+        if (e->name && !strcmp(e->name, name)) {
+            if (child) {
+                child->id   = (vino_t) e;
+                child->type = e->type;
+                child->uid  = e->uid;
+                child->gid  = e->gid;
+                child->mask = e->mask;
+            }
+
+            return 0;
+        }
     }
 
-    //printk("dir = %p\n", dir);
-
-    return dir;
+    return -ENOENT;
 }
 
-static struct fs_node *cpiofs_load(struct fs_node *node)
+static int cpiofs_vget(struct vnode *vnode, struct inode **inode)
+{
+    printk("cpiofs_vget(vnode=%p, inode=%p)\n", vnode, inode);
+    *inode = (struct inode *) vnode->id;
+    return 0;
+}
+
+static int cpiofs_load(struct inode *dev, struct inode **super)
 {
     /* Allocate the root node */
-    struct fs_node *rootfs = new_node(NULL, FS_DIR, 0, 0, node);
+    struct inode *rootfs = NULL;
+    cpio_roofs_inode(dev, &rootfs);
 
-    cpio_hdr_t cpio;
+    cpio_hdr_t hdr;
     size_t offset = 0;
     size_t size = 0;
 
-    for (; offset < node->size; 
-          offset += sizeof(cpio_hdr_t) + (cpio.namesize+1)/2*2 + (size+1)/2*2) {
+    for (; offset < dev->size; 
+          offset += sizeof(cpio_hdr_t) + (hdr.namesize+1)/2*2 + (size+1)/2*2) {
+
         size_t data_offset = offset;
+        vfs.read(dev, data_offset, sizeof(cpio_hdr_t), &hdr);
 
-        node->fs->read(node, data_offset, sizeof(cpio_hdr_t), &cpio);
-
-        if (cpio.magic != CPIO_BIN_MAGIC) { /* Invalid CPIO archive */
+        if (hdr.magic != CPIO_BIN_MAGIC) { /* Invalid CPIO archive */
             printk("Invalid CPIO archive\n");
-            return NULL;
+            return -1;
         }
 
-        size = cpio.filesize[0] * 0x10000 + cpio.filesize[1];
+        size = hdr.filesize[0] * 0x10000 + hdr.filesize[1];
         
         data_offset += sizeof(cpio_hdr_t);
         
-        char path[cpio.namesize];
-        node->fs->read(node, data_offset, cpio.namesize, path);
+        char path[hdr.namesize];
+        vfs.read(dev, data_offset, hdr.namesize, path);
 
         if (!strcmp(path, ".")) continue;
         if (!strcmp(path, "TRAILER!!!")) break; /* End of archive */
 
-        char *dir = NULL;
+        char *dir  = NULL;
         char *name = NULL;
 
-        for (int i = cpio.namesize - 1; i >= 0; --i) {
+        for (int i = hdr.namesize - 1; i >= 0; --i) {
             if (path[i] == '/') {
                 path[i] = '\0';
                 name = &path[i+1];
@@ -203,24 +283,22 @@ static struct fs_node *cpiofs_load(struct fs_node *node)
             dir  = "/";
         }
         
-        data_offset += cpio.namesize + (cpio.namesize % 2);
+        data_offset += hdr.namesize + (hdr.namesize % 2);
 
-        struct fs_node *_node = new_node(strdup(name), 
-            ((cpio.mode & 0170000 ) == 0040000) ? FS_DIR : FS_FILE,
-            size,
-            data_offset,
-            node
-        );
+        struct inode *_node = NULL; 
+        cpio_new_inode(strdup(name), &hdr, size, data_offset, dev, &_node);
 
-        struct fs_node *parent = cpiofs_find(rootfs, dir);
-
+        struct inode *parent = cpiofs_find(rootfs, dir);
         cpiofs_new_child_node(parent, _node);
     }
 
-    return rootfs;
+    if (super)
+        *super = rootfs;
+
+    return 0;
 }
 
-static ssize_t cpiofs_read(struct fs_node *node, off_t offset, size_t len, void *buf_p)
+static ssize_t cpiofs_read(struct inode *node, off_t offset, size_t len, void *buf_p)
 {
     //printk("cpiofs_read(node=%p, offset=%d, len=%d, buf_p=%p)\n", node, offset, len, buf_p);
     if (offset >= (off_t) node->size)
@@ -229,17 +307,17 @@ static ssize_t cpiofs_read(struct fs_node *node, off_t offset, size_t len, void 
     len = MIN(len, node->size - offset);
 
     cpiofs_private_t *p = node->p;
-    struct fs_node *super = p->super;
-    return super->fs->read(super, p->data + offset, len, buf_p);
+    struct inode *super = p->super;
+    return vfs.read(super, p->data + offset, len, buf_p);
 }
 
-static ssize_t cpiofs_readdir(struct fs_node *node, off_t offset, struct dirent *dirent)
+static ssize_t cpiofs_readdir(struct inode *node, off_t offset, struct dirent *dirent)
 {
     if ((size_t) offset == ((cpiofs_private_t *) node->p)->count)
         return 0;
 
     int i = 0;
-    struct fs_node *dir = ((cpiofs_private_t *) node->p)->dir;
+    struct inode *dir = ((cpiofs_private_t *) node->p)->dir;
 
     forlinked (e, dir, ((cpiofs_private_t *) e->p)->next) {
         if (i == offset) {
@@ -264,17 +342,19 @@ static int cpiofs_eof(struct file *file)
 struct fs initramfs = {
     .name = "initramfs",
     .load = &cpiofs_load,
-    .find = &cpiofs_find,
-    .traverse = &cpiofs_traverse,
-    .read = &cpiofs_read,
-    .readdir = &cpiofs_readdir,
-    //.write = NULL,
+
+    .iops = {
+        .read    = &cpiofs_read,
+        .readdir = &cpiofs_readdir,
+        .vfind   = cpiofs_vfind,
+        .vget    = cpiofs_vget,
+    },
     
-    .f_ops = {
-        .open  = generic_file_open,
-        .read  = generic_file_read,
-        .write = generic_file_write,
-        .readdir = generic_file_readdir,
+    .fops = {
+        .open    = generic_file_open,
+        .read    = posix_file_read,
+        .readdir = posix_file_readdir,
+        .lseek   = posix_file_lseek,
 
         .eof = cpiofs_eof,
     },

@@ -54,8 +54,18 @@ static void sys_close(int fildes)
         return; 
     }
 
-    cur_proc->fds[fildes].node = NULL;  /* FIXME */
-    arch_syscall_return(cur_proc, 0);
+    struct file *file = &cur_proc->fds[fildes];
+    
+    if (!file->node) {
+        arch_syscall_return(cur_proc, -EBADFD);
+        return;
+    }
+
+    int ret = 0;
+    //int ret = vfs.fops.close(file); /* XXX */
+    cur_proc->fds[fildes].node = NULL;
+
+    arch_syscall_return(cur_proc, ret);
 }
 
 static void sys_execve(const char *path, char *const argp[], char *const envp[])
@@ -107,7 +117,7 @@ static void sys_isatty(int fildes)
         return; 
     }
 
-    struct fs_node *node = cur_proc->fds[fildes].node;
+    struct inode *node = cur_proc->fds[fildes].node;
 
     if (!node) {    /* Invalid File Descriptor */
         arch_syscall_return(cur_proc, -EBADFD);
@@ -132,47 +142,28 @@ static void sys_link()
 
 static void sys_lseek(int fildes, off_t offset, int whence)
 {
-    /* FIXME */
     printk("[%d] %s: lseek(fildes=%d, offset=%d, whence=%d)\n", cur_proc->pid, cur_proc->name, fildes, offset, whence);
+
     if (fildes < 0 || fildes >= FDS_COUNT) {  /* Out of bounds */
         arch_syscall_return(cur_proc, -EBADFD);
         return; 
     }
 
-    struct fs_node *node = cur_proc->fds[fildes].node;
+    struct file *file = &cur_proc->fds[fildes];
 
-    if (!node) {    /* Invalid File Descriptor */
+    if (!file->node) {    /* Invalid File Descriptor */
         arch_syscall_return(cur_proc, -EBADFD);
         return;
     }
 
-    switch (whence) {
-        case 0: /* SEEK_SET */
-            cur_proc->fds[fildes].offset = offset;
-            break;
-        case 1: /* SEEK_CUR */
-            cur_proc->fds[fildes].offset += offset;
-            break;
-        case 2: /* SEEK_END */
-            cur_proc->fds[fildes].offset = cur_proc->fds[fildes].node->size + offset;
-            break;
-    }
-
-    arch_syscall_return(cur_proc, cur_proc->fds[fildes].offset);
+    int ret = vfs.fops.lseek(file, offset, whence);
+    arch_syscall_return(cur_proc, ret);
 }
 
 static void sys_open(const char *path, int oflags)
 {
     printk("[%d] %s: open(path=%s, oflags=0x%x)\n", cur_proc->pid, cur_proc->name, path, oflags);
     
-    /* Look up the file */
-    struct fs_node *node = vfs.find(path);
-
-    if (!node) {    /* File not found */
-        arch_syscall_return(cur_proc, -ENOENT);
-        return;
-    }
-
     int fd = get_fd(cur_proc);  /* Find a free file descriptor */
 
     if (fd == -1) {     /* No free file descriptor */
@@ -181,21 +172,34 @@ static void sys_open(const char *path, int oflags)
         return;
     }
 
+    /* Look up the file */
+    struct vnode vnode;
+    int ret = vfs.lookup(path, cur_proc->uid, cur_proc->gid, &vnode);
+
+    if (ret)    /* Lookup failed */
+        goto done;
+
+    struct inode *inode = NULL;
+    ret = vfs.vget(&vnode, &inode);
+
+    if (ret)
+        goto done;
+
     cur_proc->fds[fd] = (struct file) {
-        .node = node,
+        .node = inode,
         .offset = 0,
         .flags = oflags,
     };
 
-    int ret = node->fs->f_ops.open(&cur_proc->fds[fd]);
-    
-    if (ret) {  /* open returned an error code */
-        arch_syscall_return(cur_proc, ret);
-        release_fd(cur_proc, fd);
-    } else {
-        arch_syscall_return(cur_proc, fd);
-    }
+    ret = vfs.fops.open(&cur_proc->fds[fd]);
 
+done:
+    if (ret < 0)  /* open returned an error code */
+        release_fd(cur_proc, fd);
+    else
+        ret = fd;
+
+    arch_syscall_return(cur_proc, ret);
     return;
 }
 
@@ -208,16 +212,9 @@ static void sys_read(int fildes, void *buf, size_t nbytes)
         return; 
     }
 
-    struct fs_node *node = cur_proc->fds[fildes].node;
-
-    if (!node) {    /* Invalid File Descriptor */
-        arch_syscall_return(cur_proc, -EBADFD);
-        return;
-    }
-
-    ssize_t ret = node->fs->f_ops.read(&cur_proc->fds[fildes], buf, nbytes);
+    struct file *file = &cur_proc->fds[fildes];
+    int ret = vfs.fops.read(file, buf, nbytes);
     arch_syscall_return(cur_proc, ret);
-
     return;
 }
 
@@ -284,25 +281,18 @@ static void sys_waitpid(int pid, int *stat_loc, int options)
     reap_proc(child);
 }
 
-static void sys_write(int fd, void *buf, size_t count)
+static void sys_write(int fd, void *buf, size_t nbytes)
 {
-    printk("[%d] %s: write(fd=%d, buf=%p, count=%d)\n", cur_proc->pid, cur_proc->name, fd, buf, count);
+    printk("[%d] %s: write(fd=%d, buf=%p, nbytes=%d)\n", cur_proc->pid, cur_proc->name, fd, buf, nbytes);
     
     if (fd < 0 || fd >= FDS_COUNT) {   /* Out of bounds */
         arch_syscall_return(cur_proc, -EBADFD);
         return; 
     }
 
-    struct fs_node *node = cur_proc->fds[fd].node;
-    
-    if (!node) {    /* Invalid File Descriptor */
-        arch_syscall_return(cur_proc, -EBADFD);
-        return;
-    }
-
-    int ret = node->fs->f_ops.write(&cur_proc->fds[fd], buf, count);
+    struct file *file = &cur_proc->fds[fd];
+    int ret = vfs.fops.write(file, buf, nbytes);
     arch_syscall_return(cur_proc, ret);
-    
     return;
 }
 
@@ -315,15 +305,10 @@ static void sys_ioctl(int fd, int request, void *argp)
         return; 
     }
 
-    struct fs_node *node = cur_proc->fds[fd].node;
-
-    if (!node) {    /* Invalid File Descriptor */
-        arch_syscall_return(cur_proc, -EBADFD);
-        return;
-    }
-
-    int ret = vfs.ioctl(node, request, argp);
+    struct file *file = &cur_proc->fds[fd];
+    int ret = vfs.fops.ioctl(file, request, argp);
     arch_syscall_return(cur_proc, ret);
+    return;
 }
 
 static void sys_signal(int sig, void (*func)(int))
@@ -343,16 +328,9 @@ static void sys_readdir(int fd, struct dirent *dirent)
         return; 
     }
 
-    struct fs_node *node = cur_proc->fds[fd].node;
-
-    if (!node) {    /* Invalid File Descriptor */
-        arch_syscall_return(cur_proc, -EBADFD);
-        return;
-    }
-    
-    int ret = node->fs->f_ops.readdir(&cur_proc->fds[fd], dirent);
+    struct file *file = &cur_proc->fds[fd];
+    int ret = vfs.fops.readdir(file, dirent);
     arch_syscall_return(cur_proc, ret);
-
     return;
 }
 
@@ -379,26 +357,16 @@ static void sys_mount(struct mount_struct *args)
     return;
 }
 
-static void sys_mkdirat(int fd, const char *path, int mode)
+static void sys_mkdir(const char *path, int mode)
 {
-    printk("[%d] %s: mkdirat(fd=%d, path=%s, mode=%x)\n", cur_proc->pid, cur_proc->name, fd, path, mode);
+    printk("[%d] %s: mkdir(path=%s, mode=%x)\n", cur_proc->pid, cur_proc->name, path, mode);
 
-    if (fd < 0 || fd >= FDS_COUNT) {  /* Out of bounds */
-        arch_syscall_return(cur_proc, -EBADFD);
-        return; 
-    }
-
-    struct fs_node *node = cur_proc->fds[fd].node;
-
-    if (!node) {    /* Invalid File Descriptor */
-        arch_syscall_return(cur_proc, -EBADFD);
-        return;
-    }
-    
-    int ret = vfs.mkdir(node, path);
+    for (;;);
+    /*
+    int ret = vfs.iops.mkdir(file, path, cur_proc->uid, cur_proc->gid, mode);
     arch_syscall_return(cur_proc, ret);
-
     return;
+    */
 }
 
 static void sys_uname(struct utsname *name)
@@ -450,19 +418,17 @@ static void sys_chdir(const char *path)
     if (path[0] == '/') { /* Absolute Path */
         p = (char *) path;
     } else {
-        extern char *parse_relative_path(char *, const char *);
-        p = parse_relative_path(cur_proc->cwd, path);
+        vfs.relative(cur_proc->cwd, path, &p);
         rel = 1;
     }
 
-    struct fs_node *node = vfs.find(p);
+    struct vnode vnode;
+    ret = vfs.lookup(p, cur_proc->uid, cur_proc->gid, &vnode);
 
-    if (!node) {
-        ret = -ENOENT;
+    if (ret)
         goto free_resources;
-    }
 
-    if (node->type != FS_DIR) {
+    if (vnode.type != FS_DIR) {
         ret = -ENOTDIR;
         goto free_resources;
     }
@@ -473,7 +439,6 @@ static void sys_chdir(const char *path)
 
 free_resources:
     if (rel) kfree(p);
-    //if (node) kfree(node);
     arch_syscall_return(cur_proc, ret);
 }
 
@@ -521,7 +486,7 @@ void (*syscall_table[])() =  {
     /* 20 */    sys_signal,
     /* 21 */    sys_readdir,
     /* 22 */    sys_mount,
-    /* 23 */    sys_mkdirat,
+    /* 23 */    sys_mkdir,
     /* 24 */    sys_uname,
     /* 25 */    sys_pipe,
     /* 26 */    sys_fcntl,

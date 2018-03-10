@@ -18,7 +18,7 @@
 #include <bits/dirent.h>
 
 /**
- * generic_file_readdir
+ * posix_file_readdir
  *
  * Conforming to `IEEE Std 1003.1, 2013 Edition'
  * 
@@ -26,12 +26,12 @@
  * @dirent  Buffer to write to.
  */
 
-ssize_t generic_file_readdir(struct file *file, struct dirent *dirent)
+ssize_t posix_file_readdir(struct file *file, struct dirent *dirent)
 {
     if (file->flags & O_WRONLY) /* File is not opened for reading */
         return -EBADFD;
     
-    int retval = file->node->fs->readdir(file->node, file->offset, dirent);
+    int retval = vfs.readdir(file->node, file->offset, dirent);
 
     /* Update file offset */
     file->offset += retval;
