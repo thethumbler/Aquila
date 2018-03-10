@@ -1,1 +1,1 @@
-dirs-y += x86/
+dirs-$(ARCH_X86) += x86/
