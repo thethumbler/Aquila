@@ -23,7 +23,8 @@ void arch_spawn_proc(proc_t *proc)
 
 void arch_init_proc(void *d, proc_t *p)
 {
-    x86_proc_t *arch = memset(kmalloc(sizeof(x86_proc_t)), 0, sizeof(x86_proc_t));
+    x86_proc_t *arch = kmalloc(sizeof(x86_proc_t));
+    memset(arch, 0, sizeof(x86_proc_t));
     struct arch_load_elf *s = d;
 
     arch->pd = s->new;

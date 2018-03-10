@@ -111,5 +111,8 @@ int arch_sys_fork(proc_t *proc)
     fork_arch->pd = new_proc_pd;
     proc->arch = fork_arch;
 
+    fork_arch->fpu_enabled = 0; /* XXX */
+    fork_arch->fpu_context = NULL; /* XXX */
+
     return 0;
 }

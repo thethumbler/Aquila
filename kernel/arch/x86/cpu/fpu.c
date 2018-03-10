@@ -35,8 +35,10 @@ static inline void restore_fpu()
 
 void trap_fpu()
 {
+    printk("[%d] %s: TRAP FPU!!!\n", cur_proc->pid, cur_proc->name);
     enable_fpu();
     x86_proc_t *arch = cur_proc->arch;
+    printk("arch = %p\n", arch);
 
     if (!last_fpu_proc) {   /* Initialize */
         init_fpu();
@@ -51,6 +53,7 @@ void trap_fpu()
         memcpy(_arch->fpu_context, fpu_context, 512);
 
         if (arch->fpu_enabled) {    /* Restore context */
+            printk("arch->fpu_context = %p\n", arch->fpu_context);
             memcpy(fpu_context, arch->fpu_context, 512);
             restore_fpu();
         } else {
