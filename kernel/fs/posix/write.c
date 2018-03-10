@@ -16,7 +16,7 @@
 #include <bits/errno.h>
 
 /**
- * generic_file_write
+ * posix_file_write
  *
  * Writes up to `size' bytes from `buf' into a file.
  *
@@ -26,15 +26,15 @@
  * @returns written bytes on success, or error-code on failure.
  */
 
-ssize_t generic_file_write(struct file *file, void *buf, size_t size)
+ssize_t posix_file_write(struct file *file, void *buf, size_t size)
 {
 	if (!(file->flags & (O_WRONLY | O_RDWR)))	/* File is not opened for writing */
 		return -EBADFD;
 	
 	if (file->flags & O_NONBLOCK) {	/* Non-blocking I/O */
-		if (file->node->fs->f_ops.can_write(file, size)) {
+		if (vfs.fops.can_write(file, size)) {
 			/* write up to `size' from `buf' into file */
-			ssize_t retval = file->node->fs->write(file->node, file->offset, size, buf);
+			ssize_t retval = vfs.write(file->node, file->offset, size, buf);
 
 			/* Update file offset */
 			file->offset += retval;
@@ -53,10 +53,10 @@ ssize_t generic_file_write(struct file *file, void *buf, size_t size)
 		ssize_t retval = size;
 		
 		while (size) {
-			size -= file->node->fs->write(file->node, file->offset, size, buf);
+			size -= vfs.write(file->node, file->offset, size, buf);
 
 			/* No bytes left to be written, or reached END-OF-FILE */
-			if (!size || file->node->fs->f_ops.eof(file))	/* Done writting */
+			if (!size || file->node->fs->fops.eof(file))	/* Done writting */
 				break;
 
 			/* Sleep on the file writers queue */

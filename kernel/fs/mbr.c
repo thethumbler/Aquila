@@ -6,8 +6,9 @@
  * TODO: Make readmbr for any generic device not just ata
  */
 
+#if 0
 #define BLOCK_SIZE 512
-void readmbr(struct fs_node *node)
+void readmbr(struct inode *node)
 {
     static mbr_t mbr;
     memset(&mbr, 0, sizeof(mbr_t));
@@ -42,4 +43,4 @@ void readmbr(struct fs_node *node)
         }
     }
 }
-
+#endif

@@ -21,7 +21,12 @@ proc_t *load_elf(const char *fn)
 {
     void *arch_specific_data = arch_load_elf();
 
-    struct fs_node *file = vfs.find(fn);
+    struct vnode v;
+    struct inode *file = NULL;
+
+    vfs.lookup(fn, 1, 1, &v);
+    vfs.vget(&v, &file);
+
     if (!file) return NULL;
 
     elf32_hdr_t hdr;
@@ -73,7 +78,13 @@ proc_t *load_elf(const char *fn)
 /* Loads an elf file into an existing process skeleton */
 proc_t *load_elf_proc(proc_t *proc, const char *fn)
 {
-    struct fs_node *file = vfs.find(fn);
+    //struct inode *file = vfs.find(fn);
+    struct vnode v;
+    struct inode *file = NULL;
+
+    vfs.lookup(fn, 1, 1, &v);
+    vfs.vget(&v, &file);
+
     if (!file) return NULL;
 
     pmman.unmap_full(0, proc->heap);

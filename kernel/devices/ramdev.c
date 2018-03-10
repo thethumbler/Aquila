@@ -4,7 +4,7 @@
 #include <dev/dev.h>
 #include <dev/ramdev.h>
 
-static ssize_t ramdev_read(struct fs_node *node, off_t offset, size_t _size, void *buf)
+static ssize_t ramdev_read(struct inode *node, off_t offset, size_t _size, void *buf)
 {
 	/* Read ramdev private data from node */
     ramdev_private_t *p = (ramdev_private_t*) node->p;
@@ -18,7 +18,7 @@ static ssize_t ramdev_read(struct fs_node *node, off_t offset, size_t _size, voi
     return size;
 }
 
-static ssize_t ramdev_write(struct fs_node *node, off_t offset, size_t _size, void *buf)
+static ssize_t ramdev_write(struct inode *node, off_t offset, size_t _size, void *buf)
 {
 	/* Read ramdev private data from inode */
     ramdev_private_t *p = (ramdev_private_t*) node->p;
@@ -32,9 +32,8 @@ static ssize_t ramdev_write(struct fs_node *node, off_t offset, size_t _size, vo
     return size;
 }
 
-dev_t ramdev = 
-{
-	.name = "ramdev",
-	.read = &ramdev_read,
+dev_t ramdev = {
+	.name  = "ramdev",
+	.read  = &ramdev_read,
 	.write = &ramdev_write,
 };

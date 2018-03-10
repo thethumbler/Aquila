@@ -30,6 +30,6 @@ typedef struct {
     uint16_t             boot_signature;
 } __packed mbr_t;
 
-void readmbr(struct fs_node *node);
+void readmbr(struct inode *node);
 
 #endif

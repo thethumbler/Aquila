@@ -11,8 +11,9 @@ static struct fb_fix_screeninfo vesa_fix_screeninfo = {
 
 static struct fb_var_screeninfo vesa_var_screeninfo;
 
-static ssize_t fbdev_vesa_write(struct fs_node *node, off_t offset, size_t size, void *buf)
+static ssize_t fbdev_vesa_write(struct inode *node, off_t offset, size_t size, void *buf)
 {
+    printk("fbdev_vesa_write(node=%p, offset=%d, size=%d, buf=%p)\n", node, offset, size, buf);
     /* Maximum possible write size */
     size = MIN(size, node->size - offset);
     
@@ -39,14 +40,11 @@ static int fbdev_vesa_prope(int i, struct fbdev *fb)
     char name[50] = {0};
     snprintf(name, 50, "fb%d", i);
 
-    vfs.create(dev_root, name);
+    struct inode *fb_node = NULL;
+    int ret = vfs.create(&vdev_root, name, 1, 1, 0666, &fb_node);
 
-    struct vfs_path path = (struct vfs_path) {
-        .mountpoint = dev_root,
-        .tokens = (char *[]) {name, NULL}
-    };
-
-    struct fs_node *fb_node = vfs.traverse(&path);
+    if (ret)
+        return ret;
 
     fb_node->dev = &fbdev;
     fb_node->size = size;

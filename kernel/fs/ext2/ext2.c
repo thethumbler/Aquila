@@ -791,8 +791,8 @@ struct fs ext2fs = {
 
     .f_ops = {
         .open = generic_file_open,
-        .read = generic_file_read,
-        .readdir = generic_file_readdir,
+        .read = posix_file_read,
+        .readdir = posix_file_readdir,
         .eof = ext2_eof,
     }
 };
