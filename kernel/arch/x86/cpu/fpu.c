@@ -5,7 +5,7 @@
 #include <sys/sched.h>
 
 static char fpu_context[512] __aligned(16);
-proc_t *last_fpu_proc = NULL;
+thread_t *last_fpu_thread = NULL;
 
 void enable_fpu()
 {
@@ -35,16 +35,15 @@ static inline void restore_fpu()
 
 void trap_fpu()
 {
-    printk("[%d] %s: TRAP FPU!!!\n", cur_proc->pid, cur_proc->name);
+    printk("[%d:%d] %s: TRAP FPU!!!\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name);
     enable_fpu();
-    x86_proc_t *arch = cur_proc->arch;
-    printk("arch = %p\n", arch);
+    x86_thread_t *arch = cur_thread->arch;
 
-    if (!last_fpu_proc) {   /* Initialize */
+    if (!last_fpu_thread) {   /* Initialize */
         init_fpu();
         arch->fpu_enabled = 1;
-    } else if (cur_proc != last_fpu_proc) {
-        x86_proc_t *_arch = last_fpu_proc->arch;
+    } else if (cur_thread != last_fpu_thread) {
+        x86_thread_t *_arch = last_fpu_thread->arch;
 
         if (!_arch->fpu_context)    /* Lazy allocate */
             _arch->fpu_context = kmalloc(512);
@@ -62,5 +61,5 @@ void trap_fpu()
         }
     }
 
-    last_fpu_proc = cur_proc;
+    last_fpu_thread = cur_thread;
 }

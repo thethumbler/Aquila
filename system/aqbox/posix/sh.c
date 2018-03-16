@@ -54,7 +54,7 @@ int builtin_export(int argc, char **argv)
 struct aqsh_command {
     char *name;
     int (*f)(int, char**);
-} builtin_commands[] = {
+} builtin_commands[] = {    /* Commands must be sorted */
     {"cd", builtin_cd},
     {"export", builtin_export},
 };
@@ -173,6 +173,7 @@ int eval()
 
 void shell()
 {
+    putenv("USER=root");
     for (;;) {
         pwd = getenv("PWD");
         print_prompt();

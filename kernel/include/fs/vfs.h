@@ -32,6 +32,7 @@ struct iops {
     ssize_t (*write)   (struct inode *node, off_t offset, size_t size, void *buf);
     int     (*ioctl)   (struct inode *node, int request, void *argp);
     ssize_t (*readdir) (struct inode *node, off_t offset, struct dirent *dirent);
+    int     (*close)   (struct inode *node);
 
     int     (*vfind)   (struct vnode *dir, const char *name, struct vnode *child);
     int     (*vget)    (struct vnode *vnode, struct inode **inode);
@@ -86,7 +87,7 @@ struct inode {    /* Actual inode, only one copy is permitted */
     uint32_t    uid;    /* User ID */
     uint32_t    gid;    /* Group ID */
 
-    size_t      ref;    /* Number of processes referencing this node */
+    ssize_t     ref;    /* Number of processes referencing this node */
     queue_t     *read_queue;
     queue_t     *write_queue;
 };
@@ -121,6 +122,7 @@ struct vfs {
     ssize_t (*write)   (struct inode *inode, size_t offset, size_t size, void *buf);
     ssize_t (*readdir) (struct inode *inode, off_t offset, struct dirent *dirent);
     int     (*ioctl)   (struct inode *inode, unsigned long request, void *argp);
+    int     (*close)   (struct inode *node);
 
     /* file operations mappings */
     struct  fops fops;

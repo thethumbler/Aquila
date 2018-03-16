@@ -6,18 +6,22 @@
 
 #include "sys.h"
 
+uint32_t timer_freq = 100;
+uint32_t timer_ticks = 0;
+uint32_t timer_sub_ticks = 0;
+
 static void x86_sched_handler(regs_t *r __unused) 
 {
-    //extern queue_t *procs;
-    //printk("----- procs dump -----\n");
-    //forlinked (node, procs->head, node->next) {
-    //    proc_t *proc = node->value;
-    //    printk("(%d, %s)\n", proc->pid, proc->name);
-    //}
-    //printk("----------------------\n");
+    /* FIXME */
+	++timer_sub_ticks;
+
+	if (timer_sub_ticks == timer_freq) {
+		++timer_ticks;
+		timer_sub_ticks = 0;
+	}
 
     if (!kidle) {
-        x86_proc_t *arch = (x86_proc_t *) cur_proc->arch;
+        x86_thread_t *arch = (x86_thread_t *) cur_thread->arch;
         extern uintptr_t x86_read_eip();
 
         volatile uintptr_t eip = 0, esp = 0, ebp = 0;    
@@ -39,7 +43,7 @@ static void x86_sched_handler(regs_t *r __unused)
 
 void arch_sched_init()
 {
-    pit_setup(1);
+    pit_setup(timer_freq);
     irq_install_handler(PIT_IRQ, x86_sched_handler);
 }
 
@@ -54,7 +58,7 @@ void __arch_idle()
 void arch_idle()
 {
     //printk("Kernel Idle\n");
-    cur_proc = NULL;
+    cur_thread = NULL;
     uintptr_t esp = VMA(0x100000);
     set_kernel_stack(esp);
     asm volatile("mov %0, %%esp; mov %0, %%ebp; jmp __arch_idle;"::"g"(esp), "g"(__arch_idle));

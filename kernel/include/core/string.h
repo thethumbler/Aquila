@@ -9,7 +9,7 @@
 #else
 #endif
 
-int snprintf(char *s, size_t n, char *fmt, ...);
+int snprintf(char *s, size_t n, const char *fmt, ...);
 
 static inline int strcmp(const char *s1, const char *s2)
 {

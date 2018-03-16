@@ -10,14 +10,14 @@
 #include <fs/initramfs.h>
 #include <fs/devfs.h>
 #include <fs/devpts.h>
-//#include <fs/procfs.h>
+#include <fs/procfs.h>
 #include <fs/ext2.h>
 
 #include <boot/multiboot.h>
 
 #include <sys/proc.h>
 #include <sys/sched.h>
-#include <sys/elf.h>
+#include <sys/binfmt.h>
 
 #include <ds/queue.h>
 
@@ -35,15 +35,18 @@ void kmain(struct boot *boot)
 
     devman_init();
 
-    //vfs.bind("/proc", proc_root);
+    vfs.bind("/proc", procfs_root);
     
     printk("[0] Kernel: Loading init process\n");
-    proc_t *init = load_elf("/init");
 
-    if (!init)
+    proc_t *init;
+    int err;
+
+    if ((err = binfmt_load(NULL, "/init", &init))) {
+        printk("error: %d\n", err);
         panic("Can not load init process");
+    }
 
-    spawn_init(init);
-
+    proc_init_spawn(init);
     for(;;);
 }

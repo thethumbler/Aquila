@@ -83,4 +83,8 @@ void fb_term_init(struct fbterm_ctx *ctx);
 int fb_init(char *path);
 int fb_cook_wallpaper(struct fbterm_ctx *ctx, char *path);
 
+#define _RGBA(r, g, b, a) (((r) << 3*8) | ((g) << 2*8) | ((b) << 1*8) | ((a) << 0*8))
+#define _RGB(r, g, b, a) (((r) << 3*8) | ((g) << 2*8) | ((b) << 1*8))
+#define _ALPHA(c, a) (((c) & (~0xFF)) | ((a) & 0xFF))
+
 #endif

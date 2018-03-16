@@ -2,7 +2,7 @@
 #define _ELF_H
 
 #include <core/system.h>
-#include <sys/proc.h>
+#include <fs/vfs.h>
 
 #define ELFMAG0 0x7f
 #define ELFMAG1 'E'
@@ -92,8 +92,8 @@ typedef struct
 	uint64_t entsize;
 } elf64_section_hdr_t;
 
-/* sys/elf.c */
-proc_t *load_elf(const char *fn);
-proc_t *load_elf_proc(proc_t *proc, const char *fn);
+/* sys/binfmt/elf.c */
+int binfmt_elf_check(struct inode *file);
+int binfmt_elf_load(proc_t *proc, struct inode *file);
 
 #endif

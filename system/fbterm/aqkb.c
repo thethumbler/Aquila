@@ -82,7 +82,7 @@ void handle_keyboard(int fd, int scancode)
     }
 }
 
-int qkb_loop(int kbd_fd, int out_fd)
+int aqkb_loop(int kbd_fd, int out_fd)
 {
     for (;;) {
         int scancode;

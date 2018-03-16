@@ -1,248 +1,227 @@
 #include <core/system.h>
-
-#include <mm/mm.h>
-#include <fs/vfs.h>
-
+#include <core/string.h>
 #include <bits/errno.h>
-#include <bits/dirent.h>
 
-/* procfs root directory (usually mounted on '/proc') */
-struct fs_node *proc_root = NULL;
+#include <fs/vfs.h>
+#include <fs/devfs.h>
+#include <fs/posix.h>
+#include <fs/procfs.h>
+#include <fs/itbl.h>
 
-#if 0
-static struct fs_node *procfs_find(struct fs_node *dir, const char *fn)
+#include <sys/proc.h>
+#include <sys/sched.h>
+
+struct procfs_entry {
+    int id;
+    char *name;
+    ssize_t (*read)();
+};
+
+/* procfs root directory (usually mounted on /proc) */
+struct inode *procfs_root = NULL;
+struct vnode vprocfs_root;
+struct itbl  procfs_itbl = {0};
+
+/* proc/meminfo */
+static ssize_t procfs_meminfo(struct inode *node, off_t off, size_t size, char *buf)
 {
-    if (dir->type != FS_DIR)
-        return NULL;
+    char meminfo_buf[512];
+    extern size_t k_total_mem, k_used_mem, kvmem_used, kvmem_obj_cnt;
 
-    struct devfs_dir *_dir = (struct devfs_dir *) dir->p;
+    int sz = snprintf(meminfo_buf, 512, 
+            "MemTotal: %d kB\n"
+            "MemFree: %d kB\n"
+            "KVMemUsed: %d KB\n"
+            "KVMemObjCnt: %d\n",
+            k_total_mem/1024,
+            (k_total_mem-k_used_mem)/1024,
+            kvmem_used/1024,
+            kvmem_obj_cnt
+            );
 
-    if (!_dir)  /* Directory not initialized */
-        return NULL;
-
-    forlinked (file, _dir, file->next) {
-        if (!strcmp(file->node->name, fn))
-            return file->node;
-    }
-
-    return NULL;    /* File not found */
-}
-
-static struct fs_node *devfs_traverse(struct vfs_path *path)
-{
-    //printk("devfs_traverse(path=%p)\n", path);
-    struct fs_node *dir = path->mountpoint;
-
-    foreach (token, path->tokens) {
-        dir = devfs_find(dir, token);
-    }
-
-    return dir;
-}
-
-static ssize_t devfs_read(struct fs_node *node, off_t offset, size_t size, void *buf)
-{
-    if (!node->dev) /* is node connected to a device handler? */
-        return -EINVAL;
-
-    return node->dev->read(node, offset, size, buf);
-}
-
-static ssize_t devfs_write(struct fs_node *node, off_t offset, size_t size, void *buf)
-{
-    if (!node->dev) /* is node connected to a device handler? */
-        return -EINVAL;
-
-    return node->dev->write(node, offset, size, buf);
-}
-
-static int devfs_create(struct fs_node *dir, const char *name)
-{
-    struct fs_node *node = kmalloc(sizeof(struct fs_node));
-
-    if (!node)
-        return -ENOMEM;
-
-    memset(node, 0, sizeof(struct fs_node));
-    
-    node->name = strdup(name);
-
-    if (!node->name)
-        goto e_nomem;
-
-    node->type = FS_FILE;
-    node->fs   = &devfs;
-    node->size = 0;
-
-    struct devfs_dir *_dir = (struct devfs_dir *) dir->p;
-    struct devfs_dir *tmp  = kmalloc(sizeof(struct devfs_dir));
-
-    if (!tmp)
-        goto e_nomem;
-
-    tmp->next = _dir;
-    tmp->node = node;
-
-    dir->p = tmp;
-
-    return 0;
-
-e_nomem:    /* Error: No Memory */
-    if (node) {
-        if (node->name)
-            kfree(node->name);
-        kfree(node);
-    }
-
-    if (tmp)
-        kfree(tmp);
-
-    return -ENOMEM;
-}
-
-static int devfs_mkdir(struct fs_node *parent, const char *name)
-{
-    int ret = 0;
-    ret = devfs_create(parent, name);
-
-    if (ret)
+    if (off < sz) {
+        ssize_t ret = MIN(size, (size_t)(sz - off));
+        memcpy(buf, meminfo_buf + off, ret);
         return ret;
-
-    struct fs_node *d = devfs_find(parent, name);
-
-    if (!d) {
-        panic("Directory not found!");
     }
-
-    d->type = FS_DIR;
 
     return 0;
 }
 
-static int devfs_ioctl(struct fs_node *file, int request, void *argp)
+/* proc/version */
+static ssize_t procfs_version(struct inode *node, off_t off, size_t size, char *buf)
 {
-    if (!file || !file->dev || !file->dev->ioctl)
-        return -EBADFD;
+    char version_buf[512];
 
-    return file->dev->ioctl(file, request, argp);
+    int sz = snprintf(version_buf, 512,
+            "%s version %s (gcc version %s) %s\n",
+            UTSNAME_SYSNAME, UTSNAME_RELEASE, __VERSION__, __TIMESTAMP__
+            );
+
+    if (off < sz) {
+        ssize_t ret = MIN(size, (size_t)(sz - off));
+        memcpy(buf, version_buf + off, ret);
+        return ret;
+    }
+
+    return 0;
 }
 
-static ssize_t devfs_readdir(struct fs_node *dir, off_t offset, struct dirent *dirent)
+/* proc/uptime */
+static ssize_t procfs_uptime(struct inode *node, off_t off, size_t size, char *buf)
 {
-    //printk("devfs_readdir(dir=%p, offset=%d, dirent=%p)\n", dir, offset, dirent);
-    int i = 0;
-    struct devfs_dir *_dir = (struct devfs_dir *) dir->p;
+    char uptime_buf[64];
 
-    if (!_dir)
-        return 0;
+    extern uint32_t timer_ticks;
+    int sz = snprintf(uptime_buf, 64, "%d\n", timer_ticks);
 
-    int found = 0;
+    if (off < sz) {
+        ssize_t ret = MIN(size, (size_t)(sz - off));
+        memcpy(buf, uptime_buf + off, ret);
+        return ret;
+    }
 
-    forlinked (e, _dir, e->next) {
-        if (i == offset) {
-            found = 1;
-            strcpy(dirent->d_name, e->node->name);   // FIXME
-            break;
+    return 0;
+}
+
+static struct procfs_entry entries[] = {
+    {-1, "meminfo", procfs_meminfo},
+    {-2, "version", procfs_version},
+    {-3, "uptime",  procfs_uptime},
+};
+
+#define PROCFS_ENTRIES  (sizeof(entries)/sizeof(entries[0]))
+
+static ssize_t procfs_read(struct inode *node, off_t offset, size_t size, void *buf)
+{
+    size_t id = (size_t) node->p;
+    if (id < PROCFS_ENTRIES) {
+        return entries[id].read(node, offset, size, buf);
+    }
+
+    return -ENOSYS;
+}
+
+static ssize_t procfs_readdir(struct inode *inode, off_t offset, struct dirent *dirent)
+{
+    if (offset == 0) {
+        dirent->d_ino = 0;
+        strcpy(dirent->d_name, ".");
+        return 1;
+    } else if (offset == 1) {
+        dirent->d_ino = 1;
+        strcpy(dirent->d_name, "..");
+        return 1;
+    }
+
+    offset -= 2;
+
+    if ((size_t) offset < PROCFS_ENTRIES) {
+        dirent->d_ino = entries[offset].id;
+        strcpy(dirent->d_name, entries[offset].name);
+        return 1;
+    }
+
+    /* Processes go here */
+
+    return 0;
+}
+
+static int procfs_vfind(struct vnode *parent, const char *name, struct vnode *child)
+{
+    if (parent->id == (vino_t) procfs_root) {
+        for (size_t i = 0; i < PROCFS_ENTRIES; ++i) {
+            if (!strcmp(name, entries[i].name)) {
+                child->id = entries[i].id;
+                child->type = FS_RGL;
+                child->mask = 0444;
+                return 0;
+            }
         }
-        ++i;
     }
 
-    return found;
+    return -1;
 }
 
-
-/* ================ File Operations ================ */
-
-static int devfs_file_open(struct file *file)
+static int procfs_vget(struct vnode *vnode, struct inode **inode)
 {
-    if (file->node->type == FS_DIR) {
+    if (vnode->id == (vino_t) procfs_root) {
+        if (inode)
+            *inode = procfs_root;
         return 0;
-    } else {
-        if (!file->node->dev)
-            return -ENXIO;
-        
-        return file->node->dev->f_ops.open(file);
+    } else if ((ssize_t) vnode->id < 0) {
+        int id = -vnode->id - 1;
+
+        if ((size_t) id < PROCFS_ENTRIES) {
+            struct inode *node = NULL;
+            if (!(node = itbl_find(&procfs_itbl, id))) { /* Not in open inode table? */
+                node = kmalloc(sizeof(struct inode));
+                memset(node, 0, sizeof(struct inode));
+
+                node->name = entries[id].name;
+                node->type = FS_RGL;
+                node->fs   = &procfs;
+                node->p    = (void *) id;
+
+                itbl_insert(&procfs_itbl, node);
+            }
+
+            node->ref++;
+
+            if (inode)
+                *inode = node;
+
+            return 0;
+        } else {
+            return -ENONET;
+        }
     }
+
+    return -1;
 }
 
-static ssize_t devfs_file_read(struct file *file, void *buf, size_t size)
+static int procfs_init()
 {
-    if (!file->node->dev)
-        return -ENXIO;
+    procfs_root = kmalloc(sizeof(struct inode));
 
-    return file->node->dev->f_ops.read(file, buf, size);
-}
-
-static ssize_t devfs_file_write(struct file *file, void *buf, size_t size)
-{
-    if (!file->node->dev)
-        return -ENXIO;
-    
-    return file->node->dev->f_ops.write(file, buf, size);
-}
-
-static int devfs_file_can_read(struct file *file, size_t size)
-{
-    if (!file->node->dev)
-        return -ENXIO;
-
-    return file->node->dev->f_ops.can_read(file, size);
-}
-
-static int devfs_file_can_write(struct file *file, size_t size)
-{
-    if (!file->node->dev)
-        return -ENXIO;
-
-    return file->node->dev->f_ops.can_write(file, size);
-}
-
-static int devfs_file_eof(struct file *file)
-{
-    if (!file->node->dev)
-        return -ENXIO;
-
-    return file->node->dev->f_ops.eof(file);
-}
-#endif
-
-int procfs_init()
-{
-    //printk("[0] Kernel: devfs -> init()\n");
-    proc_root = kmalloc(sizeof(struct fs_node));
-
-    if (!proc_root)
+    if (!procfs_root)
         return -ENOMEM;
 
-    proc_root->name = "proc";
-    proc_root->type = FS_DIR;
-    proc_root->size = 0;
-    proc_root->fs   = &procfs;
-    proc_root->p    = NULL;
+    memset(procfs_root, 0, sizeof(struct inode));
+
+    *procfs_root = (struct inode) {
+        .type = FS_DIR,
+        .id   = (vino_t) procfs_root,
+        .fs   = &procfs,
+    };
+
+    vprocfs_root = (struct vnode) {
+        .super = procfs_root,
+        .id    = (vino_t) procfs_root,
+        .type  = FS_DIR,
+    };
+
+    itbl_init(&procfs_itbl);
 
     return 0;
 }
 
 struct fs procfs = {
-    .name   = "procfs",
-    .init   = procfs_init,
-    //.create = devfs_create,
-    //.mkdir  = devfs_mkdir,
-    //.find   = devfs_find,
-    //.traverse = devfs_traverse,
-    //.read   = devfs_read,
-    //.write  = devfs_write,
-    //.ioctl  = devfs_ioctl,
-    //.readdir = devfs_readdir,
-    //
-    //.f_ops = {
-    //    .open  = devfs_file_open,
-    //    .read  = devfs_file_read,
-    //    .write = devfs_file_write, 
-    //    .readdir = generic_file_readdir,
+    .name = "procfs",
+    .init = procfs_init,
 
-    //    .can_read = devfs_file_can_read,
-    //    .can_write = devfs_file_can_write,
-    //    .eof = devfs_file_eof,
-    //},
+    .iops = {
+        .read    = procfs_read,
+        .readdir = procfs_readdir,
+        .vfind   = procfs_vfind,
+        .vget    = procfs_vget,
+    },
+
+    .fops = {
+        .open    = generic_file_open,
+        .read    = posix_file_read,
+        .readdir = posix_file_readdir,
+
+        .eof     = __vfs_always,
+    },
 };

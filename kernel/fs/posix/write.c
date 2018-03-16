@@ -41,7 +41,7 @@ ssize_t posix_file_write(struct file *file, void *buf, size_t size)
 			
 			/* Wake up all sleeping readers if a `read_queue' is attached */
 			if (file->node->read_queue)
-				wakeup_queue(file->node->read_queue);
+				thread_queue_wakeup(file->node->read_queue);
 
 			/* Return written bytes count */
 			return retval;
@@ -60,7 +60,7 @@ ssize_t posix_file_write(struct file *file, void *buf, size_t size)
 				break;
 
 			/* Sleep on the file writers queue */
-			sleep_on(file->node->write_queue);
+			thread_queue_sleep(file->node->write_queue);
 		}
 		
 		/* Store written bytes count */
@@ -71,7 +71,7 @@ ssize_t posix_file_write(struct file *file, void *buf, size_t size)
 
 		/* Wake up all sleeping readers if a `read_queue' is attached */
 		if (file->node->read_queue)
-			wakeup_queue(file->node->read_queue);
+			thread_queue_wakeup(file->node->read_queue);
 
 		return retval;
 	}

@@ -21,6 +21,7 @@
 #include <cpu/cpu.h>
 #include <ds/queue.h>
 #include <mm/buddy.h>
+#include <arch/x86/include/proc.h> /* XXX */
 #include <sys/proc.h>
 #include <sys/sched.h>
 
@@ -533,8 +534,8 @@ void handle_page_fault(uintptr_t addr)
         size_t page_idx = phys/PAGE_SIZE;
 
         if ((addr >= USER_STACK_BASE && addr < USER_STACK_BASE + USER_STACK_SIZE)   /* Stack? */
-             || (addr < cur_proc->heap_start)   /* Data section? FIXME */
-             || (addr < cur_proc->heap)) {  /* Allocated Heap */
+             || (addr < cur_thread->owner->heap_start)   /* Data section? FIXME */
+             || (addr < cur_thread->owner->heap)) {  /* Allocated Heap */
             if (pages[page_idx].refs == 1) {
                 page->structure.write = 1;
                 tlb_invalidate_page(addr);
@@ -548,21 +549,21 @@ void handle_page_fault(uintptr_t addr)
             return;
         }
     } else {
-        if (addr < cur_proc->heap && addr >= cur_proc->heap_start) {
+        if (addr < cur_thread->owner->heap && addr >= cur_thread->owner->heap_start) {
             page_map(page_addr, URWX);  /* FIXME */
             memset((void *) page_addr, 0, PAGE_SIZE);
             return;
         }
 
         // Send signal
-        printk("proc = [%d] %s\n", cur_proc->pid, cur_proc->name);
-        printk("-- heap %p\n", cur_proc->heap);
-        x86_proc_t *arch = cur_proc->arch;
+        printk("proc = [%d] %s\n", cur_thread->owner->pid, cur_thread->owner->name);
+        printk("-- heap %p\n", cur_thread->owner->heap);
+        x86_thread_t *arch = cur_thread->arch;
         x86_dump_registers(arch->regs);
         panic("Not implemented\n");
     }
 
-    x86_proc_t *arch = cur_proc->arch;
+    x86_thread_t *arch = cur_thread->arch;
     x86_dump_registers(arch->regs);
     panic("This is fucked up :)\n");
 }

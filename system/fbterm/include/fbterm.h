@@ -2,6 +2,7 @@
 #define _FBTERM_H
 
 #include <tinyfont.h>
+#include <stdint.h>
 
 struct fbterm_ctx {
     unsigned cr, cc;    /* Cursor location (row, column) */
@@ -11,6 +12,12 @@ struct fbterm_ctx {
     char *textbuf;      /* Rendered text buffer */
     char *backbuf;      /* Back buffer for terminal */
     struct font *font;  /* Font used */
+    uint32_t fg_c;      /* Current fg color */
+    uint32_t bg_c;      /* Current fg color */
 };
+
+void fbterm_set_cursor(struct fbterm_ctx *ctx, int cc, int cr);
+size_t fbterm_write(struct fbterm_ctx *ctx, void *buf, size_t size);
+size_t fbterm_clear(struct fbterm_ctx *ctx);
 
 #endif
