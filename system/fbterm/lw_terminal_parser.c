@@ -24,10 +24,6 @@
  */
 
 #include <stdlib.h>
-#ifndef NDEBUG
-#    include <stdio.h>
-#endif
-
 #include <lw_terminal_parser.h>
 
 static void lw_terminal_parser_push(struct lw_terminal *this, char c)
@@ -194,28 +190,12 @@ void lw_terminal_parser_read_str(struct lw_terminal *this, char *c)
         lw_terminal_parser_read(this, *c++);
 }
 
-#ifndef NDEBUG
-void lw_terminal_parser_default_unimplemented(struct lw_terminal* this, char *seq, char chr)
-{
-    unsigned int argc;
-
-    fprintf(stderr, "WARNING: UNIMPLEMENTED %s (", seq);
-    for (argc = 0; argc < this->argc; ++argc)
-    {
-        fprintf(stderr, "%d", this->argv[argc]);
-        if (argc != this->argc - 1)
-            fprintf(stderr, ", ");
-    }
-    fprintf(stderr, ")%o\n", chr);
-}
-#else
 void lw_terminal_parser_default_unimplemented(struct lw_terminal* this, char *seq, char chr)
 {
     this = this;
     seq = seq;
     chr = chr;
 }
-#endif
 
 struct lw_terminal *lw_terminal_parser_init(void)
 {

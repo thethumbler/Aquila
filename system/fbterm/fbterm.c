@@ -8,26 +8,17 @@
 #include <fb.h>
 #include <tinyfont.h>
 #include <fbterm.h>
+#include <config.h>
 
 #include <hl_vt100.h>
 #include <lw_terminal_vt100.h>
 
 #include <aqkb.h>
 
-/* Defaults */
-#define DEFAULT_WALLPAPER  "/etc/wallpaper.jpg"
-#define DEFAULT_FONT       "/etc/font.tf"
-#define DEFAULT_SHELL      "/bin/aqbox"
-
-#define FB_PATH            "/dev/fb0"
-#define KBD_PATH           "/dev/kbd"
-#define KBD_HANDLER_PATH   "/bin/kbd"
-
 /* Terminals */
 struct fbterm_ctx term[10];
 
 /* Term helpers */
-#define _RGBA(r, g, b, a) (((r) << 3*8) | ((g) << 2*8) | ((b) << 1*8) | ((a) << 0*8))
 static void fbterm_putc(struct fbterm_ctx *ctx, char c, uint32_t color)
 {
     if (ctx->cc >= ctx->cols) {
@@ -44,7 +35,7 @@ static void fbterm_putc(struct fbterm_ctx *ctx, char c, uint32_t color)
         int cx = ctx->cc * font->cols;
         for (int j = 0; j < font->cols; ++j) {
             char v = fbuf[i * font->cols + j];
-            fb_put_pixel(ctx, cx, ctx->cr*font->rows+i, _RGBA(0xFFU, 0xFFU, 0xFFU, v));
+            fb_put_pixel(ctx, cx, ctx->cr*font->rows+i, _ALPHA(color, v));
             ++cx;
         }
     }
@@ -59,7 +50,7 @@ void fbterm_set_cursor(struct fbterm_ctx *ctx, int cc, int cr)
     fbterm_putc(ctx, '_', 0xFFFFFFFF);
 }
 
-static ssize_t fbterm_write(struct fbterm_ctx *ctx, void *buf, size_t size)
+size_t fbterm_write(struct fbterm_ctx *ctx, void *buf, size_t size)
 {
 	for (size_t i = 0; i < size; ++i) {
 		char c = ((char *) buf)[i];
@@ -77,14 +68,14 @@ static ssize_t fbterm_write(struct fbterm_ctx *ctx, void *buf, size_t size)
                 fbterm_putc(ctx, ' ', 0xFFFFFFFF);
 				break;
 			default:
-                fbterm_putc(ctx, c, 0xFFFFFFFF);
+                fbterm_putc(ctx, c, 0xEEEEEEFF);
 		}
 	}
 
 	return size;
 }
 
-static ssize_t fbterm_clear(struct fbterm_ctx *ctx)
+size_t fbterm_clear(struct fbterm_ctx *ctx)
 {
     fb_clear(ctx);
 }
@@ -141,29 +132,13 @@ void disp(struct vt100_headless *vt100)
     fbterm_redraw(&term[0]);
 }
 
-static void set_non_canonical(struct vt100_headless *this, int fd)
-{
-    struct termios termios;
-
-    ioctl(fd, TCGETS, &this->backup);
-    ioctl(fd, TCGETS, &termios);
-    termios.c_iflag |= ICANON;
-    termios.c_cc[VMIN] = 1;
-    termios.c_cc[VTIME] = 0;
-    ioctl(fd, TCSETS, &termios);
-}
-
-static void restore_termios(struct vt100_headless *this, int fd)
-{
-    ioctl(fd, TCSETS, &this->backup);
-}
-
 int fbterm_main()
 {
     struct vt100_headless *vt100_headless;
     vt100_headless = new_vt100_headless();
     vt100_headless->changed = disp;
     vt100_headless->term = lw_terminal_vt100_init(vt100_headless, term[0].cols, term[0].rows, lw_terminal_parser_default_unimplemented);
+    vt100_headless->term->ctx = &term[0];
 
     extern void master_write(void *user_data, void *buffer, size_t len);
     vt100_headless->term->master_write = master_write;
@@ -185,12 +160,13 @@ int main(int argc, char **argv)
         if (fbterm_init(&term[0]) < 0) {
             fprintf(stderr, "Error initalizing fbterm\n");
         }
+
         fbterm_main();
     } else {
-        if (shell_pid = fork()) { /* Keyboard handler */
-            int kbd_fd  = open(KBD_PATH, O_RDONLY);
-            qkb_loop(kbd_fd, pty);
-            //execve(KBD_HANDLER_PATH, 0, 0);
+        if (shell_pid = fork()) {
+            /* Keyboard handler */
+            int kbd_fd = open(KBD_PATH, O_RDONLY);
+            aqkb_loop(kbd_fd, pty);
         } else {
             close(pty);
             int stdin_fd  = open(pts_fn, O_RDONLY);

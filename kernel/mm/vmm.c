@@ -13,6 +13,8 @@
 #include <core/panic.h>
 #include <mm/mm.h>
 
+int debug_kmalloc = 0;
+
 typedef struct {
     uint32_t addr : 28; /* Offseting (1GiB), 4-bytes aligned objects */
     uint32_t free : 1;  /* Free or not flag */
@@ -20,9 +22,11 @@ typedef struct {
     uint32_t next : 25; /* Index of the next node */
 } __packed vmm_node_t;
 
+size_t kvmem_used;
+size_t kvmem_obj_cnt;
 
-#define VMM_BASE        (0xD0000000UL)
-#define VMM_NODES_SIZE  (0x00100000UL)
+#define VMM_BASE        ARCH_VMM_BASE
+#define VMM_NODES_SIZE  ARCH_VMM_NODES_SIZE
 #define VMM_NODES       (VMM_BASE - VMM_NODES_SIZE)
 #define NODE_ADDR(node) (VMM_BASE + ((node).addr) * 4)
 #define NODE_SIZE(node) (((node).size) * 4)
@@ -89,7 +93,7 @@ void print_node(unsigned i)
     printk("   |_ Next   : %d\n", nodes[i].next );
 }
 
-void *kmalloc(size_t size)
+void *(kmalloc)(size_t size)
 {
     //printk("kmalloc(%d)\n", size);
     size = (size + 3)/4;    /* size in 4-bytes units */
@@ -114,11 +118,14 @@ void *kmalloc(size_t size)
         nodes[i].size = size;
     }
 
+    kvmem_used += NODE_SIZE(nodes[i]);
+    kvmem_obj_cnt++;
+
     pmman.map(NODE_ADDR(nodes[i]), NODE_SIZE(nodes[i]), KRW);
     return (void *) NODE_ADDR(nodes[i]);
 }
 
-void kfree(void *_ptr)
+void (kfree)(void *_ptr)
 {
     //printk("kfree(%p)\n", _ptr);
     uintptr_t ptr = (uintptr_t) _ptr;
@@ -129,7 +136,7 @@ void kfree(void *_ptr)
     /* Look for the node containing _ptr -- merge sequential free nodes */
     size_t cur_node = 0, prev_node = 0;
 
-    while (ptr > NODE_ADDR(nodes[cur_node])) {
+    while (ptr != NODE_ADDR(nodes[cur_node])) {
         /* check if current and previous node are free */
         if (cur_node && nodes[cur_node].free && nodes[prev_node].free) {
             /* check for overflow */
@@ -150,8 +157,16 @@ void kfree(void *_ptr)
         }
     }
 
+    if (nodes[cur_node].free)   /* Node is already free, dangling pointer? */
+        return;
+
     /* First we mark our node as free */
     nodes[cur_node].free = 1;
+
+    kvmem_used -= NODE_SIZE(nodes[cur_node]);
+    if (debug_kmalloc)
+        printk("NODE_SIZE %d\n", NODE_SIZE(nodes[cur_node]));
+    kvmem_obj_cnt--;
 
     /* Now we merge all free nodes ahead -- except the last node */
     while (nodes[cur_node].next < LAST_NODE_INDEX && nodes[cur_node].free) {
@@ -190,20 +205,3 @@ void dump_nodes()
         i = nodes[i].next;
     }
 }
-
-/*
-void x86_ap_mm_setup()
-{
-    int i;
-    for(i = 0; i < 1024; ++i)
-        AP_KPT[i] = (0x1000 * i) | 3;
-
-    AP_PD[0] = (uint32_t)AP_KPT | 3;
-    //PD[1] = 0x400083;
-    //AP_LKPT[1023] = (uint32_t)AP_PD | 3;
-
-    asm volatile("mov %%eax, %%cr3;"::"a"(AP_PD));
-    asm volatile("mov %%cr4, %%eax; or %0, %%eax; mov %%eax, %%cr4;"::"g"(0x10));
-    asm volatile("mov %%cr0, %%eax; or %0, %%eax; mov %%eax, %%cr0;"::"g"(0x80000000));
-}
-*/

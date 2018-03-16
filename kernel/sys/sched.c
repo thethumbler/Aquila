@@ -5,12 +5,14 @@
 #include <sys/sched.h>
 #include <ds/queue.h>
 
-queue_t *ready_queue = NEW_QUEUE;   /* Ready processes queue */
-proc_t *cur_proc = NULL;
+queue_t *ready_queue = NEW_QUEUE;   /* Ready threads queue */
+thread_t *cur_thread = NULL;
 
-void make_ready(proc_t *proc)
+void thread_ready(thread_t *thread)
 {
-    enqueue(ready_queue, proc);
+    struct queue_node *sched_node = enqueue(ready_queue, thread);
+    thread->sched_queue = ready_queue;
+    thread->sched_node = sched_node;
 }
 
 int kidle = 0;
@@ -20,39 +22,45 @@ void kernel_idle()
     arch_idle();
 }
 
-void spawn_proc(proc_t *proc)   /* Starts process execution */
+void thread_spawn(thread_t *thread)   /* Starts thread execution */
 {
-    proc->spawned = 1;
-    arch_spawn_proc(proc);
+    thread->spawned = 1;
+    arch_thread_spawn(thread);
 }
 
-void spawn_init(proc_t *init)
+void proc_init_spawn(proc_t *init)
 {
-    init_process(init);
-    init->state = RUNNABLE;
+    printk("proc_init_spawn(init=%p)\n", init);
+    proc_init(init);
     init->cwd = strdup("/");
+
     arch_sched_init();
-    cur_proc = init;
-    spawn_proc(init);
+
+    //init->thread->state = RUNNABLE;
+    cur_thread = (thread_t *) init->threads.head->value;
+    cur_thread->state = RUNNABLE;
+    thread_spawn(cur_thread);
 }
 
 void schedule() /* Called from arch-specific timer event handler */
 {
     if (!ready_queue)    /* How did we even get here? */
-        panic("Processes queue is not initialized");
+        panic("Threads queue is not initialized");
 
     if (!kidle)
-        make_ready(cur_proc);
+        thread_ready(cur_thread);
 
     kidle = 0;
 
-    if (!ready_queue->count) /* No ready processes, idle */
+    if (!ready_queue->count) /* No ready threads, idle */
         kernel_idle();
 
-    cur_proc = dequeue(ready_queue);
+    cur_thread = dequeue(ready_queue);
+    cur_thread->sched_node = NULL;
 
-    if (cur_proc->spawned)
-        arch_switch_proc(cur_proc);
-    else
-        spawn_proc(cur_proc);
+    if (cur_thread->spawned) {
+        arch_thread_switch(cur_thread);
+    } else {
+        thread_spawn(cur_thread);
+    }
 }

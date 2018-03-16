@@ -4,8 +4,7 @@
 #include <sys/proc.h>
 
 /* Common types for sys */
-struct arch_load_elf
-{
+struct arch_binfmt {
 	uintptr_t cur;
 	uintptr_t new;
 };

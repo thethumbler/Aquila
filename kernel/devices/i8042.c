@@ -2,7 +2,7 @@
  *	        Intel 8042 (PS/2 Controller) Driver
  *
  *
- *  This file is part of Aquila OS and is released under
+ *  This file is part of AquilaOS and is released under
  *  the terms of GNU GPLv3 - See LICENSE.
  *
  */
@@ -31,7 +31,7 @@ static void i8042_read_wait()
 	while (inb(STAT_PORT) & IN_BUF_FULL);
 }
 
-static void i8042_first_handler(regs_t *r __attribute__((unused)))
+static void i8042_first_handler()
 {
 	i8042_read_wait();
 	int scancode = inb(DATA_PORT);
@@ -39,7 +39,7 @@ static void i8042_first_handler(regs_t *r __attribute__((unused)))
 		channel1_handler(scancode);
 }
 
-static void i8042_second_handler(regs_t *r __attribute__((unused)))
+static void i8042_second_handler()
 {
 	i8042_read_wait();
 	int scancode = inb(DATA_PORT);

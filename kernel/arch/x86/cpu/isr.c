@@ -9,10 +9,11 @@
  */
 
 #include <core/system.h>
+#include <core/arch.h>
+
 #include <core/panic.h>
 #include <core/string.h>
 #include <cpu/cpu.h>
-#include <core/arch.h>
 #include <sys/sched.h>
 #include <mm/mm.h>
 
@@ -98,11 +99,11 @@ void interrupt(regs_t *regs)
 
     //x86_dump_registers(regs);
 
-    if (int_num == 0xE && cur_proc && regs->cs == X86_CS) {   /* Page fault from user-space */
+    if (int_num == 0xE && cur_thread && regs->cs == X86_CS) {   /* Page fault from user-space */
 
         if (regs->eip == 0x0FFF) {  /* Signal return */
             //printk("Returned from signal [regs=%p]\n", regs);
-            x86_proc_t *arch = cur_proc->arch;
+            x86_thread_t *arch = cur_thread->arch;
 
             /* Fix kstack and regs pointers*/
             arch->regs = (regs_t *) arch->kstack;
@@ -123,7 +124,7 @@ void interrupt(regs_t *regs)
     }
 	
 	if (int_num == 0x80) {	/* syscall */
-		x86_proc_t *arch = cur_proc->arch;
+		x86_thread_t *arch = cur_thread->arch;
 		arch->regs = regs;
 		arch_syscall(regs);
 		return;

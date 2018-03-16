@@ -2,12 +2,12 @@
 #include <core/string.h>
 #include <core/arch.h>
 #include <sys/proc.h>
-#include <sys/elf.h>
+#include <sys/binfmt.h>
 #include <mm/mm.h>
 
-proc_t *execve_proc(proc_t *proc, const char *fn, char * const _argp[], char * const _envp[])
+int proc_execve(thread_t *thread, const char *fn, char * const _argp[], char * const _envp[])
 {
-
+    proc_t *proc = thread->owner;
     char **u_argp = (char **) _argp;
     char **u_envp = (char **) _envp;
 
@@ -33,9 +33,8 @@ proc_t *execve_proc(proc_t *proc, const char *fn, char * const _argp[], char * c
     for (int i = 0; i < envc; ++i)
         envp[i] = strdup(u_envp[i]);
 
-    proc_t *p = load_elf_proc(proc, fn);
-    
-    if (!p) {
+    int err;
+    if ((err = binfmt_load(proc, fn, NULL))) {
         /* Free used resources */
         for (int i = 0; i < argc + 1; ++i)
             kfree(argp[i]);
@@ -44,12 +43,13 @@ proc_t *execve_proc(proc_t *proc, const char *fn, char * const _argp[], char * c
         for (int i = 0; i < envc + 1; ++i)
             kfree(envp[i]);
         kfree(envp);
-        return NULL;
+
+        return err;
     }
 
-    p->spawned = 0;
+    thread->spawned = 0;
     
-    arch_sys_execve(p, argc + 1, argp, envc + 1, envp);
+    arch_sys_execve(proc, argc + 1, argp, envc + 1, envp);
 
     /* Free used resources */
     for (int i = 0; i < argc + 1; ++i)
@@ -60,5 +60,5 @@ proc_t *execve_proc(proc_t *proc, const char *fn, char * const _argp[], char * c
         kfree(envp[i]);
     kfree(envp);
     
-    return p;
+    return 0;
 }

@@ -50,16 +50,16 @@ int sig_default_action[] = {
 
 int send_signal(pid_t pid, int signal)
 {
-    if (cur_proc->pid == pid) {
+    if (cur_thread->owner->pid == pid) {
         arch_handle_signal(signal);
         return 0;
     } else {
-        proc_t *proc = get_proc_by_pid(pid);
+        proc_t *proc = proc_pid_find(pid);
 
         if (!proc) {
             return -ESRCH;
         } else {
-            enqueue(proc->signals_queue, (void *) signal);
+            enqueue(proc->sig_queue, (void *) signal);
             return 0;
         }
     }

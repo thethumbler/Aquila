@@ -188,10 +188,13 @@ static void set(struct lw_terminal_vt100 *headless_term,
                 unsigned int x, unsigned int y,
                 char c)
 {
-    if (y < headless_term->margin_top || y > headless_term->margin_bottom)
+    if (y < headless_term->margin_top || y > headless_term->margin_bottom) {
         headless_term->frozen_screen[FROZEN_SCREEN_PTR(headless_term, x, y)] = c;
-    else
+    } else {
         headless_term->screen[SCREEN_PTR(headless_term, x, y)] = c;
+        //fbterm_set_cursor(headless_term->ctx, x, y);
+        //fbterm_write(headless_term->ctx, &c, 1);
+    }
 }
 
 
@@ -225,6 +228,8 @@ static void blank_screen(struct lw_terminal_vt100 *lw_terminal_vt100)
     for (x = 0; x < lw_terminal_vt100->width; ++x)
         for (y = 0; y < lw_terminal_vt100->height; ++y)
             set(lw_terminal_vt100, x, y, ' ');
+
+    //fbterm_clear(lw_terminal_vt100->ctx);
 }
 
 /*
@@ -913,13 +918,12 @@ const char **lw_terminal_vt100_getlines(struct lw_terminal_vt100 *vt100)
 {
     unsigned int y;
 
-    //pthread_mutex_lock(&vt100->mutex);
     for (y = 0; y < vt100->height; ++y)
     if (y < vt100->margin_top || y > vt100->margin_bottom)
         vt100->lines[y] = vt100->frozen_screen + FROZEN_SCREEN_PTR(vt100, 0, y);
     else
         vt100->lines[y] = vt100->screen + SCREEN_PTR(vt100, 0, y);
-    //pthread_mutex_unlock(&vt100->mutex);
+
     return (const char **)vt100->lines;
 }
 
@@ -952,7 +956,7 @@ struct lw_terminal_vt100 *lw_terminal_vt100_init(void *user_data, unsigned int w
     this->selected_charset = 0;
     this->x = 0;
     this->y = 0;
-    this->modes = MASK_DECANM;
+    this->modes = MASK_DECANM | MASK_DECOM;
     this->top_line = 0;
     this->lw_terminal = lw_terminal_parser_init();
     if (this->lw_terminal == NULL)
@@ -995,9 +999,7 @@ free_this:
 
 void lw_terminal_vt100_read_str(struct lw_terminal_vt100 *this, char *buffer)
 {
-    //pthread_mutex_lock(&this->mutex);
     lw_terminal_parser_read_str(this->lw_terminal, buffer);
-    //pthread_mutex_unlock(&this->mutex);
 }
 
 void lw_terminal_vt100_destroy(struct lw_terminal_vt100 *this)

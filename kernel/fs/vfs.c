@@ -211,11 +211,13 @@ static void vfs_init(void)
     //extern struct fs ext2fs;
     extern struct fs devfs;
     extern struct fs devpts;
+    extern struct fs procfs;
 
     struct fs *fs_list[] = {
         &devfs,
         &devpts,
         //&ext2fs,
+        &procfs,
         NULL
     };
 
@@ -372,6 +374,24 @@ static ssize_t vfs_readdir(struct inode *inode, off_t offset, struct dirent *dir
     return inode->fs->iops.readdir(inode, offset, dirent);
 }
 
+static int vfs_close(struct inode *inode)
+{
+    /* Invalid request */
+    if (!inode || !inode->fs)
+        return -EINVAL;
+
+    /* Operation not supported */
+    if (!inode->fs->iops.close)
+        return -ENOSYS;
+
+    --inode->ref;
+
+    if (inode->ref <= 0) {
+        return inode->fs->iops.close(inode);
+    }
+
+    return 0;
+}
 
 static int vfs_mount(const char *type, const char *dir, int flags, void *data)
 {
@@ -535,12 +555,6 @@ static int vfs_file_eof(struct file *file)
 
 /* ================== VFS vnode ops mappings ================== */
 
-static int vfs_vrelease(struct vnode *vnode)
-{
-    kfree(vnode);
-    return 0;
-}
-
 static int vfs_vget(struct vnode *vnode, struct inode **inode)
 {
     if (!vnode || !vnode->super || !vnode->super->fs)
@@ -566,6 +580,7 @@ struct vfs vfs = (struct vfs) {
     .write   = vfs_write,
     .ioctl   = vfs_ioctl,
     .readdir = vfs_readdir,
+    .close   = vfs_close,
 
     /* file operations mappings */
     .fops = {

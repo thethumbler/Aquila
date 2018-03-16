@@ -11,11 +11,11 @@ void arch_syscall(regs_t *r)
 	syscall(r->ebx, r->ecx, r->edx);
 }
 
-void arch_syscall_return(proc_t *proc, uintptr_t val)
+void arch_syscall_return(thread_t *thread, uintptr_t val)
 {
-	x86_proc_t *arch = proc->arch;
+	x86_thread_t *arch = thread->arch;
 
-	if (proc->spawned)
+	if (thread->spawned)
 		arch->regs->eax = val;
 	else
 		arch->eax = val;

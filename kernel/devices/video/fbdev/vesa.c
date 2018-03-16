@@ -13,7 +13,6 @@ static struct fb_var_screeninfo vesa_var_screeninfo;
 
 static ssize_t fbdev_vesa_write(struct inode *node, off_t offset, size_t size, void *buf)
 {
-    printk("fbdev_vesa_write(node=%p, offset=%d, size=%d, buf=%p)\n", node, offset, size, buf);
     /* Maximum possible write size */
     size = MIN(size, node->size - offset);
     

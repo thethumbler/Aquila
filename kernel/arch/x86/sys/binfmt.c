@@ -6,9 +6,9 @@
 
 #include "sys.h"
 
-void *arch_load_elf()
+void *arch_binfmt_load()
 {
-    static struct arch_load_elf ret;
+    static struct arch_binfmt ret;
 
     ret.cur = get_current_page_directory();
     ret.new = get_new_page_directory();
@@ -18,8 +18,8 @@ void *arch_load_elf()
     return &ret;
 }
 
-void arch_load_elf_end(void *d)
+void arch_binfmt_end(void *d)
 {
-    struct arch_load_elf *p = (struct arch_load_elf *) d;
+    struct arch_binfmt *p = (struct arch_binfmt *) d;
     pmman.switch_mapping(p->cur);
 }

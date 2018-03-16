@@ -32,17 +32,37 @@ static int pipefs_can_write(struct file *file, size_t size)
 	return size >= pipe->ring->size - ring_available(pipe->ring);
 }
 
-static struct pipe *pipefs_mkpipe()
+static int pipefs_mkpipe(struct pipe **pipe)
 {
     struct pipe *p = kmalloc(sizeof(struct pipe));
+
+    if (!p)
+        return -ENOMEM;
+
     memset(p, 0, sizeof(struct pipe));
     p->ring = new_ring(PIPE_BUF_LEN);
-    return p;
+    
+    if (!p->ring) {
+        kfree(p);
+        return -ENOMEM;
+    }
+
+    if (pipe)
+        *pipe = p;
+
+    return 0;
 }
 
 int pipefs_pipe(struct file *read, struct file *write)
 {
-    struct pipe *pipe = pipefs_mkpipe();
+    int ret = 0;
+    struct pipe *pipe = NULL;
+
+    ret = pipefs_mkpipe(&pipe);
+
+    if (ret)
+        return ret;
+
     read->node = kmalloc(sizeof(struct inode));
     write->node = kmalloc(sizeof(struct inode));
 

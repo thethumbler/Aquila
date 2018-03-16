@@ -7,24 +7,30 @@
 #define X86_EFLAGS	(0x200)
 #define X86_CS		(0x18 | 3)
 
-typedef struct
-{
+typedef struct {
 	uintptr_t	pd; /* Page Directory */
+} __attribute__((packed)) x86_proc_t;
 
+typedef struct {
 	uintptr_t	kstack;	/* Kernel stack */
 	uintptr_t	eip;
 	uintptr_t	esp;
 	uintptr_t	ebp;
 	uintptr_t	eflags;
-	uintptr_t	eax;	/* For syscall return if process is not spawned */
+	uintptr_t	eax;	/* For syscall return if thread is not spawned */
 	regs_t		*regs;	/* Pointer to registers on the stack */
 
     void        *fpu_context;
 
     /* Flags */
     int fpu_enabled : 1;
-} __attribute__((packed)) x86_proc_t;
+} __attribute__((packed)) x86_thread_t;
 
 void arch_syscall(regs_t *r);
+
+#define USER_STACK		(0xC0000000UL)
+#define USER_STACK_BASE (USER_STACK - USER_STACK_SIZE)
+
+#define KERN_STACK_SIZE	(8192U)	/* 8 KiB */
 
 #endif /* ! _X86_ARCH_H */

@@ -15,38 +15,110 @@
 #include <mm/mm.h>
 #include <sys/proc.h>
 #include <ds/queue.h>
+#include <bits/errno.h>
 
-proc_t *fork_proc(proc_t *proc)
+static int copy_fds(proc_t *parent, proc_t *fork)
 {
-    /* Copy parent proc structure */
-    proc_t *fork = new_proc();
-    memcpy(fork, proc, sizeof(proc_t));
-
-    fork->name = strdup(proc->name);
-    fork->pid = get_pid();
-    fork->parent = proc;
-    fork->spawned = 1;
-    fork->cwd = strdup(proc->cwd);
-    
-    /* Allocate new signals queue */
-    fork->signals_queue = new_queue();
-
     /* Copy open files descriptors */
     fork->fds = kmalloc(FDS_COUNT * sizeof(struct file));
-    memcpy(fork->fds, proc->fds, FDS_COUNT * sizeof(struct file));
 
-    /* Call arch specific fork handler */
-    int retval = arch_sys_fork(fork);
+    if (!fork->fds)
+        return -ENOMEM;
 
-    if (!retval) {
-        arch_syscall_return(fork, 0);
-        arch_syscall_return(proc, fork->pid);
-    } else {
-        arch_syscall_return(proc, retval);
-        kfree(fork->fds);
-        kfree(fork);
-        return NULL;
+    memcpy(fork->fds, parent->fds, FDS_COUNT * sizeof(struct file));
+
+    return 0;
+}
+
+static int copy_proc(proc_t *parent, proc_t *fork)
+{
+    fork->mask = parent->mask;
+    fork->uid  = parent->uid;
+    fork->gid  = parent->gid;
+
+	fork->heap_start = parent->heap_start;
+	fork->heap  = parent->heap;
+	fork->entry = parent->entry;
+
+    memcpy(fork->sig, parent->sig, sizeof(parent->sig));
+
+    return 0;
+}
+
+int proc_fork(thread_t *thread, proc_t **fork_ref)
+{
+    printk("proc_fork(fork_ref=%p)\n", fork_ref);
+    int err = 0;
+
+    /* Copy parent proc structure */
+    proc_t *fork = proc_new();
+    thread_t *fthread = (thread_t *) fork->threads.head->value;
+
+    if (!fork)
+        return -ENOMEM;
+
+    proc_t *proc = thread->owner;
+
+    //memcpy(fork, proc, sizeof(proc_t));
+    copy_proc(proc, fork);
+
+    fork->name = strdup(proc->name);
+
+    if (!fork->name) {
+        err = -ENOMEM;
+        goto free_resources;
     }
 
-    return fork;
+    fork->pid = proc_pid_get();
+    fork->parent = proc;
+    fthread->spawned = 1;
+    fork->cwd = strdup(proc->cwd);
+
+    if (!fork->cwd) {
+        err = -ENOMEM;
+        goto free_resources;
+    }
+    
+    /* Allocate new signals queue */
+    fork->sig_queue = new_queue();
+
+    if (!fork->sig_queue) {
+        err = -ENOMEM;
+        goto free_resources;
+    }
+
+    if ((err = copy_fds(proc, fork)))
+        goto free_resources;
+
+    /* Call arch specific fork handler */
+    err = arch_proc_fork(thread, fork);
+    //printk("fthread %p, fork->thread %p\n", fthread, fork->thread);
+    //printk("fthread->arch %p, fork->thread->arch %p\n", fthread->arch, fork->thread->arch);
+
+    if (!err) {
+        arch_syscall_return(fthread, 0);
+        arch_syscall_return(thread, fork->pid);
+    } else {
+        arch_syscall_return(thread, err);
+        goto free_resources;
+    }
+
+    if (fork_ref)
+        *fork_ref = fork;
+
+    return 0;
+
+free_resources:
+    if (fork) {
+        if (fork->name)
+            kfree(fork->name);
+        if (fork->cwd)
+            kfree(fork->cwd);
+        if (fork->sig_queue)
+            kfree(fork->sig_queue);
+
+        kfree(fork);
+    }
+
+    return err;
 }

@@ -68,6 +68,7 @@ static int devfs_vget(struct vnode *vnode, struct inode **inode)
 
     /* Inode is always present in memory */
     struct inode *node = (struct inode *) vnode->id;
+    node->ref++;
 
     if (inode)
         *inode = node;
@@ -75,19 +76,10 @@ static int devfs_vget(struct vnode *vnode, struct inode **inode)
     return 0;
 }
 
-#if 0
-static struct inode *devfs_traverse(struct vfs_path *path)
+static int devfs_close(struct inode *inode)
 {
-    //printk("devfs_traverse(path=%p)\n", path);
-    struct fs_node *dir = path->mountpoint;
-
-    foreach (token, path->tokens) {
-        dir = devfs_find(dir, token);
-    }
-
-    return dir;
+    return 0;
 }
-#endif
 
 static ssize_t devfs_read(struct inode *node, off_t offset, size_t size, void *buf)
 {

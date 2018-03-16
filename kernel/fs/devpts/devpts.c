@@ -245,7 +245,7 @@ static void new_pty(proc_t *proc, struct inode **master)
 /* File Operations */
 static int ptmx_open(struct file *file)
 {   
-    new_pty(cur_proc, &(file->node));
+    new_pty(cur_thread->owner, &(file->node));
     return 0;
 }
 

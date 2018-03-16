@@ -36,7 +36,7 @@ void ps2kbd_handler(int scancode)
     ring_write(kbd_ring, sizeof(scancode), (char *) &scancode);
     
     if (kbd_read_queue->count)
-        wakeup_queue(kbd_read_queue);
+        thread_queue_wakeup(kbd_read_queue);
 }
 
 void ps2kbd_register()
@@ -74,7 +74,7 @@ static int ps2kbd_file_open(struct file *file)
     if (proc) /* Only one process can open kbd */
         return -EACCES;
 
-    proc = cur_proc;
+    proc = cur_thread->owner;
     return generic_file_open(file);
 }
 

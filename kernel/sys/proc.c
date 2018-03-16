@@ -25,20 +25,27 @@
 
 queue_t *procs = NEW_QUEUE; /* All processes queue */
 
-int get_pid()
+int proc_pid_get()
 {
+    /* TODO: Use bitmap */
     static int pid = 0;
     return ++pid;
 }
 
-proc_t *new_proc()
+proc_t *proc_new(void)
 {
     proc_t *proc = kmalloc(sizeof(proc_t));
+    memset(proc, 0, sizeof(proc_t));
+
+    thread_t *thread;
+    thread_new(proc, &thread);
+    proc->running = 1;
+
     enqueue(procs, proc);   /* Add process to all processes queue */
     return proc;
 }
 
-proc_t *get_proc_by_pid(pid_t pid)
+proc_t *proc_pid_find(pid_t pid)
 {
     forlinked (node, procs->head, node->next) {
         proc_t *proc = node->value;
@@ -49,23 +56,47 @@ proc_t *get_proc_by_pid(pid_t pid)
     return NULL;
 }
 
-void init_process(proc_t *proc)
+int proc_init(proc_t *proc)
 {
-    proc->pid = get_pid();
+    int err = 0;
+
+    if (!proc)
+        return -EINVAL;
+
+    proc->pid = proc_pid_get();
 
     proc->fds  = kmalloc(FDS_COUNT * sizeof(struct file));
+
+    if (!proc->fds) {
+        err = -ENOMEM;
+        goto free_resources;
+    }
+
     memset(proc->fds, 0, FDS_COUNT * sizeof(struct file));
 
-    proc->signals_queue = new_queue();  /* Initalize signals queue */
+    proc->sig_queue = new_queue();  /* Initalize signals queue */
+    if (!proc->sig_queue) {
+        err = -ENOMEM;
+        goto free_resources;
+    }
+
+    return 0;
+
+free_resources:
+    if (proc->fds)
+        kfree(proc->fds);
+    if (proc->sig_queue)
+        kfree(proc->sig_queue);
+
+    return err;
 }
 
-void kill_proc(proc_t *proc)
+void proc_kill(proc_t *proc)
 {
+    proc->running = 0;
+
     /* Free resources */
-    //arch_kill_proc(proc);
-    extern proc_t *last_fpu_proc;
-    if (last_fpu_proc == proc)
-        last_fpu_proc = NULL;
+    arch_proc_kill(proc);
 
     /* Unmap memory */
     pmman.unmap_full((uintptr_t) NULL, (uintptr_t) proc->heap);
@@ -73,32 +104,47 @@ void kill_proc(proc_t *proc)
 
     /* Free kernel-space resources */
     kfree(proc->fds);
+    kfree(proc->cwd);
 
-    while (proc->signals_queue->count)
-        dequeue(proc->signals_queue);
+    while (proc->sig_queue->count)
+        dequeue(proc->sig_queue);
 
-    kfree(proc->signals_queue);
+    kfree(proc->sig_queue);
 
-    /* Make parent inherit all children */
+    /* Mark all children as orphans */
     forlinked (node, procs->head, node->next) {
         proc_t *_proc = node->value;
 
         if (_proc->parent == proc)
-            _proc->parent = proc->parent;
+            _proc->parent = NULL;
     }
 
-    proc->state = ZOMBIE;
+    kfree(proc->name);
+
+    /* Kill all threads */
+    while (proc->threads.count) {
+        thread_t *thread = dequeue(&proc->threads);
+
+        if (thread->sleep_node) /* Thread is sleeping on some queue */
+            queue_node_remove(thread->sleep_queue, thread->sleep_node);
+
+        if (thread->sched_node) /* Thread is in the scheduler queue */
+            queue_node_remove(thread->sched_queue, thread->sched_node);
+
+        thread_kill(thread);
+        kfree(thread);
+    }
 }
 
-void reap_proc(proc_t *proc)
+int proc_reap(proc_t *proc)
 {
     queue_remove(procs, proc);
-
-    kfree(proc->name);
     kfree(proc);
+
+    return 0;
 }
 
-int get_fd(proc_t *proc)
+int proc_fd_get(proc_t *proc)
 {
     for (int i = 0; i < FDS_COUNT; ++i) {
         if (!proc->fds[i].node) {
@@ -110,42 +156,14 @@ int get_fd(proc_t *proc)
     return -1;
 }
 
-void release_fd(proc_t *proc, int fd)
+void proc_fd_release(proc_t *proc, int fd)
 {
     if (fd < FDS_COUNT) {
         proc->fds[fd].node = NULL;
     }
 }
 
-int sleep_on(queue_t *queue)
-{
-    printk("[%d] %s: Sleeping on queue %p\n", cur_proc->pid, cur_proc->name, queue);
-    enqueue(queue, cur_proc);
-    cur_proc->state = ISLEEP;
-    arch_sleep();
-
-    /* Woke up */
-    if (cur_proc->state != ISLEEP) {
-        /* A signal interrupted the sleep */
-        printk("[%d] %s: Sleeping was interrupted by a signal\n", cur_proc->pid, cur_proc->name);
-        return -1;
-    } else {
-        cur_proc->state = RUNNABLE;
-        return 0;
-    }
-}
-
-void wakeup_queue(queue_t *queue)
-{
-    //printk("wakeup_queue(queue=%p)\n", queue);
-    while (queue->count > 0) {
-        proc_t *proc = dequeue(queue);
-        printk("[%d] %s: Waking up from queue %p\n", proc->pid, proc->name, queue);
-        make_ready(proc);
-    }
-}
-
-int validate_ptr(proc_t *proc, void *ptr)
+int proc_ptr_validate(proc_t *proc, void *ptr)
 {
     uintptr_t uptr = (uintptr_t) ptr;
     if (!(uptr >= proc->entry && uptr <= proc->heap))

@@ -5,7 +5,8 @@
 
 void arch_sys_execve(proc_t *proc, int argc, char * const _argp[], int envc, char * const _envp[])
 {
-    x86_proc_t *arch = proc->arch;
+    thread_t *thread = (thread_t *) proc->threads.head->value;
+    x86_thread_t *arch = thread->arch;
 
     arch->eip = proc->entry;
     arch->eflags = X86_EFLAGS;

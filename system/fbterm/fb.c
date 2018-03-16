@@ -50,9 +50,6 @@ void fb_term_init(struct fbterm_ctx *ctx)
 {
     ctx->rows = yres/ctx->font->rows;
     ctx->cols = xres/ctx->font->cols;
-
-    //char *wallpaper;
-    //char *textbuf;
     ctx->backbuf = calloc(1, yres * line_length);
 }
 

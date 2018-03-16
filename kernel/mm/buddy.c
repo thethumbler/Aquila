@@ -14,6 +14,7 @@
 #include <ds/bitmap.h>
 #include <mm/heap.h>
 
+size_t k_total_mem, k_used_mem;
 
 #define BUDDY_MAX_ORDER (10)
 #define BUDDY_MIN_BS (4096)
@@ -111,6 +112,8 @@ uintptr_t buddy_alloc(size_t _sz)
         sz <<= 1;
     }
 
+    k_used_mem += sz;
+
     size_t idx = buddy_recursive_alloc(order);
 
     if (idx != (size_t) -1)
@@ -137,6 +140,8 @@ void buddy_free(uintptr_t addr, size_t size)
             break;
         sz <<= 1;
     }
+
+    k_used_mem -= sz;
 
     size_t idx = (addr / (BUDDY_MIN_BS << order)) & (sz - 1);
 
@@ -175,6 +180,9 @@ void buddy_set_unusable(uintptr_t addr, size_t size)
 void buddy_setup(size_t total_mem)
 {
     printk("[0] Kernel: PMM -> Setting up Buddy System\n");
+
+    k_total_mem = total_mem;
+    k_used_mem  = 0;
 
     size_t total_size = 0;
     size_t bits_cnt = total_mem / BUDDY_MAX_BS;
