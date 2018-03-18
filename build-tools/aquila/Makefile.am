@@ -18,7 +18,7 @@ lib_a_CCASFLAGS = $(AM_CCASFLAGS)
 lib_a_CFLAGS = $(AM_CFLAGS)
 
 if MAY_SUPPLY_SYSCALLS
-all: crt0.o crti.o crtn.o
+all: crt0.o
 endif
 
 ACLOCAL_AMFLAGS = -I ../../..

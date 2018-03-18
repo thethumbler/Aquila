@@ -46,8 +46,9 @@ fi;
 #
 
 # Fetch autoconf and automake if not present
-if [[ ! -f autoconf-2.65.tar.gz ]]; then
-	wget https://ftp.gnu.org/gnu/autoconf/autoconf-2.65.tar.gz;
+#if [[ ! -f autoconf-2.65.tar.gz ]]; then
+if [[ ! -f autoconf-2.69.tar.gz ]]; then
+    wget https://ftp.gnu.org/gnu/autoconf/autoconf-2.69.tar.gz;
 fi;
 
 if [[ ! -f automake-1.12.1.tar.gz ]]; then
@@ -56,9 +57,10 @@ fi;
 
 # Unpack and build
 
-if [[ ! -d autoconf-2.65 ]]; then
-	tar xzf autoconf-2.65.tar.gz;
-    cd autoconf-2.65 && ./configure --prefix=$top_dir/sys && make && make install;
+#if [[ ! -d autoconf-2.65 ]]; then
+if [[ ! -d autoconf-2.69 ]]; then
+	tar xzf autoconf-2.69.tar.gz;
+    cd autoconf-2.69 && ./configure --prefix=$top_dir/sys && make && make install;
     cd ..;
 fi;
 
@@ -71,20 +73,24 @@ fi;
 
 # newlib
 # Fetch
-if [[ ! -f newlib-2.2.0-1.tar.gz ]]; then
-	wget ftp://sourceware.org/pub/newlib/newlib-2.2.0-1.tar.gz;
+if [[ ! -f "newlib-3.0.0.tar.gz" ]]; then
+    wget "ftp://sourceware.org/pub/newlib/newlib-3.0.0.tar.gz";
 fi;
 
+
 # Patch & Build
-if [[ ! -d newlib-2.2.0-1 ]]; then
-    tar -xzf newlib-2.2.0-1.tar.gz;
-    cp aquila newlib-2.2.0-1/newlib/libc/sys/ -r;
-    cd newlib-2.2.0-1;
+if [[ ! -d newlib-3.0.0 ]]; then
+    tar -xzf newlib-3.0.0.tar.gz;
+    cp aquila newlib-3.0.0/newlib/libc/sys/ -r;
+    cd newlib-3.0.0;
     patch -p1 < ../patches/newlib.patch;
-    cd newlib/libc/sys;
+    cd newlib/libc/sys/aquila;
+    $top_dir/sys/bin/aclocal -I ../../..;
+    $top_dir/sys/bin/automake --cygnus Makefile;
+    cd ..;
     $top_dir/sys/bin/autoconf;
-    cd aquila
-    $top_dir/sys/bin/autoconf
+    cd aquila;
+    $top_dir/sys/bin/autoconf;
     cd $top_dir;
 
     # Link binaries
@@ -98,7 +104,7 @@ fi;
 # Always rebuild newlib
 export PATH=$top_dir/sys/bin:$PATH;
 rm -rf build-newlib && mkdir -p build-newlib && cd build-newlib;
-../newlib-2.2.0-1/configure --prefix=/usr --target=i686-aquila;
+../newlib-3.0.0/configure --prefix=/usr --target=i686-aquila;
 make all;
 make DESTDIR=$top_dir/libc/sysroot install;
 cd ..;
