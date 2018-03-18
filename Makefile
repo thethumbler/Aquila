@@ -14,6 +14,8 @@ aquila.iso: kernel ramdisk
 kernel: iso/kernel.elf
 ramdisk: iso/initrd.img
 system:
+	$(RM) -rf system/usr
+	$(CP) build-tools/libc/sysroot/usr system/usr -r
 	$(MAKE) -C system/
 
 .PHONY: iso/kernel.elf
