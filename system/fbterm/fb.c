@@ -14,7 +14,7 @@
 static struct fb_fix_screeninfo fix_screeninfo;
 static struct fb_var_screeninfo var_screeninfo;
 static int fb = -1;
-static unsigned xres, yres, line_length;
+static unsigned xres, yres, line_length, bpp;
 
 #define COLORMERGE(f, b, c)	((b) + (((f) - (b)) * (c) >> 8u))
 #define _R(c)   (((c) >> 3*8) & 0xFF)
@@ -38,6 +38,20 @@ void fb_clear(struct fbterm_ctx *ctx)
 
     if (ctx->wallpaper)
         memcpy(ctx->backbuf, ctx->wallpaper, yres*line_length);
+}
+
+void fb_rect_clear(struct fbterm_ctx *ctx, size_t x0, size_t x1, size_t y0, size_t y1)
+{
+    for (size_t y = y0; y < y1; ++y) {
+        memset(ctx->backbuf + (y * line_length) + x0 * bpp, 0, (x1 - x0) * bpp);
+    }
+
+    if (ctx->wallpaper) {
+        for (size_t y = y0; y < y1; ++y) {
+            size_t off = (y * line_length) + x0 * bpp;
+            memcpy(ctx->backbuf + off, ctx->wallpaper + off, (x1 - x0) * bpp);
+        }
+    }
 }
 
 void fb_render(struct fbterm_ctx *ctx)
@@ -140,6 +154,8 @@ int fb_init(char *path)
 
     xres = var_screeninfo.xres;
     yres = var_screeninfo.yres;
+
+    bpp  = line_length/xres;
 
     return 0;
 }

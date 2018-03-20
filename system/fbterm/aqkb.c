@@ -1,9 +1,13 @@
 #include <stdint.h>
 #include <unistd.h>
+#include <fbterm.h>
+#include <vterm.h>
+#include <vterm_keycodes.h>
 #include <aqkb.h>
 
 /* Keyboard */
 #define ESC		0x01
+
 #define  LSHIFT	0x2A
 #define _LSHIFT	0xAA
 #define  RSHIFT	0x36
@@ -18,11 +22,11 @@
 
 uint8_t kbd_us[] = 
 {
-	'\0', ESC, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
-	'\t', 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n',
-	'\0', 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'',
-	'\0', '\0', '\\', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/',
-	'\0', '\0', '\0', ' ',
+	'\0',  ESC,  '1',  '2',  '3',  '4',  '5',  '6',  '7',  '8',  '9',  '0',  '-',  '=',  '\b',
+	'\t',  'q',  'w',  'e',  'r',  't',  'y',  'u',  'i',  'o',  'p',  '[', ']', '\n',
+	'\0',  'a',  's',  'd',  'f',  'g',  'h',  'j',  'k',  'l',  ';', '\'',
+	'\0', '\0', '\\',  'z',  'x',  'c',  'v',  'b',  'n',  'm',  ',',  '.', '/',
+	'\0', '\0', '\0',  ' ',
 };
 
 uint8_t kbd_us_shift[] = 
@@ -33,24 +37,67 @@ uint8_t kbd_us_shift[] =
 	'\0', '\0', '|', 'Z', 'X', 'C', 'V', 'B', 'N', 'M', '<', '>', '?',
 };
 
+struct fbterm_ctx *active;
 
 void handle_keyboard(int fd, int scancode)
 {
-    static char shift = 0, alt = 0, ctl = 0, caps = 0;
+    static char shift = 0, alt = 0, ctl = 0, caps = 0, spec = 0;
+#define VTERM_MOD ( (shift? VTERM_MOD_SHIFT : 0) \
+                  | (alt?   VTERM_MOD_ALT   : 0) \
+                  | (ctl?   VTERM_MOD_CTRL  : 0))
 
+    if (spec) {
+        switch (scancode) {
+            case 0x53:  /* Delete */
+                vterm_keyboard_key(active->vt, VTERM_KEY_BACKSPACE, VTERM_MOD);
+                break;
+            case 0x48:  /* Cursor Up */
+                vterm_keyboard_key(active->vt, VTERM_KEY_UP, VTERM_MOD);
+                break;
+            case 0x4B:  /* Cursor Left */
+                vterm_keyboard_key(active->vt, VTERM_KEY_LEFT, VTERM_MOD);
+                break;
+            case 0x4D:  /* Cursor Right */
+                vterm_keyboard_key(active->vt, VTERM_KEY_RIGHT, VTERM_MOD);
+                break;
+            case 0x50:  /* Cursor Down */
+                vterm_keyboard_key(active->vt, VTERM_KEY_DOWN, VTERM_MOD);
+                break;
+        }
+
+        spec = 0;
+        return;
+    }
+
+    /* Detect special scancodes first */
     switch (scancode) {
         case  LSHIFT:
-        case  RSHIFT: shift = 1; return;
-
+        case  RSHIFT:
+            shift = 1; return;
         case _LSHIFT:
-        case _RSHIFT: shift = 0; return;
-        case    CAPS: caps = !caps; return;
+        case _RSHIFT:
+            shift = 0; return;
+        case    CAPS:
+            caps = !caps; return;
+        case    LALT:
+            alt = 1; return;
+        case   _LALT:
+            alt = 0; return;
+        case    LCTL: 
+            ctl = 1; return;
+        case   _LCTL:
+            ctl = 0; return;
 
-        case    LALT: alt = 1; return;
-        case   _LALT: alt = 0; return;
+        case 0xE0:
+            spec = 1; return;
 
-        case    LCTL: ctl = 1; return;
-        case   _LCTL: ctl = 0; return;
+        case 0x01:  /* ESC */
+            vterm_keyboard_key(active->vt, VTERM_KEY_ESCAPE, VTERM_MOD);
+            return;
+
+        case 0x1C:  /* Enter */
+            vterm_keyboard_key(active->vt, VTERM_KEY_ENTER, VTERM_MOD);
+            return;
     }
 
     if (scancode < 60) {
@@ -77,17 +124,29 @@ void handle_keyboard(int fd, int scancode)
                     break;
             }
         }
-
-        write(fd, &c, 1);
+        
+        vterm_push_output_sprintf(active->vt, "%c", c);
     }
 }
 
-int aqkb_loop(int kbd_fd, int out_fd)
+void *aqkb_thread(void *arg)
 {
+    extern struct fbterm_ctx term[10];
+    extern int kbd_fd;
+    extern int pty;
+
+    active = &term[0];
+
     for (;;) {
         int scancode;
         if (read(kbd_fd, &scancode, sizeof(scancode)) > 0) {
-            handle_keyboard(out_fd, scancode);
+            handle_keyboard(pty, scancode);
+
+            char buf[1024];
+            size_t s;
+            while ((s = vterm_output_read(active->vt, buf, 1024))) {
+                write(pty, buf, s);
+            }
         }
     }
 }
