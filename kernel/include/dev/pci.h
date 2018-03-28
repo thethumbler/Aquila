@@ -25,7 +25,7 @@ struct pci_dev {
     uint8_t func;
 };
 
-extern dev_t pci_bus;
+extern struct dev pci_bus;
 
 
 /*

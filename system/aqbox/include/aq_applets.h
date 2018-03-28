@@ -10,6 +10,7 @@ int cmd_mount(int, char**);
 int cmd_pwd(int, char**);
 int cmd_screenfetch(int, char**);
 int cmd_sh(int, char**);
+int cmd_stat(int, char**);
 int cmd_uname(int, char**);
 
 #define APPLET(name) {#name, cmd_##name}
@@ -27,6 +28,7 @@ struct applet {
     APPLET(pwd),
     APPLET(screenfetch),
     APPLET(sh),
+    APPLET(stat),
     APPLET(uname),
 };
 

@@ -18,7 +18,7 @@ int binfmt_elf_check(struct inode *file)
     printk("binfmt_elf_check(file=%p)\n", file);
 
     elf32_hdr_t hdr;
-    vfs.read(file, 0, sizeof(hdr), &hdr);
+    vfs_read(file, 0, sizeof(hdr), &hdr);
 
     /* Check header */
     if (hdr.magic[0] == ELFMAG0 && hdr.magic[1] == ELFMAG1 && hdr.magic[2] == ELFMAG2 && hdr.magic[3] == ELFMAG3)
@@ -29,25 +29,26 @@ int binfmt_elf_check(struct inode *file)
 
 int binfmt_elf_load(proc_t *proc, struct inode *file)
 {
-    //printk("binfmt_elf_load(proc=%p, file=%p)\n", proc, file);
+    printk("binfmt_elf_load(proc=%p, file=%p)\n", proc, file);
+
     int err = 0;
 
     elf32_hdr_t hdr;
-    vfs.read(file, 0, sizeof(hdr), &hdr);
+    vfs_read(file, 0, sizeof(hdr), &hdr);
 
     uintptr_t proc_heap = 0;
     size_t offset = hdr.shoff;
     
     for (int i = 0; i < hdr.shnum; ++i) {
         elf32_section_hdr_t shdr;
-        vfs.read(file, offset, sizeof(shdr), &shdr);
+        vfs_read(file, offset, sizeof(shdr), &shdr);
         
         if (shdr.flags & SHF_ALLOC) {
             /* FIXME add some out-of-bounds handling code here */
             pmman.map(shdr.addr, shdr.size, URWX);  /* FIXME URWX, are you serious? */
 
             if (shdr.type == SHT_PROGBITS) {
-                vfs.read(file, shdr.off, shdr.size, (void *) shdr.addr);
+                vfs_read(file, shdr.off, shdr.size, (void *) shdr.addr);
             } else {
                 memset((void *) shdr.addr, 0, shdr.size);
             }
@@ -63,5 +64,5 @@ int binfmt_elf_load(proc_t *proc, struct inode *file)
     proc->heap = proc_heap;
     proc->entry = hdr.entry;
 
-    return 0;
+    return err;
 }

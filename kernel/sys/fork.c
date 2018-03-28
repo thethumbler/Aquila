@@ -32,6 +32,9 @@ static int copy_fds(proc_t *parent, proc_t *fork)
 
 static int copy_proc(proc_t *parent, proc_t *fork)
 {
+    fork->pgrp = parent->pgrp;
+    fork->pgrp_node = enqueue(fork->pgrp->procs, fork);
+
     fork->mask = parent->mask;
     fork->uid  = parent->uid;
     fork->gid  = parent->gid;
@@ -40,7 +43,7 @@ static int copy_proc(proc_t *parent, proc_t *fork)
 	fork->heap  = parent->heap;
 	fork->entry = parent->entry;
 
-    memcpy(fork->sig, parent->sig, sizeof(parent->sig));
+    memcpy(fork->sigaction, parent->sigaction, sizeof(parent->sigaction));
 
     return 0;
 }

@@ -134,6 +134,18 @@ void proc_kill(proc_t *proc)
         thread_kill(thread);
         kfree(thread);
     }
+
+    /* XXX */
+    queue_node_remove(proc->pgrp->procs, proc->pgrp_node);
+
+    /* Wakeup parent if it is waiting for children */
+    if (proc->parent) {
+        thread_queue_wakeup(&proc->parent->wait_queue);
+        //signal_proc_send(proc->parent, SIGCHLD);
+    } else { 
+        /* Orphan zombie, just reap it */
+        proc_reap(proc);
+    }
 }
 
 int proc_reap(proc_t *proc)
@@ -169,4 +181,51 @@ int proc_ptr_validate(proc_t *proc, void *ptr)
     if (!(uptr >= proc->entry && uptr <= proc->heap))
         return 0;
     return 1;
+}
+
+int session_new(proc_t *proc)
+{
+    session_t *session = kmalloc(sizeof(session_t));
+    pgroup_t  *pgrp = kmalloc(sizeof(pgroup_t));
+
+    session->pgps = new_queue();
+    pgrp->procs = new_queue();
+
+    pgrp->session_node = enqueue(session->pgps, pgrp);
+    proc->pgrp_node = enqueue(pgrp->procs, proc);
+
+    session->sid = proc->pid;
+    pgrp->pgid = proc->pid;
+
+    session->leader = proc;
+    pgrp->leader = proc;
+
+    pgrp->session = session;
+    proc->pgrp = pgrp;
+
+    return 0;
+}
+
+int pgrp_new(proc_t *proc, pgroup_t **ref)
+{
+    pgroup_t *pgrp = kmalloc(sizeof(pgroup_t));
+    memset(pgrp, 0, sizeof(pgroup_t));
+    pgrp->pgid = proc->pid;
+
+    queue_node_remove(proc->pgrp->procs, proc->pgrp_node);
+
+    pgrp->procs = new_queue();
+    proc->pgrp_node = enqueue(pgrp->procs, proc);
+    pgrp->session_node = enqueue(proc->pgrp->session->pgps, pgrp);
+
+    if (!proc->pgrp->procs->count) {
+        /* TODO */
+    }
+
+    proc->pgrp = pgrp;
+
+    if (ref)
+        *ref = pgrp;
+
+    return 0;
 }

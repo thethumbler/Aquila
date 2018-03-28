@@ -7,7 +7,7 @@
 extern int fbdev_register(int, void*);
 
 #define FBDEV_TYPE_VESA 1
-extern dev_t fbdev_vesa;
+extern struct dev fbdev_vesa;
 
 
 /* Linux framebuffer API */
@@ -86,7 +86,7 @@ struct fb_var_screeninfo {
 struct fbdev {
     int type;
     void *data;
-    dev_t *dev; /* Actuall device */
+    struct dev *dev; /* Actuall device */
     struct fb_fix_screeninfo *fix_screeninfo;
     struct fb_var_screeninfo *var_screeninfo;
 };

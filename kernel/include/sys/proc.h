@@ -5,6 +5,13 @@
 #include <fs/vfs.h>
 #include <ds/queue.h>
 
+typedef struct proc proc_t;
+typedef struct thread thread_t;
+typedef struct pgroup pgroup_t;
+typedef pid_t tid_t;
+
+#include <sys/signal.h>
+
 typedef struct thread thread_t;
 
 typedef enum {
@@ -13,10 +20,6 @@ typedef enum {
 	USLEEP,	/* Uninterruptable SLEEP (Waiting for event) */
 	ZOMBIE,
 } state_t;
-
-typedef struct proc proc_t;
-typedef struct thread thread_t;
-typedef pid_t tid_t;
 
 struct thread {
 	tid_t 		tid;	    /* Thread ID */
@@ -34,8 +37,28 @@ struct thread {
 	int			spawned: 1;
 } __packed;
 
+typedef struct session {
+    pid_t       sid;        /* Session ID */
+    queue_t     *pgps;      /* Process Groups */
+    proc_t      *leader;    /* Session Leader */
+} session_t;
+
+struct pgroup {
+    pid_t       pgid;       /* Process Group ID */
+    session_t   *session;   /* Associated Session */
+
+    struct queue_node *session_node;   /* Session Queue Node */
+
+    queue_t     *procs;     /* Processes */
+    proc_t      *leader;    /* Process Group Leader */
+};
+
 struct proc {
 	pid_t 		pid;	     /* Process ID */
+    pgroup_t    *pgrp;       /* Associated Process Group */
+
+    struct queue_node *pgrp_node;   /* Process Group Queue Node */
+
 	char		*name;       /* Process name */
 	struct file *fds;	     /* Open file descriptors */
 	proc_t 		*parent;     /* Parent process */
@@ -56,7 +79,7 @@ struct proc {
     size_t      threads_nr;  /* Number of threads */
 
     queue_t     *sig_queue;  /* Recieved Signals Queue */
-    uintptr_t   sig[22];     /* Registered signal handlers */
+    struct sigaction sigaction[22];   /* Registered signal handlers */
 
     queue_t     wait_queue;  /* Dummy queue for children wait */
     int         exit;        /* Exit status of process */
@@ -75,6 +98,8 @@ int proc_execve(thread_t *thread, const char *fn, char * const argv[], char * co
 /* sys/proc.c */
 proc_t *proc_new(void);
 proc_t *proc_pid_find(pid_t pid);
+int session_new(proc_t *proc);
+int pgrp_new(proc_t *proc, pgroup_t **ref_pgrp);
 
 void proc_kill(proc_t *proc);
 int  proc_reap(proc_t *proc);
@@ -89,7 +114,11 @@ int  proc_init(proc_t *proc);
 int  thread_queue_sleep(queue_t *queue);
 void thread_queue_wakeup(queue_t *queue);
 int  thread_new(proc_t *proc, thread_t **rthread);
-int  thread_create(thread_t *thread, uintptr_t stack, uintptr_t entry, uintptr_t arg, int attr, thread_t **new_thread);
+int  thread_create(thread_t *thread, uintptr_t stack, uintptr_t entry, uintptr_t uentry, uintptr_t arg, uintptr_t attr, thread_t **new_thread);
 int  thread_kill(thread_t *thread);
+
+#define _PROC_EXIT(info, code) ((((info) & 0xff) << 8) | ((code) & 0xff))
+
+#define _PROC_UIO(proc) ((struct uio){.cwd = (proc)->cwd, .uid = (proc)->uid, .gid = (proc)->gid, .mask = (proc)->mask})
 
 #endif /* !_PROC_H */

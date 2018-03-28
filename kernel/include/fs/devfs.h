@@ -3,14 +3,8 @@
 
 #include <fs/vfs.h>
 
-struct devfs_dir
-{
-	struct inode     *node;
-	struct devfs_dir *next;
-};
-
 extern struct fs devfs;
-extern struct inode *dev_root;
-extern struct vnode vdev_root;
+extern struct inode *devfs_root;
+extern struct vnode vdevfs_root;
 
 #endif /* !_DEVFS_H */

@@ -6,19 +6,19 @@
 
 #define INDEX(ring, i) ((i) % ((ring)->size))
 
-typedef struct ring {
+struct ringbuf {
 	char *buf;
 	size_t size;
 	size_t head;
 	size_t tail;
-} ring_t;
+};
 
-#define NEW_RING(sz) (&(ring_t){.buf = (char[sz]){0}, .size = sz, .head = 0, .tail = 0})
+#define RINGBUF_NEW(sz) (&(struct ringbuf){.buf = (char[sz]){0}, .size = sz, .head = 0, .tail = 0})
 
-static inline ring_t *new_ring(size_t size)
+static inline struct ringbuf *ringbuf_new(size_t size)
 {
-	ring_t *ring = kmalloc(sizeof(ring_t));
-	*ring = (ring_t) {
+	struct ringbuf *ring = kmalloc(sizeof(struct ringbuf));
+	*ring = (struct ringbuf) {
         .buf = kmalloc(size),
         .size = size,
         .head = 0,
@@ -27,7 +27,13 @@ static inline ring_t *new_ring(size_t size)
 	return ring;
 }
 
-static inline size_t ring_read(ring_t *ring, size_t n, char *buf)
+static inline void ringbuf_free(struct ringbuf *r)
+{
+    kfree(r->buf);
+    kfree(r);
+}
+
+static inline size_t ringbuf_read(struct ringbuf *ring, size_t n, char *buf)
 {
 	size_t size = n;
 
@@ -43,7 +49,7 @@ static inline size_t ring_read(ring_t *ring, size_t n, char *buf)
 	return size - n;
 }
 
-static inline size_t ring_write(ring_t *ring, size_t n, char *buf)
+static inline size_t ringbuf_write(struct ringbuf *ring, size_t n, char *buf)
 {
 	size_t size = n;
 
@@ -61,7 +67,7 @@ static inline size_t ring_write(ring_t *ring, size_t n, char *buf)
 	return size - n;
 }
 
-static inline size_t ring_available(ring_t *ring)
+static inline size_t ringbuf_available(struct ringbuf *ring)
 {
 	if (ring->tail >= ring->head)
 		return ring->tail - ring->head;

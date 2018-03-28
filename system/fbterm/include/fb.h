@@ -76,15 +76,18 @@ struct fb_var_screeninfo {
     uint32_t reserved[4];       /* Reserved for future compatibility */
 };
 
-void fb_put_pixel(struct fbterm_ctx *ctx, int x, int y, uint32_t color);
+void fb_put_pixel(struct fbterm_ctx *ctx, int x, int y, uint32_t fg, uint32_t bg);
 void fb_clear(struct fbterm_ctx *ctx);
 void fb_render(struct fbterm_ctx *ctx);
 void fb_term_init(struct fbterm_ctx *ctx);
 int fb_init(char *path);
 int fb_cook_wallpaper(struct fbterm_ctx *ctx, char *path);
+void fb_rect_clear(struct fbterm_ctx *ctx, size_t x0, size_t x1, size_t y0, size_t y1);
+void fb_rect_move(struct fbterm_ctx *ctx, size_t dx0, size_t dx1, size_t dy0, size_t dy1,
+        size_t sx0, size_t sx1, size_t sy0, size_t sy1);
 
 #define _RGBA(r, g, b, a) (((r) << 3*8) | ((g) << 2*8) | ((b) << 1*8) | ((a) << 0*8))
-#define _RGB(r, g, b, a) (((r) << 3*8) | ((g) << 2*8) | ((b) << 1*8))
+#define _RGB(r, g, b) (((r) << 3*8) | ((g) << 2*8) | ((b) << 1*8))
 #define _ALPHA(c, a) (((c) & (~0xFF)) | ((a) & 0xFF))
 
 #endif

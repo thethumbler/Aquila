@@ -9,5 +9,6 @@
 
 extern struct fs devpts;
 extern struct inode *devpts_root;
+extern struct vnode vdevpts_root;
 
 #endif

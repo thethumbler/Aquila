@@ -53,7 +53,7 @@ void arch_thread_switch(thread_t *thread)
     disable_fpu();
 
     if (thread->owner->sig_queue->count) {
-        //printk("There are %d pending signals\n", proc->signals_queue->count);
+        printk("[%d:%d] %s: There are %d pending signals\n", thread->owner->pid, thread->tid, thread->owner->name, thread->owner->sig_queue->count);
         int sig = (int) dequeue(thread->owner->sig_queue);
         arch_handle_signal(sig);
         for (;;);
@@ -63,7 +63,7 @@ void arch_thread_switch(thread_t *thread)
     x86_goto(tarch->eip, tarch->ebp, tarch->esp);
 }
 
-void arch_thread_create(thread_t *thread, uintptr_t stack, uintptr_t entry, uintptr_t arg)
+void arch_thread_create(thread_t *thread, uintptr_t stack, uintptr_t entry, uintptr_t uentry, uintptr_t arg)
 {
     printk("arch_thread_create(thread=%p, stack=%p, entry=%p, arg=%p)\n", thread, stack, entry, arg);
 
@@ -72,9 +72,17 @@ void arch_thread_create(thread_t *thread, uintptr_t stack, uintptr_t entry, uint
 
     arch->kstack = (uintptr_t) kmalloc(KERN_STACK_SIZE) + KERN_STACK_SIZE;
     arch->eip = entry;
+
+    /* Push arg */
     stack -= sizeof(void *);
     *((void **) stack) = (void *) arg;
+
+    /* Push uentry */
+    stack -= sizeof(void *);
+    *((void **) stack) = (void *) uentry;
+
     stack -= sizeof(void *);    /* Dummy return address */
+
     arch->esp = stack;
     thread->arch = arch;
 }

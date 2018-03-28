@@ -62,12 +62,12 @@ void thread_queue_wakeup(queue_t *queue)
     }
 }
 
-int thread_create(thread_t *thread, uintptr_t stack, uintptr_t entry, uintptr_t arg, int attr, thread_t **new_thread)
+int thread_create(thread_t *thread, uintptr_t stack, uintptr_t entry, uintptr_t uentry, uintptr_t arg, uintptr_t attr __unused, thread_t **new_thread)
 {
     thread_t *t = NULL;
     thread_new(thread->owner, &t);
 
-    arch_thread_create(t, stack, entry, arg);
+    arch_thread_create(t, stack, entry, uentry, arg);
 
     if (new_thread)
         *new_thread = t;

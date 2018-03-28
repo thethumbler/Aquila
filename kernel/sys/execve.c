@@ -50,6 +50,7 @@ int proc_execve(thread_t *thread, const char *fn, char * const _argp[], char * c
     thread->spawned = 0;
     
     arch_sys_execve(proc, argc + 1, argp, envc + 1, envp);
+    memset(proc->sigaction, 0, sizeof(proc->sigaction));
 
     /* Free used resources */
     for (int i = 0; i < argc + 1; ++i)

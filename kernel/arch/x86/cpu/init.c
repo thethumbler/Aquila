@@ -25,6 +25,7 @@
 
 struct cpu cpus[32];
 int cpus_count;
+struct boot *__kboot;
 
 void cpu_init()
 {
@@ -45,6 +46,7 @@ void cpu_init()
 
     printk("[0] Kernel: Processing multiboot info\n");
     struct boot *boot = process_multiboot_info(multiboot_info);
+    __kboot = boot;
 
     printk("[0] Kernel: Setting up Physical Memory Manager (PMM)\n");
     pmm_setup(boot);

@@ -5,6 +5,7 @@ hd.img
 mnt/
 build-tools/*
 system/usr
+ramdisk/sysroot
 !build-tools/build.sh
 !build-tools/aquila/
 !build-tools/patches/

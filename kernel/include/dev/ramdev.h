@@ -9,6 +9,6 @@ typedef struct
     void *addr;
 } ramdev_private_t;
 
-extern dev_t ramdev;
+extern struct dev ramdev;
 
 #endif /* !_RAMDEV_H */

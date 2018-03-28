@@ -1,3 +1,5 @@
+obj-y += open.o
+obj-y += close.o
 obj-y += read.o
 obj-y += readdir.o
 obj-y += write.o

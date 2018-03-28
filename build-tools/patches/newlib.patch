@@ -1,6 +1,6 @@
 diff -ruN ../newlib-3.0.0/config.sub ./config.sub
---- ../newlib-3.0.0/config.sub	2018-01-18 20:07:45.000000000 +0200
-+++ ./config.sub	2018-03-19 00:14:13.194758887 +0200
+--- ../newlib-3.0.0/config.sub	2018-03-24 09:00:24.892046699 +0200
++++ ./config.sub	2018-03-24 09:00:38.868210880 +0200
 @@ -1378,7 +1378,7 @@
  	      | -hpux* | -unos* | -osf* | -luna* | -dgux* | -auroraux* | -solaris* \
  	      | -sym* | -kopensolaris* | -plan9* \
@@ -11,22 +11,23 @@ diff -ruN ../newlib-3.0.0/config.sub ./config.sub
  	      | -clix* | -riscos* | -uniplus* | -iris* | -rtu* | -xenix* \
  	      | -hiux* | -386bsd* | -knetbsd* | -mirbsd* | -netbsd* \
 diff -ruN ../newlib-3.0.0/newlib/configure.host ./newlib/configure.host
---- ../newlib-3.0.0/newlib/configure.host	2018-01-18 20:07:45.000000000 +0200
-+++ ./newlib/configure.host	2018-03-19 00:13:56.361557226 +0200
-@@ -571,6 +571,10 @@
+--- ../newlib-3.0.0/newlib/configure.host	2018-03-24 09:00:24.908046887 +0200
++++ ./newlib/configure.host	2018-03-24 09:01:42.625959861 +0200
+@@ -571,6 +571,11 @@
    z8k-*-coff)
  	sys_dir=z8ksim
  	;;
 +  *-*-aquila*)
-+	sys_dir=aquila
-+    newlib_cflags="${newlib_cflags} -DSIGNAL_PROVIDED -DHAVE_MMAP=0 -DHAVE_MREMAP=0 -D_I386MACH_ALLOW_HW_INTERRUPTS"
++    posix_dir=posix
++    sys_dir=aquila
++    newlib_cflags="${newlib_cflags} -DSIGNAL_PROVIDED -DHAVE_OPENDIR -DHAVE_MMAP=0 -DHAVE_MREMAP=0 -D_I386MACH_ALLOW_HW_INTERRUPTS"
 +	;;
  esac
  
  # Host specific flag settings -- usually for features that are not
 diff -ruN ../newlib-3.0.0/newlib/libc/stdlib/malign.c ./newlib/libc/stdlib/malign.c
---- ../newlib-3.0.0/newlib/libc/stdlib/malign.c	2018-01-18 20:07:45.000000000 +0200
-+++ ./newlib/libc/stdlib/malign.c	2018-03-19 00:13:56.373557369 +0200
+--- ../newlib-3.0.0/newlib/libc/stdlib/malign.c	2018-03-24 09:00:24.943047298 +0200
++++ ./newlib/libc/stdlib/malign.c	2018-03-24 09:00:38.869210892 +0200
 @@ -1,3 +1,4 @@
 +#if 0
  #ifndef MALLOC_PROVIDED
@@ -38,8 +39,8 @@ diff -ruN ../newlib-3.0.0/newlib/libc/stdlib/malign.c ./newlib/libc/stdlib/malig
  #endif
 +#endif
 diff -ruN ../newlib-3.0.0/newlib/libc/sys/configure.in ./newlib/libc/sys/configure.in
---- ../newlib-3.0.0/newlib/libc/sys/configure.in	2018-01-18 20:07:45.000000000 +0200
-+++ ./newlib/libc/sys/configure.in	2018-03-19 00:13:56.398557669 +0200
+--- ../newlib-3.0.0/newlib/libc/sys/configure.in	2018-03-24 09:00:24.957047462 +0200
++++ ./newlib/libc/sys/configure.in	2018-03-24 09:00:38.870210904 +0200
 @@ -49,6 +49,7 @@
  	tirtos) AC_CONFIG_SUBDIRS(tirtos) ;;
  	w65) AC_CONFIG_SUBDIRS(w65) ;;

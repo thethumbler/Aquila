@@ -32,9 +32,9 @@ ssize_t posix_file_write(struct file *file, void *buf, size_t size)
 		return -EBADFD;
 	
 	if (file->flags & O_NONBLOCK) {	/* Non-blocking I/O */
-		if (vfs.fops.can_write(file, size)) {
+		if (vfs_file_can_write(file, size)) {
 			/* write up to `size' from `buf' into file */
-			ssize_t retval = vfs.write(file->node, file->offset, size, buf);
+			ssize_t retval = vfs_write(file->node, file->offset, size, buf);
 
 			/* Update file offset */
 			file->offset += retval;
@@ -53,7 +53,7 @@ ssize_t posix_file_write(struct file *file, void *buf, size_t size)
 		ssize_t retval = size;
 		
 		while (size) {
-			size -= vfs.write(file->node, file->offset, size, buf);
+			size -= vfs_write(file->node, file->offset, size, buf);
 
 			/* No bytes left to be written, or reached END-OF-FILE */
 			if (!size || file->node->fs->fops.eof(file))	/* Done writting */

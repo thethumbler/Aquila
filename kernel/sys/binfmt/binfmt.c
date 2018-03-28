@@ -54,21 +54,27 @@ int binfmt_load(proc_t *proc, const char *path, proc_t **ref)
     struct inode *file = NULL;
     int err;
 
-    if ((err = vfs.lookup(path, 1, 1, &v)))   /* FIXME */
+    struct uio uio = {0};
+
+    if (proc) {
+        uio = _PROC_UIO(proc);
+    }
+
+    if ((err = vfs_lookup(path, &uio, &v, NULL)))
         return err;
 
-    if ((err = vfs.vget(&v, &file)))
+    if ((err = vfs_vget(&v, &file)))
         return err;
 
     for (size_t i = 0; i < BINFMT_NR; ++i) {
         if (!binfmt_list[i].check(file)) {
             binfmt_fmt_load(proc, path, file, binfmt_list[i].load, ref);
-            vfs.close(file);
+            vfs_close(file);
             return 0;
         }
     }
 
-    vfs.close(file);
+    vfs_close(file);
     return -ENOEXEC;
 }
 

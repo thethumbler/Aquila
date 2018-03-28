@@ -190,28 +190,17 @@ struct mode_info_block
 #define VBE_DIRECTCOLOR_COLOR_RAMP_PROGRAMMABLE          0x01
 #define VBE_DIRECTCOLOR_RESERVED_BITS_AVAILABLE          0x02
 
-  /**
-   * VBE Bios Extra Data structure.
-   * @remark duplicated in DevVGA.h.
-   */
-  typedef struct VBEHeader
-  {
-      /** Signature (VBEHEADER_MAGIC). */
-      uint16_t      uint16_tSignature;
-      /** Data size. */
-      uint16_t      cbData;
-  } VBEHeader;
-
-  /** The value of the VBEHEADER::uint16_tSignature field.
-   * @remark duplicated in DevVGA.h. */
-  #define VBEHEADER_MAGIC      0x77CC
-
-  /** The extra port which is used to read the mode list.
-   * @remark duplicated in DevVGA.h. */
-  #define VBE_EXTRA_PORT       0x3b6
-
-  /** The extra port which is used for debug printf.
-   * @remark duplicated in DevVGA.h. */
-  #define VBE_PRINTF_PORT      0x3b7
+struct pm_info_block {
+    char        signature[4];
+    uint16_t    entry_point;
+    uint16_t    pm_initalize;
+    uint16_t    bios_data_sel;
+    uint16_t    a000h;
+    uint16_t    b000h;
+    uint16_t    b800h;
+    uint16_t    code_seg_sel;
+    uint8_t     in_protect_mode;
+    uint8_t     checksum;
+} __packed;
 
 #endif

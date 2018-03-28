@@ -23,7 +23,7 @@ struct vnode vprocfs_root;
 struct itbl  procfs_itbl = {0};
 
 /* proc/meminfo */
-static ssize_t procfs_meminfo(struct inode *node, off_t off, size_t size, char *buf)
+static ssize_t procfs_meminfo(struct inode *node __unused, off_t off, size_t size, char *buf)
 {
     char meminfo_buf[512];
     extern size_t k_total_mem, k_used_mem, kvmem_used, kvmem_obj_cnt;
@@ -49,7 +49,7 @@ static ssize_t procfs_meminfo(struct inode *node, off_t off, size_t size, char *
 }
 
 /* proc/version */
-static ssize_t procfs_version(struct inode *node, off_t off, size_t size, char *buf)
+static ssize_t procfs_version(struct inode *node __unused, off_t off, size_t size, char *buf)
 {
     char version_buf[512];
 
@@ -68,7 +68,7 @@ static ssize_t procfs_version(struct inode *node, off_t off, size_t size, char *
 }
 
 /* proc/uptime */
-static ssize_t procfs_uptime(struct inode *node, off_t off, size_t size, char *buf)
+static ssize_t procfs_uptime(struct inode *node __unused, off_t off, size_t size, char *buf)
 {
     char uptime_buf[64];
 
@@ -102,7 +102,7 @@ static ssize_t procfs_read(struct inode *node, off_t offset, size_t size, void *
     return -ENOSYS;
 }
 
-static ssize_t procfs_readdir(struct inode *inode, off_t offset, struct dirent *dirent)
+static ssize_t procfs_readdir(struct inode *inode __unused, off_t offset, struct dirent *dirent)
 {
     if (offset == 0) {
         dirent->d_ino = 0;
@@ -206,9 +206,17 @@ static int procfs_init()
     return 0;
 }
 
+static int procfs_mount(const char *dir, int flags, void *data)
+{
+    printk("procfs_mount(dir=%s, flags=%x, data=%p)\n", dir, flags, data);
+    vfs_bind(dir, procfs_root);
+    return 0;
+}
+
 struct fs procfs = {
-    .name = "procfs",
-    .init = procfs_init,
+    .name  = "procfs",
+    .init  = procfs_init,
+    .mount = procfs_mount,
 
     .iops = {
         .read    = procfs_read,
@@ -218,7 +226,7 @@ struct fs procfs = {
     },
 
     .fops = {
-        .open    = generic_file_open,
+        .open    = posix_file_open,
         .read    = posix_file_read,
         .readdir = posix_file_readdir,
 

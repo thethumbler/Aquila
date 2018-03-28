@@ -11,7 +11,7 @@ struct pipe {
     unsigned r_ref;   /* Readers reference count */
     unsigned w_ref;   /* Writers reference count */
 
-    ring_t *ring; /* Ring buffer */
+    struct ringbuf *ring; /* Ring buffer */
 };
 
 struct fs pipefs;

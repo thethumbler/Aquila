@@ -1,3 +1,5 @@
+dirs-y += virtfs/
+dirs-y += tmpfs/
 dirs-y += devfs/
 dirs-y += devpts/
 #dirs-y += ext2/

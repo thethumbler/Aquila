@@ -4,6 +4,8 @@
 #include <core/system.h>
 #include <dev/dev.h>
 
-extern dev_t ttydev;
+extern struct dev ttydev;
+extern struct dev condev;
+extern struct dev ptmdev;
 
 #endif /* !_TTYDEV_H */

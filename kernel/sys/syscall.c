@@ -20,34 +20,24 @@
 #include <bits/errno.h>
 #include <bits/dirent.h>
 #include <bits/utsname.h>
+#include <bits/fcntl.h>
 
 #include <fs/devpts.h>
 #include <fs/pipe.h>
+#include <fs/stat.h>
 
-static void sys_exit(int status)
+static void sys_exit(int code)
 {
-    printk("[%d:%d] %s: exit(status=%d)\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name, status);
+    printk("[%d:%d] %s: exit(code=%d)\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name, code);
 
     if (cur_thread->owner->pid == 1)
         panic("init killed\n");
 
     proc_t *owner  = cur_thread->owner;
-    proc_t *parent = owner->parent;
-    owner->exit = status;
 
-    //cur_thread->sched_node = NULL;
+    owner->exit = _PROC_EXIT(code, 0);  /* Child exited normally */
 
     proc_kill(owner);
-
-    /* Wakeup parent if it is waiting for children */
-    if (parent) {
-        thread_queue_wakeup(&parent->wait_queue);
-        /* XXX: We should signal the parent here? */
-    } else { 
-        /* Orphan zombie, just reap it */
-        proc_reap(owner);
-    }
-
     arch_sleep();
 
     /* We should never reach this anyway */
@@ -80,7 +70,7 @@ static void sys_execve(const char *path, char *const argp[], char *const envp[])
 {
     printk("[%d:%d] %s: execve(path=%s, argp=%p, envp=%p)\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name, path, argp, envp);
 
-    if (!path || !strlen(path)) {
+    if (!path || !*path) {
         arch_syscall_return(cur_thread, -ENOENT);
         return;
     }
@@ -118,9 +108,50 @@ static void sys_fork(void)
     }
 }
 
-static void sys_fstat()
+static void sys_fstat(int fildes, struct stat *buf)
 {
-    //printk("[%d] %s: fstat(fildes=%d, buf=%p)\n", cur_thread->owner->pid, cur_thread->owner->name, fildes, buf);
+    printk("[%d:%d] %s: fstat(fildes=%d, buf=%p)\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name, fildes, buf);
+
+    if (fildes < 0 || fildes >= FDS_COUNT) {  /* Out of bounds */
+        arch_syscall_return(cur_thread, -EBADFD);
+        return; 
+    }
+
+    struct file *file = &cur_thread->owner->fds[fildes];
+    
+    if (!file->node) {
+        arch_syscall_return(cur_thread, -EBADFD);
+        return;
+    }
+
+    struct inode *inode = file->node;
+
+    int ret = 0;
+
+    buf->st_dev   = 0;  /* TODO */
+    buf->st_ino   = 0;  /* TODO */
+
+    buf->st_mode = (int []) {
+        [FS_RGL]     = _IFREG,
+        [FS_DIR]     = _IFDIR,
+        [FS_CHRDEV]  = _IFCHR,
+        [FS_BLKDEV]  = _IFBLK,
+        [FS_SYMLINK] = _IFLNK,
+        [FS_PIPE]    = 0,   /* FIXME */
+        [FS_FIFO]    = _IFIFO,
+        [FS_SOCKET]  = _IFSOCK,
+        [FS_SPECIAL] = 0    /* FIXME */
+    }[inode->type];
+
+    buf->st_mode  |= inode->mask;
+
+    buf->st_nlink = 0;  /* FIXME */
+    buf->st_uid   = inode->uid;
+    buf->st_gid   = inode->gid;
+    buf->st_rdev  = inode->rdev;
+    buf->st_size  = inode->size;
+
+    arch_syscall_return(cur_thread, ret);
 }
 
 static void sys_getpid()
@@ -146,7 +177,7 @@ static void sys_isatty(int fildes)
     }
 
     // XXX
-    arch_syscall_return(cur_thread, !strcmp(node->dev->name, "pts"));
+    //arch_syscall_return(cur_thread, !strcmp(node->dev->name, "pts"));
 }
 
 static void sys_kill(pid_t pid, int sig)
@@ -177,7 +208,7 @@ static void sys_lseek(int fildes, off_t offset, int whence)
         return;
     }
 
-    int ret = vfs.fops.lseek(file, offset, whence);
+    int ret = vfs_file_lseek(file, offset, whence);
     arch_syscall_return(cur_thread, ret);
 }
 
@@ -193,41 +224,39 @@ static void sys_open(const char *path, int oflags)
         return;
     }
 
-    int rel = 0;
-    char *p = NULL;
-
-    if (path[0] == '/') { /* Absolute Path */
-        p = (char *) path;
-    } else {
-        vfs.relative(cur_thread->owner->cwd, path, &p);
-        rel = 1;
-    }
-
     /* Look up the file */
     struct vnode vnode;
-    int ret = vfs.lookup(p, cur_thread->owner->uid, cur_thread->owner->gid, &vnode);
-
-    if (ret)    /* Lookup failed */
-        goto done;
-
     struct inode *inode = NULL;
-    ret = vfs.vget(&vnode, &inode);
+
+    int ret = vfs_lookup(path, &_PROC_UIO(cur_thread->owner), &vnode, NULL);
+
+    if (ret) {   /* Lookup failed */
+        if ((ret == -ENOENT) && (oflags & O_CREAT)) {
+            if ((ret = vfs_creat(path, &_PROC_UIO(cur_thread->owner), &inode))) {
+                goto done;
+            }
+
+            goto o_creat;
+        }
+
+        goto done;
+    }
+
+    ret = vfs_vget(&vnode, &inode);
 
     if (ret)
         goto done;
 
+o_creat:
     cur_thread->owner->fds[fd] = (struct file) {
         .node = inode,
         .offset = 0,
         .flags = oflags,
     };
 
-    ret = vfs.fops.open(&cur_thread->owner->fds[fd]);
+    ret = vfs_file_open(&cur_thread->owner->fds[fd]);
 
 done:
-    if (rel)
-        kfree(p);
-
     if (ret < 0)  /* open returned an error code */
         proc_fd_release(cur_thread->owner, fd);
     else
@@ -247,7 +276,7 @@ static void sys_read(int fildes, void *buf, size_t nbytes)
     }
 
     struct file *file = &cur_thread->owner->fds[fildes];
-    int ret = vfs.fops.read(file, buf, nbytes);
+    int ret = vfs_file_read(file, buf, nbytes);
     arch_syscall_return(cur_thread, ret);
     return;
 }
@@ -325,7 +354,7 @@ static void sys_write(int fd, void *buf, size_t nbytes)
     }
 
     struct file *file = &cur_thread->owner->fds[fd];
-    int ret = vfs.fops.write(file, buf, nbytes);
+    int ret = vfs_file_write(file, buf, nbytes);
     arch_syscall_return(cur_thread, ret);
     return;
 }
@@ -340,17 +369,24 @@ static void sys_ioctl(int fd, int request, void *argp)
     }
 
     struct file *file = &cur_thread->owner->fds[fd];
-    int ret = vfs.fops.ioctl(file, request, argp);
+    int ret = vfs_file_ioctl(file, request, argp);
     arch_syscall_return(cur_thread, ret);
     return;
 }
 
-static void sys_signal(int sig, void (*func)(int))
+static void sys_sigaction(int sig, const struct sigaction *act, struct sigaction *oact)
 {
-    printk("[%d:%d] %s: signal(sig=%d, func=%p)\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name, sig, func);
-    uintptr_t ret = cur_thread->owner->sig[sig];
-    cur_thread->owner->sig[sig] = (uintptr_t) func;
-    arch_syscall_return(cur_thread, ret);
+    printk("[%d:%d] %s: sigaction(sig=%d, act=%p, oact=%p)\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name, sig, act, oact);
+
+    /* TODO Boundary checking */
+
+    if (oact)
+        memcpy(oact, &cur_thread->owner->sigaction[sig], sizeof(struct sigaction));
+
+    if (act)
+        memcpy(&cur_thread->owner->sigaction[sig], act, sizeof(struct sigaction));
+
+    arch_syscall_return(cur_thread, 0);
 }
 
 static void sys_readdir(int fd, struct dirent *dirent)
@@ -363,7 +399,7 @@ static void sys_readdir(int fd, struct dirent *dirent)
     }
 
     struct file *file = &cur_thread->owner->fds[fd];
-    int ret = vfs.fops.readdir(file, dirent);
+    int ret = vfs_file_readdir(file, dirent);
     arch_syscall_return(cur_thread, ret);
     return;
 }
@@ -384,7 +420,7 @@ static void sys_mount(struct mount_struct *args)
 
     printk("[%d:%d] %s: mount(type=%s, dir=%s, flags=%x, data=%p)\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name, type, dir, flags, data);
 
-    int ret = vfs.mount(type, dir, flags, data);
+    int ret = vfs_mount(type, dir, flags, data, &_PROC_UIO(cur_thread->owner));
     arch_syscall_return(cur_thread, ret);
     return;
 }
@@ -439,23 +475,16 @@ static void sys_chdir(const char *path)
 {
     printk("[%d:%d] %s: chdir(path=%s)\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name, path);
 
-    if (!path || !strlen(path) || path[0] == '\0') {
+    if (!path || !*path) {
         arch_syscall_return(cur_thread, -ENOENT);
         return;
     }
 
-    int rel = 0, ret = 0;
-    char *p = NULL;
-
-    if (path[0] == '/') { /* Absolute Path */
-        p = (char *) path;
-    } else {
-        vfs.relative(cur_thread->owner->cwd, path, &p);
-        rel = 1;
-    }
+    int ret = 0;
+    char *abs_path = NULL;
 
     struct vnode vnode;
-    ret = vfs.lookup(p, cur_thread->owner->uid, cur_thread->owner->gid, &vnode);
+    ret = vfs_lookup(path, &_PROC_UIO(cur_thread->owner), &vnode, &abs_path);
 
     if (ret)
         goto free_resources;
@@ -466,11 +495,12 @@ static void sys_chdir(const char *path)
     }
 
     kfree(cur_thread->owner->cwd);
-    cur_thread->owner->cwd = strdup(p);
+    cur_thread->owner->cwd = strdup(abs_path);
+
     printk("cur_thread->owner->cwd %s\n", cur_thread->owner->cwd);
 
 free_resources:
-    if (rel) kfree(p);
+    kfree(abs_path);
     arch_syscall_return(cur_thread, ret);
 }
 
@@ -496,16 +526,17 @@ static void sys_getcwd(char *buf, size_t size)
 
 struct __uthread {
     uintptr_t stack;
-    uintptr_t entry;
+    uintptr_t entry;    /* Sys entry */
+    uintptr_t uentry;   /* User entry */
     uintptr_t arg;
-    int attr;
+    uintptr_t attr;
 };
 
 static void sys_thread_create(struct __uthread *__uthread)
 {
-    printk("[%d:%d] %s: thread_create(stack=%p, entry=%p, arg=%p, attr=%x)\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name, __uthread->stack, __uthread->entry, __uthread->arg, __uthread->attr);
+    printk("[%d:%d] %s: thread_create(stack=%p, entry=%p, uentry=%p, arg=%p, attr=%p)\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name, __uthread->stack, __uthread->entry, __uthread->entry, __uthread->arg, __uthread->attr);
     thread_t *thread;
-    thread_create(cur_thread, __uthread->stack, __uthread->entry, __uthread->arg, __uthread->attr, &thread);
+    thread_create(cur_thread, __uthread->stack, __uthread->entry, __uthread->uentry, __uthread->arg, __uthread->attr, &thread);
     thread_ready(thread);
     arch_syscall_return(cur_thread, thread->tid);
 }
@@ -563,6 +594,18 @@ static void sys_thread_join(int tid, void **value_ptr)
     arch_syscall_return(cur_thread, thread->tid);
 }
 
+static void sys_setpgid(pid_t pid, pid_t pgid)
+{
+    printk("[%d:%d] %s: setpgid(pid=%d, pgid=%d)\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name, pid, pgid);
+
+    if (pid == 0 && pgid == 0) {
+        int ret = pgrp_new(cur_thread->owner, NULL);
+        arch_syscall_return(cur_thread, ret);
+    } else {
+        panic("Unsupported");
+    }
+}
+
 void (*syscall_table[])() =  {
     /* 00 */    NULL,
     /* 01 */    sys_exit,
@@ -584,7 +627,7 @@ void (*syscall_table[])() =  {
     /* 17 */    sys_waitpid,
     /* 18 */    sys_write,
     /* 19 */    sys_ioctl,
-    /* 20 */    sys_signal,
+    /* 20 */    sys_sigaction,
     /* 21 */    sys_readdir,
     /* 22 */    sys_mount,
     /* 23 */    sys_mkdir,
@@ -596,4 +639,5 @@ void (*syscall_table[])() =  {
     /* 29 */    sys_thread_create,
     /* 30 */    sys_thread_exit,
     /* 31 */    sys_thread_join,
+    /* 32 */    sys_setpgid,
 };

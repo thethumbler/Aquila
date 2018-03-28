@@ -24,6 +24,7 @@
 #include <arch/x86/include/proc.h> /* XXX */
 #include <sys/proc.h>
 #include <sys/sched.h>
+#include <sys/signal.h>
 
 #include "32_bit.h"
 
@@ -556,11 +557,15 @@ void handle_page_fault(uintptr_t addr)
         }
 
         // Send signal
-        printk("proc = [%d] %s\n", cur_thread->owner->pid, cur_thread->owner->name);
-        printk("-- heap %p\n", cur_thread->owner->heap);
-        x86_thread_t *arch = cur_thread->arch;
-        x86_dump_registers(arch->regs);
-        panic("Not implemented\n");
+        signal_proc_send(cur_thread->owner, SIGSEGV);
+        return;
+
+        //printk("[%d:%d] %s\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name);
+        //printk("-- addr %p\n", addr);
+        //printk("-- heap %p\n", cur_thread->owner->heap);
+        //x86_thread_t *arch = cur_thread->arch;
+        //x86_dump_registers(arch->regs);
+        //panic("Not implemented\n");
     }
 
     x86_thread_t *arch = cur_thread->arch;

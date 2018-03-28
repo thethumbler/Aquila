@@ -8,7 +8,7 @@
 
 #include "sys.h"
 
-void arch_proc_spawn(proc_t *proc)
+void arch_proc_spawn(proc_t *proc __unused)
 {
 #if 0
     x86_proc_t *arch = proc->arch;
@@ -70,7 +70,7 @@ void arch_proc_switch(proc_t *proc)
 }
 #endif
 
-void arch_proc_kill(proc_t *proc)
+void arch_proc_kill(proc_t *proc __unused)
 {
 #if 0
     x86_proc_t *arch = (x86_proc_t *) proc->arch;

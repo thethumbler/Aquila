@@ -10,6 +10,8 @@
 #define FDS_COUNT	64  /* Maximum number of file descriptors per process */
 #define USER_STACK_SIZE	(8192 *1024U)	/* 8 MiB */
 
+//#define DEV_FRAMEBUFFER
+
 
 #define UTSNAME_SYSNAME  "AquilaOS"
 #define UTSNAME_RELEASE  "v0.0.1a"

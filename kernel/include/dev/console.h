@@ -4,6 +4,6 @@
 #include <core/system.h>
 #include <dev/dev.h>
 
-extern dev_t console;
+extern struct dev console;
 
 #endif	/* !_CONSOLE_H */

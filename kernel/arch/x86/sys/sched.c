@@ -49,18 +49,21 @@ void arch_sched_init()
 
 void __arch_idle()
 {
-    //printk("__arch_idle()\n");
     for (;;) {
         asm volatile("sti; hlt; cli;");
     }
 }
 
+static char __idle_stack[8192] __aligned(16);
+
 void arch_idle()
 {
-    //printk("Kernel Idle\n");
     cur_thread = NULL;
+
     uintptr_t esp = VMA(0x100000);
     set_kernel_stack(esp);
-    asm volatile("mov %0, %%esp; mov %0, %%ebp; jmp __arch_idle;"::"g"(esp), "g"(__arch_idle));
-    //__arch_idle();
+    uintptr_t stack = (uintptr_t) __idle_stack + 8192;
+
+    extern void x86_goto(uintptr_t eip, uintptr_t ebp, uintptr_t esp) __attribute__((noreturn));
+    x86_goto((uintptr_t) __arch_idle, stack, stack);
 }
