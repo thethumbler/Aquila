@@ -178,6 +178,7 @@ int sb_popline(int cols, VTermScreenCell *cells, void *user)
 
 }
 
+struct font *font = NULL;
 VTermScreenCallbacks screen_cbs = {
     .damage      = damage,
     .moverect    = moverect,
@@ -189,7 +190,6 @@ VTermScreenCallbacks screen_cbs = {
     .sb_popline  = sb_popline,
 };
 
-struct font *font = NULL;
 int fbterm_init(struct fbterm_ctx *ctx)
 {
     if (!font) {
