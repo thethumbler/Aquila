@@ -6,11 +6,10 @@
  * TODO: Make readmbr for any generic device not just ata
  */
 
-#if 0
 #define BLOCK_SIZE 512
 void readmbr(struct inode *node)
 {
-    static mbr_t mbr;
+    mbr_t mbr;
     memset(&mbr, 0, sizeof(mbr_t));
 
     vfs.read(node, 0, sizeof(mbr_t), &mbr);
@@ -23,24 +22,21 @@ void readmbr(struct inode *node)
 
         snprintf(name, 20, "%s%d", node->name, i+1);
 
-        if (vfs.create(dev_root, name)) {
+        struct inode *n = NULL;
+
+        struct uio uio = {
+            .uid  = ROOT_UID,
+            .gid  = DISK_GID,
+            .mask = 0660,
+        };
+
+        if (vfs.create(&vdev_root, name, &uio, &n)) {
             panic("Could not create file");
-        } else {
-            struct vfs_path path = (struct vfs_path) {
-                .mountpoint = dev_root,
-                .tokens = (char *[]) {name, NULL}
-            };
-
-            struct fs_node *n = vfs.traverse(&path);
-
-            if (!n) {
-                panic("File not found");
-            }
-
-            n->dev = node->dev;
-            n->p = node->p;
-            n->offset = mbr.ptab[i].start_lba * BLOCK_SIZE;
         }
+
+        n->type = FS_BLKDEV;
+        n->dev = node->dev;
+        n->p = node->p;
+        n->offset = mbr.ptab[i].start_lba * BLOCK_SIZE;
     }
 }
-#endif

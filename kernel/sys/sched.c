@@ -36,7 +36,8 @@ void proc_init_spawn(proc_t *init)
 
     arch_sched_init();
 
-    //init->thread->state = RUNNABLE;
+    session_new(init);
+
     cur_thread = (thread_t *) init->threads.head->value;
     cur_thread->state = RUNNABLE;
     thread_spawn(cur_thread);

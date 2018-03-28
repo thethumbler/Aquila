@@ -4,13 +4,13 @@
 #include <core/system.h>
 #include <bits/dirent.h>
 #include <bits/errno.h>
+#include <sys/proc.h>
+#include <ds/queue.h>
 
 struct fs;  /* File System Structure */
 struct inode;
 struct vnode;
 struct file;
-
-typedef uintptr_t vino_t;    /* vino_t should be large enough to hold a pointer */
 
 #define FS_RGL      1
 #define FS_DIR      2
@@ -22,18 +22,23 @@ typedef uintptr_t vino_t;    /* vino_t should be large enough to hold a pointer 
 #define FS_SOCKET   8
 #define FS_SPECIAL  9
 
-typedef struct dentry dentry_t;
+struct uio {    /* User I/O operation */
+    char     *root; /* Root Directory */
+    char     *cwd;  /* Current Working Directory */
+    uint32_t uid;
+    uint32_t gid;
+    uint32_t mask;
+};
 
 /* Inode Operations */
 struct iops {
-    int     (*create)  (struct vnode *dir, const char *fn, int uid, int gid, int mode, struct inode **node);
-    int     (*mkdir)   (struct vnode *dir, const char *dname, int uid, int gid, int mode);
     ssize_t (*read)    (struct inode *node, off_t offset, size_t size, void *buf);
     ssize_t (*write)   (struct inode *node, off_t offset, size_t size, void *buf);
     int     (*ioctl)   (struct inode *node, int request, void *argp);
     ssize_t (*readdir) (struct inode *node, off_t offset, struct dirent *dirent);
     int     (*close)   (struct inode *node);
 
+    int     (*vmknod)  (struct vnode *dir, const char *fn, itype_t type, dev_t dev, struct uio *uio, struct inode **ref);
     int     (*vfind)   (struct vnode *dir, const char *name, struct vnode *child);
     int     (*vget)    (struct vnode *vnode, struct inode **inode);
 } __packed;
@@ -59,10 +64,6 @@ struct vfs_path {
     char **tokens;
 };
 
-#include <dev/dev.h>
-#include <sys/proc.h>
-#include <ds/queue.h>
-
 struct fs {
     char *name;
     int (*init)  ();
@@ -79,13 +80,16 @@ struct inode {    /* Actual inode, only one copy is permitted */
     size_t      size;
     uint32_t    type;
     struct fs   *fs;
-    dev_t       *dev;
+
+    dev_t       dev;
+    dev_t       rdev;
+
     off_t       offset; /* Offset to add to each operation on node */
     void        *p;     /* Filesystem handler private data */
 
-    uint32_t    mask;   /* File access mask */
     uint32_t    uid;    /* User ID */
     uint32_t    gid;    /* Group ID */
+    uint32_t    mask;   /* File access mask */
 
     ssize_t     ref;    /* Number of processes referencing this node */
     queue_t     *read_queue;
@@ -107,33 +111,6 @@ struct file {
     int flags;
 };
 
-struct vfs {
-    /* Filesystem operations */
-    void    (*init)       (void);
-    void    (*install)    (struct fs *fs);
-    void    (*mount_root) (struct inode *inode);
-    int     (*bind)       (const char *path, struct inode *target);
-    int     (*mount)      (const char *type, const char *dir, int flags, void *data);
-
-    /* inode operations mappings */
-    int     (*create)  (struct vnode *dir, const char *fn, int uid, int gid, int mode, struct inode **node);
-    int     (*mkdir)   (struct vnode *dir, const char *dname, int uid, int gid, int mode);
-    ssize_t (*read)    (struct inode *inode, size_t offset, size_t size, void *buf);
-    ssize_t (*write)   (struct inode *inode, size_t offset, size_t size, void *buf);
-    ssize_t (*readdir) (struct inode *inode, off_t offset, struct dirent *dirent);
-    int     (*ioctl)   (struct inode *inode, unsigned long request, void *argp);
-    int     (*close)   (struct inode *node);
-
-    /* file operations mappings */
-    struct  fops fops;
-
-    /* Path resolution and lookup */
-    int     (*relative) (const char * const rel, const char * const path, char **abs_path);
-    int     (*lookup)   (const char *path, uint32_t uid, uint32_t gid, struct vnode *vnode);
-    int     (*vfind)    (struct vnode *vnode, const char *name, struct vnode *child);
-    int     (*vget)     (struct vnode *vnode, struct inode **inode);
-};
-
 typedef struct  {
     struct inode *node;
     uint32_t type;
@@ -141,14 +118,53 @@ typedef struct  {
 } vfs_mountpoint_t;
 
 
-extern struct vfs vfs;
 extern struct inode *vfs_root;
-
-/* kernel/fs/vfs.c */
-int generic_file_open(struct file *file);
 
 static inline int __vfs_always(){return 1;}
 static inline int __vfs_never (){return 0;}
 static inline int __vfs_nosys (){return -ENOSYS;}
+
+/* Filesystem operations */
+void    vfs_init(void);
+void    vfs_install(struct fs *fs);
+void    vfs_mount_root(struct inode *inode);
+int     vfs_bind(const char *path, struct inode *target);
+int     vfs_mount(const char *type, const char *dir, int flags, void *data, struct uio *uio);
+
+/* inode operations mappings */
+int     vfs_vmknod(struct vnode *dir, const char *fn, itype_t type, dev_t dev, struct uio *uio, struct inode **ref);
+int     vfs_vcreat(struct vnode *dir, const char *fn, struct uio *uio, struct inode **ref);
+int     vfs_vmkdir(struct vnode *dir, const char *dname, struct uio *uio, struct inode **ref);
+int     vfs_vfind(struct vnode *vnode, const char *name, struct vnode *child);
+int     vfs_vget(struct vnode *vnode, struct inode **inode);
+
+ssize_t vfs_read(struct inode *inode, size_t offset, size_t size, void *buf);
+ssize_t vfs_write(struct inode *inode, size_t offset, size_t size, void *buf);
+ssize_t vfs_readdir(struct inode *inode, off_t offset, struct dirent *dirent);
+int     vfs_ioctl(struct inode *inode, unsigned long request, void *argp);
+int     vfs_close(struct inode *node);
+
+/* file operations mappings */
+int     vfs_file_open(struct file *file);
+ssize_t vfs_file_read(struct file *file, void *buf, size_t size);    
+ssize_t vfs_file_write(struct file *file, void *buf, size_t size);
+ssize_t vfs_file_readdir(struct file *file, struct dirent *dirent);  
+off_t   vfs_file_lseek(struct file *file, off_t offset, int whence);
+ssize_t vfs_file_close(struct file *file);
+int     vfs_file_ioctl(struct file *file, int request, void *argp);
+
+/* helpers */
+int     vfs_file_can_read(struct file * file, size_t size);
+int     vfs_file_can_write(struct file * file, size_t size);
+int     vfs_file_eof(struct file *);
+
+/* Path resolution and lookup */
+int     vfs_relative(const char * const rel, const char * const path, char **abs_path);
+int     vfs_lookup(const char *path, struct uio *uio, struct vnode *vnode, char **abs_path);
+
+/* Higher level functions */
+int     vfs_creat(const char *path, struct uio *uio, struct inode **ref);
+int     vfs_mkdir(const char *path, struct uio *uio, struct inode **ref);
+int     vfs_mknod(const char *path, itype_t type, dev_t dev, struct uio *uio, struct inode **ref);
 
 #endif /* !_VFS_H */

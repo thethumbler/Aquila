@@ -11,6 +11,7 @@
 #include <dirent.h>
 #include <string.h>
 #include <stdarg.h>
+#include <signal.h>
  
 #define SYS_EXIT    1
 #define SYS_CLOSE	2
@@ -27,7 +28,7 @@
 #define SYS_WAITPID 17
 #define SYS_WRITE	18
 #define SYS_IOCTL	19
-#define SYS_SIGNAL  20 
+#define SYS_SIGACT  20 
 #define SYS_READDIR 21 
 #define SYS_MOUNT   22 
 #define SYS_MKDIRAT 23
@@ -36,6 +37,7 @@
 #define SYS_FCNTL   26
 #define SYS_CHDIR   27
 #define SYS_GETCWD  28
+#define SYS_SETPGID 32
 
 #define SYSCALL3(ret, v, arg1, arg2, arg3) \
 	asm volatile("int $0x80;":"=a"(ret):"a"(v), "b"(arg1), "c"(arg2), "d"(arg3));
@@ -67,7 +69,7 @@ int close(int fildes)
 
 char **environ; /* pointer to array of char * strings that define the current environment variables */
 
-int execve(const char *path, char *const argv[], char *const envp[])
+int _execve(const char *path, char *const argv[], char *const envp[])
 {
     int ret;
 	SYSCALL3(ret, SYS_EXECVE, path, argv, envp);
@@ -243,12 +245,31 @@ int gettimeofday(struct timeval *p, void *z)
     return 0;
 }
 
-void (*signal(int sig, void (*func)(int)))(int)
+int sigaction(int sig, const struct sigaction *act, struct sigaction *oact)
 {
-    void (*ret)(int);
-    SYSCALL2(ret, SYS_SIGNAL, sig, func);
+    int ret;
+	SYSCALL3(ret, SYS_SIGACT, sig, act, oact);
 
-    /* TODO */
+    if (ret < 0) {
+        errno = -ret;
+        return -1;
+    }
+
+    return ret;
+}
+
+typedef void (*sighandler_t)(int);
+sighandler_t signal(int sig, sighandler_t handler)
+{
+    struct sigaction act  = {0}, oact = {0};
+
+    act.sa_handler = handler;
+    int ret = sigaction(sig, &act, &oact);
+
+    if (ret != -1) {
+        return oact.sa_handler;
+    }
+
     return ret;
 }
 
@@ -395,6 +416,19 @@ int getcwd(char *buf, size_t size)
 {
     int ret;
     SYSCALL2(ret, SYS_GETCWD, buf, size);
+
+    if (ret < 0) {
+        errno = -ret;
+        return -1;
+    }
+
+    return 0;
+}
+
+int setpgid(pid_t pid, pid_t pgid)
+{
+    int ret;
+    SYSCALL2(ret, SYS_SETPGID, pid, pgid);
 
     if (ret < 0) {
         errno = -ret;

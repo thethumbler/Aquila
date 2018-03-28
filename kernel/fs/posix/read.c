@@ -37,7 +37,7 @@ ssize_t posix_file_read(struct file *file, void *buf, size_t size)
     
     int retval;
     for (;;) {
-        if ((retval = vfs.read(file->node, file->offset, size, buf)) > 0) {
+        if ((retval = vfs_read(file->node, file->offset, size, buf)) > 0) {
             /* Update file offset */
             file->offset += retval;
             
@@ -49,7 +49,7 @@ ssize_t posix_file_read(struct file *file, void *buf, size_t size)
             return retval;
         } else if (retval < 0) {    /* Error */
             return retval;
-        } else if (vfs.fops.eof(file)) {
+        } else if (vfs_file_eof(file)) {
             /* Reached end-of-file */
             return 0;
         } else if (file->flags & O_NONBLOCK) {

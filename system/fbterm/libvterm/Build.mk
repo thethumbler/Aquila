@@ -1,0 +1,10 @@
+#dirs-y += encoding/
+obj-y += encoding.o
+obj-y += keyboard.o
+obj-y += mouse.o
+obj-y += parser.o
+obj-y += pen.o
+obj-y += screen.o
+obj-y += state.o
+obj-y += unicode.o
+obj-y += vterm.o

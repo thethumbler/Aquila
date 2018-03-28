@@ -9,27 +9,27 @@
 static ssize_t pipefs_read(struct inode *node, off_t offset __unused, size_t size, void *buf)
 {
     struct pipe *pipe = node->p;
-	return ring_read(pipe->ring, size, buf);
+	return ringbuf_read(pipe->ring, size, buf);
 }
 
 static ssize_t pipefs_write(struct inode *node, off_t offset __unused, size_t size, void *buf)
 {
     struct pipe *pipe = node->p;
-	return ring_write(pipe->ring, size, buf);
+	return ringbuf_write(pipe->ring, size, buf);
 }
 
 static int pipefs_can_read(struct file *file, size_t size)
 {
     struct inode *node = file->node;
     struct pipe *pipe = node->p;
-	return size <= ring_available(pipe->ring);
+	return size <= ringbuf_available(pipe->ring);
 }
 
 static int pipefs_can_write(struct file *file, size_t size)
 {
     struct inode *node = file->node;
     struct pipe *pipe = node->p;
-	return size >= pipe->ring->size - ring_available(pipe->ring);
+	return size >= pipe->ring->size - ringbuf_available(pipe->ring);
 }
 
 static int pipefs_mkpipe(struct pipe **pipe)
@@ -40,7 +40,7 @@ static int pipefs_mkpipe(struct pipe **pipe)
         return -ENOMEM;
 
     memset(p, 0, sizeof(struct pipe));
-    p->ring = new_ring(PIPE_BUF_LEN);
+    p->ring = ringbuf_new(PIPE_BUF_LEN);
     
     if (!p->ring) {
         kfree(p);

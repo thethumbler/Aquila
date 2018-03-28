@@ -9,6 +9,8 @@
  */
 
 #include <core/system.h>
+#include <core/arch.h>
+
 #include <ds/queue.h>
 
 #include <sys/proc.h>
@@ -50,6 +52,7 @@ int sig_default_action[] = {
 
 int send_signal(pid_t pid, int signal)
 {
+    printk("send_signal(pid=%d, signal=%d)\n", pid, signal);
     if (cur_thread->owner->pid == pid) {
         arch_handle_signal(signal);
         return 0;
@@ -64,5 +67,28 @@ int send_signal(pid_t pid, int signal)
         }
     }
     
+    return 0;
+}
+
+int signal_proc_send(proc_t *proc, int signal)
+{
+    printk("signal_proc_send(proc=%p, signal=%d)\n", proc, signal);
+    if (proc == cur_thread->owner) {
+        arch_handle_signal(signal);
+    } else {
+        enqueue(proc->sig_queue, (void *) signal);
+    }
+
+    return 0;
+}
+
+int signal_pgrp_send(pgroup_t *pg, int signal)
+{
+    printk("signal_pgrp_send(pg=%p, signal=%d)\n", pg, signal);
+    forlinked (node, pg->procs->head, node->next) {
+        proc_t *proc = node->value;
+        signal_proc_send(proc, signal);
+    }
+
     return 0;
 }

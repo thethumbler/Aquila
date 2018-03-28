@@ -6,7 +6,7 @@
 #ifdef PRINTK_DEBUG
 int printk(char *fmt, ...);
 #else
-#define printk(...)
+#define printk(...) {}
 #endif
 
 #endif /* !_PRINTK_H */

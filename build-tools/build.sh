@@ -85,6 +85,12 @@ if [[ ! -d newlib-3.0.0 ]]; then
     cd newlib-3.0.0;
     patch -p1 < ../patches/newlib.patch;
     cd newlib/libc/sys/aquila;
+
+    cd pthread; $top_dir/sys/bin/aclocal -I ../../../..;
+    $top_dir/sys/bin/automake --cygnus Makefile;
+    $top_dir/sys/bin/autoconf;
+    cd ..;
+
     $top_dir/sys/bin/aclocal -I ../../..;
     $top_dir/sys/bin/automake --cygnus Makefile;
     cd ..;

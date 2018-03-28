@@ -31,7 +31,7 @@ ssize_t posix_file_readdir(struct file *file, struct dirent *dirent)
     if (file->flags & O_WRONLY) /* File is not opened for reading */
         return -EBADFD;
     
-    int retval = vfs.readdir(file->node, file->offset, dirent);
+    int retval = vfs_readdir(file->node, file->offset, dirent);
 
     /* Update file offset */
     file->offset += retval;

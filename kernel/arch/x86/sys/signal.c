@@ -7,20 +7,24 @@
 
 void arch_handle_signal(int sig)
 {
-#if 0
-    uintptr_t handler = cur_proc->signal_handler[sig];
-    if (!handler) handler = sig_default_action[sig];
+    printk("arch_handle_signal(sig=%d)\n", sig);
+    uintptr_t handler = cur_thread->owner->sigaction[sig].sa_handler;
+    printk("handler=%p\n", handler);
+
+    if (handler == SIG_DFL)
+        handler = sig_default_action[sig];
 
     switch (handler) {
         case SIGACT_ABORT:
         case SIGACT_TERMINATE:
-            proc_kill(cur_proc);
-            kernel_idle();
+            cur_thread->owner->exit = _PROC_EXIT(sig, sig);
+            proc_kill(cur_thread->owner);
+            arch_sleep();
             break;  /* We should never reach this anyway */
     }
 
 
-    x86_proc_t *arch = cur_proc->arch;
+    x86_thread_t *arch = cur_thread->arch;
 
     //printk("Current regs=%p\n", arch->regs);
 
@@ -39,5 +43,4 @@ void arch_handle_signal(int sig)
 
     extern void x86_jump_user(uintptr_t eax, uintptr_t eip, uintptr_t cs, uintptr_t eflags, uintptr_t esp, uintptr_t ss) __attribute__((noreturn));
     x86_jump_user(0, handler, X86_CS, arch->eflags, sig_esp, X86_SS);
-#endif
 }

@@ -15,21 +15,16 @@
 #define __unused	__attribute__((unused))
 #define __packed	__attribute__((packed))
 #define __aligned(n) __attribute__((aligned(n)))
+#define __section(s) __attribute__((section(s)))
 
 #define MEMBER_SIZE(type, member) (sizeof(((type *)0)->member))
 
 #include <stdint.h>
 #include <stdarg.h>
 #include <stddef.h>
-
-/* FIXME -- should be moved elsewhere */
-typedef int pid_t;
-typedef long int off_t;
-typedef long int ssize_t;
-
 #include <core/printk.h>
-
 #include <config.h>
+#include <core/types.h>
 
 #if ARCH==X86
 #include <arch/x86/include/system.h>
@@ -37,5 +32,10 @@ typedef long int ssize_t;
 
 static inline int __always(){return 1;}
 static inline int __never (){return 0;}
+
+#define __CAT(a, b) a ## b
+#define MODULE_INIT(name, i, f) \
+    __section(".__minit") void * __CAT(__minit_, name) = i;\
+    __section(".__mfini") void * __CAT(__mfini_, name) = f;\
 
 #endif /* !_SYSTEM_H */

@@ -13,7 +13,7 @@ endif
 CC := $(PDIR)/../build-tools/sys/bin/i686-elf-gcc
 CFLAGS := -std=gnu99 -I $(PDIR) -I $(PDIR)/include/ -nostdlib -ffreestanding -m32 \
 		  -O3 -Wall -Wextra -Werror -funsigned-bitfields -fuse-ld=bfd \
-		  -Wno-unused
+		  #-Wno-unused
 
 AS := $(CC)
 ASFLAGS := $(CFLAGS)
@@ -23,7 +23,7 @@ LDFLAGS := -nostdlib -melf_i386
 
 PERL := perl
 
-dirs-y = core/ fs/ devices/ sys/ mm/ arch/
+dirs-y = core/ fs/ dev/ sys/ mm/ arch/
 
 all: $(dirs-y)
 

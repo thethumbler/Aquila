@@ -2,6 +2,9 @@ AUTOMAKE_OPTIONS = cygnus
 INCLUDES = $(NEWLIB_CFLAGS) $(CROSS_CFLAGS) $(TARGET_CFLAGS)
 AM_CCASFLAGS = $(INCLUDES)
 
+SUBDIRS = pthread .
+SUBLIBS = pthread/libpthread.la
+
 noinst_LIBRARIES = lib.a
 
 if MAY_SUPPLY_SYSCALLS

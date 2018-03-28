@@ -1,7 +1,7 @@
 OUTPUT_FORMAT(elf32-i386)
 ENTRY(_start)
 INPUT(boot/builtin.o cpu/builtin.o console/builtin.o mm/builtin.o sys/builtin.o ../../core/builtin.o
-../../devices/builtin.o ../../fs/builtin.o ../../sys/builtin.o ../../mm/builtin.o)
+../../fs/builtin.o ../../dev/builtin.o ../../sys/builtin.o ../../mm/builtin.o)
 OUTPUT(kernel.elf)
 
 SECTIONS {
@@ -22,6 +22,12 @@ SECTIONS {
 		*(.text*)
 		*(.rodata*)
 	}
+
+    .__minit : AT(ADDR(.__minit) - _VMA) ALIGN(0x1000) {
+        __minit = .;
+        *(.__minit*)
+        __minit_end = .;
+    }
 	
 	.data : AT(ADDR(.data) - _VMA) ALIGN(0x1000) {
 		*(.data)

@@ -17,10 +17,11 @@ static void *xread(int fd, int len)
 struct font *font_open(char *path)
 {
 	struct font *font;
-	struct tinyfont head;
+    struct tinyfont head = {0};
 	int fd = open(path, O_RDONLY);
+    lseek(fd, 0, SEEK_SET);
 
-	if (fd < 0 || read(fd, &head, sizeof(head)) != sizeof(head)) {
+	if (fd < 0 || (size_t) read(fd, &head, sizeof(head)) != sizeof(head)) {
 		close(fd);
 		return NULL;
 	}

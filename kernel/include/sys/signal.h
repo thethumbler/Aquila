@@ -2,6 +2,7 @@
 #define _SIGNAL_H
 
 #include <core/system.h>
+#include <sys/proc.h>
 
 /* Signal numbers */
 #define	SIGHUP	1	/* hangup */
@@ -40,9 +41,22 @@
 #define SIGACT_STOP         4
 #define SIGACT_CONTINUE     5
 
+/* libc bindings */
+#define SIG_DFL ((uintptr_t) 0)  /* Default action */
+#define SIG_IGN ((uintptr_t) 1)  /* Ignore action */
+#define SIG_ERR ((uintptr_t) -1) /* Error return */
+
+typedef unsigned long sigset_t;
+struct sigaction {
+    uintptr_t sa_handler;
+    sigset_t  sa_mask;
+    int       sa_flags;
+};
+
 extern int sig_default_action[];
 
 int send_signal(int pid, int sig);
-void arch_handle_signal(int sig);
+int signal_proc_send(proc_t *proc, int signal);
+int signal_pgrp_send(pgroup_t *pg, int signal);
 
 #endif /* ! _SIGNAL_H */
