@@ -126,31 +126,7 @@ static void sys_fstat(int fildes, struct stat *buf)
 
     struct inode *inode = file->node;
 
-    int ret = 0;
-
-    buf->st_dev   = 0;  /* TODO */
-    buf->st_ino   = 0;  /* TODO */
-
-    buf->st_mode = (int []) {
-        [FS_RGL]     = _IFREG,
-        [FS_DIR]     = _IFDIR,
-        [FS_CHRDEV]  = _IFCHR,
-        [FS_BLKDEV]  = _IFBLK,
-        [FS_SYMLINK] = _IFLNK,
-        [FS_PIPE]    = 0,   /* FIXME */
-        [FS_FIFO]    = _IFIFO,
-        [FS_SOCKET]  = _IFSOCK,
-        [FS_SPECIAL] = 0    /* FIXME */
-    }[inode->type];
-
-    buf->st_mode  |= inode->mask;
-
-    buf->st_nlink = 0;  /* FIXME */
-    buf->st_uid   = inode->uid;
-    buf->st_gid   = inode->gid;
-    buf->st_rdev  = inode->rdev;
-    buf->st_size  = inode->size;
-
+    int ret = vfs_stat(inode, buf);
     arch_syscall_return(cur_thread, ret);
 }
 
@@ -176,8 +152,7 @@ static void sys_isatty(int fildes)
         return;
     }
 
-    // XXX
-    //arch_syscall_return(cur_thread, !strcmp(node->dev->name, "pts"));
+    arch_syscall_return(cur_thread, node->rdev & (136 << 8));
 }
 
 static void sys_kill(pid_t pid, int sig)
@@ -425,16 +400,16 @@ static void sys_mount(struct mount_struct *args)
     return;
 }
 
-static void sys_mkdir(const char *path, int mode)
+static void sys_mkdir(const char *path, mode_t mode)
 {
     printk("[%d:%d] %s: mkdir(path=%s, mode=%x)\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name, path, mode);
 
-    for (;;);
-    /*
-    int ret = vfs.iops.mkdir(file, path, cur_thread->owner->uid, cur_thread->owner->gid, mode);
-    arch_syscall_return(cur_thread->owner, ret);
+    struct uio uio = _PROC_UIO(cur_thread->owner);
+    uio.mask = mode;
+
+    int ret = vfs_mkdir(path, &uio, NULL);
+    arch_syscall_return(cur_thread, ret);
     return;
-    */
 }
 
 static void sys_uname(struct utsname *name)
@@ -606,6 +581,38 @@ static void sys_setpgid(pid_t pid, pid_t pgid)
     }
 }
 
+static void sys_mknod(const char *path, uint32_t mode, uint32_t dev)
+{
+    printk("[%d:%d] %s: mknod(path=%s, mode=%x, dev=%x)\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name, path, mode, dev);
+
+    itype_t type = 0;
+    switch (mode & S_IFMT) {
+        case S_IFCHR: type = FS_CHRDEV; break;
+        case S_IFBLK: type = FS_BLKDEV; break;
+    }
+
+    int ret = vfs_mknod(path, type, dev, &_PROC_UIO(cur_thread->owner), NULL);
+    arch_syscall_return(cur_thread, ret);
+}
+
+static void sys_lstat(const char *path, struct stat *buf)
+{
+    printk("[%d:%d] %s: lstat(path=%s, buf=%p)\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name, path, buf);
+
+    struct vnode vnode;
+    struct inode *inode = NULL;
+    int ret = 0;
+
+    if ((ret = vfs_lookup(path, &_PROC_UIO(cur_thread->owner), &vnode, NULL)))
+        arch_syscall_return(cur_thread, ret);
+
+    if ((ret = vfs_vget(&vnode, &inode)))
+        arch_syscall_return(cur_thread, ret);
+
+    ret = vfs_stat(inode, buf);
+    arch_syscall_return(cur_thread, ret);
+}
+
 void (*syscall_table[])() =  {
     /* 00 */    NULL,
     /* 01 */    sys_exit,
@@ -640,4 +647,6 @@ void (*syscall_table[])() =  {
     /* 30 */    sys_thread_exit,
     /* 31 */    sys_thread_join,
     /* 32 */    sys_setpgid,
+    /* 33 */    sys_mknod,
+    /* 34 */    sys_lstat,
 };
