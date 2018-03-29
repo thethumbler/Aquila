@@ -31,13 +31,15 @@
 #define SYS_SIGACT  20 
 #define SYS_READDIR 21 
 #define SYS_MOUNT   22 
-#define SYS_MKDIRAT 23
+#define SYS_MKDIR   23
 #define SYS_UNAME   24
 #define SYS_PIPE    25
 #define SYS_FCNTL   26
 #define SYS_CHDIR   27
 #define SYS_GETCWD  28
 #define SYS_SETPGID 32
+#define SYS_MKNOD   33
+#define SYS_LSTAT   34
 
 #define SYSCALL3(ret, v, arg1, arg2, arg3) \
 	asm volatile("int $0x80;":"=a"(ret):"a"(v), "b"(arg1), "c"(arg2), "d"(arg3));
@@ -270,7 +272,7 @@ sighandler_t signal(int sig, sighandler_t handler)
         return oact.sa_handler;
     }
 
-    return ret;
+    return SIG_ERR;
 }
 
 int ioctl(int fildes, int request, void *argp)
@@ -342,10 +344,10 @@ int mount(const char *type, const char *dir, int flags, void *data)
     return 0;
 }
 
-int mkdirat(int fd, const char *path, mode_t mode)
+int mkdir(const char *path, mode_t mode)
 {
     int ret;
-    SYSCALL3(ret, SYS_MKDIRAT, fd, path, mode);
+    SYSCALL2(ret, SYS_MKDIR, path, mode);
 
     if (ret < 0) {
         errno = -ret;
@@ -429,6 +431,32 @@ int setpgid(pid_t pid, pid_t pgid)
 {
     int ret;
     SYSCALL2(ret, SYS_SETPGID, pid, pgid);
+
+    if (ret < 0) {
+        errno = -ret;
+        return -1;
+    }
+
+    return 0;
+}
+
+int mknod(const char *path, mode_t mode, dev_t dev)
+{
+    int ret;
+    SYSCALL3(ret, SYS_MKNOD, path, mode, dev);
+
+    if (ret < 0) {
+        errno = -ret;
+        return -1;
+    }
+
+    return 0;
+}
+
+int lstat(const char *path, struct stat *buf)
+{
+    int ret;
+    SYSCALL2(ret, SYS_LSTAT, path, buf);
 
     if (ret < 0) {
         errno = -ret;
