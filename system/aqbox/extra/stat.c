@@ -1,6 +1,5 @@
 #include <aqbox.h>
 #include <stdio.h>
-#include <sys/fcntl.h>
 #include <sys/stat.h>
 
 AQBOX_APPLET(stat)(int argc, char *argv[])
@@ -9,9 +8,10 @@ AQBOX_APPLET(stat)(int argc, char *argv[])
         return -1;
     }
 
-    int fd = open(argv[1], O_RDONLY);
+    const char *path = argv[1];
+
     struct stat buf = {0};
-    fstat(fd, &buf);
+    lstat(path, &buf);
 
     char *type = NULL, a_t;
     switch (buf.st_mode & S_IFMT) { 
@@ -38,7 +38,7 @@ AQBOX_APPLET(stat)(int argc, char *argv[])
         '\0'
     };
 
-    printf("  File: %s\n", argv[1]);
+    printf("  File: %s\n", path);
     printf("  Type: %s\n", type);
     printf("Device: %x/%x\n", buf.st_dev >> 8, buf.st_dev & 0xff);
     printf(" Inode: %d\n", buf.st_ino);

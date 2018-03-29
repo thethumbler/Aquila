@@ -6,6 +6,8 @@ int cmd_clear(int, char**);
 int cmd_echo(int, char**);
 int cmd_env(int, char**);
 int cmd_ls(int, char**);
+int cmd_mkdir(int, char**);
+int cmd_mknod(int, char**);
 int cmd_mount(int, char**);
 int cmd_pwd(int, char**);
 int cmd_screenfetch(int, char**);
@@ -24,6 +26,8 @@ struct applet {
     APPLET(echo),
     APPLET(env),
     APPLET(ls),
+    APPLET(mkdir),
+    APPLET(mknod),
     APPLET(mount),
     APPLET(pwd),
     APPLET(screenfetch),
