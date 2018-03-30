@@ -11,7 +11,7 @@ PDIR != pwd
 endif
 
 CC := $(PDIR)/../build-tools/sys/bin/i686-elf-gcc
-CFLAGS := -std=gnu99 -I $(PDIR) -I $(PDIR)/include/ -nostdlib -ffreestanding -m32 \
+CFLAGS := -std=gnu99 -I. -I $(PDIR) -I $(PDIR)/include/ -nostdlib -ffreestanding -m32 \
 		  -O3 -Wall -Wextra -Werror -funsigned-bitfields -fuse-ld=bfd \
 		  #-Wno-unused
 

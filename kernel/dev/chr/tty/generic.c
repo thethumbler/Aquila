@@ -3,11 +3,6 @@
 
 #include <sys/sched.h>  // XXX
 
-ssize_t tty_master_read(struct tty *tty, size_t size, void *buf)
-{
-    return ringbuf_read(tty->out, size, buf);  
-}
-
 ssize_t tty_master_write(struct tty *tty, size_t size, void *buf)
 {
     ssize_t ret = size;
@@ -43,9 +38,10 @@ ssize_t tty_master_write(struct tty *tty, size_t size, void *buf)
                 tty->cook[tty->pos++] = '\n';
 
                 if (echo)
-                    tty_slave_write(tty, 1, "\n");
+                    tty->slave_write(tty, 1, "\n");
 
-                ringbuf_write(tty->in, tty->pos, tty->cook);
+                tty->slave_write(tty, tty->pos, tty->cook);
+
                 tty->pos = 0;
                 ret = ret - size + 1;
                 return ret;
@@ -56,9 +52,9 @@ ssize_t tty_master_write(struct tty *tty, size_t size, void *buf)
             if (echo) {
                 if (*c < ' ') { /* Non-printable */
                     char cc[] = {'^', *c + '@'};
-                    tty_slave_write(tty, 2, cc);
+                    tty->slave_write(tty, 2, cc);
                 } else {
-                    tty_slave_write(tty, 1, c);
+                    tty->slave_write(tty, 1, c);
                 }
             }
 skip_echo:
@@ -66,7 +62,7 @@ skip_echo:
             --size;
         }
     } else {
-        return ringbuf_write(tty->in, size, buf);
+        return tty->slave_write(tty, size, buf);
     }
 
     return ret;
@@ -101,11 +97,6 @@ int tty_ioctl(struct tty *tty, int request, void *argp)
     return 0;
 }
 
-ssize_t tty_slave_read(struct tty *tty, size_t size, void *buf)
-{
-    return ringbuf_read(tty->in, size, buf);
-}
-
 ssize_t tty_slave_write(struct tty *tty, size_t size, void *buf)
 {
     if (tty->tios.c_oflag & OPOST) {
@@ -113,24 +104,24 @@ ssize_t tty_slave_write(struct tty *tty, size_t size, void *buf)
         for (written = 0; written < size; ++written) {
             char c = ((char *) buf)[written];
             if (c == '\n' && (tty->tios.c_oflag & ONLCR)) {
-                ringbuf_write(tty->out, 2, "\r\n");
+                tty->master_write(tty, 2, "\r\n");
             } else if (c == '\r' && (tty->tios.c_oflag & OCRNL)) {
-                ringbuf_write(tty->out, 1, "\n");
+                tty->master_write(tty, 1, "\n");
             } else if (c == '\r' && (tty->tios.c_oflag & ONOCR)) {
                 /* TODO */
             } else if (c == '\n' && (tty->tios.c_oflag & ONLRET)) {
                 /* TODO */
             } else {
-                ringbuf_write(tty->out, 1, &c);
+                tty->master_write(tty, 1, &c);
             }
         }
         return written;
     } else {
-        return ringbuf_write(tty->out, size, buf);
+        return tty->master_write(tty, size, buf);
     }
 }
 
-int tty_new(proc_t *proc, size_t buf_size, struct tty **ref)
+int tty_new(proc_t *proc, size_t buf_size, ttyio master, ttyio slave, void *p, struct tty **ref)
 {
     struct tty *tty = NULL;
     
@@ -142,8 +133,6 @@ int tty_new(proc_t *proc, size_t buf_size, struct tty **ref)
     if (!buf_size)
         buf_size = TTY_BUF_SIZE;
 
-    tty->in   = ringbuf_new(buf_size);
-    tty->out  = ringbuf_new(buf_size);
     tty->cook = kmalloc(buf_size);
     tty->pos  = 0;
 
@@ -164,6 +153,11 @@ int tty_new(proc_t *proc, size_t buf_size, struct tty **ref)
 
     tty->fg = proc->pgrp;
 
+    /* Interface */
+    tty->master_write = master;
+    tty->slave_write = slave;
+    tty->p = p;
+
     if (ref)
         *ref = tty;
 
@@ -173,8 +167,6 @@ int tty_new(proc_t *proc, size_t buf_size, struct tty **ref)
 int tty_free(struct tty *tty)
 {
     kfree(tty->cook);
-    ringbuf_free(tty->out);
-    ringbuf_free(tty->in);
     kfree(tty);
 
     return 0;

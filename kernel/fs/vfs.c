@@ -35,6 +35,7 @@ void vfs_mount_root(struct inode *node)
     /* TODO Flush mountpoints */
     vfs_root = node;
     vfs_graph.node = node;
+    vfs_graph.children = NULL;  /* XXX */
     //vfs_graph_cache_node(&vfs_graph, node);
 }
 
@@ -170,6 +171,11 @@ int vfs_bind(const char *path, struct inode *target)
     /* if path is NULL pointer, or path is empty string, or no target return -1 */
     if (!path ||  !*path || !target)
         return -EINVAL;
+
+    if (!strcmp(path, "/")) {
+        vfs_mount_root(target);
+        return 0;
+    }
 
     /* Canonicalize Path */
     char **tokens = canonicalize_path(path);
@@ -708,4 +714,32 @@ int vfs_mkdir(const char *path, struct uio *uio, struct inode **ref)
 int vfs_creat(const char *path, struct uio *uio, struct inode **ref)
 {
     return vfs_mknod(path, FS_RGL, 0, uio, ref);
+}
+
+int vfs_stat(struct inode *inode, struct stat *buf)
+{
+    buf->st_dev   = 0;  /* TODO */
+    buf->st_ino   = 0;  /* TODO */
+
+    buf->st_mode = (int []) {
+        [FS_RGL]     = _IFREG,
+        [FS_DIR]     = _IFDIR,
+        [FS_CHRDEV]  = _IFCHR,
+        [FS_BLKDEV]  = _IFBLK,
+        [FS_SYMLINK] = _IFLNK,
+        [FS_PIPE]    = 0,   /* FIXME */
+        [FS_FIFO]    = _IFIFO,
+        [FS_SOCKET]  = _IFSOCK,
+        [FS_SPECIAL] = 0    /* FIXME */
+    }[inode->type];
+
+    buf->st_mode  |= inode->mask;
+
+    buf->st_nlink = 0;  /* FIXME */
+    buf->st_uid   = inode->uid;
+    buf->st_gid   = inode->gid;
+    buf->st_rdev  = inode->rdev;
+    buf->st_size  = inode->size;
+
+    return 0;
 }

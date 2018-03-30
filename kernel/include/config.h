@@ -12,7 +12,6 @@
 
 //#define DEV_FRAMEBUFFER
 
-
 #define UTSNAME_SYSNAME  "AquilaOS"
 #define UTSNAME_RELEASE  "v0.0.1a"
 #define UTSNAME_NODENAME "aquila"
