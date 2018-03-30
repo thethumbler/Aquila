@@ -77,6 +77,8 @@ static void scan_device(uint8_t bus, uint8_t dev)
 
             printk("Bus: %d, Device: %d, Function %d\n", bus, dev, func);
             printk("  -> Vendor ID: %x, Device ID: %x, Class: %x, Subclass: %x\n", vendor_id, device_id, class_code, subclass_code);
+            printk("  -> Vednor: %s\n", get_vendor_name(vendor_id));
+            printk("  -> Device: %s\n", get_device_name(vendor_id, device_id));
         }
     }
 }
@@ -90,7 +92,7 @@ static void scan_bus(uint8_t bus)
 
 int pci_prope()
 {
-    //scan_bus(0);
+    scan_bus(0);
     return 0;
 }
 
@@ -110,7 +112,7 @@ int pci_scan_device(uint8_t class, uint8_t subclass, struct pci_dev *_dev)
         for (uint8_t func = 0; func < 8; ++func) {
             uint16_t vendor_id = get_vendor_id(bus, dev, func);
             if (vendor_id != 0xFFFF) {
-                uint32_t device_id = get_device_id(bus, dev, func);
+                //uint32_t device_id = get_device_id(bus, dev, func);
                 uint32_t class_code = get_class_code(bus, dev, func);
                 uint32_t subclass_code = get_subclass_code(bus, dev, func);
                 if (class_code == class && subclass_code == subclass) {
@@ -125,3 +127,5 @@ int pci_scan_device(uint8_t class, uint8_t subclass, struct pci_dev *_dev)
 
     return -1;
 }
+
+MODULE_INIT(pci, pci_prope, NULL)

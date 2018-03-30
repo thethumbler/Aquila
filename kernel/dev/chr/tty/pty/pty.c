@@ -14,14 +14,32 @@ struct pty {
     struct inode *master;
     struct inode *slave;
 
+    struct ringbuf *in;  /* Master Input, Slave Output */
+    struct ringbuf *out; /* Slave Input, Master Output */
+
     queue_t pts_read_queue;  /* Slave read, Master write wait queue */
     queue_t pts_write_queue; /* Slave write, Master read wait queue */
 };
+
+#define PTY_BUF 512
 
 static struct pty *__pty[256] = {0};
 
 struct dev ptmdev;
 struct dev ptsdev;
+
+/* TTY Interface */
+ssize_t pty_master_write(struct tty *tty, size_t size, void *buf)
+{
+    struct pty *pty = (struct pty *) tty->p;
+    return ringbuf_write(pty->out, size, buf);
+}
+
+ssize_t pty_slave_write(struct tty *tty, size_t size, void *buf)
+{
+    struct pty *pty = (struct pty *) tty->p;
+    return ringbuf_write(pty->in, size, buf);
+}
 
 /*************************************
  *
@@ -54,7 +72,7 @@ static int ptm_new(struct pty *pty, struct inode **ref)
 static ssize_t ptm_read(struct devid *dd, off_t offset __unused, size_t size, void *buf)
 {
     struct pty *pty = __pty[dd->minor];
-    return tty_master_read(pty->tty, size, buf);  
+    return ringbuf_read(pty->out, size, buf);  
 }
 
 static ssize_t ptm_write(struct devid *dd, off_t offset __unused, size_t size, void *buf)
@@ -112,7 +130,7 @@ static int pts_new(struct pty *pty, struct inode **ref)
 ssize_t pts_read(struct devid *dd, off_t offset __unused, size_t size, void *buf)
 {
     struct pty *pty = __pty[dd->minor];
-    return tty_slave_read(pty->tty, size, buf);
+    return ringbuf_read(pty->in, size, buf);
 }
 
 ssize_t pts_write(struct devid *dd, off_t offset __unused, size_t size, void *buf)
@@ -148,7 +166,17 @@ int pty_new(proc_t *proc, struct inode **master)
 
     pty->id = pty_id_get();
 
-    if ((err = tty_new(proc, 0, &pty->tty)))
+    if (!(pty->in = ringbuf_new(PTY_BUF))) {
+        err = -ENOMEM;
+        goto error;
+    }
+
+    if (!(pty->out = ringbuf_new(PTY_BUF))) {
+        err = -ENOMEM;
+        goto error;
+    }
+
+    if ((err = tty_new(proc, 0, pty_master_write, pty_slave_write, pty, &pty->tty)))
         goto error;
 
     if ((err = ptm_new(pty, &pty->master)))
@@ -167,6 +195,10 @@ int pty_new(proc_t *proc, struct inode **master)
 
 error:
     if (pty) {
+        if (pty->in)
+            ringbuf_free(pty->in);
+        if (pty->out)
+            ringbuf_free(pty->in);
         if (pty->tty)
             tty_free(pty->tty);
 
@@ -227,4 +259,4 @@ struct dev ptmdev = {
     },
 };
 
-MODULE_INIT(pty, pty_init, NULL);
+MODULE_INIT(pty, pty_init, NULL)

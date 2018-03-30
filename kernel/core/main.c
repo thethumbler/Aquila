@@ -12,7 +12,6 @@
 #include <fs/devfs.h>
 #include <fs/devpts.h>
 #include <fs/procfs.h>
-#include <fs/ext2.h>
 
 #include <boot/multiboot.h>
 
@@ -44,6 +43,8 @@ void kmain(struct boot *boot)
     vfs_vmknod(&vdevfs_root, "ptmx", FS_CHRDEV, _DEV_T(5, 2), &uio, NULL);
     vfs_vmknod(&vdevfs_root, "kbd", FS_CHRDEV, _DEV_T(11, 0), &uio, NULL);
     vfs_vmknod(&vdevfs_root, "fb0", FS_CHRDEV, _DEV_T(29, 0), &uio, NULL);
+    vfs_vmknod(&vdevfs_root, "hda",  FS_BLKDEV, _DEV_T(3, 0), &uio, NULL);
+    vfs_vmknod(&vdevfs_root, "hda1", FS_BLKDEV, _DEV_T(3, 1), &uio, NULL);
     vfs_vmkdir(&vdevfs_root, "pts", &uio, NULL);
 
     vfs_bind("/dev/pts", devpts_root);

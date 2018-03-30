@@ -15,22 +15,25 @@ static struct ata_device {
     uint16_t base;
     uint16_t ctrl;
     uint8_t  slave;
-} devices[4] = {0};
 
-void ata_wait(struct ata_device *dev)
+    size_t   poff[4];
+} __devices[4] = {0};
+
+
+static void ata_wait(struct ata_device *dev)
 {
     for (int i = 0; i < 4; ++i)
         inb(dev->base + ATA_PORT_CMD);
 }
 
-void ata_soft_reset(struct ata_device *dev)
+static void ata_soft_reset(struct ata_device *dev)
 {
     outb(dev->ctrl, ATA_CMD_RESET);
     ata_wait(dev);
     outb(dev->ctrl, 0);
 }
 
-void ata_poll(struct ata_device *dev, int advanced_check)
+static void ata_poll(struct ata_device *dev, int advanced_check)
 {
     ata_wait(dev);
 
@@ -136,14 +139,35 @@ static ssize_t ata_write_sectors(struct ata_device *dev, uint64_t lba, size_t co
 
 #define BLOCK_SIZE  512UL
 static char read_buf[BLOCK_SIZE] __aligned(16);
-static ssize_t ata_read(struct inode *node, off_t offset, size_t size, void *buf)
+
+static size_t ata_partition_offset(struct ata_device *dev, size_t p)
 {
-    //printk("ata_read(node=%p, offset=%x, size=%d, buf=%p)\n", node, offset, size, buf);
+    if (!p) /* Whole Disk */
+        return 0;
+
+    p -= 1;
+
+    if (dev->poff[p] != 0)
+        return dev->poff[p];
+
+    mbr_t *mbr;
+
+    ata_read_sectors(dev, 0, 1, read_buf);
+    mbr = (mbr_t *) read_buf;
+
+    return dev->poff[p] = mbr->ptab[p].start_lba * BLOCK_SIZE;
+}
+
+static ssize_t ata_read(struct devid *dd, off_t offset, size_t size, void *buf)
+{
     ssize_t ret = 0;
     char *_buf = buf;
 
-    struct ata_device *dev = node->p;
-    offset += node->offset;
+    size_t dev_id = dd->minor / 64;
+    size_t partition = dd->minor % 64;
+
+    struct ata_device *dev = &__devices[dev_id];
+    offset += ata_partition_offset(dev, partition);
 
     if (offset % BLOCK_SIZE) {
         /* Read up to block boundary */
@@ -162,7 +186,6 @@ static ssize_t ata_read(struct inode *node, off_t offset, size_t size, void *buf
                 return ret;
         }
     }
-
 
     /* Read whole sectors */
     size_t count = size/BLOCK_SIZE;
@@ -192,14 +215,17 @@ static ssize_t ata_read(struct inode *node, off_t offset, size_t size, void *buf
     return ret;
 }
 
-static ssize_t ata_write(struct inode *node, off_t offset, size_t size, void *buf)
+static ssize_t ata_write(struct devid *dd, off_t offset, size_t size, void *buf)
 {
     //printk("ata_write(node=%p, offset=%x, size=%d, buf=%p)\n", node, offset, size, buf);
     ssize_t ret = 0;
     char *_buf = buf;
 
-    struct ata_device *dev = node->p;
-    offset += node->offset;
+    size_t dev_id = dd->minor / 64;
+    size_t partition = dd->minor % 64;
+
+    struct ata_device *dev = &__devices[dev_id];
+    offset += ata_partition_offset(dev, partition);
 
     if (offset % BLOCK_SIZE) {
         /* Write up to block boundary */
@@ -273,50 +299,36 @@ uint8_t ata_detect_device(struct ata_device *dev)
     return ATADEV_UNKOWN;
 }
 
-static char pata_idx = 'a';
+//static char pata_idx = 'a';
 void pata_init(struct ata_device *dev)
 {
-    char name[] = "hda";
-    name[2] = pata_idx;
-
+    //char name[] = "hda";
+    //name[2] = pata_idx;
     ata_soft_reset(dev);
-
-	struct inode *hd = NULL;
-
-    struct uio uio = {
-        .uid  = ROOT_UID,
-        .gid  = DISK_GID,
-        .mask = 0660,
-    };
-
-    vfs.create(&vdev_root, name, &uio, &hd);
-
-    hd->type = FS_CHRDEV;
-    hd->dev = &atadev;
-    hd->p = dev;
-
-    readmbr(hd);
+    //readmbr(hd);
 }
 
 int ata_probe()
 {
+#if 0
     struct pci_dev ide;
-
     if (pci_scan_device(0x01, 0x01, &ide)) {
         panic("No IDE controller found\n"); /* FIXME */
     }
+#endif
 
-    devices[0].base = ATA_PIO_PORT_BASE;
-    devices[0].ctrl = ATA_PIO_PORT_CONTROL;
+    __devices[0].base = ATA_PIO_PORT_BASE;
+    __devices[0].ctrl = ATA_PIO_PORT_CONTROL;
 
-    uint8_t type = ata_detect_device(&devices[0]);
+    uint8_t type = ata_detect_device(&__devices[0]);
 
     switch (type) {
         case ATADEV_PATA:
-            pata_init(&devices[0]);
+            pata_init(&__devices[0]);
             break;
     }
 
+    kdev_blkdev_register(3, &atadev);
     return 0;
 }
 
@@ -326,7 +338,10 @@ struct dev atadev = {
     .write = ata_write,
 
     .fops = {
-        .open = generic_file_open,
-        .read = posix_file_read,
+        .open  = posix_file_open,
+        .read  = posix_file_read,
+        .write = posix_file_write,
     },
 };
+
+MODULE_INIT(ata, ata_probe, NULL);

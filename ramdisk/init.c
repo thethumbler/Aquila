@@ -18,6 +18,13 @@
 void _start()
 {
 #if USE_FBTERM
+    struct {char *dev; char *opt} data;
+    data.dev = "/dev/hda1";
+    mount("ext2", "/", 0, &data);
+    mount("devfs", "/dev", 0, 0);
+    //mkdir("/dev/pts", 0);
+    mount("devpts", "/dev/pts", 0, 0);
+
     if (!fork())
         execve("/bin/fbterm", 0, 0);
 #else

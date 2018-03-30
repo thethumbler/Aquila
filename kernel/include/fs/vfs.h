@@ -6,6 +6,7 @@
 #include <bits/errno.h>
 #include <sys/proc.h>
 #include <ds/queue.h>
+#include <fs/stat.h>
 
 struct fs;  /* File System Structure */
 struct inode;
@@ -84,7 +85,6 @@ struct inode {    /* Actual inode, only one copy is permitted */
     dev_t       dev;
     dev_t       rdev;
 
-    off_t       offset; /* Offset to add to each operation on node */
     void        *p;     /* Filesystem handler private data */
 
     uint32_t    uid;    /* User ID */
@@ -166,5 +166,6 @@ int     vfs_lookup(const char *path, struct uio *uio, struct vnode *vnode, char 
 int     vfs_creat(const char *path, struct uio *uio, struct inode **ref);
 int     vfs_mkdir(const char *path, struct uio *uio, struct inode **ref);
 int     vfs_mknod(const char *path, itype_t type, dev_t dev, struct uio *uio, struct inode **ref);
+int     vfs_stat(struct inode *inode, struct stat *buf);
 
 #endif /* !_VFS_H */
