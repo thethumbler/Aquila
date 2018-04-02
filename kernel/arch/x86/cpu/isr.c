@@ -134,6 +134,7 @@ void interrupt(regs_t *regs)
     if (int_num < 32) {
         const char *msg = int_msg[int_num];
         printk("Recieved interrupt %d [err=%d]: %s\n", int_num, err_num, msg);
+
         if (int_num == 0x0E) { /* Page Fault */
             printk("CR2 = %p\n", read_cr2());
         }

@@ -23,7 +23,7 @@
 
 #include <ds/queue.h>
 
-queue_t *procs = NEW_QUEUE; /* All processes queue */
+queue_t *procs = QUEUE_NEW(); /* All processes queue */
 
 int proc_pid_get()
 {
@@ -74,7 +74,7 @@ int proc_init(proc_t *proc)
 
     memset(proc->fds, 0, FDS_COUNT * sizeof(struct file));
 
-    proc->sig_queue = new_queue();  /* Initalize signals queue */
+    proc->sig_queue = queue_new();  /* Initalize signals queue */
     if (!proc->sig_queue) {
         err = -ENOMEM;
         goto free_resources;
@@ -188,8 +188,8 @@ int session_new(proc_t *proc)
     session_t *session = kmalloc(sizeof(session_t));
     pgroup_t  *pgrp = kmalloc(sizeof(pgroup_t));
 
-    session->pgps = new_queue();
-    pgrp->procs = new_queue();
+    session->pgps = queue_new();
+    pgrp->procs = queue_new();
 
     pgrp->session_node = enqueue(session->pgps, pgrp);
     proc->pgrp_node = enqueue(pgrp->procs, proc);
@@ -214,7 +214,7 @@ int pgrp_new(proc_t *proc, pgroup_t **ref)
 
     queue_node_remove(proc->pgrp->procs, proc->pgrp_node);
 
-    pgrp->procs = new_queue();
+    pgrp->procs = queue_new();
     proc->pgrp_node = enqueue(pgrp->procs, proc);
     pgrp->session_node = enqueue(proc->pgrp->session->pgps, pgrp);
 

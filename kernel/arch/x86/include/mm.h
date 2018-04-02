@@ -2,6 +2,7 @@
 #define _X86_MM_H
 
 #include <core/system.h>
+#include <cpu/cpu.h>
 
 #define NR_PAGE_SIZE	2
 #define KERNEL_HEAP_SIZE	(8 * 1024  * 1024)	/* 8 MiB */
@@ -14,7 +15,8 @@ extern char _VMA; /* Must be defined in linker script */
 
 static inline void TLB_flush()
 {
-	asm volatile("mov %%cr3, %%eax; mov %%eax, %%cr3":::"eax");
+	//asm volatile("mov %%cr3, %%eax; mov %%eax, %%cr3":::"eax");
+    write_cr3(read_cr3());
 }
 
 void pmm_setup();

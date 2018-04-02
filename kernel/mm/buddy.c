@@ -179,7 +179,7 @@ void buddy_set_unusable(uintptr_t addr, size_t size)
 
 void buddy_setup(size_t total_mem)
 {
-    printk("[0] Kernel: PMM -> Setting up Buddy System\n");
+    //printk("[0] Kernel: PMM -> Setting up Buddy System\n");
 
     k_total_mem = total_mem;
     k_used_mem  = 0;

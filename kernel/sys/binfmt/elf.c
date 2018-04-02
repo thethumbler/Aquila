@@ -15,8 +15,6 @@
 
 int binfmt_elf_check(struct inode *file)
 {
-    printk("binfmt_elf_check(file=%p)\n", file);
-
     elf32_hdr_t hdr;
     vfs_read(file, 0, sizeof(hdr), &hdr);
 
@@ -29,8 +27,6 @@ int binfmt_elf_check(struct inode *file)
 
 int binfmt_elf_load(proc_t *proc, struct inode *file)
 {
-    printk("binfmt_elf_load(proc=%p, file=%p)\n", proc, file);
-
     int err = 0;
 
     elf32_hdr_t hdr;

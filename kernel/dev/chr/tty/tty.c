@@ -2,7 +2,18 @@
 #include <dev/ttydev.h>
 #include <fs/posix.h>
 
-static inline struct dev *ttydev_mux(struct devid *dd)
+struct dev *sttydev_mux(struct devid *dd)
+{
+    if (dd->minor < 64) {
+        //return &vtty;
+    } else {
+        return &uart;
+    }
+
+    return NULL;
+}
+
+struct dev *ttydev_mux(struct devid *dd)
 {
     switch (dd->minor) {
         case 0: /* /dev/tty */
@@ -19,16 +30,21 @@ static inline struct dev *ttydev_mux(struct devid *dd)
     return NULL;
 }
 
-static int ttydev_probe()
+int ttydev_probe()
 {
+    kdev_chrdev_register(4, &sttydev);
     kdev_chrdev_register(5, &ttydev);
     return 0;
 }
 
+struct dev sttydev = {
+    .name  = "sttydev",
+    .mux   = sttydev_mux,
+};
+
 struct dev ttydev = {
     .name  = "ttydev",
-    .probe = ttydev_probe,
     .mux   = ttydev_mux,
 };
 
-MODULE_INIT(ttydev, ttydev_probe, NULL);
+MODULE_INIT(ttydev, ttydev_probe, NULL)

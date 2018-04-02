@@ -104,7 +104,7 @@ static inline void queue_node_remove(queue_t *queue, struct queue_node *node)
     return;
 }
 
-static inline void *new_queue()
+static inline void *queue_new()
 {
     queue_t *q = kmalloc(sizeof(queue_t));
 
@@ -115,7 +115,7 @@ static inline void *new_queue()
     return q;
 }
 
-#define NEW_QUEUE &(struct queue){0}
+#define QUEUE_NEW() &(struct queue){0}
 
 #if 0
 static inline void *queue_find(queue_t *queue, int (*check) (void *))

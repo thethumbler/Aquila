@@ -8,7 +8,7 @@ if [[ ! -d out/tmp ]]; then mkdir -p out/tmp; fi
 for f in `ls *.c`; do ../build-tools/sys/bin/i686-aquila-gcc -m32 -I../build-tools/libc/sysroot/usr/include -nostdlib -ffreestanding -Wl,-Ttext=0x1000 \
 `echo "-o out/$f $f"  | sed 's/\..//'` -lgcc ../build-tools/libc/sysroot/usr/lib/libc.a; done
 
-#cd src; bash build.sh; cd ..
+cd src; bash build.sh; cd ..
 
 cp etc out/ -r
 #cp sysroot/usr out/ -r

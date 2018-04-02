@@ -12,7 +12,8 @@
 #include <core/system.h>
 #include <core/string.h>
 #include <core/printk.h>
-#include <console/early_console.h>
+#include <core/chipset.h>
+
 #include <cpu/cpu.h>
 #include <mm/mm.h>
 
@@ -29,58 +30,35 @@ struct boot *__kboot;
 
 void cpu_init()
 {
-    early_console_init();
-    printk("[0] Kernel: Welcome to Aquila OS!\n");
-
-    printk("[0] Kernel: Installing GDT\n");
     gdt_setup();
-
-    printk("[0] Kernel: Installing IDT\n");
     idt_setup();
-
-    printk("[0] Kernel: Installing ISRs\n");
     isr_setup();
 
-    printk("[0] Kernel: Setting up PIC\n");
-    pic_setup();
-
-    printk("[0] Kernel: Processing multiboot info\n");
     struct boot *boot = process_multiboot_info(multiboot_info);
     __kboot = boot;
 
-    printk("[0] Kernel: Setting up Physical Memory Manager (PMM)\n");
     pmm_setup(boot);
-
-    printk("[0] Kernel: Setting up Virtual Memory Manager (VMM)\n");
     vmm_setup();
+
+    chipset_init();
+
+#if 1
+    //acpi_setup();
+    //hpet_setup();
+
+    //for(;;);
+#endif
+
 
     set_tss_esp(VMA(0x100000));
 
-    pic_setup();
-    pit_setup(20);
+    //pic_setup();
+    //pit_setup(20);
 
     extern void kmain(struct boot *);
     kmain(boot);
     
-    for (;;);
-
-#if 0
-    struct cpu_features fp = {0};
-    get_cpu_features(&fp);
-
-    if (fp.apic) {
-        printk("APIC On-Chip\n");
-        extern void trampoline();
-        extern void trampoline_end();
-
-        printk("Copying trampoline code to %p [%d]\n", VMA(NULL), (char *) trampoline_end - (char *)  trampoline);
-        memcpy(VMA(NULL), trampoline, (char *)  trampoline_end - (char *)  trampoline);
-
-        for(;;);
-    }
-
-    for(;;);
-#endif
+    //for (;;);
 }
 
 #if 0

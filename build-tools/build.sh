@@ -111,7 +111,7 @@ fi;
 export PATH=$top_dir/sys/bin:$PATH;
 rm -rf build-newlib && mkdir -p build-newlib && cd build-newlib;
 ../newlib-3.0.0/configure --prefix=/usr --target=i686-aquila;
-make all;
+make CFLAGS=-march=i586 all;
 make DESTDIR=$top_dir/libc/sysroot install;
 cd ..;
 cp -ar $top_dir/libc/sysroot/usr/i686-aquila/* $top_dir/libc/sysroot/usr/

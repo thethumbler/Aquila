@@ -3,7 +3,7 @@
 
 void itbl_init(struct itbl *itbl)
 {
-    itbl->tbl = new_queue();
+    itbl->tbl = queue_new();
 }
 
 int itbl_insert(struct itbl *itbl, struct inode *inode)

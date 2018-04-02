@@ -5,6 +5,7 @@
 
 ssize_t tty_master_write(struct tty *tty, size_t size, void *buf)
 {
+    printk("tty_master_write(tty=%p, size=%d, buf=%s)\n", tty, size, buf);
     ssize_t ret = size;
 
     /* Process Slave Input */
@@ -38,7 +39,7 @@ ssize_t tty_master_write(struct tty *tty, size_t size, void *buf)
                 tty->cook[tty->pos++] = '\n';
 
                 if (echo)
-                    tty->slave_write(tty, 1, "\n");
+                    tty_slave_write(tty, 1, "\n");
 
                 tty->slave_write(tty, tty->pos, tty->cook);
 
@@ -52,9 +53,9 @@ ssize_t tty_master_write(struct tty *tty, size_t size, void *buf)
             if (echo) {
                 if (*c < ' ') { /* Non-printable */
                     char cc[] = {'^', *c + '@'};
-                    tty->slave_write(tty, 2, cc);
+                    tty_slave_write(tty, 2, cc);
                 } else {
-                    tty->slave_write(tty, 1, c);
+                    tty_slave_write(tty, 1, c);
                 }
             }
 skip_echo:

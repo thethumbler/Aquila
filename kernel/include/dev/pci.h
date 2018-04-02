@@ -4,8 +4,10 @@
 #include <stdint.h>
 #include <dev/dev.h>
 
-#define PCI_CONFIG_ADDRESS  0xCF8
-#define PCI_CONFIG_DATA     0xCFC
+//#define PCI_CONFIG_ADDRESS  0xCF8
+//#define PCI_CONFIG_DATA     0xCFC
+#define PCI_CONFIG_ADDRESS  0x00
+#define PCI_CONFIG_DATA     0x04
 
 union pci_address {
     struct  {
@@ -33,5 +35,12 @@ extern struct dev pci_bus;
  */
 
 int pci_scan_device(uint8_t class, uint8_t subclass, struct pci_dev *_dev);
+int pci_device_scan(uint16_t vendor_id, uint16_t device_id, struct pci_dev *ref);
+uint8_t pci_reg8_read(struct pci_dev *dev, uint8_t off);
+uint16_t pci_reg16_read(struct pci_dev *dev, uint8_t off);
+uint32_t pci_reg32_read(struct pci_dev *dev, uint8_t off);
+void pci_reg8_write(struct pci_dev *dev, uint8_t off, uint8_t val);
+void pci_reg16_write(struct pci_dev *dev, uint8_t off, uint8_t val);
+void pci_reg32_write(struct pci_dev *dev, uint8_t off, uint8_t val);
 
 #endif /* ! _PCI_H */
