@@ -23,6 +23,10 @@
 #define VGA_START   (VMA((char*)0xB8000))
 
 static char *vga = VGA_START;
+static struct __ioaddr __console_ioaddr = {
+    .addr = 0x3D4,
+    .type = __IOADDR_PORT,
+};
 
 static void scroll(int n)
 {
@@ -37,11 +41,11 @@ static void scroll(int n)
 
 static void set_cursor(unsigned pos)
 {
-    outb(0x3D4, 0x0F);
-    outb(0x3D5, (uint8_t)(pos & 0xFF));
+    __io_out8(&__console_ioaddr, 0x00, 0x0F);
+    __io_out8(&__console_ioaddr, 0x01, (uint8_t)(pos & 0xFF));
 
-    outb(0x3D4, 0x0E);
-    outb(0x3D5, (uint8_t)((pos >> 8) & 0xFF));
+    __io_out8(&__console_ioaddr, 0x00, 0x0E);
+    __io_out8(&__console_ioaddr, 0x01, (uint8_t)((pos >> 8) & 0xFF));
 }
 
 static ssize_t console_write(struct devid *dd __unused, off_t offset __unused, size_t size, void *buf)

@@ -20,7 +20,7 @@ diff -ruN ../newlib-3.0.0/newlib/configure.host ./newlib/configure.host
 +  *-*-aquila*)
 +    posix_dir=posix
 +    sys_dir=aquila
-+    newlib_cflags="${newlib_cflags} -DSIGNAL_PROVIDED -DHAVE_OPENDIR -DHAVE_MMAP=0 -DHAVE_MREMAP=0 -D_I386MACH_ALLOW_HW_INTERRUPTS"
++    newlib_cflags="${newlib_cflags} -march=i586 -DSIGNAL_PROVIDED -DHAVE_OPENDIR -DHAVE_MMAP=0 -DHAVE_MREMAP=0 -D_I386MACH_ALLOW_HW_INTERRUPTS"
 +	;;
  esac
  

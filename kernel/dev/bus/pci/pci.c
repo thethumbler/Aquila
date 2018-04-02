@@ -2,6 +2,8 @@
 #include <dev/pci_list.h>
 #include <cpu/io.h>
 
+struct __ioaddr __pci_ioaddr;
+
 static inline const char *get_vendor_name(uint16_t vendor_id)
 {
     for (size_t i = 0; i < PCI_VENTABLE_LEN; ++i)
@@ -30,8 +32,22 @@ static inline uint32_t pci_read_dword(uint8_t bus, uint8_t dev, uint8_t func, ui
     adr.structure.function = func;
     adr.structure.reg = reg & 0xfc;
 
-    outl(PCI_CONFIG_ADDRESS, adr.raw);
-    return inl(PCI_CONFIG_DATA);
+    __io_out32(&__pci_ioaddr, PCI_CONFIG_ADDRESS, adr.raw);
+    return __io_in32(&__pci_ioaddr, PCI_CONFIG_DATA);
+}
+
+static inline void pci_write_dword(uint8_t bus, uint8_t dev, uint8_t func, uint8_t reg, uint32_t val)
+{
+    union pci_address adr = {0};
+
+    adr.structure.enable = 1;
+    adr.structure.bus = bus;
+    adr.structure.device = dev;
+    adr.structure.function = func;
+    adr.structure.reg = reg & 0xfc;
+
+    __io_out32(&__pci_ioaddr, PCI_CONFIG_ADDRESS, adr.raw);
+    __io_out32(&__pci_ioaddr, PCI_CONFIG_DATA, val);
 }
 
 static inline uint16_t get_vendor_id(uint8_t bus, uint8_t dev, uint8_t func)
@@ -64,10 +80,67 @@ static inline uint32_t get_bar(uint8_t bus, uint8_t dev, uint8_t func, uint8_t i
     return pci_read_dword(bus, dev, func, 0x10 + 4 * id);
 }
 
+int pci_device_scan(uint16_t vendor_id, uint16_t device_id, struct pci_dev *ref)
+{
+    uint8_t bus = 0;
+    for (uint8_t dev = 0; dev < 32; ++dev) {
+        for (uint8_t func = 0; func < 8; ++func) {
+            uint16_t _vendor_id = get_vendor_id(bus, dev, func);
+            if (_vendor_id != 0xFFFF) {
+                uint16_t _device_id = get_device_id(bus, dev, func);
+                if (_vendor_id == vendor_id && _device_id == device_id) {
+                    if (ref) {
+                        ref->bus = bus;
+                        ref->dev = dev;
+                        ref->func = func;
+                    }
+
+                    return 0;
+                }
+            }
+        }
+    }
+
+    return -1;
+}
+
+uint8_t pci_reg8_read(struct pci_dev *dev, uint8_t off)
+{
+    return (pci_read_dword(dev->bus, dev->dev, dev->func, off) >> ((off & 3) * 8)) & 0xFF;
+}
+
+uint16_t pci_reg16_read(struct pci_dev *dev, uint8_t off)
+{
+    return (pci_read_dword(dev->bus, dev->dev, dev->func, off) >> ((off & 2) * 8)) & 0xFFFF;
+}
+
+uint32_t pci_reg32_read(struct pci_dev *dev, uint8_t off)
+{
+    return pci_read_dword(dev->bus, dev->dev, dev->func, off);
+}
+
+void pci_reg8_write(struct pci_dev *dev, uint8_t off, uint8_t val)
+{
+    uint32_t oval = pci_read_dword(dev->bus, dev->dev, dev->func, off);
+    oval = (oval & (~0xFFUL << (off & 3) * 8)) | (val << (off & 3) * 8);
+    pci_write_dword(dev->bus, dev->dev, dev->func, off, oval);
+}
+
+void pci_reg16_write(struct pci_dev *dev, uint8_t off, uint8_t val)
+{
+    uint32_t oval = pci_read_dword(dev->bus, dev->dev, dev->func, off);
+    oval = (oval & (~0xFFFFUL << (off & 2) * 8)) | (val << (off & 2) * 8);
+    pci_write_dword(dev->bus, dev->dev, dev->func, off, oval);
+}
+
+void pci_reg32_write(struct pci_dev *dev, uint8_t off, uint8_t val)
+{
+    pci_write_dword(dev->bus, dev->dev, dev->func, off, val);
+}
+
 static void scan_device(uint8_t bus, uint8_t dev)
 {
     for (uint8_t func = 0; func < 8; ++func) {
-
         uint16_t vendor_id = get_vendor_id(bus, dev, func);
         if (vendor_id != 0xFFFF) {
 

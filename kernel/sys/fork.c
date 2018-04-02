@@ -83,7 +83,7 @@ int proc_fork(thread_t *thread, proc_t **fork_ref)
     }
     
     /* Allocate new signals queue */
-    fork->sig_queue = new_queue();
+    fork->sig_queue = queue_new();
 
     if (!fork->sig_queue) {
         err = -ENOMEM;

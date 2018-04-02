@@ -66,7 +66,7 @@ int pipefs_pipe(struct file *read, struct file *write)
     read->node = kmalloc(sizeof(struct inode));
     write->node = kmalloc(sizeof(struct inode));
 
-    read->node->read_queue = new_queue();
+    read->node->read_queue = queue_new();
     write->node->write_queue = read->node->read_queue;
 
     read->node->fs  = &pipefs;

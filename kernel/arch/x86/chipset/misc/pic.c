@@ -12,13 +12,14 @@
  */
 
 #include <core/system.h>
+#include <chipset/misc.h>
 #include <cpu/cpu.h>
-#include <cpu/io.h>
 
-#define MASTER_PIC_CMD	0x20
-#define MASTER_PIC_DATA	0x21
-#define SLAVE_PIC_CMD	0xA0
-#define SLAVE_PIC_DATA	0xA1
+#define PIC_CMD  0x00
+#define PIC_DATA 0x01
+
+static struct __ioaddr __master;
+static struct __ioaddr __slave;
 
 /*
  * ICW1 (Sent on COMMAND port of each PIC)
@@ -74,21 +75,21 @@
 #define SLAVE_ICW3	0x02 /* Slave ID is 2 */
 #define ICW4		0x01 /* Sets PIC to 8086 MODE */
 
-static void irq_remap()
+static void __x86_irq_remap()
 {
 	/*
 	 * Remaps PIC interrupts to different interrupts numbers so as not to
 	 * conflict with CPU exceptions
 	 */
 
-	outb(MASTER_PIC_CMD,  ICW1);
-	outb(SLAVE_PIC_CMD,   ICW1);
-	outb(MASTER_PIC_DATA, MASTER_ICW2);
-	outb(SLAVE_PIC_DATA,  SLAVE_ICW2);
-	outb(MASTER_PIC_DATA, MASTER_ICW3);
-	outb(SLAVE_PIC_DATA,  SLAVE_ICW3);
-	outb(MASTER_PIC_DATA, ICW4);
-	outb(SLAVE_PIC_DATA,  ICW4);
+	__io_out8(&__master, PIC_CMD,  ICW1);
+	__io_out8(&__slave,  PIC_CMD,  ICW1);
+	__io_out8(&__master, PIC_DATA, MASTER_ICW2);
+	__io_out8(&__slave,  PIC_DATA, SLAVE_ICW2);
+	__io_out8(&__master, PIC_DATA, MASTER_ICW3);
+	__io_out8(&__slave,  PIC_DATA, SLAVE_ICW3);
+	__io_out8(&__master, PIC_DATA, ICW4);
+	__io_out8(&__slave,  PIC_DATA, ICW4);
 }
 
 extern void irq0 (void);
@@ -108,49 +109,51 @@ extern void irq13(void);
 extern void irq14(void);
 extern void irq15(void);
 
-static irq_handler_t irq_handlers[16] = {0};
+static __x86_irq_handler_t __irq_handlers[16] = {0};
 
-void irq_install_handler(unsigned irq, irq_handler_t handler)
+void __x86_irq_handler_install(unsigned irq, __x86_irq_handler_t handler)
 {
 	if (irq < 16)
-		irq_handlers[irq] = handler;
+		__irq_handlers[irq] = handler;
 }
 
-void irq_uninstall_handler(unsigned irq)
+void __x86_irq_handler_uninstall(unsigned irq)
 {
 	if (irq < 16)
-		irq_handlers[irq] = (irq_handler_t) NULL;
+		__irq_handlers[irq] = (__x86_irq_handler_t) NULL;
 }
 
 #define IRQ_ACK	0x20
-void irq_ack(uint32_t irq_no)
+static void __x86_irq_ack(uint32_t irq_no)
 {
 	if (irq_no > 7)	/* IRQ fired from the Slave PIC */
-		outb(SLAVE_PIC_CMD, IRQ_ACK);
+		__io_out8(&__slave, PIC_CMD, IRQ_ACK);
 
-	outb(MASTER_PIC_CMD, IRQ_ACK);
+	__io_out8(&__master, PIC_CMD, IRQ_ACK);
 }
 
-void irq_handler(regs_t *r)
+void __x86_irq_handler()
 {
 	extern uint32_t int_num;
+    if (int_num != 32)
+        printk("IRQ %d\n", int_num);
 	/* extern uint32_t err_num; */
     //printk("irq_handler(%d)\n", int_num);
 
-	irq_handler_t handler = NULL;
+	__x86_irq_handler_t handler = NULL;
 
 	if (int_num > 47 || int_num < 32) /* Out of range */
 		handler = NULL;
 	else
-		handler = irq_handlers[int_num - 32];
+		handler = __irq_handlers[int_num - 32];
 
-    irq_ack(int_num - 32);
+    __x86_irq_ack(int_num - 32);
 
-	if (handler) handler(r);
+	if (handler) handler();
 }
 
 
-static void irq_setup_gates(void)
+static void __x86_irq_gates_setup(void)
 {
 	idt_set_gate(32, (uint32_t) irq0);
 	idt_set_gate(33, (uint32_t) irq1);
@@ -170,15 +173,23 @@ static void irq_setup_gates(void)
 	idt_set_gate(47, (uint32_t) irq15);
 }
 
-void pic_setup()
+int __x86_pic_setup(struct __ioaddr *master, struct __ioaddr *slave)
 {
-	irq_remap();
-	irq_setup_gates();
+    printk("x86: Setting up 8259 PIC [Master: %p (%s), Salve: %p (%s)]\n",
+            master->addr, __ioaddr_type_str(master),
+            slave->addr, __ioaddr_type_str(slave));
+
+    __master = *master;
+    __slave  = *slave;
+
+	__x86_irq_remap();
+	__x86_irq_gates_setup();
+    return 0;
 }
 
-void pic_disable()
+void __x86_pic_disable()
 {
 	/* Done by masking all IRQs */
-	outb(SLAVE_PIC_DATA, 0xFF);
-	outb(MASTER_PIC_DATA, 0xFF);
+	__io_out8(&__slave,  PIC_DATA, 0xFF);
+	__io_out8(&__master, PIC_DATA, 0xFF);
 }

@@ -44,7 +44,7 @@ static inline void tlb_invalidate_page(uintptr_t virt)
 
 static inline uintptr_t frame_mount(uintptr_t paddr)
 {
-    //printk("mount_page(%p)\n", paddr);
+    //printk("frame_mount(%p)\n", paddr);
     if (!paddr)
         return (uintptr_t) last_page_table[1023].raw & ~PAGE_MASK;
 
@@ -269,7 +269,7 @@ static inline __page_t *page_get_mapping(uintptr_t addr)
 static char page_buffer[PAGE_SIZE];
 static void *copy_physical_to_physical(uintptr_t _phys_dest, uintptr_t _phys_src, size_t n)
 {
-    printk("copy_physical_to_physical(%p, %p, %d)\n", _phys_dest, _phys_src, n);
+    //printk("copy_physical_to_physical(%p, %p, %d)\n", _phys_dest, _phys_src, n);
 
     if (_phys_dest & PAGE_MASK || _phys_src & PAGE_MASK)
         panic("Copy must be on page (4K) boundaries\n");
@@ -305,6 +305,7 @@ static void *copy_physical_to_physical(uintptr_t _phys_dest, uintptr_t _phys_src
 
 static void *copy_physical_to_virtual(void *_virt_dest, void *_phys_src, size_t n)
 {
+    //printk("copy_physical_to_virtual(v=%p, p=%p, n=%d)\n", _virt_dest, _phys_src, n);
     char *virt_dest = (char *) _virt_dest;
     char *phys_src  = (char *) _phys_src;
 
@@ -316,8 +317,8 @@ static void *copy_physical_to_virtual(void *_virt_dest, void *_phys_src, size_t 
     
     if (size) {
         uintptr_t prev_mount = frame_mount((uintptr_t) phys_src);
-        char *p = MOUNT_ADDR;
-        memcpy(virt_dest, p + offset, size);
+        volatile char *p = MOUNT_ADDR;
+        memcpy(virt_dest, (char *) (p + offset), size);
         
         phys_src  += size;
         virt_dest += size;
@@ -327,7 +328,7 @@ static void *copy_physical_to_virtual(void *_virt_dest, void *_phys_src, size_t 
         size = n / PAGE_SIZE;
         while (size--) {
             frame_mount((uintptr_t) phys_src);
-            memcpy(virt_dest, p, PAGE_SIZE);
+            memcpy(virt_dest, (char *) p, PAGE_SIZE);
             phys_src += PAGE_SIZE;
             virt_dest += PAGE_SIZE;
         }
@@ -336,7 +337,7 @@ static void *copy_physical_to_virtual(void *_virt_dest, void *_phys_src, size_t 
         size = n % PAGE_SIZE;
         if (size) {
             frame_mount((uintptr_t) phys_src);
-            memcpy(virt_dest, p, size);
+            memcpy(virt_dest, (char *) p, size);
         }
 
         frame_mount(prev_mount);
@@ -575,9 +576,9 @@ void handle_page_fault(uintptr_t addr)
 
 void setup_32_bit_paging()
 {
-    printk("[0] Kernel: PMM -> Setting up 32-Bit Paging\n");
-    cur_pd = read_cr3() & ~PAGE_MASK;
-    bootstrap_processor_table = (__table_t *) VMA(cur_pd);
+    //printk("[0] Kernel: PMM -> Setting up 32-Bit Paging\n");
+    uintptr_t __cur_pd = read_cr3() & ~PAGE_MASK;
+    bootstrap_processor_table = (__table_t *) VMA(__cur_pd);
 
     bootstrap_processor_table[1023].raw = LMA((uint32_t) bootstrap_processor_table);
     bootstrap_processor_table[1023].structure.write = 1;

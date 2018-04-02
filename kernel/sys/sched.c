@@ -5,7 +5,7 @@
 #include <sys/sched.h>
 #include <ds/queue.h>
 
-queue_t *ready_queue = NEW_QUEUE;   /* Ready threads queue */
+queue_t *ready_queue = QUEUE_NEW();   /* Ready threads queue */
 thread_t *cur_thread = NULL;
 
 void thread_ready(thread_t *thread)

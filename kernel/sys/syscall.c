@@ -152,7 +152,8 @@ static void sys_isatty(int fildes)
         return;
     }
 
-    arch_syscall_return(cur_thread, node->rdev & (136 << 8));
+    //arch_syscall_return(cur_thread, node->rdev & (136 << 8));
+    arch_syscall_return(cur_thread, 1);
 }
 
 static void sys_kill(pid_t pid, int sig)

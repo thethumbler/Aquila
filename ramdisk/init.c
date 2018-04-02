@@ -13,21 +13,35 @@
 #define TIOCGPTN	0x80045430
 #define EAGAIN			11
 
-#define USE_FBTERM  1
+#define USE_FBTERM   0
+#define USE_CONSOLE  0
+#define USE_SERIAL   1
 
 void _start()
 {
+#if USE_SERIAL
+    open("/dev/ttyS0", O_RDONLY);
+    open("/dev/ttyS0", O_WRONLY);
+    open("/dev/ttyS0", O_WRONLY);
+
+    char *argp[] = {"/bin/aqbox", "sh", 0};
+    char *envp[] = {"PWD=/", 0};
+    execve("/bin/aqbox", argp, envp);
+#endif
+
 #if USE_FBTERM
-    struct {char *dev; char *opt} data;
-    data.dev = "/dev/hda1";
-    mount("ext2", "/", 0, &data);
-    mount("devfs", "/dev", 0, 0);
-    //mkdir("/dev/pts", 0);
-    mount("devpts", "/dev/pts", 0, 0);
+    //struct {char *dev; char *opt} data;
+    //data.dev = "/dev/hda1";
+    //mount("ext2", "/", 0, &data);
+    //mount("devfs", "/dev", 0, 0);
+    ////mkdir("/dev/pts", 0);
+    //mount("devpts", "/dev/pts", 0, 0);
 
     if (!fork())
         execve("/bin/fbterm", 0, 0);
-#else
+#endif
+
+#if USE_CONSOLE
 	int pty = open("/dev/ptmx", O_RDWR);
 	int pid = fork();
 

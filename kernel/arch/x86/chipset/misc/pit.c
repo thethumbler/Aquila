@@ -21,6 +21,8 @@ volatile uint32_t pit_sub_ticks = 0;
 
 static void pit_handler(regs_t *r __unused)
 {
+    printk("Tick\n");
+
 	--wait;
 	++pit_sub_ticks;
 
@@ -36,8 +38,8 @@ void sleep(uint32_t ms)
 	while (wait > 0) asm("hlt");
 }
 
-#define PIT_CMD			0x43
 #define PIT_CHANNEL0	0x40
+#define PIT_CMD			0x43
 
 struct pit_cmd_register {
 	uint32_t bcd	: 1;
@@ -49,8 +51,10 @@ struct pit_cmd_register {
 #define PIT_MODE_SQUARE_WAVE	0x3
 #define PIT_ACCESS_LOHIBYTE		0x3
 
-void pit_setup(uint32_t freq)
+void __x86_pit_setup(uint32_t freq)
 {
+    printk("8254: Initalizing\n");
+
 	struct pit_cmd_register cmd = {
 		.bcd = 0,
 		.mode = PIT_MODE_SQUARE_WAVE,

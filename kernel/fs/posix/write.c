@@ -56,7 +56,7 @@ ssize_t posix_file_write(struct file *file, void *buf, size_t size)
 			size -= vfs_write(file->node, file->offset, size, buf);
 
 			/* No bytes left to be written, or reached END-OF-FILE */
-			if (!size || file->node->fs->fops.eof(file))	/* Done writting */
+			if (!size || vfs_file_eof(file))	/* Done writting */
 				break;
 
 			/* Sleep on the file writers queue */

@@ -129,11 +129,11 @@ IRQ 14, 46
 IRQ 15, 47
 
 
-.extern irq_handler
+.extern __x86_irq_handler
 irq_stub:
 	push_context
 	push %esp
-	call irq_handler
+	call __x86_irq_handler
 	pop %eax
 	pop_context
 	iret

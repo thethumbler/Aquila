@@ -11,7 +11,6 @@
 
 #include <core/system.h>
 #include <core/string.h>
-#include <core/log.h>
 #include <cpu/cpu.h>
 #include <mm/mm.h>
 #include <boot/multiboot.h>
@@ -20,8 +19,9 @@
 /* Minimalistic Paging structure for BSP */
 volatile uint32_t _BSP_PD[1024] __aligned(PAGE_SIZE);
 
-#define P  _BV(0)
-#define RW _BV(1)
+#define P   _BV(0)
+#define RW  _BV(1)
+#define PCD _BV(4)
 
 extern char kernel_end; /* Defined in linker script */
 char *lower_kernel_heap = &kernel_end;  /* Start of kernel heap */
@@ -73,6 +73,7 @@ static void switch_to_higher_half()
     enable_paging((uint32_t) _BSP_PD);
 }
 
+
 void early_init()
 {
     /* We assume that GrUB loaded a valid GDT */
@@ -87,5 +88,6 @@ void early_init()
     cpu_init();
 
     /* Why would we ever get back here? however we should be precautious */
-    for(;;);
+    for(;;)
+        asm volatile ("hlt;");
 }

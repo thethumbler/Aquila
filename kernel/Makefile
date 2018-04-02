@@ -11,9 +11,9 @@ PDIR != pwd
 endif
 
 CC := $(PDIR)/../build-tools/sys/bin/i686-elf-gcc
-CFLAGS := -std=gnu99 -I. -I $(PDIR) -I $(PDIR)/include/ -nostdlib -ffreestanding -m32 \
+CFLAGS := -std=gnu99 -I. -I$(PDIR)/arch/$$(ARCH_DIR)/chipset/$$(CHIPSET_DIR)/include -I$(PDIR)/arch/$$(ARCH_DIR)/include -I $(PDIR) -I $(PDIR)/include/ -nostdlib -ffreestanding -m32 \
 		  -O3 -Wall -Wextra -Werror -funsigned-bitfields -fuse-ld=bfd \
-		  #-Wno-unused
+		  -Wno-unused -march=i586
 
 AS := $(CC)
 ASFLAGS := $(CFLAGS)

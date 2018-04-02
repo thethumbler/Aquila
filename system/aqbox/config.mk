@@ -1,5 +1,5 @@
 CC := /opt/cross/bin/i686-aquila-gcc
-CFLAGS := -m32 -I$(PDIR)/include -I$(PDIR)/../usr/include 
+CFLAGS := -m32 -I$(PDIR)/include -I$(PDIR)/../usr/include -march=i586
 
 LD := $(CC)
 LDFLAGS := -nostdlib -ffreestanding -Wl,-Ttext=0x1000

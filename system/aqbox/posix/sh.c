@@ -261,6 +261,7 @@ char *read_input()
         switch(c) {
         case '\t':  /* Tab character */
             goto skip_echo;
+        case '\n':
         case ENTER:
             read_buf[len] = '\0';
             write(1, "\n", 1);
@@ -432,11 +433,14 @@ void shell()
     setpgid(0, 0);
     pid_t pid = getpid();
     ioctl(0, TIOCSPGRP, &pid);
+    char buf[1024];
 
     for (;;) {
         pwd = getenv("PWD");
         print_prompt();
+        memset(buf, 0, 1024);
         char *input = read_input();
+        //char *input = fgets(buf, 1024, stdin);
         eval(input);
     }
 }

@@ -77,15 +77,8 @@ static ssize_t tmpfs_write(struct inode *node, off_t offset, size_t size, void *
 
 /* ================ File Operations ================ */
 
-static int tmpfs_file_open(struct file *file)
+static int tmpfs_file_open(struct file *file __unused)
 {
-    printk("tmpfs_file_open(file=%p)\n", file);
-
-    //if (file->node->type == FS_DIR) {
-    //    return 0;
-    //} else {
-    //    return -EINVAL; /* XXX */
-    //}
     return 0;
 }
 
@@ -113,7 +106,7 @@ static int tmpfs_init()
     return 0;
 }
 
-static int tmpfs_mount(const char *dir, int flags, void *data)
+static int tmpfs_mount(const char *dir, int flags __unused, void *data __unused)
 {
     printk("tmpfs_mount(dir=%s, flags=%x, data=%p)\n", dir, flags, data);
 

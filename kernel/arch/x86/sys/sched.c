@@ -1,5 +1,7 @@
 #include <core/system.h>
 #include <core/arch.h>
+#include <core/chipset.h>
+
 #include <sys/proc.h>
 #include <sys/sched.h>
 #include <mm/mm.h>
@@ -10,7 +12,7 @@ uint32_t timer_freq = 100;
 uint32_t timer_ticks = 0;
 uint32_t timer_sub_ticks = 0;
 
-static void x86_sched_handler(regs_t *r __unused) 
+static void x86_sched_handler() 
 {
     /* FIXME */
 	++timer_sub_ticks;
@@ -43,8 +45,7 @@ static void x86_sched_handler(regs_t *r __unused)
 
 void arch_sched_init()
 {
-    pit_setup(timer_freq);
-    irq_install_handler(PIT_IRQ, x86_sched_handler);
+    chipset_timer_setup(1, x86_sched_handler);
 }
 
 void __arch_idle()

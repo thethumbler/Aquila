@@ -171,7 +171,7 @@ union vendor_id {
     uint32_t array[3];
 } __packed;
 
-static inline union vendor_id get_vendor_id()
+static inline union vendor_id cpu_get_vendor_id()
 {
     union vendor_id vendor_id;
     asm volatile("cpuid":
@@ -184,7 +184,6 @@ static inline union vendor_id get_vendor_id()
 }
 
 /* TODO: Move these declrations to some specific file */
-int get_cpus_count();
 void gdt_setup();
 void idt_setup();
 void idt_set_gate(uint32_t id, uint32_t offset);
@@ -198,10 +197,13 @@ void set_kernel_stack(uintptr_t esp);
 void enable_fpu();
 void disable_fpu();
 void trap_fpu();
+void acpi_setup();
+uintptr_t acpi_rsdt_find(char signature[4]);
+void hpet_setup();
+int hpet_timer_setup(size_t period_ns, void (*handler)());
 
 #include "msr.h"
 #include "sdt.h"
-#include "irq.h"
 #include "pit.h"
 
 #endif /* !_X86_CPU_H */

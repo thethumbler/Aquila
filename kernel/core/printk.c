@@ -1,15 +1,15 @@
 #include <core/system.h>
-#include <console/early_console.h>
+#include <console/earlycon.h>
 
 #ifdef PRINTK_DEBUG
 static int putc(char c)
 {
-    return early_console_putc(c);
+    return earlycon_putc(c);
 }
 
 static int puts(char *s)
 {
-    return early_console_puts(s? s : "(null)");
+    return earlycon_puts(s? s : "(null)");
 }
 
 static int putx(uint32_t val)

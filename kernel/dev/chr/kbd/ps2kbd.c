@@ -29,7 +29,7 @@
 
 static struct ringbuf *kbd_ring = RINGBUF_NEW(BUF_SIZE);   /* Keboard Ring Buffer */
 static proc_t *proc = NULL; /* Current process using Keboard */
-static queue_t *kbd_read_queue = NEW_QUEUE; /* Keyboard read queue */
+static queue_t *kbd_read_queue = QUEUE_NEW(); /* Keyboard read queue */
 
 void ps2kbd_handler(int scancode)
 {
@@ -41,8 +41,8 @@ void ps2kbd_handler(int scancode)
 
 void ps2kbd_register()
 {
-    extern void i8042_register_handler(int channel, void (*fun)(int));
-    i8042_register_handler(1, ps2kbd_handler);
+    //extern void i8042_register_handler(int channel, void (*fun)(int));
+    //i8042_register_handler(1, ps2kbd_handler);
 }
 
 static ssize_t ps2kbd_read(struct devid *dd __unused, off_t offset __unused, size_t size, void *buf)
