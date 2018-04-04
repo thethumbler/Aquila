@@ -4,6 +4,7 @@
 extern char __minit, __minit_end;
 int modules_init()
 {
+    printk("Kernel: Loading builtin modules\n");
     /* Initalize built-in modules */
     void **f = (void **) &__minit;
     void **g = (void **) &__minit_end;

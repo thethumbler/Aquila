@@ -1,11 +1,10 @@
 #ifndef _ARCH_H
 #define _ARCH_H
 
-#include <sys/proc.h>
+/* Include arch specific arch header */
+#include <core/_arch.h>
 
-#if ARCH==x86
-#include <arch/x86/include/arch.h>
-#endif
+#include <sys/proc.h>
 
 /* arch/ARCH/sys/binfmt.c */
 void *arch_binfmt_load();

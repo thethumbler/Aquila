@@ -1,3 +1,5 @@
+export
+
 ARCH = x86
 CP = cp
 BASH = bash
@@ -7,6 +9,19 @@ ifeq ($(GRUB_MKRESCUE),)
 GRUB_MKRESCUE = grub-mkrescue
 endif
 
+SRC_DIR := $(TRAVIS_BUILD_DIR)
+
+ifeq ($(SRC_DIR),)
+SRC_DIR != pwd
+endif
+
+KERNEL_CONFIG := $(CONFIG)
+ifeq ($(KERNEL_CONFIG),)
+KERNEL_CONFIG := i686-pc
+endif
+
+KERNEL_MAKE_FLAGS := CONFIG=$(KERNEL_CONFIG)
+
 aquila.iso: kernel ramdisk
 	$(GRUB_MKRESCUE) -o aquila.iso iso/
 
@@ -14,19 +29,17 @@ aquila.iso: kernel ramdisk
 kernel: iso/kernel.elf
 ramdisk: iso/initrd.img
 system:
-	$(RM) -rf system/usr
-	$(CP) build-tools/libc/sysroot/usr system/usr -r
 	$(MAKE) -C system/
 
 .PHONY: iso/kernel.elf
 iso/kernel.elf: kernel/arch/$(ARCH)/kernel.elf
-	$(MAKE) -C kernel/
+	$(MAKE) $(KERNEL_MAKE_FLAGS) -C kernel/
 	$(BASH) -c "if [[ ! -e iso ]]; then mkdir iso; fi"
 	$(CP) kernel/arch/$(ARCH)/kernel.elf $@
 
 .PHONY: %$(ARCH)/kernel.elf
 %$(ARCH)/kernel.elf:
-	$(MAKE) -C kernel/
+	$(MAKE) $(KERNEL_MAKE_FLAGS) -C kernel/
 
 iso/initrd.img: ramdisk/initrd.img
 	cp ramdisk/initrd.img iso/initrd.img
@@ -39,7 +52,7 @@ try: aquila.iso
 
 .PHONY: clean
 clean:
-	$(MAKE) clean -C kernel
+	$(MAKE) $(KERNEL_MAKE_FLAGS) clean -C kernel
 	$(MAKE) clean -C system
 	$(RM) -f ramdisk/out/* -r
 	$(RM) -f ramdisk/initrd.img
@@ -48,4 +61,4 @@ clean:
 .PHONY: distclean
 distclean:
 	$(MAKE) clean
-	$(MAKE) distclean -C kernel
+	$(MAKE) $(KERNEL_MAKE_FLAGS) distclean -C kernel

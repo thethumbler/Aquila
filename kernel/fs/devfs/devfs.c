@@ -27,8 +27,6 @@ static int devfs_init()
     devfs.iops = tmpfs.iops;
     devfs.fops = tmpfs.fops;
 
-    printk("[0] Kernel: devfs -> init()\n");
-
     if (!(devfs_root = kmalloc(sizeof(struct inode))))
         return -ENOMEM;
 
@@ -52,8 +50,6 @@ static int devfs_init()
 
 static int devfs_mount(const char *dir, int flags, void *data)
 {
-    printk("devfs_mount(dir=%s, flags=%x, data=%p)\n", dir, flags, data);
-
     if (!devfs_root)
         return -EINVAL;
 

@@ -50,13 +50,9 @@ uint32_t first_free_node = 0;
 uint32_t get_node()
 {
     for (unsigned i = first_free_node; i < LAST_NODE_INDEX; ++i) {
-        /*if(!flag && nodes[i].free)
-        {
-            first_free_node = flag = i;
-        }*/
-        
-        if (!nodes[i].size)
+        if (!nodes[i].size) {
             return i;
+        }
     }
 
     panic("Can't find an unused node");
@@ -66,8 +62,6 @@ uint32_t get_node()
 void release_node(uint32_t i)
 {
     nodes[i] = (vmm_node_t){0};
-    //if(i < first_free_node)
-    //  first_free_node = i;
 }
 
 uint32_t get_first_fit_free_node(uint32_t size)
@@ -122,6 +116,7 @@ void *(kmalloc)(size_t size)
     kvmem_obj_cnt++;
 
     pmman.map(NODE_ADDR(nodes[i]), NODE_SIZE(nodes[i]), KRW);
+
     return (void *) NODE_ADDR(nodes[i]);
 }
 
@@ -152,13 +147,12 @@ void (kfree)(void *_ptr)
         prev_node = cur_node;
         cur_node = nodes[cur_node].next;
 
-        if (cur_node == LAST_NODE_INDEX) { /* Trying to free unallocated node */
-            return;
-        }
+        if (cur_node == LAST_NODE_INDEX)  /* Trying to free unallocated node */
+            goto done;
     }
 
-    if (nodes[cur_node].free)   /* Node is already free, dangling pointer? */
-        return;
+    if (nodes[cur_node].free)  /* Node is already free, dangling pointer? */
+        goto done;
 
     /* First we mark our node as free */
     nodes[cur_node].free = 1;
@@ -191,8 +185,12 @@ void (kfree)(void *_ptr)
         if (nodes[cur_node].free) {
             pmman.unmap(NODE_ADDR(nodes[cur_node]), NODE_SIZE(nodes[cur_node]));
         }
+
         cur_node = nodes[cur_node].next;
     }
+
+done:
+    return;
 }
 
 void dump_nodes()

@@ -38,13 +38,13 @@ struct cpu_features {
     int pbe   : 1;  /* Pending Break Enable */
 } __packed;
 
-typedef struct {
+struct x86_regs {
     uint32_t
     edi, esi, ebp, ebx, ecx, edx, eax,
     eip, cs, eflags, esp, ss;
-} __packed regs_t;
+} __packed;
 
-static inline void x86_dump_registers(regs_t *regs)
+static inline void x86_dump_registers(struct x86_regs *regs)
 {
     printk("Registers dump:\n");
     printk("edi = %p\n", regs->edi);
@@ -183,17 +183,22 @@ static inline union vendor_id cpu_get_vendor_id()
     return vendor_id;
 }
 
-/* TODO: Move these declrations to some specific file */
-void gdt_setup();
-void idt_setup();
-void idt_set_gate(uint32_t id, uint32_t offset);
-void idt_set_gate_user(uint32_t id, uint32_t offset);
-void isr_setup();
+/* cpu/gdt.c */
+void x86_gdt_setup();
+void x86_tss_esp_set(uint32_t esp);
+void x86_kernel_stack_set(uintptr_t esp);
+
+/* cpu/idt.c */
+void x86_idt_setup();
+void x86_idt_gate_set(uint32_t id, uint32_t offset);
+void x86_idt_gate_user_set(uint32_t id, uint32_t offset);
+
+/* cpu/isr.c */
+void x86_isr_setup();
+
 void pic_setup();
 void pic_disable();
 void pit_setup(uint32_t);
-void set_tss_esp(uint32_t esp);
-void set_kernel_stack(uintptr_t esp);
 void enable_fpu();
 void disable_fpu();
 void trap_fpu();

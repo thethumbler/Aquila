@@ -5,7 +5,7 @@
  *  This file is part of Aquila OS and is released under the terms of
  *  GNU GPLv3 - See LICENSE.
  *
- *  Copyright (C) 2016-2017 Mohamed Anwar <mohamed_anwar@opmbx.org>
+ *  Copyright (C) Mohamed Anwar
  */
 
 
@@ -25,6 +25,10 @@
 #include <fs/devpts.h>
 #include <fs/pipe.h>
 #include <fs/stat.h>
+
+#ifndef DEBUG_SYSCALL
+#define printk(...) {}
+#endif
 
 static void sys_exit(int code)
 {
@@ -90,7 +94,7 @@ static void sys_execve(const char *path, char *const argp[], char *const envp[])
     if (err) {
         arch_syscall_return(cur_thread, err);
     } else {
-        thread_spawn(cur_thread);
+        sched_thread_spawn(cur_thread);
     }
 }
 
@@ -104,7 +108,7 @@ static void sys_fork(void)
     /* Returns are handled inside proc_fork */
     if (fork) {
         thread_t *thread = (thread_t *) fork->threads.head->value;
-        thread_ready(thread);
+        sched_thread_ready(thread);
     }
 }
 
@@ -513,7 +517,7 @@ static void sys_thread_create(struct __uthread *__uthread)
     printk("[%d:%d] %s: thread_create(stack=%p, entry=%p, uentry=%p, arg=%p, attr=%p)\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name, __uthread->stack, __uthread->entry, __uthread->entry, __uthread->arg, __uthread->attr);
     thread_t *thread;
     thread_create(cur_thread, __uthread->stack, __uthread->entry, __uthread->uentry, __uthread->arg, __uthread->attr, &thread);
-    thread_ready(thread);
+    sched_thread_ready(thread);
     arch_syscall_return(cur_thread, thread->tid);
 }
 

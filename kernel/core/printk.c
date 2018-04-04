@@ -149,6 +149,7 @@ int printk(char *fmt, ...)
     va_start(args, fmt);
     int ret = vprintk(fmt, args);
     va_end(args);
+
     return ret;
 }
 #endif

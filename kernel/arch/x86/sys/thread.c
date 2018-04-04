@@ -13,47 +13,23 @@ void arch_thread_spawn(thread_t *thread)
     x86_thread_t *arch = thread->arch;
     x86_proc_t *parch = thread->owner->arch;
 
-    printk("[%d:%d] %s: Spawning [IP: %p, SP: %p, F: 0x%x, KSTACK: %p]\n", thread->owner->pid, thread->tid, thread->owner->name, arch->eip, arch->esp, arch->eflags, arch->kstack);
-    
     switch_page_directory(parch->pd);
-
-    set_kernel_stack(arch->kstack);
+    x86_kernel_stack_set(arch->kstack);
 
     extern void x86_jump_user(uintptr_t eax, uintptr_t eip, uintptr_t cs, uintptr_t eflags, uintptr_t esp, uintptr_t ss) __attribute__((noreturn));
     x86_jump_user(arch->eax, arch->eip, X86_CS, arch->eflags, arch->esp, X86_SS);
 }
 
-#if 0
-void arch_thread_init(void *d, thread_t *p)
-{
-    x86_proc_t *arch = kmalloc(sizeof(x86_proc_t));
-    memset(arch, 0, sizeof(x86_proc_t));
-    struct arch_binfmt *s = d;
-
-    arch->pd = s->new;
-
-    uintptr_t kstack_base = (uintptr_t) kmalloc(KERN_STACK_SIZE);
-    arch->kstack = kstack_base + KERN_STACK_SIZE;   /* Kernel stack */
-    arch->eip = p->entry;
-    arch->esp = USER_STACK;
-    arch->eflags = X86_EFLAGS;
-
-    p->arch = arch;
-}
-#endif
-
 void arch_thread_switch(thread_t *thread)
 {
     x86_proc_t *parch = thread->owner->arch;
     x86_thread_t *tarch = thread->arch;
-    //printk("[%d:%d] %s: Switching [KSTACK: %p, EIP: %p, ESP: %p]\n", thread->owner->pid, thread->tid, thread->owner->name, tarch->kstack, tarch->eip, tarch->esp);
 
     switch_page_directory(parch->pd);
-    set_kernel_stack(tarch->kstack);
+    x86_kernel_stack_set(tarch->kstack);
     disable_fpu();
 
     if (thread->owner->sig_queue->count) {
-        printk("[%d:%d] %s: There are %d pending signals\n", thread->owner->pid, thread->tid, thread->owner->name, thread->owner->sig_queue->count);
         int sig = (int) dequeue(thread->owner->sig_queue);
         arch_handle_signal(sig);
         for (;;);
@@ -65,8 +41,6 @@ void arch_thread_switch(thread_t *thread)
 
 void arch_thread_create(thread_t *thread, uintptr_t stack, uintptr_t entry, uintptr_t uentry, uintptr_t arg)
 {
-    printk("arch_thread_create(thread=%p, stack=%p, entry=%p, arg=%p)\n", thread, stack, entry, arg);
-
     x86_thread_t *arch = kmalloc(sizeof(x86_thread_t)); 
     memset(arch, 0, sizeof(x86_thread_t));
 

@@ -12,7 +12,7 @@
 #include <core/system.h>
 #include <core/string.h>
 
-struct {
+static struct {
     uint32_t link;
     uint32_t esp;
     uint32_t ss;
@@ -32,7 +32,7 @@ struct {
 #define DPL0 0
 #define DPL3 3
 
-struct gdt_entry {
+static struct gdt_entry {
 	uint32_t limit_lo : 16;	/* Segment Limit 15:00 */
 	uint32_t base_lo  : 16;	/* Base Address 15:00 */
 	uint32_t base_mid : 8;	/* Base Address 23:16 */
@@ -63,7 +63,7 @@ struct gdt_entry {
 	{LIMIT, BASE, BASE, RW_DATA, 1, DPL3, 1, LIMIT, 0, 0, 1, 1, BASE},
 };
 
-struct {
+static struct {
 	uint16_t size;
 	uint32_t offset;
 } __packed __aligned(8) gdt_pointer = {
@@ -71,7 +71,7 @@ struct {
 	(uint32_t) gdt,
 };
 
-void gdt_setup()
+void x86_gdt_setup()
 {
 	asm volatile("\
 	lgdtl (%0) \n\
@@ -85,7 +85,7 @@ void gdt_setup()
 	"::"g"(gdt_pointer), "a"(0x10));
 }
 
-void set_tss_esp(uint32_t esp)
+void x86_tss_esp_set(uint32_t esp)
 {
 	memset(&tss_entry, 0, sizeof(tss_entry));
     tss_entry.ss  = 0x10;
@@ -99,7 +99,7 @@ void set_tss_esp(uint32_t esp)
     asm volatile ("ltr %%ax;"::"a"(0x28 | DPL3));
 }
 
-void set_kernel_stack(uintptr_t esp)
+void x86_kernel_stack_set(uintptr_t esp)
 {
 	tss_entry.esp = esp;
 }

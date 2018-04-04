@@ -12,18 +12,11 @@ uint32_t timer_freq = 100;
 uint32_t timer_ticks = 0;
 uint32_t timer_sub_ticks = 0;
 
-static void x86_sched_handler() 
+static void x86_sched_handler(struct x86_regs *r) 
 {
-    /* FIXME */
-	++timer_sub_ticks;
-
-	if (timer_sub_ticks == timer_freq) {
-		++timer_ticks;
-		timer_sub_ticks = 0;
-	}
-
     if (!kidle) {
         x86_thread_t *arch = (x86_thread_t *) cur_thread->arch;
+
         extern uintptr_t x86_read_eip();
 
         volatile uintptr_t eip = 0, esp = 0, ebp = 0;    
@@ -62,7 +55,7 @@ void arch_idle()
     cur_thread = NULL;
 
     uintptr_t esp = VMA(0x100000);
-    set_kernel_stack(esp);
+    x86_kernel_stack_set(esp);
     uintptr_t stack = (uintptr_t) __idle_stack + 8192;
 
     extern void x86_goto(uintptr_t eip, uintptr_t ebp, uintptr_t esp) __attribute__((noreturn));

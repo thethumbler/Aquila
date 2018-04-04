@@ -28,8 +28,8 @@ void arch_handle_signal(int sig)
 
     //printk("Current regs=%p\n", arch->regs);
 
-    arch->kstack -= sizeof(regs_t);
-    set_kernel_stack(arch->kstack);
+    arch->kstack -= sizeof(struct x86_regs);
+    x86_kernel_stack_set(arch->kstack);
 
     uintptr_t sig_esp = arch->regs->esp;
 

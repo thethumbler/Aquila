@@ -11,13 +11,11 @@
 
 int arch_proc_fork(thread_t *thread, proc_t *fork)
 {
-    printk("arch_proc_fork(fork=%p)\n", fork);
-
     int err = 0;
     x86_proc_t   *pparch = thread->owner->arch;
     x86_thread_t *ptarch = thread->arch;
-    x86_proc_t   *fparch = NULL;    //kmalloc(sizeof(x86_proc_t));
-    x86_thread_t *ftarch = NULL;    //kmalloc(sizeof(x86_thread_t));
+    x86_proc_t   *fparch = NULL;
+    x86_thread_t *ftarch = NULL;
 
     if (!(fparch = kmalloc(sizeof(x86_proc_t)))) {
         /* Failed to allocate fork process arch structure */
@@ -47,7 +45,7 @@ int arch_proc_fork(thread_t *thread, proc_t *fork)
     ftarch->kstack = fkstack_base + KERN_STACK_SIZE;
 
     /* Copy registers */
-    regs_t *fork_regs = (void *) (ftarch->kstack - (ptarch->kstack - (uintptr_t) ptarch->regs));
+    struct x86_regs *fork_regs = (void *) (ftarch->kstack - (ptarch->kstack - (uintptr_t) ptarch->regs));
     ftarch->regs = fork_regs;
 
     /* Copy kstack */
@@ -64,8 +62,8 @@ int arch_proc_fork(thread_t *thread, proc_t *fork)
     thread_t *fthread = (thread_t *) fork->threads.head->value;
     fthread->arch = ftarch;
 
-    ftarch->fpu_enabled = 0; /* XXX */
-    ftarch->fpu_context = NULL; /* XXX */
+    ftarch->fpu_enabled = 0;
+    ftarch->fpu_context = NULL;
 
     return 0;
 

@@ -30,9 +30,9 @@ struct boot *__kboot;
 
 void cpu_init()
 {
-    gdt_setup();
-    idt_setup();
-    isr_setup();
+    x86_gdt_setup();
+    x86_idt_setup();
+    x86_isr_setup();
 
     struct boot *boot = process_multiboot_info(multiboot_info);
     __kboot = boot;
@@ -40,6 +40,7 @@ void cpu_init()
     pmm_setup(boot);
     vmm_setup();
 
+    x86_tss_esp_set(VMA(0x100000));
     chipset_init();
 
 #if 1
@@ -50,7 +51,6 @@ void cpu_init()
 #endif
 
 
-    set_tss_esp(VMA(0x100000));
 
     //pic_setup();
     //pit_setup(20);

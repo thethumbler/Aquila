@@ -5,7 +5,6 @@
 
 ssize_t tty_master_write(struct tty *tty, size_t size, void *buf)
 {
-    printk("tty_master_write(tty=%p, size=%d, buf=%s)\n", tty, size, buf);
     ssize_t ret = size;
 
     /* Process Slave Input */

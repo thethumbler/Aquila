@@ -48,9 +48,9 @@ static int copy_proc(proc_t *parent, proc_t *fork)
     return 0;
 }
 
-int proc_fork(thread_t *thread, proc_t **fork_ref)
+int proc_fork(thread_t *thread, proc_t **ref)
 {
-    printk("proc_fork(fork_ref=%p)\n", fork_ref);
+    //printk("proc_fork(thread=%p, ref=%p)\n", thread, ref);
     int err = 0;
 
     /* Copy parent proc structure */
@@ -95,8 +95,6 @@ int proc_fork(thread_t *thread, proc_t **fork_ref)
 
     /* Call arch specific fork handler */
     err = arch_proc_fork(thread, fork);
-    //printk("fthread %p, fork->thread %p\n", fthread, fork->thread);
-    //printk("fthread->arch %p, fork->thread->arch %p\n", fthread->arch, fork->thread->arch);
 
     if (!err) {
         arch_syscall_return(fthread, 0);
@@ -106,8 +104,8 @@ int proc_fork(thread_t *thread, proc_t **fork_ref)
         goto free_resources;
     }
 
-    if (fork_ref)
-        *fork_ref = fork;
+    if (ref)
+        *ref = fork;
 
     return 0;
 

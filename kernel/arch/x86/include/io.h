@@ -61,103 +61,118 @@
 #define __mmio_outl(addr, v) (*((volatile uint32_t *)(addr)) = v)
 #define __mmio_outq(addr, v) (*((volatile uint64_t *)(addr)) = v)
 
-#define __IOADDR_PORT    1
-#define __IOADDR_MMIO16  2
-#define __IOADDR_MMIO32  3
+#define IOADDR_PORT    1
+#define IOADDR_MMIO8   2
+#define IOADDR_MMIO16  3
+#define IOADDR_MMIO32  4
 
-struct __ioaddr {
+struct ioaddr {
     char type;
     uintptr_t addr;
 };
 
-static inline char *__ioaddr_type_str(struct __ioaddr *io)
+static inline char *ioaddr_type_str(struct ioaddr *io)
 {
     switch (io->type) {
-        case __IOADDR_PORT:
+        case IOADDR_PORT:
             return "pio";
-        case __IOADDR_MMIO16:
+        case IOADDR_MMIO8:
+            return "mmio8";
+        case IOADDR_MMIO16:
             return "mmio16";
-        case __IOADDR_MMIO32:
+        case IOADDR_MMIO32:
             return "mmio32";
     }
 
     return NULL;
 }
 
-static inline uint8_t __io_in8(struct __ioaddr *io, uintptr_t off)
+static inline uint8_t io_in8(struct ioaddr *io, uintptr_t off)
 {
     switch (io->type) {
-        case __IOADDR_PORT:
+        case IOADDR_PORT:
             return __inb(io->addr + off);
-        case __IOADDR_MMIO16:
+        case IOADDR_MMIO8:
+            return __mmio_inb(io->addr + off);
+        case IOADDR_MMIO16:
             return __mmio_inb(io->addr + (off << 1));
-        case __IOADDR_MMIO32:
+        case IOADDR_MMIO32:
             return __mmio_inb(io->addr + (off << 2));
     }
 
     return 0;
 }
 
-static inline uint16_t __io_in16(struct __ioaddr *io, uintptr_t off)
+static inline uint16_t io_in16(struct ioaddr *io, uintptr_t off)
 {
     switch (io->type) {
-        case __IOADDR_PORT:
+        case IOADDR_PORT:
             return __inw(io->addr + off);
-        case __IOADDR_MMIO16:
+        case IOADDR_MMIO8:
+            return __mmio_inw(io->addr + off);
+        case IOADDR_MMIO16:
             return __mmio_inw(io->addr + (off << 1));
-        case __IOADDR_MMIO32:
+        case IOADDR_MMIO32:
             return __mmio_inw(io->addr + (off << 2));
     }
 
     return 0;
 }
 
-static inline uint32_t __io_in32(struct __ioaddr *io, uintptr_t off)
+static inline uint32_t io_in32(struct ioaddr *io, uintptr_t off)
 {
     switch (io->type) {
-        case __IOADDR_PORT:
+        case IOADDR_PORT:
             return __inl(io->addr + off);
-        case __IOADDR_MMIO16:
+        case IOADDR_MMIO8:
+            return __mmio_inl(io->addr + off);
+        case IOADDR_MMIO16:
             return __mmio_inl(io->addr + (off << 1));
-        case __IOADDR_MMIO32:
+        case IOADDR_MMIO32:
             return __mmio_inl(io->addr + (off << 2));
     }
 
     return 0;
 }
 
-static inline void __io_out8(struct __ioaddr *io, uintptr_t off, uint8_t val)
+static inline void io_out8(struct ioaddr *io, uintptr_t off, uint8_t val)
 {
     switch (io->type) {
-        case __IOADDR_PORT:
+        case IOADDR_PORT:
             __outb(io->addr + off, val); return;
-        case __IOADDR_MMIO16:
+        case IOADDR_MMIO8:
+            __mmio_outb(io->addr + off, val); return;
+        case IOADDR_MMIO16:
             __mmio_outb(io->addr + (off << 1), val); return;
-        case __IOADDR_MMIO32:
+        case IOADDR_MMIO32:
             __mmio_outb(io->addr + (off << 2), val); return;
     }
 }
 
-static inline void __io_out16(struct __ioaddr *io, uintptr_t off, uint16_t val)
+static inline void io_out16(struct ioaddr *io, uintptr_t off, uint16_t val)
 {
     switch (io->type) {
-        case __IOADDR_PORT:
+        case IOADDR_PORT:
             __outw(io->addr + off, val); return;
-        case __IOADDR_MMIO16:
+        case IOADDR_MMIO8:
+            __mmio_outw(io->addr + off, val); return;
+        case IOADDR_MMIO16:
             __mmio_outw(io->addr + (off << 1), val); return;
-        case __IOADDR_MMIO32:
+        case IOADDR_MMIO32:
             __mmio_outw(io->addr + (off << 2), val); return;
     }
 }
 
-static inline void __io_out32(struct __ioaddr *io, uintptr_t off, uint32_t val)
+static inline void io_out32(struct ioaddr *io, uintptr_t off, uint32_t val)
 {
     switch (io->type) {
-        case __IOADDR_PORT:
+        case IOADDR_PORT:
             __outl(io->addr + off, val); return;
-        case __IOADDR_MMIO16:
+        case IOADDR_MMIO8:
+            __mmio_outl(io->addr + off, val); return;
+        case IOADDR_MMIO16:
             __mmio_outl(io->addr + (off << 1), val); return;
-        case __IOADDR_MMIO32:
+        case IOADDR_MMIO32:
             __mmio_outl(io->addr + (off << 2), val); return;
     }
 }

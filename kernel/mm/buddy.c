@@ -5,7 +5,7 @@
  *  This file is part of Aquila OS and is released under the terms of
  *  GNU GPLv3 - See LICENSE.
  *
- *  Copyright (C) 2016 Mohamed Anwar <mohamed_anwar@opmbx.org>
+ *  Copyright (C) Mohamed Anwar
  */
 
 #include <core/system.h>
@@ -20,7 +20,7 @@ size_t k_total_mem, k_used_mem;
 #define BUDDY_MIN_BS (4096)
 #define BUDDY_MAX_BS (BUDDY_MIN_BS << BUDDY_MAX_ORDER)
 
-struct buddy buddies[BUDDY_MAX_ORDER+1];
+static struct buddy buddies[BUDDY_MAX_ORDER+1];
 
 size_t buddy_recursive_alloc(size_t order)
 {
@@ -116,11 +116,12 @@ uintptr_t buddy_alloc(size_t _sz)
 
     size_t idx = buddy_recursive_alloc(order);
 
-    if (idx != (size_t) -1)
+    if (idx != (size_t) -1) {
         return (uintptr_t) (idx * (BUDDY_MIN_BS << order));
-    else
+    } else {
         panic("Cannot find free buddy");
         //return (uintptr_t) NULL;
+    }
 }
 
 static uintptr_t kernel_bound = 0;
@@ -144,9 +145,6 @@ void buddy_free(uintptr_t addr, size_t size)
     k_used_mem -= sz;
 
     size_t idx = (addr / (BUDDY_MIN_BS << order)) & (sz - 1);
-
-    //printk("order = %d, idx = %d\n", order, idx);
-
     buddy_recursive_free(order, idx);
 }
 
