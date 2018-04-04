@@ -6,7 +6,7 @@ install:
   - cd build-tools && bash build.sh && cd ..
 cache:
   directories:
-  - build-tools
+  - build-tools/sys
 script:
   - make aquila.iso
 deploy:
