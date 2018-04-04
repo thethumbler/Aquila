@@ -2,7 +2,7 @@ export
 
 MAKEFLAGS += --no-print-directory
 
-PDIR != pwd
+PDIR = $(SRC_DIR)/system/aqbox
 CFLAGS += -I$(PDIR)/include
 
 include Build.mk
