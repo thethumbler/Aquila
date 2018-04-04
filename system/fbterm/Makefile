@@ -2,8 +2,7 @@ export
 
 MAKEFLAGS += --no-print-directory
 
-PDIR != pwd
-
+PDIR := $(SRC_DIR)/system/fbterm
 CFLAGS += -I$(PDIR)/include
 
 include Build.mk
