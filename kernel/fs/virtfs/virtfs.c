@@ -3,7 +3,6 @@
 
 int virtfs_vmknod(struct vnode *vdir, const char *fn, itype_t type, dev_t dev, struct uio *uio, struct inode **ref)
 {
-    printk("virtfs_vmknod(vdir=%p, fn=%s, type=%d, dev=%x, uio=%p, ref=%p)\n", vdir, fn, type, dev, uio, ref);
     int err = 0;
     struct inode *node = NULL;
     struct virtfs_dir *dirent = NULL;

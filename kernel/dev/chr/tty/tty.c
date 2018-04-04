@@ -20,7 +20,7 @@ struct dev *ttydev_mux(struct devid *dd)
             // return ttydev
             break;
         case 1: /* /dev/console */
-            return &condev;
+            //return &condev;
             break;
         case 2: /* /dev/ptmx */
             return &ptmdev;

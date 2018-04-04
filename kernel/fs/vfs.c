@@ -41,18 +41,13 @@ void vfs_mount_root(struct inode *node)
 
 static char **canonicalize_path(const char * const path)
 {
-    printk("canonicalize_path(path=%s)\n", path);
-
     /* Tokenize slash seperated words in path into tokens */
     char **tokens = tokenize(path, '/');
-
     return tokens;
 }
 
 static int vfs_parse_path(const char *path, struct uio *uio, char **abs_path)
 {
-    printk("vfs_parse_path(path=%s, uio=%p, abs_path=%p)\n", path, uio, abs_path);
-
     if (!path || !*path)
         return -ENOENT;
 
@@ -116,7 +111,6 @@ static int vfs_parse_path(const char *path, struct uio *uio, char **abs_path)
 
 static struct vfs_path *vfs_get_mountpoint(char **tokens)
 {
-    //printk("vfs_get_mountpoint(tokens=%p)\n", tokens);
     struct vfs_path *path = kmalloc(sizeof(struct vfs_path));
     path->tokens = tokens;
 
@@ -166,9 +160,7 @@ next:;
 /*  Bind VFS path to node */
 int vfs_bind(const char *path, struct inode *target)
 {
-    //printk("vfs_mount(path=%s, target=%p)\n", path, target);
-
-    /* if path is NULL pointer, or path is empty string, or no target return -1 */
+    /* if path is NULL pointer, or path is empty string, or no target return EINVAL */
     if (!path ||  !*path || !target)
         return -EINVAL;
 
@@ -199,14 +191,12 @@ int vfs_bind(const char *path, struct inode *target)
             }
 
             /* Not found, create it */
-            //printk("%s not found, creating it on %s\n", token, last_node->name);
             struct vfs_node *new_node = kmalloc(sizeof(struct vfs_node));
             memset(new_node, 0, sizeof(struct vfs_node));
             new_node->name = strdup(token);
             last_node->next = new_node;
             cur_node = new_node;
         } else {
-            //printk("no children found, creating %s on %s\n", token, cur_node->name);
             struct vfs_node *new_node = kmalloc(sizeof(struct vfs_node));
             memset(new_node, 0, sizeof(struct vfs_node));
             new_node->name = strdup(token);
@@ -222,7 +212,7 @@ next:;
 
 void vfs_init(void)
 {
-
+    printk("VFS: Initalizing\n");
 }
 
 void vfs_install(struct fs *fs)
@@ -232,12 +222,11 @@ void vfs_install(struct fs *fs)
     node->fs = fs;
     node->next = registered_fs;
     registered_fs = node;
+    printk("VFS: Registered filesystem %s\n", fs->name);
 }
 
 int vfs_lookup(const char *path, struct uio *uio, struct vnode *vnode, char **abs_path)
 {
-    printk("vfs_lookup(path=%s, uio=%p, vnode=%p)\n", path, uio, vnode);
-
     int ret = 0;
     struct vfs_path *p = NULL;
     char **tokens = NULL;
@@ -394,8 +383,6 @@ int vfs_close(struct inode *inode)
 
 int vfs_mount(const char *type, const char *dir, int flags, void *data, struct uio *uio)
 {
-    printk("vfs_mount_type(type=%s, dir=%s, flags=%x, data=%p)\n", type, dir, flags, data);
-
     struct fs *fs = NULL;
 
     /* Look up filesystem */
@@ -643,8 +630,6 @@ int vfs_file_eof(struct file *file)
 
 int vfs_mknod(const char *path, itype_t type, dev_t dev, struct uio *uio, struct inode **ref)
 {
-    printk("vfs_mknod(path=%s, type=%d, dev=%x, uio=%p, node=%p)\n", path, type, dev, uio, ref);
-
     int ret = 0;
     struct vfs_path *p = NULL;
     char **tokens = NULL;

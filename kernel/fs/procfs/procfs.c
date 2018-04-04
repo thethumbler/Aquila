@@ -203,12 +203,12 @@ static int procfs_init()
 
     itbl_init(&procfs_itbl);
 
+    vfs_install(&procfs);
     return 0;
 }
 
 static int procfs_mount(const char *dir, int flags, void *data)
 {
-    printk("procfs_mount(dir=%s, flags=%x, data=%p)\n", dir, flags, data);
     vfs_bind(dir, procfs_root);
     return 0;
 }
@@ -233,3 +233,5 @@ struct fs procfs = {
         .eof     = __vfs_always,
     },
 };
+
+MODULE_INIT(procfs, procfs_init, NULL)

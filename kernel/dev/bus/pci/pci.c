@@ -2,7 +2,7 @@
 #include <dev/pci_list.h>
 #include <cpu/io.h>
 
-struct __ioaddr __pci_ioaddr;
+static struct ioaddr __pci_ioaddr;
 
 static inline const char *get_vendor_name(uint16_t vendor_id)
 {
@@ -32,8 +32,8 @@ static inline uint32_t pci_read_dword(uint8_t bus, uint8_t dev, uint8_t func, ui
     adr.structure.function = func;
     adr.structure.reg = reg & 0xfc;
 
-    __io_out32(&__pci_ioaddr, PCI_CONFIG_ADDRESS, adr.raw);
-    return __io_in32(&__pci_ioaddr, PCI_CONFIG_DATA);
+    io_out32(&__pci_ioaddr, PCI_CONFIG_ADDRESS, adr.raw);
+    return io_in32(&__pci_ioaddr, PCI_CONFIG_DATA);
 }
 
 static inline void pci_write_dword(uint8_t bus, uint8_t dev, uint8_t func, uint8_t reg, uint32_t val)
@@ -46,8 +46,8 @@ static inline void pci_write_dword(uint8_t bus, uint8_t dev, uint8_t func, uint8
     adr.structure.function = func;
     adr.structure.reg = reg & 0xfc;
 
-    __io_out32(&__pci_ioaddr, PCI_CONFIG_ADDRESS, adr.raw);
-    __io_out32(&__pci_ioaddr, PCI_CONFIG_DATA, val);
+    io_out32(&__pci_ioaddr, PCI_CONFIG_ADDRESS, adr.raw);
+    io_out32(&__pci_ioaddr, PCI_CONFIG_DATA, val);
 }
 
 static inline uint16_t get_vendor_id(uint8_t bus, uint8_t dev, uint8_t func)
@@ -165,13 +165,21 @@ static void scan_bus(uint8_t bus)
 
 int pci_prope()
 {
-    scan_bus(0);
+    //scan_bus(0);
     return 0;
 }
 
 struct dev pcidev = {
     .probe = pci_prope,
 };
+
+/*
+ * Used by chipset driver to initalize PCI bus
+ */
+void pci_ioaddr_set(struct ioaddr *io)
+{
+    __pci_ioaddr = *io;
+}
 
 
 /*

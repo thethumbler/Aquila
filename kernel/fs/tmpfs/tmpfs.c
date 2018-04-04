@@ -24,8 +24,6 @@
 
 static int tmpfs_vget(struct vnode *vnode, struct inode **inode)
 {
-    printk("tmpfs_vget(vnode={id=%p, type=%d}, inode=%p)\n", vnode->id, vnode->type, inode);
-
     if (!vnode)
         return -EINVAL;
 
@@ -103,13 +101,12 @@ static int tmpfs_file_eof(struct file *file)
 
 static int tmpfs_init()
 {
+    vfs_install(&tmpfs);
     return 0;
 }
 
 static int tmpfs_mount(const char *dir, int flags __unused, void *data __unused)
 {
-    printk("tmpfs_mount(dir=%s, flags=%x, data=%p)\n", dir, flags, data);
-
     /* Initalize new */
     struct inode *tmpfs_root = kmalloc(sizeof(struct inode));
 
@@ -158,3 +155,5 @@ struct fs tmpfs = {
         .eof       = tmpfs_file_eof,
     },
 };
+
+MODULE_INIT(tmpfs, tmpfs_init, NULL)

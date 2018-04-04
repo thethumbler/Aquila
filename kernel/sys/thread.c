@@ -4,9 +4,8 @@
 #include <sys/sched.h>
 #include <ds/queue.h>
 
-int thread_new(proc_t *proc, thread_t **rthread)
+int thread_new(proc_t *proc, thread_t **ref)
 {
-    printk("thread_new(proc=%p[%s], rthread=%p)\n", proc, proc->name, rthread);
     thread_t *thread = kmalloc(sizeof(thread_t));
     memset(thread, 0, sizeof(thread_t));
 
@@ -16,8 +15,8 @@ int thread_new(proc_t *proc, thread_t **rthread)
 
     enqueue(&proc->threads, thread);
 
-    if (rthread)
-        *rthread = thread;
+    if (ref)
+        *ref = thread;
 
     return 0;
 }
@@ -32,7 +31,9 @@ int thread_kill(thread_t *thread)
 
 int thread_queue_sleep(queue_t *queue)
 {
+#ifdef DEBUG_SLEEP_QUEUE
     printk("[%d:%d] %s: Sleeping on queue %p\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name, queue);
+#endif
 
     struct queue_node *sleep_node = enqueue(queue, cur_thread);
 
@@ -44,7 +45,9 @@ int thread_queue_sleep(queue_t *queue)
     /* Woke up */
     if (cur_thread->state != ISLEEP) {
         /* A signal interrupted the sleep */
+#ifdef DEBUG_SLEEP_QUEUE
         printk("[%d:%d] %s: Sleeping was interrupted by a signal\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name);
+#endif
         return -1;
     } else {
         cur_thread->state = RUNNABLE;
@@ -57,8 +60,10 @@ void thread_queue_wakeup(queue_t *queue)
     while (queue->count) {
         thread_t *thread = dequeue(queue);
         thread->sleep_node = NULL;
+#ifdef DEBUG_SLEEP_QUEUE
         printk("[%d:%d] %s: Waking up from queue %p\n", thread->owner->pid, thread->tid, thread->owner->name, queue);
-        thread_ready(thread);
+#endif
+        sched_thread_ready(thread);
     }
 }
 

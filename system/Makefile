@@ -2,7 +2,7 @@ export
 
 MAKEFLAGS += --no-print-directory
 
-include config
+include Config.mk
 
 dirs-y = aqbox/ fbterm/
 

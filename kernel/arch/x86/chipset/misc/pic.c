@@ -1,25 +1,26 @@
 /**********************************************************************
- *				Programmable Interrupt Controller (PIC)
- *					 (Legacy PIC (8259) support)
+ *              Programmable Interrupt Controller (PIC)
+ *                   (Legacy PIC (8259) support)
  *
- *	-- Should only be used when no APIC is avilable or APIC support 
+ *  -- Should only be used when no APIC is avilable or APIC support 
  *  isn't built into the kernel.
  *
- *	This file is part of Aquila OS and is released under the terms of
- *	GNU GPLv3 - See LICENSE.
+ *  This file is part of Aquila OS and is released under the terms of
+ *  GNU GPLv3 - See LICENSE.
  *
- *	Copyright (C) 2016 Mohamed Anwar <mohamed_anwar@opmbx.org>
+ *  Copyright (C) 2016 Mohamed Anwar <mohamed_anwar@opmbx.org>
  */
 
 #include <core/system.h>
+#include <core/arch.h>
 #include <chipset/misc.h>
 #include <cpu/cpu.h>
 
-#define PIC_CMD  0x00
-#define PIC_DATA 0x01
+#define PIC_CMD   0x00
+#define PIC_DATA  0x01
 
-static struct __ioaddr __master;
-static struct __ioaddr __slave;
+static struct ioaddr __master;
+static struct ioaddr __slave;
 
 /*
  * ICW1 (Sent on COMMAND port of each PIC)
@@ -68,128 +69,125 @@ static struct __ioaddr __slave;
  *
  */
 
-#define ICW1		0x11 /* Both Master and Slave use the same ICW1 */
-#define MASTER_ICW2	0x20 /* Interrupts (from Master) start from offset 32 */
-#define SLAVE_ICW2	0x28 /* Interrupts (from Slave)  start from offset 40 */
-#define MASTER_ICW3	0x04 /* Master has a Slave attached to IR 2 */
-#define SLAVE_ICW3	0x02 /* Slave ID is 2 */
-#define ICW4		0x01 /* Sets PIC to 8086 MODE */
+#define ICW1        0x11 /* Both Master and Slave use the same ICW1 */
+#define MASTER_ICW2 0x20 /* Interrupts (from Master) start from offset 32 */
+#define SLAVE_ICW2  0x28 /* Interrupts (from Slave)  start from offset 40 */
+#define MASTER_ICW3 0x04 /* Master has a Slave attached to IR 2 */
+#define SLAVE_ICW3  0x02 /* Slave ID is 2 */
+#define ICW4        0x01 /* Sets PIC to 8086 MODE */
 
-static void __x86_irq_remap()
+
+static void x86_irq_remap()
 {
-	/*
-	 * Remaps PIC interrupts to different interrupts numbers so as not to
-	 * conflict with CPU exceptions
-	 */
+    /*
+     * Remaps PIC interrupts to different interrupts numbers so as not to
+     * conflict with CPU exceptions
+     */
 
-	__io_out8(&__master, PIC_CMD,  ICW1);
-	__io_out8(&__slave,  PIC_CMD,  ICW1);
-	__io_out8(&__master, PIC_DATA, MASTER_ICW2);
-	__io_out8(&__slave,  PIC_DATA, SLAVE_ICW2);
-	__io_out8(&__master, PIC_DATA, MASTER_ICW3);
-	__io_out8(&__slave,  PIC_DATA, SLAVE_ICW3);
-	__io_out8(&__master, PIC_DATA, ICW4);
-	__io_out8(&__slave,  PIC_DATA, ICW4);
+    io_out8(&__master, PIC_CMD,  ICW1);
+    io_out8(&__slave,  PIC_CMD,  ICW1);
+    io_out8(&__master, PIC_DATA, MASTER_ICW2);
+    io_out8(&__slave,  PIC_DATA, SLAVE_ICW2);
+    io_out8(&__master, PIC_DATA, MASTER_ICW3);
+    io_out8(&__slave,  PIC_DATA, SLAVE_ICW3);
+    io_out8(&__master, PIC_DATA, ICW4);
+    io_out8(&__slave,  PIC_DATA, ICW4);
 }
 
-extern void irq0 (void);
-extern void irq1 (void);
-extern void irq2 (void);
-extern void irq3 (void);
-extern void irq4 (void);
-extern void irq5 (void);
-extern void irq6 (void);
-extern void irq7 (void);
-extern void irq8 (void);
-extern void irq9 (void);
-extern void irq10(void);
-extern void irq11(void);
-extern void irq12(void);
-extern void irq13(void);
-extern void irq14(void);
-extern void irq15(void);
+extern void __x86_irq0 (void);
+extern void __x86_irq1 (void);
+extern void __x86_irq2 (void);
+extern void __x86_irq3 (void);
+extern void __x86_irq4 (void);
+extern void __x86_irq5 (void);
+extern void __x86_irq6 (void);
+extern void __x86_irq7 (void);
+extern void __x86_irq8 (void);
+extern void __x86_irq9 (void);
+extern void __x86_irq10(void);
+extern void __x86_irq11(void);
+extern void __x86_irq12(void);
+extern void __x86_irq13(void);
+extern void __x86_irq14(void);
+extern void __x86_irq15(void);
 
-static __x86_irq_handler_t __irq_handlers[16] = {0};
+static x86_irq_handler_t irq_handlers[16] = {0};
 
-void __x86_irq_handler_install(unsigned irq, __x86_irq_handler_t handler)
+void x86_irq_handler_install(unsigned irq, x86_irq_handler_t handler)
 {
-	if (irq < 16)
-		__irq_handlers[irq] = handler;
+    if (irq < 16)
+        irq_handlers[irq] = handler;
 }
 
-void __x86_irq_handler_uninstall(unsigned irq)
+void x86_irq_handler_uninstall(unsigned irq)
 {
-	if (irq < 16)
-		__irq_handlers[irq] = (__x86_irq_handler_t) NULL;
+    if (irq < 16)
+        irq_handlers[irq] = (x86_irq_handler_t) NULL;
 }
 
-#define IRQ_ACK	0x20
-static void __x86_irq_ack(uint32_t irq_no)
+#define IRQ_ACK 0x20
+static void x86_irq_ack(uint32_t irq_no)
 {
-	if (irq_no > 7)	/* IRQ fired from the Slave PIC */
-		__io_out8(&__slave, PIC_CMD, IRQ_ACK);
+    if (irq_no > 7) /* IRQ fired from the Slave PIC */
+        io_out8(&__slave, PIC_CMD, IRQ_ACK);
 
-	__io_out8(&__master, PIC_CMD, IRQ_ACK);
+    io_out8(&__master, PIC_CMD, IRQ_ACK);
 }
 
-void __x86_irq_handler()
+void __x86_irq_handler(struct x86_regs *r)
 {
-	extern uint32_t int_num;
-    if (int_num != 32)
-        printk("IRQ %d\n", int_num);
-	/* extern uint32_t err_num; */
-    //printk("irq_handler(%d)\n", int_num);
+    extern uint32_t int_num;
 
-	__x86_irq_handler_t handler = NULL;
+    x86_irq_handler_t handler = NULL;
 
-	if (int_num > 47 || int_num < 32) /* Out of range */
-		handler = NULL;
-	else
-		handler = __irq_handlers[int_num - 32];
+    if (int_num > 47 || int_num < 32) /* Out of range */
+        handler = NULL;
+    else
+        handler = irq_handlers[int_num - 32];
 
-    __x86_irq_ack(int_num - 32);
+    x86_irq_ack(int_num - 32);
 
-	if (handler) handler();
+    if (handler) handler(r);
 }
 
 
-static void __x86_irq_gates_setup(void)
+static void x86_irq_gates_setup(void)
 {
-	idt_set_gate(32, (uint32_t) irq0);
-	idt_set_gate(33, (uint32_t) irq1);
-	idt_set_gate(34, (uint32_t) irq2);
-	idt_set_gate(35, (uint32_t) irq3);
-	idt_set_gate(36, (uint32_t) irq4);
-	idt_set_gate(37, (uint32_t) irq5);
-	idt_set_gate(38, (uint32_t) irq6);
-	idt_set_gate(39, (uint32_t) irq7);
-	idt_set_gate(40, (uint32_t) irq8);
-	idt_set_gate(41, (uint32_t) irq9);
-	idt_set_gate(42, (uint32_t) irq10);
-	idt_set_gate(43, (uint32_t) irq11);
-	idt_set_gate(44, (uint32_t) irq12);
-	idt_set_gate(45, (uint32_t) irq13);
-	idt_set_gate(46, (uint32_t) irq14);
-	idt_set_gate(47, (uint32_t) irq15);
+    x86_idt_gate_set(32, (uint32_t) __x86_irq0);
+    x86_idt_gate_set(33, (uint32_t) __x86_irq1);
+    x86_idt_gate_set(34, (uint32_t) __x86_irq2);
+    x86_idt_gate_set(35, (uint32_t) __x86_irq3);
+    x86_idt_gate_set(36, (uint32_t) __x86_irq4);
+    x86_idt_gate_set(37, (uint32_t) __x86_irq5);
+    x86_idt_gate_set(38, (uint32_t) __x86_irq6);
+    x86_idt_gate_set(39, (uint32_t) __x86_irq7);
+    x86_idt_gate_set(40, (uint32_t) __x86_irq8);
+    x86_idt_gate_set(41, (uint32_t) __x86_irq9);
+    x86_idt_gate_set(42, (uint32_t) __x86_irq10);
+    x86_idt_gate_set(43, (uint32_t) __x86_irq11);
+    x86_idt_gate_set(44, (uint32_t) __x86_irq12);
+    x86_idt_gate_set(45, (uint32_t) __x86_irq13);
+    x86_idt_gate_set(46, (uint32_t) __x86_irq14);
+    x86_idt_gate_set(47, (uint32_t) __x86_irq15);
 }
 
-int __x86_pic_setup(struct __ioaddr *master, struct __ioaddr *slave)
+int x86_pic_setup(struct ioaddr *master, struct ioaddr *slave)
 {
-    printk("x86: Setting up 8259 PIC [Master: %p (%s), Salve: %p (%s)]\n",
-            master->addr, __ioaddr_type_str(master),
-            slave->addr, __ioaddr_type_str(slave));
+    printk("8259 PIC: Initalizing [Master: %p (%s), Salve: %p (%s)]\n",
+            master->addr, ioaddr_type_str(master),
+            slave->addr, ioaddr_type_str(slave));
 
     __master = *master;
     __slave  = *slave;
 
-	__x86_irq_remap();
-	__x86_irq_gates_setup();
+    x86_irq_remap();
+    x86_irq_gates_setup();
     return 0;
 }
 
-void __x86_pic_disable()
+void x86_pic_disable()
 {
-	/* Done by masking all IRQs */
-	__io_out8(&__slave,  PIC_DATA, 0xFF);
-	__io_out8(&__master, PIC_DATA, 0xFF);
+    /* Done by masking all IRQs */
+    io_out8(&__slave,  PIC_DATA, 0xFF);
+    io_out8(&__master, PIC_DATA, 0xFF);
 }

@@ -13,6 +13,8 @@
 #include <core/arch.h>
 #include <cpu/cpu.h>
 
+#include <chipset/misc.h>
+
 #include <sys/proc.h>
 #include <sys/sched.h>
 
@@ -41,8 +43,7 @@ void ps2kbd_handler(int scancode)
 
 void ps2kbd_register()
 {
-    //extern void i8042_register_handler(int channel, void (*fun)(int));
-    //i8042_register_handler(1, ps2kbd_handler);
+    x86_i8042_handler_register(1, ps2kbd_handler);
 }
 
 static ssize_t ps2kbd_read(struct devid *dd __unused, off_t offset __unused, size_t size, void *buf)

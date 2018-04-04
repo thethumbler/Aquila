@@ -8,7 +8,7 @@
 queue_t *ready_queue = QUEUE_NEW();   /* Ready threads queue */
 thread_t *cur_thread = NULL;
 
-void thread_ready(thread_t *thread)
+void sched_thread_ready(thread_t *thread)
 {
     struct queue_node *sched_node = enqueue(ready_queue, thread);
     thread->sched_queue = ready_queue;
@@ -22,15 +22,14 @@ void kernel_idle()
     arch_idle();
 }
 
-void thread_spawn(thread_t *thread)   /* Starts thread execution */
+void sched_thread_spawn(thread_t *thread)   /* Starts thread execution */
 {
     thread->spawned = 1;
     arch_thread_spawn(thread);
 }
 
-void proc_init_spawn(proc_t *init)
+void sched_init_spawn(proc_t *init)
 {
-    printk("proc_init_spawn(init=%p)\n", init);
     proc_init(init);
     init->cwd = strdup("/");
 
@@ -40,7 +39,7 @@ void proc_init_spawn(proc_t *init)
 
     cur_thread = (thread_t *) init->threads.head->value;
     cur_thread->state = RUNNABLE;
-    thread_spawn(cur_thread);
+    sched_thread_spawn(cur_thread);
 }
 
 void schedule() /* Called from arch-specific timer event handler */
@@ -49,7 +48,7 @@ void schedule() /* Called from arch-specific timer event handler */
         panic("Threads queue is not initialized");
 
     if (!kidle)
-        thread_ready(cur_thread);
+        sched_thread_ready(cur_thread);
 
     kidle = 0;
 
@@ -62,6 +61,6 @@ void schedule() /* Called from arch-specific timer event handler */
     if (cur_thread->spawned) {
         arch_thread_switch(cur_thread);
     } else {
-        thread_spawn(cur_thread);
+        sched_thread_spawn(cur_thread);
     }
 }

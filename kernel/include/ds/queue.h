@@ -3,7 +3,6 @@
 
 #include <core/system.h>
 #include <core/string.h>
-#include <core/printk.h>
 #include <mm/mm.h>
 
 typedef struct queue queue_t;
@@ -39,14 +38,17 @@ static inline struct queue_node *enqueue(queue_t *queue, void *value)
     }
 
     ++queue->count;
-
     return node;
 }
 
 static inline void *dequeue(queue_t *queue)
 {
-    if (!queue->count)  /* Queue is empty! */
+    if (!queue)
         return NULL;
+
+    if (!queue->count) {  /* Queue is empty! */
+        return NULL;
+    }
 
     --queue->count;
     struct queue_node *head = queue->head;
@@ -56,13 +58,18 @@ static inline void *dequeue(queue_t *queue)
         queue->head->prev = NULL;
     void *value = head->value;
     kfree(head);
+
     return value;
 }
 
 static inline void queue_remove(queue_t *queue, void *value)
 {
-    if (!queue || !queue->count)
+    if (!queue)
         return;
+
+    if (!queue->count) {
+        return;
+    }
 
     forlinked (node, queue->head, node->next) {
         if (node->value == value) {
@@ -87,8 +94,12 @@ static inline void queue_remove(queue_t *queue, void *value)
 
 static inline void queue_node_remove(queue_t *queue, struct queue_node *node)
 {
-    if (!queue || !queue->count || !node)
+    if (!queue || !node)
         return;
+
+    if (!queue->count) {
+        return;
+    }
 
     if (node->prev)
         node->prev->next = node->next;

@@ -4,7 +4,7 @@
 #include <sys/sched.h>
 #include <sys/syscall.h>
 
-void arch_syscall(regs_t *r)
+void arch_syscall(struct x86_regs *r)
 {
 	/* FIXME: Add some out-of-bounds checking code here */
 	void (*syscall)() = syscall_table[r->eax];

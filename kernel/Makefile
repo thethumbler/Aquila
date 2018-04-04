@@ -2,24 +2,13 @@ export
 
 MAKEFLAGS += --no-print-directory
 
-include config.mk
+PDIR := $(SRC_DIR)/kernel
 
-PDIR := $(TRAVIS_BUILD_DIR)/kernel
-
-ifeq ($(PDIR),/kernel)
-PDIR != pwd
+ifeq ($(CONFIG),)
+$(error Config file must be specified, e.g. 'make CONFIG=i686-pc')
 endif
 
-CC := $(PDIR)/../build-tools/sys/bin/i686-elf-gcc
-CFLAGS := -std=gnu99 -I. -I$(PDIR)/arch/$$(ARCH_DIR)/chipset/$$(CHIPSET_DIR)/include -I$(PDIR)/arch/$$(ARCH_DIR)/include -I $(PDIR) -I $(PDIR)/include/ -nostdlib -ffreestanding -m32 \
-		  -O3 -Wall -Wextra -Werror -funsigned-bitfields -fuse-ld=bfd \
-		  -Wno-unused -march=i586
-
-AS := $(CC)
-ASFLAGS := $(CFLAGS)
-
-LD := $(PDIR)/../build-tools/sys/bin/i686-elf-ld.bfd
-LDFLAGS := -nostdlib -melf_i386
+include configs/$(CONFIG).mk
 
 PERL := perl
 

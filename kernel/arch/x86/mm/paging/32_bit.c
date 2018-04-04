@@ -570,6 +570,7 @@ void handle_page_fault(uintptr_t addr)
     }
 
     x86_thread_t *arch = cur_thread->arch;
+    printk("CR2 %p\n", read_cr2());
     x86_dump_registers(arch->regs);
     panic("This is fucked up :)\n");
 }

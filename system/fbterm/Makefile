@@ -4,7 +4,8 @@ MAKEFLAGS += --no-print-directory
 
 PDIR != pwd
 
-include config.mk
+CFLAGS += -I$(PDIR)/include
+
 include Build.mk
 
 all: builtin.o fbterm

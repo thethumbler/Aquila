@@ -1,83 +1,75 @@
-/*
- *	        Intel 8042 (PS/2 Controller) Driver
- *
- *
- *  This file is part of AquilaOS and is released under
- *  the terms of GNU GPLv3 - See LICENSE.
- *
- */
-
-/* THIS DEVICE IS NOT POPULATED */
-
 #include <core/system.h>
-#include <core/panic.h>
 #include <cpu/cpu.h>
 #include <cpu/io.h>
+#include <chipset/misc.h>
 
-#include <dev/dev.h>
+static struct ioaddr __i8042_ioaddr;
 
 static void (*channel1_handler)(int) = NULL;
 static void (*channel2_handler)(int) = NULL;
 
-#define FIRST_IRQ	1
-#define SECOND_IRQ	12
+#define FIRST_IRQ   1
+#define SECOND_IRQ  12
 
-#define DATA_PORT	0x60
-#define STAT_PORT	0x64
-#define IN_BUF_FULL	0x02
+#define DATA_PORT   0x00
+#define STAT_PORT   0x04
 
-static void i8042_read_wait()
+#define __BUF_FULL  0x02
+
+static void x86_i8042_read_wait()
 {
-	while (inb(STAT_PORT) & IN_BUF_FULL);
+    while (io_in8(&__i8042_ioaddr, STAT_PORT) & __BUF_FULL);
 }
 
-static void i8042_first_handler()
+static void x86_i8042_first_handler()
 {
-	i8042_read_wait();
-	int scancode = inb(DATA_PORT);
-	if (channel1_handler)
-		channel1_handler(scancode);
+    x86_i8042_read_wait();
+    int scancode = io_in8(&__i8042_ioaddr, DATA_PORT);
+    if (channel1_handler)
+        channel1_handler(scancode);
 }
 
-static void i8042_second_handler()
+static void x86_i8042_second_handler()
 {
-	i8042_read_wait();
-	int scancode = inb(DATA_PORT);
-	if (channel2_handler)
-		channel2_handler(scancode);	
+    x86_i8042_read_wait();
+    int scancode = io_in8(&__i8042_ioaddr, DATA_PORT);
+    if (channel2_handler)
+        channel2_handler(scancode); 
 }
 
-static void install_i8042_handler()
+static void x86_i8042_handler_install()
 {
     printk("i8042: Installing IRQ %d\n", FIRST_IRQ);
-	irq_install_handler(FIRST_IRQ, i8042_first_handler);
+    x86_irq_handler_install(FIRST_IRQ, x86_i8042_first_handler);
 
     printk("i8042: Installing IRQ %d\n", SECOND_IRQ);
-	irq_install_handler(SECOND_IRQ, i8042_second_handler);
+    x86_irq_handler_install(SECOND_IRQ, x86_i8042_second_handler);
 }
 
-void i8042_register_handler(int channel, void (*fun)(int))
+void x86_i8042_handler_register(int channel, void (*fun)(int))
 {
-	switch (channel) {
-		case 1:
-			channel1_handler = fun;
-			break;
-		case 2:
-			channel2_handler = fun;
-			break;
-	}
+    switch (channel) {
+        case 1:
+            channel1_handler = fun;
+            break;
+        case 2:
+            channel2_handler = fun;
+            break;
+    }
 }
 
-#define I8042_SYSTEM_FLAG	0x4
+#define I8042_SYSTEM_FLAG   0x4
 
-static int i8042_probe()
+int x86_i8042_setup(struct ioaddr *io)
 {
-	if (!(inb(STAT_PORT) & I8042_SYSTEM_FLAG))
-		panic("No i8042 Controller found!");
+    __i8042_ioaddr = *io;
 
-    printk("i8042: Found controller\n");
-	install_i8042_handler();
-	return 0;
+    if (!(io_in8(&__i8042_ioaddr, STAT_PORT) & I8042_SYSTEM_FLAG)) {
+        printk("i8042: Controller not found");
+        return -1;
+    }
+
+    printk("i8042: Initalizing controller [%p (%s)]\n", io->addr, ioaddr_type_str(io));
+    x86_i8042_handler_install();
+    return 0;
 }
-
-MODULE_INIT(i8042, i8042_probe, NULL);

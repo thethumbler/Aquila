@@ -3,8 +3,8 @@ export
 MAKEFLAGS += --no-print-directory
 
 PDIR != pwd
+CFLAGS += -I$(PDIR)/include
 
-include config.mk
 include Build.mk
 
 all: builtin.o aqbox

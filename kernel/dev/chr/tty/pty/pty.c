@@ -190,7 +190,6 @@ int pty_new(proc_t *proc, struct inode **master)
 
     __pty[pty->id] = pty;
 
-    printk("[%d] %s: Created ptm/pts pair id=%d\n", proc->pid, proc->name, pty->id);
     return 0;
 
 error:

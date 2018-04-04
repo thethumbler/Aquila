@@ -1,16 +1,16 @@
 .code32
 
-//
-// ISRs -- Interrupt Service Routines
-//
+/*
+ * ISRs -- Interrupt Service Routines
+ */
 
 .global int_num, err_num
 int_num: .long 0
 err_num: .long 0
 
 .macro ISR_NOERR v
-.global isr\v
-isr\v:
+.global __x86_isr\v
+__x86_isr\v:
 	cli
 	movl $0x0, (err_num)
 	movl $\v, (int_num)
@@ -18,8 +18,8 @@ isr\v:
 .endm
 
 .macro ISR_ERR v
-.global isr\v
-isr\v:
+.global __x86_isr\v
+__x86_isr\v:
 	cli
 	popl (err_num)
 	movl $\v, (int_num)
@@ -87,24 +87,22 @@ ISR_NOERR 31
 ISR_NOERR 128
 
 
-.extern interrupt
-.global isr_handler
+.extern __x86_isr
 isr_handler:
 	push_context
 	push %esp
-	call interrupt
+	call __x86_isr
 	pop %eax
 	pop_context
 	iret
-
 
 //
 // IRQs -- external interrupt requists (from PIC)
 //
 
 .macro IRQ n, i
-.global irq\n
-irq\n:
+.global __x86_irq\n
+__x86_irq\n:
 	cli
 	//movl %eax, (err_num)
 	movl $\i, (int_num)
@@ -138,19 +136,6 @@ irq_stub:
 	pop_context
 	iret
 
-.global dum_var
-dum_var: .byte 1
-.global x86_jump_userspace
-x86_jump_userspace:
-	pop  %eax 	/* Caller return address */
-	mov  $0x20 | 0x3, %ax
-    movw %ax, %ds
-    movw %ax, %es
-    movw %ax, %fs
-    movw %ax, %gs
-    pop_context
-    iret
-
 .global x86_jump_user
 x86_jump_user:	/* eax, eip, cs, eflags, esp, ss */
 	pop  %eax 	/* Caller return address */
@@ -170,7 +155,7 @@ x86_read_eip:
 .global x86_goto
 x86_goto:
 	pop %ebx	/* Caller return address */
-	pop %ebx
+	pop %ebx    /* eip */
 	pop %ebp
 	pop %esp
 	mov $-1, %eax /* Return -1 -> Done switching */

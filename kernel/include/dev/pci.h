@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <dev/dev.h>
+#include <cpu/io.h>
 
 //#define PCI_CONFIG_ADDRESS  0xCF8
 //#define PCI_CONFIG_DATA     0xCFC
@@ -28,7 +29,7 @@ struct pci_dev {
 };
 
 extern struct dev pci_bus;
-
+void pci_ioaddr_set(struct ioaddr *io);
 
 /*
  * PCI Interface

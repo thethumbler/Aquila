@@ -13,9 +13,9 @@
 #define TIOCGPTN	0x80045430
 #define EAGAIN			11
 
-#define USE_FBTERM   0
+#define USE_FBTERM   1
 #define USE_CONSOLE  0
-#define USE_SERIAL   1
+#define USE_SERIAL   0
 
 void _start()
 {
@@ -39,6 +39,8 @@ void _start()
 
     if (!fork())
         execve("/bin/fbterm", 0, 0);
+
+    for (;;);
 #endif
 
 #if USE_CONSOLE
