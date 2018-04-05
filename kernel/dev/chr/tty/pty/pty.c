@@ -6,6 +6,7 @@
 #include <dev/tty.h>
 #include <sys/sched.h>
 #include <bits/errno.h>
+#include <ds/ringbuf.h>
 
 struct pty {
     size_t id;

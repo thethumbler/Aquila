@@ -22,7 +22,7 @@
 #include <fs/devfs.h>
 #include <fs/posix.h>
 
-#include <ds/ring.h>
+#include <ds/ringbuf.h>
 #include <ds/queue.h>
 
 #include <bits/errno.h>

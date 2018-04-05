@@ -1,6 +1,6 @@
 #include <core/system.h>
 
-#include <ds/ring.h>
+#include <ds/ringbuf.h>
 #include <bits/fcntl.h>
 
 #include <fs/pipe.h>

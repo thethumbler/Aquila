@@ -4,6 +4,7 @@
 #include <dev/uart.h>
 #include <fs/posix.h>
 #include <ds/queue.h>
+#include <ds/ringbuf.h>
 #include <sys/sched.h>
 
 #define UART_BUF 64
