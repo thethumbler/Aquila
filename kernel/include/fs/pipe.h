@@ -1,9 +1,9 @@
 #ifndef _PIPE_H
 #define _PIPE_H
 
-#include <stdint.h>
-#include <ds/ring.h>
+#include <core/system.h>
 #include <fs/vfs.h>
+#include <ds/ringbuf.h>
 
 #define PIPE_BUF_LEN    1024
 

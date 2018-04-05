@@ -1,7 +1,7 @@
 #ifndef _TTY_H
 #define _TTY_H
 
-#include <ds/ring.h>
+#include <core/system.h>
 #include <fs/termios.h>
 #include <fs/ioctl.h>
 #include <sys/proc.h>
