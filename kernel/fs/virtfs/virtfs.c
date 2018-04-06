@@ -24,6 +24,7 @@ int virtfs_vmknod(struct vnode *vdir, const char *fn, itype_t type, dev_t dev, s
     node->uid  = uio->uid;
     node->gid  = uio->gid;
     node->mask = uio->mask;
+    node->nlink = type == FS_DIR? 2 : 1;
     node->rdev = dev;
 
     struct inode *dir = NULL;
@@ -66,6 +67,43 @@ error:
     return err;
 }
 
+int virtfs_vunlink(struct vnode *dir, const char *fn, struct uio *uio)
+{
+    //printk("virtfs_vunlink(dir=%p, fn=%s, uio=%p)\n", dir, fn, uio);
+
+    if (dir->type != FS_DIR)
+        return -ENOTDIR;
+
+    struct inode *inode = (struct inode *) dir->id;
+    struct virtfs_dir *_dir = (struct virtfs_dir *) inode->p;
+    struct inode *next = NULL;
+
+    if (!_dir)  /* Directory not initialized */
+        return -ENOENT;
+
+    struct virtfs_dir *prev = NULL, *cur = NULL;
+
+    forlinked (file, _dir, file->next) {
+        if (!strcmp(file->node->name, fn)) {
+            cur = file;
+            goto found;
+        }
+
+        prev = file;
+    }
+
+    return -ENOENT;    /* File not found */
+
+found:
+    if (prev)
+        prev->next = cur->next;
+    else
+        inode->p = cur->next;
+
+    cur->node->nlink = 0;   /* XXX */
+    return 0;
+}
+
 int virtfs_vfind(struct vnode *dir, const char *fn, struct vnode *child)
 {
     if (dir->type != FS_DIR)
@@ -102,14 +140,6 @@ found:
 
 ssize_t virtfs_readdir(struct inode *dir, off_t offset, struct dirent *dirent)
 {
-    int i = 0;
-    struct virtfs_dir *_dir = (struct virtfs_dir *) dir->p;
-
-    if (!_dir)
-        return 0;
-
-    int found = 0;
-
     if (offset == 0) {
         strcpy(dirent->d_name, ".");
         return 1;
@@ -120,8 +150,16 @@ ssize_t virtfs_readdir(struct inode *dir, off_t offset, struct dirent *dirent)
         return 1;
     }
 
+    struct virtfs_dir *_dir = (struct virtfs_dir *) dir->p;
+
+    if (!_dir)
+        return 0;
+
+    int found = 0;
+
     offset -= 2;
 
+    int i = 0;
     forlinked (e, _dir, e->next) {
         if (i == offset) {
             found = 1;

@@ -27,9 +27,10 @@ static int __cpio_root_inode(struct inode *sp, struct inode **inode)
     node->fs   = &__cpio;
     node->p    = p;
 
-    node->uid  = 1;
-    node->gid  = 1;
+    node->uid  = 0;
+    node->gid  = 0;
     node->mask = 0555;  /* r-xr-xr-x */
+    node->nlink = 2;
 
     p->super  = sp;
     p->parent = NULL;
@@ -88,9 +89,10 @@ static int __cpio_new_inode(char *name, struct __cpio_hdr *hdr, size_t sz, size_
     node->fs   = &__cpio;
     node->p    = p;
 
-    node->uid  = 1;
-    node->gid  = 1;
+    node->uid  = 0;
+    node->gid  = 0;
     node->mask = hdr->mode & CPIO_PERM_MASK;
+    node->nlink = hdr->nlink;
 
     node->rdev = hdr->rdev;
 
@@ -338,6 +340,8 @@ struct fs __cpio = {
         .readdir = __cpio_readdir,
         .vfind   = __cpio_vfind,
         .vget    = __cpio_vget,
+        .vmknod  = __VMKNOD_T __vfs_rofs,
+        .vunlink = __vfs_rofs,
     },
     
     .fops = {

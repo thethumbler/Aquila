@@ -207,12 +207,16 @@ static void sys_open(const char *path, int oflags)
     /* Look up the file */
     struct vnode vnode;
     struct inode *inode = NULL;
+    struct uio uio = _PROC_UIO(cur_thread->owner);
 
-    int ret = vfs_lookup(path, &_PROC_UIO(cur_thread->owner), &vnode, NULL);
+    if (oflags & O_NOFOLLOW)
+        uio.flags = UIO_NOFOLLOW;
+
+    int ret = vfs_lookup(path, &uio, &vnode, NULL);
 
     if (ret) {   /* Lookup failed */
         if ((ret == -ENOENT) && (oflags & O_CREAT)) {
-            if ((ret = vfs_creat(path, &_PROC_UIO(cur_thread->owner), &inode))) {
+            if ((ret = vfs_creat(path, &uio, &inode))) {
                 goto done;
             }
 
@@ -283,9 +287,13 @@ static void sys_times()
 
 }
 
-static void sys_unlink()
+static void sys_unlink(const char *path)
 {
+    printk("[%d:%d] %s: unlink(path=%p)\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name, path);
 
+    struct uio uio = _PROC_UIO(cur_thread->owner);
+    int ret = vfs_unlink(path, &uio);
+    arch_syscall_return(cur_thread, ret);
 }
 
 static void sys_waitpid(int pid, int *stat_loc, int options)
@@ -393,6 +401,11 @@ struct mount_struct {
 
 static void sys_mount(struct mount_struct *args)
 {
+    if (cur_thread->owner->uid != 0) {
+        arch_syscall_return(cur_thread, -EACCES);
+        return;
+    }
+
     const char *type = args->type;
     const char *dir  = args->dir;
     int flags = args->flags;
@@ -607,15 +620,41 @@ static void sys_lstat(const char *path, struct stat *buf)
     struct vnode vnode;
     struct inode *inode = NULL;
     int ret = 0;
+    struct uio uio = _PROC_UIO(cur_thread->owner);
+    uio.flags = UIO_NOFOLLOW;
 
-    if ((ret = vfs_lookup(path, &_PROC_UIO(cur_thread->owner), &vnode, NULL)))
+    if ((ret = vfs_lookup(path, &uio, &vnode, NULL))) {
         arch_syscall_return(cur_thread, ret);
+        return;
+    }
 
-    if ((ret = vfs_vget(&vnode, &inode)))
+    if ((ret = vfs_vget(&vnode, &inode))) {
         arch_syscall_return(cur_thread, ret);
+        return;
+    }
 
     ret = vfs_stat(inode, buf);
     arch_syscall_return(cur_thread, ret);
+}
+
+static void sys_auth(uint32_t uid, const char *pw)
+{
+    printk("[%d:%d] %s: auth(uid=%d, pw=%s)\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name, uid, pw);
+
+    cur_thread->owner->uid = uid;   /* XXX */
+    arch_syscall_return(cur_thread, 0);
+}
+
+static void sys_getuid(void)
+{
+    printk("[%d:%d] %s: getuid()\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name);
+    arch_syscall_return(cur_thread, cur_thread->owner->uid);
+}
+
+static void sys_getgid(void)
+{
+    printk("[%d:%d] %s: getgid()\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name);
+    arch_syscall_return(cur_thread, cur_thread->owner->gid);
 }
 
 void (*syscall_table[])() =  {
@@ -654,4 +693,7 @@ void (*syscall_table[])() =  {
     /* 32 */    sys_setpgid,
     /* 33 */    sys_mknod,
     /* 34 */    sys_lstat,
+    /* 35 */    sys_auth,
+    /* 36 */    sys_getuid,
+    /* 37 */    sys_getgid,
 };

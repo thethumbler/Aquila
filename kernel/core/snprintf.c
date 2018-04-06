@@ -108,12 +108,10 @@ int vsnprintf(char *s, size_t n, char *fmt, va_list args)
 {
 	int ret = 0;
 	while(*fmt)
-	switch(*fmt)
-	{
+	switch (*fmt) {
 		case '%':
 			++fmt;
-			switch(*fmt)
-			{
+			switch (*fmt) {
 				case 'c':	/* char */
 					ret += snputc(s + ret, n - ret, (char)va_arg(args, int));
 					break;
@@ -124,8 +122,7 @@ int vsnprintf(char *s, size_t n, char *fmt, va_list args)
 					ret += snputud(s + ret, n - ret, (uint32_t)va_arg(args, uint32_t));
 					break;
 				case 'l':	/* long */
-					switch(*++fmt)
-					{
+					switch (*++fmt) {
 						case 'x':	/* long hex */
 							ret += snputlx(s + ret, n - ret, (uint64_t)va_arg(args, uint64_t));
 							break;
@@ -152,6 +149,8 @@ int vsnprintf(char *s, size_t n, char *fmt, va_list args)
 			ret += snputc(s + ret, n - ret, *fmt);
 			++fmt;
 	}
+
+    ret += snputc(s + ret, n - ret, '\0');
 
 	return ret;
 }

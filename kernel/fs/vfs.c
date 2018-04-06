@@ -9,11 +9,7 @@
 #include <dev/dev.h>
 
 /* List of registered filesystems */
-struct fs_list {
-    const char *name;
-    struct fs  *fs;
-    struct fs_list *next;
-} *registered_fs = NULL;
+struct fs_list *registered_fs = NULL;
 
 /* VFS mountpoints graph */
 struct vfs_node {
@@ -231,7 +227,7 @@ int vfs_lookup(const char *path, struct uio *uio, struct vnode *vnode, char **ab
     struct vfs_path *p = NULL;
     char **tokens = NULL;
 
-    /* if path is NULL pointer, or path is empty string, return NULL */
+    /* if path is NULL pointer, or path is empty string, return ENOENT */
     if (!path ||  !*path)
         return -ENOENT;
 
@@ -249,7 +245,7 @@ int vfs_lookup(const char *path, struct uio *uio, struct vnode *vnode, char **ab
 
     cur.super  = p->mountpoint;
     cur.id     = p->mountpoint->id;
-    cur.type   = FS_DIR; /* XXX */
+    cur.type   = FS_DIR;
     next.super = p->mountpoint;
 
     foreach (token, p->tokens) {
@@ -266,6 +262,17 @@ int vfs_lookup(const char *path, struct uio *uio, struct vnode *vnode, char **ab
         *abs_path = strdup(_path);
 
     kfree(_path);
+
+    /* Resolve symbolic links */
+    if (cur.type == FS_SYMLINK && !(uio->flags & UIO_NOFOLLOW)) {
+        char sym[1024];
+        struct inode *inode;
+        vfs_vget(&cur, &inode);
+        vfs_read(inode, 0, 1024, sym);
+        int ret = vfs_lookup(sym, uio, vnode, NULL);
+        vfs_close(inode);
+        return ret;
+    }
 
     return 0;
 
@@ -446,6 +453,19 @@ int vfs_vcreat(struct vnode *dir, const char *name, struct uio *uio, struct inod
 int vfs_vmkdir(struct vnode *dir, const char *name, struct uio *uio, struct inode **ref)
 {
     return vfs_vmknod(dir, name, FS_DIR, 0, uio, ref);
+}
+
+int vfs_vunlink(struct vnode *dir, const char *fn, struct uio *uio)
+{
+    /* Invalid request */
+    if (!dir|| !dir->super || !dir->super->fs)
+        return -EINVAL;
+
+    /* Operation not supported */
+    if (!dir->super->fs->iops.vunlink)
+        return -ENOSYS;
+
+    return dir->super->fs->iops.vunlink(dir, fn, uio);
 }
 
 int vfs_vget(struct vnode *vnode, struct inode **inode)
@@ -720,11 +740,74 @@ int vfs_stat(struct inode *inode, struct stat *buf)
 
     buf->st_mode  |= inode->mask;
 
-    buf->st_nlink = 0;  /* FIXME */
+    buf->st_nlink = inode->nlink;
     buf->st_uid   = inode->uid;
     buf->st_gid   = inode->gid;
     buf->st_rdev  = inode->rdev;
     buf->st_size  = inode->size;
 
     return 0;
+}
+
+int vfs_unlink(const char *path, struct uio *uio)
+{
+    int ret = 0;
+    struct vfs_path *p = NULL;
+    char **tokens = NULL;
+
+    /* if path is NULL pointer, or path is empty string, return NULL */
+    if (!path ||  !*path)
+        return -ENOENT;
+
+    char *_path = NULL;
+    if ((ret = vfs_parse_path(path, uio, &_path)))
+        goto error;
+
+    /* Canonicalize Path */
+    tokens = canonicalize_path(_path);
+
+    /* Get mountpoint & path */
+    p = vfs_get_mountpoint(tokens);
+
+    struct vnode cur, next;
+
+    cur.super  = p->mountpoint;
+    cur.id     = p->mountpoint->id;
+    cur.type   = FS_DIR;
+    next.super = p->mountpoint;
+
+    char *name = NULL;
+    char **tok = p->tokens;
+
+    while (tok) {
+        char *token = *tok;
+
+        if (!*(tok + 1)) {
+            name = token;
+            break;
+        }
+
+        if ((ret = vfs_vfind(&cur, token, &next)))
+            goto error;
+
+        memcpy(&cur, &next, sizeof(cur));
+        ++tok;
+    }
+
+    if ((ret = vfs_vunlink(&cur, name, uio)))
+        goto error;
+
+    free_tokens(tokens);
+    kfree(p);
+    kfree(_path);
+    return 0;
+
+error:
+    if (tokens)
+        free_tokens(tokens);
+    if (p)
+        kfree(p);
+    if (_path)
+        kfree(_path);
+    return ret;
 }

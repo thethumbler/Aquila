@@ -9,6 +9,7 @@ struct virtfs_dir {
 };
 
 int virtfs_vmknod(struct vnode *dir, const char *fn, itype_t type, dev_t dev, struct uio *uio, struct inode **ref);
+int virtfs_vunlink(struct vnode *dir, const char *fn, struct uio *uio);
 int virtfs_vfind(struct vnode *dir, const char *fn, struct vnode *child);
 ssize_t virtfs_readdir(struct inode *dir, off_t offset, struct dirent *dirent);
 
