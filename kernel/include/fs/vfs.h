@@ -29,7 +29,10 @@ struct uio {    /* User I/O operation */
     uint32_t uid;
     uint32_t gid;
     uint32_t mask;
+    uint32_t flags;
 };
+
+#define UIO_NOFOLLOW    0x0001
 
 /* Inode Operations */
 struct iops {
@@ -40,6 +43,7 @@ struct iops {
     int     (*close)   (struct inode *node);
 
     int     (*vmknod)  (struct vnode *dir, const char *fn, itype_t type, dev_t dev, struct uio *uio, struct inode **ref);
+    int     (*vunlink) (struct vnode *dir, const char *fn, struct uio *uio);
     int     (*vfind)   (struct vnode *dir, const char *name, struct vnode *child);
     int     (*vget)    (struct vnode *vnode, struct inode **inode);
 } __packed;
@@ -73,6 +77,9 @@ struct fs {
 
     struct iops iops;
     struct fops fops;
+
+    /* flags */
+    int nodev : 1;
 };
 
 struct inode {    /* Actual inode, only one copy is permitted */
@@ -90,6 +97,7 @@ struct inode {    /* Actual inode, only one copy is permitted */
     uint32_t    uid;    /* User ID */
     uint32_t    gid;    /* Group ID */
     uint32_t    mask;   /* File access mask */
+    uint32_t    nlink;  /* Number of links to inode */
 
     ssize_t     ref;    /* Number of processes referencing this node */
     queue_t     *read_queue;
@@ -117,12 +125,22 @@ typedef struct  {
     void   *p;
 } vfs_mountpoint_t;
 
+struct fs_list {
+    const char *name;
+    struct fs  *fs;
+    struct fs_list *next;
+};
+
+extern struct fs_list *registered_fs;
 
 extern struct inode *vfs_root;
 
 static inline int __vfs_always(){return 1;}
 static inline int __vfs_never (){return 0;}
 static inline int __vfs_nosys (){return -ENOSYS;}
+static inline int __vfs_rofs  (){return -EROFS;}
+
+#define __VMKNOD_T (int (*)(struct vnode *, const char *, itype_t, dev_t, struct uio *, struct inode **))
 
 /* Filesystem operations */
 void    vfs_init(void);
@@ -135,6 +153,7 @@ int     vfs_mount(const char *type, const char *dir, int flags, void *data, stru
 int     vfs_vmknod(struct vnode *dir, const char *fn, itype_t type, dev_t dev, struct uio *uio, struct inode **ref);
 int     vfs_vcreat(struct vnode *dir, const char *fn, struct uio *uio, struct inode **ref);
 int     vfs_vmkdir(struct vnode *dir, const char *dname, struct uio *uio, struct inode **ref);
+int     vfs_vunlink(struct vnode *dir, const char *fn, struct uio *uio);
 int     vfs_vfind(struct vnode *vnode, const char *name, struct vnode *child);
 int     vfs_vget(struct vnode *vnode, struct inode **inode);
 
@@ -166,6 +185,7 @@ int     vfs_lookup(const char *path, struct uio *uio, struct vnode *vnode, char 
 int     vfs_creat(const char *path, struct uio *uio, struct inode **ref);
 int     vfs_mkdir(const char *path, struct uio *uio, struct inode **ref);
 int     vfs_mknod(const char *path, itype_t type, dev_t dev, struct uio *uio, struct inode **ref);
+int     vfs_unlink(const char *path, struct uio *uio);
 int     vfs_stat(struct inode *inode, struct stat *buf);
 
 #endif /* !_VFS_H */

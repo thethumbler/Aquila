@@ -121,4 +121,6 @@ int  thread_kill(thread_t *thread);
 
 #define _PROC_UIO(proc) ((struct uio){.cwd = (proc)->cwd, .uid = (proc)->uid, .gid = (proc)->gid, .mask = (proc)->mask})
 
+extern queue_t *procs;
+
 #endif /* !_PROC_H */

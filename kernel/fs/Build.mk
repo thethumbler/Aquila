@@ -1,12 +1,12 @@
 dirs-y += virtfs/
-dirs-y += tmpfs/
-dirs-y += devfs/
-dirs-y += devpts/
-dirs-y += ext2/
 dirs-y += initramfs/
 dirs-y += posix/
-dirs-y += procfs/
 obj-y += vfs.o
-#obj-y += mbr.o
 obj-y += pipe.o
 obj-y += itbl.o
+
+dirs-$(FS_TMPFS)  += tmpfs/
+dirs-$(FS_DEVFS)  += devfs/
+dirs-$(FS_DEVPTS) += devpts/
+dirs-$(FS_EXT2)   += ext2/
+dirs-$(FS_PROCFS) += procfs/

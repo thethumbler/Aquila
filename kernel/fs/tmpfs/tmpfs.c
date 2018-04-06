@@ -138,6 +138,7 @@ struct fs tmpfs = {
         .close   = tmpfs_close,
 
         .vmknod  = virtfs_vmknod,
+        .vunlink = virtfs_vunlink,
         .vfind   = virtfs_vfind,
         .vget    = tmpfs_vget,
     },

@@ -123,6 +123,17 @@ static ssize_t procfs_readdir(struct inode *inode __unused, off_t offset, struct
     }
 
     /* Processes go here */
+    offset -= PROCFS_ENTRIES;
+
+    forlinked (node, procs->head, node->next) {
+        if (!offset) {
+            proc_t *proc = node->value;
+            snprintf(dirent->d_name, 10, "%d", proc->pid);
+            return 1;
+        }
+
+        --offset;
+    }
 
     return 0;
 }
