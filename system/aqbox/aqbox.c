@@ -47,6 +47,14 @@ int aqbox_run(int argc, char **argv)
 
 int main(int argc, char *argv[])
 {
+    char *applet = basename(argv[0]);
+
+    /* We were launched with a different name */
+    if (strcmp(applet, "aqbox")) {
+        argv[0] = applet;
+        return aqbox_run(argc, argv);
+    }
+
     if (argc < 2) {
         usage();
         return 0;
