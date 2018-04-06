@@ -25,6 +25,7 @@
 #define SYS_OPEN	11
 #define SYS_READ	12
 #define SYS_SBRK	13
+#define SYS_UNLINK  16
 #define SYS_WAITPID 17
 #define SYS_WRITE	18
 #define SYS_IOCTL	19
@@ -40,6 +41,9 @@
 #define SYS_SETPGID 32
 #define SYS_MKNOD   33
 #define SYS_LSTAT   34
+#define SYS_AUTH    35
+#define SYS_GETUID  36
+#define SYS_GETGID  37
 
 #define SYSCALL3(ret, v, arg1, arg2, arg3) \
 	asm volatile("int $0x80;":"=a"(ret):"a"(v), "b"(arg1), "c"(arg2), "d"(arg3));
@@ -206,8 +210,16 @@ clock_t times(struct tms *buf)
     
 }
 
-int unlink(char *name)
+int unlink(const char *path)
 {
+    int ret;
+    SYSCALL1(ret, SYS_UNLINK, path);
+
+    if (ret < 0) {
+        errno = -ret;
+        return -1;
+    }
+
     return 0;
 }
 
@@ -465,3 +477,31 @@ int lstat(const char *path, struct stat *buf)
 
     return 0;
 }
+
+int aquila_auth(uid_t uid, const char *pw)
+{
+    int ret;
+    SYSCALL2(ret, SYS_AUTH, uid, pw);
+
+    if (ret < 0) {
+        errno = -ret;
+        return -1;
+    }
+
+    return 0;
+}
+
+uid_t getuid(void)
+{
+    uid_t uid;
+    SYSCALL0(uid, SYS_GETUID);
+    return uid;
+}
+
+gid_t getgid(void)
+{
+    gid_t gid;
+    SYSCALL0(gid, SYS_GETGID);
+    return gid;
+}
+
