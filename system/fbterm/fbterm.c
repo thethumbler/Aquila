@@ -76,9 +76,22 @@ void fbterm_rect_move(struct fbterm_ctx *ctx, int dr0, int dr1, int dc0, int dc1
     fb_rect_move(ctx, dx0, dx1, dy0, dy1, sx0, sx1, sy0, sy1);
 }
 
+void fbterm_cursor_draw(struct fbterm_ctx *ctx, int row, int col)
+{
+    struct font *font = ctx->font;
+    for (int i = font->rows-1; i < font->rows; ++i) {
+        int cx = col * font->cols;
+        for (int j = 0; j < font->cols; ++j) {
+            fb_put_pixel(ctx, cx, row*font->rows+i, -1, 0);
+            ++cx;
+        }
+    }
+}
+
 void fbterm_redraw(struct fbterm_ctx *ctx)
 {
-    fbterm_putc(ctx, ctx->cr, ctx->cc, '_', -1, 0);
+    /* Draw cursor */
+    fbterm_cursor_draw(ctx, ctx->cr, ctx->cc);
     fb_render(ctx);
 }
 
@@ -270,7 +283,7 @@ relaunch:
         int stdout_fd = open(pts_fn, O_WRONLY);
         int stderr_fd = open(pts_fn, O_WRONLY);
 
-        char *argp[] = {DEFAULT_SHELL, "sh", NULL};
+        char *argp[] = {DEFAULT_SHELL, "login", NULL};
         char *envp[] = {"PWD=/", "TERM=VT100", NULL};
         execve(DEFAULT_SHELL, argp, envp);
         for (;;);
