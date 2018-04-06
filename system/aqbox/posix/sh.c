@@ -59,8 +59,7 @@ int builtin_export(int argc, char **argv)
 
 int builtin_exit(int argc, char **argv)
 {
-    *(char *) NULL = 'A';
-    return 0;
+    exit(0);
 }
 
 #if 0
@@ -87,7 +86,7 @@ struct aqsh_command {
     int (*f)(int, char**);
 } builtin_commands[] = {    /* Commands must be sorted */
     {"cd", builtin_cd},
-    //{"exit", builtin_exit},
+    {"exit", builtin_exit},
     {"export", builtin_export},
     //{"glob", builtin_glob},
 };
@@ -122,7 +121,8 @@ char *pwd = "/";
 /***********/
 void print_prompt()
 {
-    printf("[%s@%s %s]# ", user, hostname, pwd);
+    int root_prompt = getuid() == 0;
+    printf("[%s@%s %s]%c ", user, hostname, pwd, root_prompt? '#' : '$');
     fflush(stdout);
 }
 
@@ -396,8 +396,8 @@ int eval(char *buf)
     if (f) return f(args_i, argv);
 
     /* Check if command is built-in in aqbox - FIXME */
-    f = aqbox_get_applet(argv[0]);
-    if (f) return f(args_i, argv);
+    //f = aqbox_get_applet(argv[0]);
+    //if (f) return f(args_i, argv);
 
     /* Check commands from PATH */
     char *env_path = getenv("PATH");
@@ -428,7 +428,6 @@ void sigpass(int s)
 
 void shell()
 {
-    putenv("USER=root");
     signal(2, sigpass);
     setpgid(0, 0);
     pid_t pid = getpid();
@@ -436,6 +435,7 @@ void shell()
     char buf[1024];
 
     for (;;) {
+        user = getenv("USER");
         pwd = getenv("PWD");
         print_prompt();
         memset(buf, 0, 1024);

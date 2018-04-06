@@ -57,8 +57,10 @@ AQBOX_APPLET(mount)(int argc, char **argv)
         char *opt;
     } data = {dev, opt};
 
-    //printf("mount -t %s -o %s %s %s\n", type, opt, dev, dir);
-    mount(type, dir, 0, &data);
+    int ret;
+    if ((ret = mount(type, dir, 0, &data))) {
+        perror("mount");
+    }
     
     return 0;
 }
