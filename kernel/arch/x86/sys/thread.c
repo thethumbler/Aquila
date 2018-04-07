@@ -65,6 +65,12 @@ void arch_thread_kill(thread_t *thread)
 {
     x86_thread_t *arch = (x86_thread_t *) thread->arch;
 
+    if (thread == cur_thread) {
+        /* We don't wanna die here */
+        uintptr_t esp = VMA(0x100000);
+        x86_kernel_stack_set(esp);
+    }
+
     if (arch->kstack)
         kfree((void *) (arch->kstack - KERN_STACK_SIZE));
 

@@ -20,17 +20,15 @@ int devpts_init()
 
     memset(devpts_root, 0, sizeof(struct inode));
 
-    *devpts_root = (struct inode) {
-        .type = FS_DIR,
-        .id   = (vino_t) devpts_root,
-        .fs   = &devpts,
-    };
+    devpts_root->name = "pts";
+    devpts_root->id   = (vino_t) devpts_root;
+    devpts_root->type = FS_DIR;
+    devpts_root->nlink = 2;
+    devpts_root->fs   = &devpts;
 
-    vdevpts_root = (struct vnode) {
-        .super = devpts_root,
-        .id    = (vino_t) devpts_root,
-        .type  = FS_DIR,
-    };
+    vdevpts_root.super = devpts_root;
+    vdevpts_root.id    = (vino_t) devpts_root;
+    vdevpts_root.type  = FS_DIR;
 
     vfs_install(&devpts);
 

@@ -12,5 +12,6 @@ int virtfs_vmknod(struct vnode *dir, const char *fn, itype_t type, dev_t dev, st
 int virtfs_vunlink(struct vnode *dir, const char *fn, struct uio *uio);
 int virtfs_vfind(struct vnode *dir, const char *fn, struct vnode *child);
 ssize_t virtfs_readdir(struct inode *dir, off_t offset, struct dirent *dirent);
+int virtfs_close(struct inode *inode);
 
 #endif /* !_VIRTFS_H */

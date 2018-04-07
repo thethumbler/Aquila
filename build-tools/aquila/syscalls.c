@@ -302,7 +302,7 @@ int ioctl(int fildes, int request, void *argp)
 
 DIR *opendir(const char *dirname)
 {
-    int fd = open(dirname, O_RDONLY);
+    int fd = open(dirname, O_SEARCH);
 
     if (fd == -1)
         return NULL;

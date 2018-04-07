@@ -32,8 +32,6 @@ struct uio {    /* User I/O operation */
     uint32_t flags;
 };
 
-#define UIO_NOFOLLOW    0x0001
-
 /* Inode Operations */
 struct iops {
     ssize_t (*read)    (struct inode *node, off_t offset, size_t size, void *buf);
@@ -55,7 +53,7 @@ struct fops {
     ssize_t     (*write)   (struct file *file, void *buf, size_t size);
     ssize_t     (*readdir) (struct file *file, struct dirent *dirent);  
     off_t       (*lseek)   (struct file *file, off_t offset, int whence);
-    ssize_t     (*close)   (struct file *file);
+    int         (*close)   (struct file *file);
     int         (*ioctl)   (struct file *file, int request, void *argp);
 
     /* helpers */
@@ -187,5 +185,6 @@ int     vfs_mkdir(const char *path, struct uio *uio, struct inode **ref);
 int     vfs_mknod(const char *path, itype_t type, dev_t dev, struct uio *uio, struct inode **ref);
 int     vfs_unlink(const char *path, struct uio *uio);
 int     vfs_stat(struct inode *inode, struct stat *buf);
+int     vfs_perms_check(struct file *file, struct uio *uio);
 
 #endif /* !_VFS_H */

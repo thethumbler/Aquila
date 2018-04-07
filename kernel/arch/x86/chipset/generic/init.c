@@ -56,7 +56,7 @@ int x86_generic_pit_init()
 #define PIT_IRQ 0
 void chipset_timer_setup(size_t period_ns, void (*handler)())
 {
-    x86_pit_period_set(100);
+    x86_pit_period_set(2000);
     //hpet_timer_setup(1, x86_sched_handler);
     
     x86_irq_handler_install(PIT_IRQ, handler);

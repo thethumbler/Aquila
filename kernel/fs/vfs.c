@@ -32,7 +32,6 @@ void vfs_mount_root(struct inode *node)
     vfs_root = node;
     vfs_graph.node = node;
     vfs_graph.children = NULL;  /* XXX */
-    //vfs_graph_cache_node(&vfs_graph, node);
 }
 
 static char **canonicalize_path(const char * const path)
@@ -47,16 +46,16 @@ static int vfs_parse_path(const char *path, struct uio *uio, char **abs_path)
     if (!path || !*path)
         return -ENOENT;
 
+    char *cwd = uio->cwd;
+
     if (*path == '/') { /* Absolute path */
-        if (abs_path)
-            *abs_path = strdup(path);   /* FIXME */
-        return 0;
+        cwd = "/";
     }
 
-    size_t cwd_len = strlen(uio->cwd), path_len = strlen(path);
+    size_t cwd_len = strlen(cwd), path_len = strlen(path);
     char *buf = kmalloc(cwd_len + path_len + 2);
 
-    memcpy(buf, uio->cwd, cwd_len);
+    memcpy(buf, cwd, cwd_len);
 
     buf[cwd_len] = '/';
     memcpy(buf + cwd_len + 1, path, path_len);
@@ -208,7 +207,7 @@ next:;
 
 void vfs_init(void)
 {
-    printk("VFS: Initalizing\n");
+    printk("VFS: Initializing\n");
 }
 
 void vfs_install(struct fs *fs)
@@ -264,7 +263,8 @@ int vfs_lookup(const char *path, struct uio *uio, struct vnode *vnode, char **ab
     kfree(_path);
 
     /* Resolve symbolic links */
-    if (cur.type == FS_SYMLINK && !(uio->flags & UIO_NOFOLLOW)) {
+    if (cur.type == FS_SYMLINK && !(uio->flags & O_NOFOLLOW)) {
+        /* TODO enforce limit */
         char sym[1024];
         struct inode *inode;
         vfs_vget(&cur, &inode);
@@ -381,7 +381,7 @@ int vfs_close(struct inode *inode)
 
     --inode->ref;
 
-    if (inode->ref <= 0) {
+    if (inode->ref <= 0) {   /* Why < ? */
         return inode->fs->iops.close(inode);
     }
 
@@ -442,7 +442,12 @@ int vfs_vmknod(struct vnode *dir, const char *name, itype_t type, dev_t dev, str
     if (!dir->super->fs->iops.vmknod)
         return -ENOSYS;
 
-    return dir->super->fs->iops.vmknod(dir, name, type, dev, uio, ref);
+    int ret = dir->super->fs->iops.vmknod(dir, name, type, dev, uio, ref);
+
+    if (!ret && ref && *ref)
+        (*ref)->ref++;
+
+    return ret;
 }
 
 int vfs_vcreat(struct vnode *dir, const char *name, struct uio *uio, struct inode **ref)
@@ -476,7 +481,13 @@ int vfs_vget(struct vnode *vnode, struct inode **inode)
     if (!vnode->super->fs->iops.vget)
         return -ENOSYS;
 
-    return vnode->super->fs->iops.vget(vnode, inode);
+    int ret = vnode->super->fs->iops.vget(vnode, inode);
+
+    if (!ret && inode && *inode) {
+        (*inode)->ref++;
+    }
+
+    return ret;
 }
 
 /* ================== VFS file ops mappings ================== */
@@ -485,6 +496,9 @@ int vfs_file_open(struct file *file)
 {
     if (!file || !file->node || !file->node->fs)
         return -EINVAL;
+
+    if (file->node->type == FS_DIR && !(file->flags & O_SEARCH))
+        return -EISDIR;
 
     if (ISDEV(file->node))
         return kdev_file_open(&_INODE_DEV(file->node), file);
@@ -810,4 +824,69 @@ error:
     if (_path)
         kfree(_path);
     return ret;
+}
+
+int vfs_perms_check(struct file *file, struct uio *uio)
+{
+    if (uio->uid == 0) {    /* Root */
+        return 0;
+    }
+
+    uint32_t mask = file->node->mask;
+    uint32_t uid  = file->node->uid;
+    uint32_t gid  = file->node->gid;
+
+read_perms:
+    /* Read permissions */
+    if ((file->flags & O_ACCMODE) == O_RDONLY && (file->flags & O_ACCMODE) != O_WRONLY) {
+        if (uid == uio->uid) {
+            if (mask & S_IRUSR)
+                goto write_perms;
+        } else if (gid == uio->gid) {
+            if (mask & S_IRGRP)
+                goto write_perms;
+        } else {
+            if (mask & S_IROTH)
+                goto write_perms;
+        }
+
+        return -EACCES;
+    }
+
+write_perms:
+    /* Write permissions */
+    if (file->flags & (O_WRONLY | O_RDWR)) { 
+        if (uid == uio->uid) {
+            if (mask & S_IWUSR)
+                goto exec_perms;
+        } else if (gid == uio->gid) {
+            if (mask & S_IWGRP)
+                goto exec_perms;
+        } else {
+            if (mask & S_IWOTH)
+                goto exec_perms;
+        }
+
+        return -EACCES;
+    }
+
+exec_perms:
+    /* Execute permissions */
+    if (file->flags & O_EXEC) { 
+        if (uid == uio->uid) {
+            if (mask & S_IWUSR)
+                goto done;
+        } else if (gid == uio->gid) {
+            if (mask & S_IWGRP)
+                goto done;
+        } else {
+            if (mask & S_IWOTH)
+                goto done;
+        }
+
+        return -EACCES;
+    }
+    
+done:
+    return 0;
 }

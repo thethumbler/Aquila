@@ -24,7 +24,7 @@ struct pit_cmd_register {
 
 void x86_pit_setup(struct ioaddr *io)
 {
-    printk("8254 PIT: Initalizing [%p (%s)]\n", io->addr, ioaddr_type_str(io));
+    printk("8254 PIT: Initializing [%p (%s)]\n", io->addr, ioaddr_type_str(io));
     __pit_ioaddr = *io;
 }
 
