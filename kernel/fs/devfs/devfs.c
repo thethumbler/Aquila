@@ -35,9 +35,8 @@ static int devfs_init()
     devfs_root->name = "dev";
     devfs_root->id   = (vino_t) devfs_root;
     devfs_root->type = FS_DIR;
-    devfs_root->size = 0;
+    devfs_root->nlink = 2;
     devfs_root->fs   = &devfs;
-    devfs_root->p    = NULL;
 
     vdevfs_root.super = devfs_root;
     vdevfs_root.id    = (vino_t) devfs_root;

@@ -5,7 +5,7 @@
  *  This file is part of Aquila OS and is released under the terms of
  *  GNU GPLv3 - See LICENSE.
  *
- *  Copyright (C) 2016 Mohamed Anwar <mohamed_anwar@opmbx.org>
+ *  Copyright (C) Mohamed Anwar 
  */
 
 #include <core/system.h>
@@ -29,7 +29,6 @@ static int tmpfs_vget(struct vnode *vnode, struct inode **inode)
 
     /* Inode is always present in memory */
     struct inode *node = (struct inode *) vnode->id;
-    node->ref++;
 
     if (inode)
         *inode = node;
@@ -37,8 +36,16 @@ static int tmpfs_vget(struct vnode *vnode, struct inode **inode)
     return 0;
 }
 
-static int tmpfs_close(struct inode *inode __unused)
+static int tmpfs_close(struct inode *inode)
 {
+    /* Inode is always present in memory */
+
+    if (!inode->ref && !inode->nlink) {
+        /* inode is no longer referenced */
+        kfree(inode->p);
+        virtfs_close(inode);
+    }
+
     return 0;
 }
 
@@ -113,10 +120,35 @@ static int tmpfs_mount(const char *dir, int flags __unused, void *data __unused)
     if (!tmpfs_root)
         return -ENOMEM;
 
+    memset(tmpfs_root, 0, sizeof(struct inode));
+
+    uint32_t mode = 0777;
+
+    struct mdata {
+        char *dev;
+        char *opt;
+    } *mdata = data;
+
+    if (mdata->opt) {
+        char **tokens = tokenize(mdata->opt, ',');
+        foreach (token, tokens) {
+            if (!strncmp(token, "mode=", 5)) {    /* ??? */
+                char *t = token + 5;
+                mode = 0;
+                while (*t) {
+                    mode <<= 3;
+                    mode |= (*t++ - '0');
+                }
+            }
+        }
+    }
+
     tmpfs_root->name = "tmp";
     tmpfs_root->id   = (vino_t) tmpfs_root;
     tmpfs_root->type = FS_DIR;
+    tmpfs_root->mask = mode;
     tmpfs_root->size = 0;
+    tmpfs_root->nlink = 2;
     tmpfs_root->fs   = &tmpfs;
     tmpfs_root->p    = NULL;
 
@@ -145,6 +177,7 @@ struct fs tmpfs = {
     
     .fops = {
         .open    = tmpfs_file_open,
+        .close   = posix_file_close,
         .read    = posix_file_read,
         .write   = posix_file_write, 
         .ioctl   = posix_file_ioctl,

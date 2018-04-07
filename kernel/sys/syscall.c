@@ -26,6 +26,7 @@
 #include <fs/pipe.h>
 #include <fs/stat.h>
 
+#define DEBUG_SYSCALL
 #ifndef DEBUG_SYSCALL
 #define printk(...) {}
 #endif
@@ -64,8 +65,7 @@ static void sys_close(int fildes)
         return;
     }
 
-    int ret = 0;
-    //int ret = vfs.fops.close(file); /* XXX */
+    int ret = vfs_file_close(file);
     cur_thread->owner->fds[fildes].node = NULL;
     arch_syscall_return(cur_thread, ret);
 }
@@ -208,9 +208,7 @@ static void sys_open(const char *path, int oflags)
     struct vnode vnode;
     struct inode *inode = NULL;
     struct uio uio = _PROC_UIO(cur_thread->owner);
-
-    if (oflags & O_NOFOLLOW)
-        uio.flags = UIO_NOFOLLOW;
+    uio.flags = oflags;
 
     int ret = vfs_lookup(path, &uio, &vnode, NULL);
 
@@ -238,13 +236,18 @@ o_creat:
         .flags = oflags,
     };
 
+    if ((ret = vfs_perms_check(&cur_thread->owner->fds[fd], &uio)))
+        goto done;
+
     ret = vfs_file_open(&cur_thread->owner->fds[fd]);
 
 done:
-    if (ret < 0)  /* open returned an error code */
+    if (ret < 0) { /* open returned an error code */
         proc_fd_release(cur_thread->owner, fd);
-    else
+        vfs_close(inode);
+    } else {
         ret = fd;
+    }
 
     arch_syscall_return(cur_thread, ret);
     return;
@@ -315,10 +318,12 @@ static void sys_waitpid(int pid, int *stat_loc, int options)
         return;
     }
 
-    //if (options | WNOHANG) {
-    //    arch_syscall_return(0);
-    //    return;
-    //}
+    /*
+    if (options & WNOHANG) {
+        arch_syscall_return(cur_thread, 0);
+        return;
+    }
+    */
 
     while (child->running) {
         if (thread_queue_sleep(&cur_thread->owner->wait_queue)) {
@@ -490,8 +495,6 @@ static void sys_chdir(const char *path)
     kfree(cur_thread->owner->cwd);
     cur_thread->owner->cwd = strdup(abs_path);
 
-    printk("cur_thread->owner->cwd %s\n", cur_thread->owner->cwd);
-
 free_resources:
     kfree(abs_path);
     arch_syscall_return(cur_thread, ret);
@@ -558,7 +561,7 @@ static void sys_thread_join(int tid, void **value_ptr)
     proc_t *owner = cur_thread->owner;
     thread_t *thread = NULL;
 
-	forlinked (node, owner->threads.head, node->next) {
+    forlinked (node, owner->threads.head, node->next) {
         thread_t *_thread = node->value;
         if (_thread->tid == tid)
             thread = _thread;
@@ -621,7 +624,7 @@ static void sys_lstat(const char *path, struct stat *buf)
     struct inode *inode = NULL;
     int ret = 0;
     struct uio uio = _PROC_UIO(cur_thread->owner);
-    uio.flags = UIO_NOFOLLOW;
+    uio.flags = O_NOFOLLOW;
 
     if ((ret = vfs_lookup(path, &uio, &vnode, NULL))) {
         arch_syscall_return(cur_thread, ret);

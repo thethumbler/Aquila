@@ -323,6 +323,11 @@ static ssize_t __cpio_readdir(struct inode *node, off_t offset, struct dirent *d
     return i == offset;
 }
 
+static int __cpio_close(struct inode *inode)
+{
+    return 0;
+}
+
 static int __cpio_eof(struct file *file)
 {
     if (file->node->type == FS_DIR) {
@@ -342,10 +347,12 @@ struct fs __cpio = {
         .vget    = __cpio_vget,
         .vmknod  = __VMKNOD_T __vfs_rofs,
         .vunlink = __vfs_rofs,
+        .close   = __cpio_close,
     },
     
     .fops = {
         .open    = posix_file_open,
+        .close   = posix_file_close,
         .read    = posix_file_read,
         .write   = posix_file_write,
         .readdir = posix_file_readdir,

@@ -52,6 +52,8 @@ int virtfs_vmknod(struct vnode *vdir, const char *fn, itype_t type, dev_t dev, s
     if (ref)
         *ref = node;
 
+    vfs_close(dir);
+
     return 0;
 
 error:
@@ -101,6 +103,12 @@ found:
         inode->p = cur->next;
 
     cur->node->nlink = 0;   /* XXX */
+
+    if (cur->node->ref == 0) {
+        cur->node->ref = 1; /* vfs_close will decrement ref */
+        vfs_close(cur->node);
+    }
+
     return 0;
 }
 
@@ -170,4 +178,12 @@ ssize_t virtfs_readdir(struct inode *dir, off_t offset, struct dirent *dirent)
     }
 
     return found;
+}
+
+int virtfs_close(struct inode *inode)
+{
+    /* XXX */
+    kfree(inode->name);
+    kfree(inode);
+    return 0;
 }
