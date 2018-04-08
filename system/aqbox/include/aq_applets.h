@@ -10,6 +10,7 @@ int cmd_ls(int, char**);
 int cmd_mkdir(int, char**);
 int cmd_mknod(int, char**);
 int cmd_mount(int, char**);
+int cmd_ps(int, char**);
 int cmd_pwd(int, char**);
 int cmd_screenfetch(int, char**);
 int cmd_sh(int, char**);
@@ -32,6 +33,7 @@ struct applet {
     APPLET(mkdir),
     APPLET(mknod),
     APPLET(mount),
+    APPLET(ps),
     APPLET(pwd),
     APPLET(screenfetch),
     APPLET(sh),
