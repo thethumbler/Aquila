@@ -423,6 +423,9 @@ int vfs_vfind(struct vnode *parent, const char *name, struct vnode *child)
     if (!parent->super->fs->iops.vfind)
         return -ENOSYS;
 
+    if (parent->type != FS_DIR)
+        return -ENOTDIR;
+
     return parent->super->fs->iops.vfind(parent, name, child);
 }
 
@@ -874,13 +877,13 @@ exec_perms:
     /* Execute permissions */
     if (file->flags & O_EXEC) { 
         if (uid == uio->uid) {
-            if (mask & S_IWUSR)
+            if (mask & S_IXUSR)
                 goto done;
         } else if (gid == uio->gid) {
-            if (mask & S_IWGRP)
+            if (mask & S_IXGRP)
                 goto done;
         } else {
-            if (mask & S_IWOTH)
+            if (mask & S_IXOTH)
                 goto done;
         }
 
