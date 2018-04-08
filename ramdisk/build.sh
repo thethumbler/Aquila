@@ -24,6 +24,7 @@ ln -s /bin/aqbox out/bin/env
 ln -s /bin/aqbox out/bin/ls
 ln -s /bin/aqbox out/bin/mkdir
 ln -s /bin/aqbox out/bin/mknod
+ln -s /bin/aqbox out/bin/ps
 ln -s /bin/aqbox out/bin/pwd
 ln -s /bin/aqbox out/bin/stat
 ln -s /bin/aqbox out/bin/uname
