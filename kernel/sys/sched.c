@@ -31,6 +31,9 @@ void sched_thread_spawn(thread_t *thread)   /* Starts thread execution */
 void sched_init_spawn(proc_t *init)
 {
     proc_init(init);
+
+    /* init defaults */
+    init->mask = 0775;
     init->cwd = strdup("/");
 
     arch_sched_init();
