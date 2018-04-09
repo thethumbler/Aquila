@@ -34,6 +34,7 @@ static int devfs_init()
 
     devfs_root->name = "dev";
     devfs_root->id   = (vino_t) devfs_root;
+    devfs_root->mask = 0775;
     devfs_root->type = FS_DIR;
     devfs_root->nlink = 2;
     devfs_root->fs   = &devfs;
@@ -61,4 +62,4 @@ struct fs devfs = {
     .mount  = devfs_mount,
 };
 
-MODULE_INIT(devfs, devfs_init, NULL);
+MODULE_INIT(devfs, devfs_init, NULL)
