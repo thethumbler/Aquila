@@ -9,6 +9,7 @@ mknod /dev/fb0 c 29 0
 mknod /dev/hda b 3 0 
 mknod /dev/hda1 b 3 1 
 mknod /dev/ttyS0 c 4 64 
+mknod /dev/mouse c 10 1 
 
 # Mount devpts on /dev/pts
 mkdir /dev/pts
