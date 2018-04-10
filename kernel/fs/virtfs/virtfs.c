@@ -7,6 +7,12 @@ int virtfs_vmknod(struct vnode *vdir, const char *fn, itype_t type, dev_t dev, s
     struct inode *node = NULL;
     struct virtfs_dir *dirent = NULL;
 
+    /* Make sure file does not exist */
+    if (!virtfs_vfind(vdir, fn, NULL)) {
+        err = -EEXIST;
+        goto error;
+    }
+
     if (!(node = kmalloc(sizeof(struct inode)))) {
         err = -ENOMEM;
         goto error;
