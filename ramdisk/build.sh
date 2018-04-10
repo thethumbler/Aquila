@@ -35,6 +35,8 @@ ln -s /bin/aqbox out/sbin/mount
 ln -s /bin/aqbox out/sbin/login
 
 cp ../system/fbterm/fbterm out/bin/
+cp ../system/nuklear/nuklear out/bin/
+
 cp dist/* out/ -r
 
 cd out; find . | cpio -o > ../initrd.img; cd ..

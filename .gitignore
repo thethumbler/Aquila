@@ -5,6 +5,7 @@ hd.img
 mnt/
 build-tools/*
 system/usr
+system/nuklear
 ramdisk/sysroot
 !build-tools/build.sh
 !build-tools/aquila/

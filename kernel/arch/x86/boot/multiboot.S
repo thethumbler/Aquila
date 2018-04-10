@@ -43,7 +43,7 @@
 .long 0                         /* mode_type */
 .long 640                       /* mowidth */
 .long 480                       /* moheight */
-.long 24                        /* modepth */
+.long 32                        /* modepth */
 
 /*
  * Entry point of the bootloader

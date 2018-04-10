@@ -4,7 +4,7 @@ MAKEFLAGS += --no-print-directory
 
 include Config.mk
 
-dirs-y = aqbox/ fbterm/
+dirs-y = aqbox/ fbterm/ #nuklear/
 
 all: $(dirs-y)
 
