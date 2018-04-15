@@ -5,10 +5,10 @@
  *  -- Should only be used when no APIC is avilable or APIC support 
  *  isn't built into the kernel.
  *
- *  This file is part of Aquila OS and is released under the terms of
+ *  This file is part of AquilaOS and is released under the terms of
  *  GNU GPLv3 - See LICENSE.
  *
- *  Copyright (C) 2016 Mohamed Anwar <mohamed_anwar@opmbx.org>
+ *  Copyright (C) Mohamed Anwar
  */
 
 #include <core/system.h>
@@ -76,12 +76,40 @@ static struct ioaddr __slave;
 #define SLAVE_ICW3  0x02 /* Slave ID is 2 */
 #define ICW4        0x01 /* Sets PIC to 8086 MODE */
 
+/* The mask value currently on slave:master */
+static uint16_t pic_mask = 0xFFFF;
+
+void x86_irq_mask(int irq)
+{
+    if (irq < 8) {  /* Master */
+        pic_mask |= 1 << irq;
+        io_out8(&__master,  PIC_DATA, (pic_mask >> 8) & 0xFF);
+    } else if (irq < 16) {  /* Slave */
+        pic_mask |= 1 << irq;
+        io_out8(&__slave,  PIC_DATA, (pic_mask >> 8) & 0xFF);
+    } else {
+        panic("Invalid IRQ number\n");
+    }
+}
+
+void x86_irq_unmask(int irq)
+{
+    if (irq < 8) {  /* Master */
+        pic_mask &= ~(1 << irq);
+        io_out8(&__master,  PIC_DATA, pic_mask & 0xFF);
+    } else if (irq < 16) {  /* Slave */
+        pic_mask &= ~(1 << irq);
+        io_out8(&__slave,  PIC_DATA, (pic_mask >> 8) & 0xFF);
+    } else {
+        panic("Invalid IRQ number\n");
+    }
+}
 
 static void x86_irq_remap()
 {
     /*
-     * Remaps PIC interrupts to different interrupts numbers so as not to
-     * conflict with CPU exceptions
+     * Initializes PIC & remaps PIC interrupts to different interrupt
+     * numbers so as not to conflict with CPU exceptions
      */
 
     io_out8(&__master, PIC_CMD,  ICW1);
@@ -115,14 +143,18 @@ static x86_irq_handler_t irq_handlers[16] = {0};
 
 void x86_irq_handler_install(unsigned irq, x86_irq_handler_t handler)
 {
-    if (irq < 16)
+    if (irq < 16) {
+        x86_irq_unmask(irq);
         irq_handlers[irq] = handler;
+    }
 }
 
 void x86_irq_handler_uninstall(unsigned irq)
 {
-    if (irq < 16)
+    if (irq < 16) {
+        x86_irq_mask(irq);
         irq_handlers[irq] = (x86_irq_handler_t) NULL;
+    }
 }
 
 #define IRQ_ACK 0x20
@@ -171,17 +203,18 @@ static void x86_irq_gates_setup(void)
     x86_idt_gate_set(47, (uint32_t) __x86_irq15);
 }
 
-int x86_pic_setup(struct ioaddr *master, struct ioaddr *slave)
+int x86_pic_probe()
 {
-    printk("8259 PIC: Initalizing [Master: %p (%s), Salve: %p (%s)]\n",
-            master->addr, ioaddr_type_str(master),
-            slave->addr, ioaddr_type_str(slave));
+    /* Mask all slave IRQs */
+    io_out8(&__slave, PIC_DATA, 0xFF);
 
-    __master = *master;
-    __slave  = *slave;
+    /* Mask all master IRQs -- except slave cascade */
+    io_out8(&__master, PIC_DATA, 0xDF);
 
-    x86_irq_remap();
-    x86_irq_gates_setup();
+    /* Check if there is a devices listening to port */
+    if (io_in8(&__master, PIC_DATA) != 0xDF)
+        return -1;
+
     return 0;
 }
 
@@ -190,4 +223,30 @@ void x86_pic_disable()
     /* Done by masking all IRQs */
     io_out8(&__slave,  PIC_DATA, 0xFF);
     io_out8(&__master, PIC_DATA, 0xFF);
+}
+
+int x86_pic_setup(struct ioaddr *master, struct ioaddr *slave)
+{
+    __master = *master;
+    __slave  = *slave;
+
+    if (x86_pic_probe()) {
+        printk("8259 PIC: Controller not found\n");
+        return -1;
+    }
+
+    printk("8259 PIC: Initializing [Master: %p (%s), Salve: %p (%s)]\n",
+            master->addr, ioaddr_type_str(master),
+            slave->addr, ioaddr_type_str(slave));
+
+
+    /* Initialize */
+    x86_irq_remap();
+
+    /* Mask all interrupts */
+    x86_pic_disable();
+
+    /* Setup call gates */
+    x86_irq_gates_setup();
+    return 0;
 }
