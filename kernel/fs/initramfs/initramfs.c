@@ -20,14 +20,21 @@
 #include <fs/posix.h>
 #include <bits/errno.h>
 
+#include <ds/queue.h>
 #include <boot/boot.h>
 
 struct inode *ramdisk_dev_node = NULL;
+static queue_t *archivers = QUEUE_NEW();
+
+void initramfs_archiver_register(struct fs *fs)
+{
+    enqueue(archivers, fs);
+}
 
 void load_ramdisk()
 {
     //printk("[0] Kernel: Ramdisk %p [%d]\n", ramdisk, ramdisk_size);
-    printk("Loading ramdisk\n");
+    printk("kernel: Loading ramdisk\n");
 
     ramdisk_dev_node = kmalloc(sizeof(struct inode));
     memset(ramdisk_dev_node, 0, sizeof(struct inode));
@@ -44,14 +51,17 @@ void load_ramdisk()
     };
 
     struct inode *root = NULL;
+    int err = -1;
 
-    /* TODO: Support other archive formats -- and compression */
+    forlinked (node, archivers->head, node->next) {
+        struct fs *fs = node->value;
 
-    extern struct fs __cpio;
-    int ret = __cpio.load(ramdisk_dev_node, &root);
-    
-    if (ret) {
-        printk("Error code = %d\n", ret);
+        if (!(err = fs->load(ramdisk_dev_node, &root)))
+            break;
+    }
+
+    if (err) {
+        printk("Error code = %d\n", err);
         panic("Could not load ramdisk\n");
     }
 

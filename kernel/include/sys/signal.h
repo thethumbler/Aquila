@@ -55,7 +55,7 @@ struct sigaction {
 
 extern int sig_default_action[];
 
-int send_signal(int pid, int sig);
+int signal_send(int pid, int sig);
 int signal_proc_send(proc_t *proc, int signal);
 int signal_pgrp_send(pgroup_t *pg, int signal);
 

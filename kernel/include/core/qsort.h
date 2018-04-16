@@ -17,7 +17,6 @@ static inline void __qsort_swap(char *a, char *b, size_t size)
 
 static inline void qsort(void *base, size_t nmemb, size_t size, int (*compar)(const void *, const void *))
 {
-	printk("qsort(%x, %d, %d)\n", base, nmemb, size);
 	if (nmemb <= 1 || size == 0) return;
 
 	void *pivot = (char *) base + (nmemb - 1) * size;

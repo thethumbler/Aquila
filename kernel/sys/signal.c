@@ -50,26 +50,6 @@ int sig_default_action[] = {
     //[SIGXFSZ] = SIGACT_ABORT,
 };
 
-int send_signal(pid_t pid, int signal)
-{
-    printk("send_signal(pid=%d, signal=%d)\n", pid, signal);
-    if (cur_thread->owner->pid == pid) {
-        arch_handle_signal(signal);
-        return 0;
-    } else {
-        proc_t *proc = proc_pid_find(pid);
-
-        if (!proc) {
-            return -ESRCH;
-        } else {
-            enqueue(proc->sig_queue, (void *) signal);
-            return 0;
-        }
-    }
-    
-    return 0;
-}
-
 int signal_proc_send(proc_t *proc, int signal)
 {
     printk("signal_proc_send(proc=%p, signal=%d)\n", proc, signal);
@@ -92,3 +72,22 @@ int signal_pgrp_send(pgroup_t *pg, int signal)
 
     return 0;
 }
+
+int signal_send(pid_t pid, int signal)
+{
+    //printk("send_signal(pid=%d, signal=%d)\n", pid, signal);
+    if (cur_thread->owner->pid == pid) {
+        arch_handle_signal(signal);
+        return 0;
+    } else {
+        proc_t *proc = proc_pid_find(pid);
+
+        if (!proc)
+            return -ESRCH;
+        else
+            return signal_proc_send(proc, signal);
+    }
+    
+    return 0;
+}
+

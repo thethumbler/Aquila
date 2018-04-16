@@ -1,2 +1,2 @@
-#dirs-y += 8250/
+dirs-y += 8250/
 obj-y += uart.o

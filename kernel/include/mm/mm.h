@@ -9,46 +9,49 @@
 
 /* Physical Memory Manager interface */
 
-#define KR	_BV(0)	/* Kernel Read */
-#define KW	_BV(1)	/* Kernel Write */
-#define KX	_BV(2)	/* Kernel eXecute */
-#define KRW	(KR|KW)	/* Kernel Read/Write */
-#define KRX	(KR|KX)	/* Kernel Read/eXecute */
-#define KWX	(KW|KX)	/* Kernel Write/eXecute */
-#define KRWX	(KR|KW|KX)	/* Kernel Read/Write/eXecute */
+#define VM_KR         0x0001  /* Kernel Read */
+#define VM_KW         0x0002  /* Kernel Write */
+#define VM_KX         0x0004  /* Kernel eXecute */
+#define VM_UR         0x0008  /* User Read */
+#define VM_UW         0x0010  /* User Write */
+#define VM_UX         0x0020  /* User eXecute */
+#define VM_NOCACHE    0x0040  /* Disable caching */
+#define VM_FILE       0x0080  /* File backed */
+#define VM_ZERO       0x0100  /* Zero fill */
 
-
-#define UR	_BV(3)	/* User Read */
-#define UW	_BV(4)	/* User Write */
-#define UX	_BV(5)	/* User eXecute */
-#define URW	(UR|UW)	/* User Read/Write */
-#define URX	(UR|UX)	/* User Read/eXecute */
-#define UWX	(UW|UX)	/* User Write/eXecute */
-#define URWX	(UR|UW|UX)	/* User Read/Write/eXecute */
+#define VM_KRW  (VM_KR|VM_KW) /* Kernel Read/Write */
+#define VM_KRX  (VM_KR|VM_KX) /* Kernel Read/eXecute */
+#define VM_KWX  (VM_KW|VM_KX) /* Kernel Write/eXecute */
+#define VM_KRWX (VM_KR|VM_KW|VM_KX)  /* Kernel Read/Write/eXecute */
+#define VM_URW  (VM_UR|VM_UW) /* User Read/Write */
+#define VM_URX  (VM_UR|VM_UX) /* User Read/eXecute */
+#define VM_UWX  (VM_UW|VM_UX) /* User Write/eXecute */
+#define VM_URWX (VM_UR|VM_UW|VM_UX)  /* User Read/Write/eXecute */
 
 typedef struct
 {
-	int		(*map)(uintptr_t addr, size_t size, int flags);
-	int		(*map_to)(uintptr_t phys, uintptr_t virt, size_t size, int flags);
-	void	(*unmap)(uintptr_t addr, size_t size);
-	void	(*unmap_full)(uintptr_t addr, size_t size);
+    int     (*map)(uintptr_t addr, size_t size, int flags);
+    int     (*map_to)(uintptr_t phys, uintptr_t virt, size_t size, int flags);
+    void    (*unmap)(uintptr_t addr, size_t size);
+    void    (*unmap_full)(uintptr_t addr, size_t size);
 #if 0
-	void*	(*memcpypp)(void *phys_dest, void *phys_src, size_t n);	/* Phys to Phys memcpy */
+    void*   (*memcpypp)(void *phys_dest, void *phys_src, size_t n); /* Phys to Phys memcpy */
 #endif
-	void*	(*memcpypv)(void *virt_dest, void *phys_src, size_t n);	/* Phys to Virt memcpy */
-	void*	(*memcpyvp)(void *phys_dest, void *virt_src, size_t n);	/* Virt to Phys memcpy */
-	void*	(*memcpypp)(uintptr_t phys_dest, uintptr_t phys_src, size_t n);	/* Phys to Phys memcpy */
+    void*   (*memcpypv)(void *virt_dest, void *phys_src, size_t n); /* Phys to Virt memcpy */
+    void*   (*memcpyvp)(void *phys_dest, void *virt_src, size_t n); /* Virt to Phys memcpy */
+    void*   (*memcpypp)(uintptr_t phys_dest, uintptr_t phys_src, size_t n); /* Phys to Phys memcpy */
     void    (*switch_mapping)(uintptr_t structue);
     void    (*copy_fork_mapping)(uintptr_t base, uintptr_t fork);
     void    (*handle_page_fault)(uintptr_t addr);
 } pmman_t;
 
+
 struct paging
 {
-	size_t	size;
-	int		(*map)  (uintptr_t addr, size_t nr, int flags);
-	void	(*unmap)(uintptr_t addr, size_t nr);
-	void*	(*mount)(uintptr_t addr);
+    size_t  size;
+    int     (*map)  (uintptr_t addr, size_t nr, int flags);
+    void    (*unmap)(uintptr_t addr, size_t nr);
+    void*   (*mount)(uintptr_t addr);
 } __packed;
 
 extern struct paging paging[NR_PAGE_SIZE];

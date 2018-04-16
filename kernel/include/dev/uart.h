@@ -5,6 +5,7 @@
 #include <dev/tty.h>
 
 struct __uart {
+    char *name;
 
     struct ringbuf *in;
     struct ringbuf *out;
@@ -12,6 +13,7 @@ struct __uart {
     struct tty   *tty;
     struct inode *inode;    /* Inode associated with uart device */
 
+    void    (*init)    (struct __uart *u);
     ssize_t (*transmit)(struct __uart *u, char c);
     char    (*receive) (struct __uart *u);
 };

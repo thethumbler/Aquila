@@ -69,7 +69,7 @@ int x86_i8042_setup(struct ioaddr *io)
         return -1;
     }
 
-    printk("i8042: Initalizing controller [%p (%s)]\n", io->addr, ioaddr_type_str(io));
+    printk("i8042: Initializing controller [%p (%s)]\n", io->addr, ioaddr_type_str(io));
     x86_i8042_handler_install();
     return 0;
 }

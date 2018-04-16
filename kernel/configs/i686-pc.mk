@@ -50,6 +50,7 @@ DEV_FRAMEBUFFER=y
 # Generic console (condev) support
 DEV_CONSOLE=y
 DEV_KEYBOARD=y
+DEV_MOUSE=y
 DEV_KEYBOARD_PS2=y
 DEV_UART=y
 DEV_PTY=y

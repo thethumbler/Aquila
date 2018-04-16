@@ -1,8 +1,9 @@
 #include <core/system.h>
-#include <core/panic.h>
 #include <fs/vfs.h>
-#include <fs/cpio.h>
+#include <fs/initramfs.h>
 #include <fs/posix.h>
+
+#include <cpio.h>
 
 static int __cpio_root_inode(struct inode *sp, struct inode **inode)
 {
@@ -284,7 +285,6 @@ static ssize_t __cpio_read(struct inode *node, off_t offset, size_t len, void *b
         return 0;
 
     len = MIN(len, node->size - offset);
-
     struct __cpio_priv *p = node->p;
     struct inode *super = p->super;
     return vfs_read(super, p->data + offset, len, buf_p);
@@ -337,6 +337,12 @@ static int __cpio_eof(struct file *file)
     }
 }
 
+static int __cpio_init()
+{
+    initramfs_archiver_register(&__cpio);
+    return 0;
+}
+
 struct fs __cpio = {
     .load = __cpio_load,
 
@@ -361,3 +367,5 @@ struct fs __cpio = {
         .eof     = __cpio_eof,
     },
 };
+
+MODULE_INIT(initramfs_cpio, __cpio_init, NULL)

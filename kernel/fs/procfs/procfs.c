@@ -1,6 +1,7 @@
 #include <core/system.h>
 #include <core/string.h>
 #include <bits/errno.h>
+#include <boot/boot.h>
 
 #include <fs/vfs.h>
 #include <fs/devfs.h>
@@ -83,8 +84,29 @@ static ssize_t procfs_uptime(off_t off, size_t size, char *buf)
     return 0;
 }
 
+/* proc/rdcmdline */
+static ssize_t procfs_rdcmdline(off_t off, size_t size, char *buf)
+{
+    char rdcmdline_buf[512];
+
+    extern struct boot *__kboot;
+    module_t *rd_module = &__kboot->modules[0];
+
+    int sz = snprintf(rdcmdline_buf, 512, "%s\n", rd_module->cmdline);
+
+    if (off < sz) {
+        ssize_t ret = MIN(size, (size_t)(sz - off));
+        memcpy(buf, rdcmdline_buf + off, ret);
+        return ret;
+    }
+
+    return 0;
+}
+
 static struct procfs_entry entries[] = {
     {"meminfo", procfs_meminfo},
+    //{"cmdline", procfs_cmdline},
+    {"rdcmdline", procfs_rdcmdline},
     {"version", procfs_version},
     {"uptime",  procfs_uptime},
 };

@@ -38,4 +38,7 @@ static inline int __never (){return 0;}
     __section(".__minit") void * __CAT(__minit_, name) = i;\
     __section(".__mfini") void * __CAT(__mfini_, name) = f;\
 
+
+#define __PANIC_MSG "Man the Lifeboats! Women and children first!\n"
+
 #endif /* !_SYSTEM_H */

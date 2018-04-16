@@ -84,6 +84,7 @@ int uart_file_open(struct file *file)
         /* XXX */
         file->node = u->inode;
     } else {
+        u->init(u);
         u->inode = file->node;
         /* TODO Error checking */
         u->in = ringbuf_new(UART_BUF);
@@ -102,15 +103,19 @@ int uart_register(int id, struct __uart *u)
         for (int i = 0; i < 192; ++i) {
             if (!devices[i]) {
                 devices[i] = u;
-                return i;
+                id = i;
+                goto done;
             }
         }
 
         return -1;  /* Failed */
-    } else {
-        devices[id] = u;
-        return id;
     }
+
+done:
+    devices[id] = u;
+
+    printk("uart: Registered uart %d: %s\n", id, u->name);
+    return id;
 }
 
 struct dev uart = {

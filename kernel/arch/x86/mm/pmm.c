@@ -16,6 +16,8 @@
 #include <boot/boot.h>
 #include <mm/mm.h>
 
+#if 0
+
 volatile uint32_t *BSP_PD = NULL;
 static volatile uint32_t BSP_LPT[PAGE_SIZE/4] __aligned(PAGE_SIZE) = {0};
 
@@ -357,6 +359,8 @@ pmman_t _pmman = (pmman_t) {
     .memcpyvp = &memcpyvp,
     .memcpypp = (void *(*)(uintptr_t, uintptr_t, size_t)) memcpypp,
 };
+
+#endif
 
 void arch_pmm_setup()
 {

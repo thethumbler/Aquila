@@ -12,6 +12,7 @@
 #include <core/system.h>
 #include <sys/proc.h>
 #include <sys/elf.h>
+#include <mm/vm.h>
 
 int binfmt_elf_check(struct inode *file)
 {
@@ -40,13 +41,33 @@ int binfmt_elf_load(proc_t *proc, struct inode *file)
         vfs_read(file, offset, sizeof(shdr), &shdr);
         
         if (shdr.flags & SHF_ALLOC) {
+            struct vmr *vmr = kmalloc(sizeof(struct vmr));
+            memset(vmr, 0, sizeof(struct vmr));
+
+            vmr->base  = shdr.addr;
+            vmr->size  = shdr.size;
+
+            /* access flags */
+            /*
+            vmr->flags |= VM_UR;
+            vmr->flags |= shdr.flags & SHF_WRITE ? VM_UW : 0;
+            vmr->flags |= shdr.flags & SHF_EXEC ? VM_UX : 0;
+            */
+            vmr->flags = VM_URWX;   /* FIXME */
+
+            vmr->qnode = enqueue(&proc->vmr, vmr);
+
             /* FIXME add some out-of-bounds handling code here */
-            pmman.map(shdr.addr, shdr.size, URWX);  /* FIXME URWX, are you serious? */
+            //pmman.map(vmr->base, vmr->size, vmr->flags);
 
             if (shdr.type == SHT_PROGBITS) {
-                vfs_read(file, shdr.off, shdr.size, (void *) shdr.addr);
+                vmr->flags |= VM_FILE;
+                vmr->off   = shdr.off;
+                vmr->inode = file;
+                //vfs_read(vmr->inode, vmr->off, vmr->size, (void *) vmr->base);
             } else {
-                memset((void *) shdr.addr, 0, shdr.size);
+                vmr->flags |= VM_ZERO;
+                //memset((void *) vmr->base, 0, vmr->size);
             }
 
             if (shdr.addr + shdr.size > proc_heap)

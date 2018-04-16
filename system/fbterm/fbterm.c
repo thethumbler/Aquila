@@ -249,9 +249,12 @@ int fbterm_main()
     size_t len;
     char buf[1024];
 
-    while ((len = read(pty, buf, sizeof(buf))) > 0) {
+    while (1) {
         /* Read input */
-        vterm_input_write(active->vt, buf, len);
+        if ((len = read(pty, buf, sizeof(buf))) > 0) {
+            vterm_input_write(active->vt, buf, len);
+        }
+
         fbterm_redraw(active);
 
         /* Write output */

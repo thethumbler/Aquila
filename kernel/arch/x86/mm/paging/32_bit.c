@@ -21,6 +21,7 @@
 #include <cpu/cpu.h>
 #include <ds/queue.h>
 #include <mm/buddy.h>
+#include <mm/vm.h>
 #include <arch/x86/include/proc.h> /* XXX */
 #include <sys/proc.h>
 #include <sys/sched.h>
@@ -109,8 +110,8 @@ static inline void table_alloc(size_t pdidx, int flags)
     __table_t table = {.raw = frame_get()};
 
     table.structure.present = 1;
-    table.structure.write = !!(flags & (KW | UW));
-    table.structure.user = !!(flags & (URWX));
+    table.structure.write = !!(flags & (VM_KW | VM_UW));
+    table.structure.user = !!(flags & (VM_URWX));
 
     PAGE_DIR[pdidx] = table;
     TLB_flush();
@@ -144,8 +145,8 @@ static inline void page_map_phys(uintptr_t paddr, size_t pdidx, size_t ptidx, in
     __page_t page = {.raw = paddr};
 
     page.structure.present = 1;
-    page.structure.write = !!(flags & (KW | UW));
-    page.structure.user = !!(flags & (URWX));
+    page.structure.write = !!(flags & (VM_KW | VM_UW));
+    page.structure.user = !!(flags & (VM_URWX));
 
     page_table[ptidx] = page;
 }
@@ -496,7 +497,7 @@ static void copy_fork_mapping(uintptr_t base, uintptr_t fork)
 
    for (int i = 0; i < 768; ++i) {
        if (p[i].structure.present) {
-           table_alloc(i, URWX);    // FIXME
+           table_alloc(i, VM_URWX);    // FIXME
            uintptr_t _m = frame_mount(GET_PHYS_ADDR(&p[i]));
            __page_t *_p = MOUNT_ADDR;
            
@@ -526,7 +527,7 @@ static void copy_fork_mapping(uintptr_t base, uintptr_t fork)
 
 void handle_page_fault(uintptr_t addr)
 {
-    //printk("handle_page_fault(%p)\n", addr);
+    //printk("handle_page_fault(addr=%p)\n", addr);
 
     uintptr_t page_addr = addr & ~PAGE_MASK;
     __page_t *page = page_get_mapping(page_addr);
@@ -544,15 +545,56 @@ void handle_page_fault(uintptr_t addr)
             } else {
                 pages[page_idx].refs--;
                 page->structure.present = 0;
-                page_map(page_addr, URWX);   /* FIXME */ 
+                page_map(page_addr, VM_URWX);   /* FIXME */ 
                 copy_physical_to_virtual((void *) page_addr, (void *) phys, PAGE_SIZE);
             }
 
             return;
         }
     } else {
+#if 1
+        queue_t *q_vmr = &cur_thread->owner->vmr;
+        int vmr_flag = 0;
+        uintptr_t page_end = page_addr + PAGE_SIZE;
+
+        forlinked (node, q_vmr->head, node->next) {
+            struct vmr *vmr = node->value;
+            uintptr_t vmr_end = vmr->base + vmr->size;
+
+            /* exclude non overlapping VMRs */
+            if (page_end <= vmr->base || page_addr >= vmr_end)
+                continue;
+
+            /* page overlaps vmr in at least one byte */
+            vmr_flag = 1;
+            page_map(page_addr, VM_URWX);  /* FIXME */
+
+            uintptr_t addr_start = page_addr;
+            if (vmr->base > page_addr)
+                addr_start = vmr->base;
+
+            uintptr_t addr_end = page_end;
+            if (vmr_end < page_end)
+                addr_end = vmr_end;
+
+            size_t size = addr_end - addr_start;
+            size_t file_off = addr_start - vmr->base;
+
+            /* File backed */
+            if (vmr->flags & VM_FILE)
+                vfs_read(vmr->inode, vmr->off + file_off, size, (void *) addr_start);
+
+            /* Zero fill */
+            if (vmr->flags & VM_ZERO)
+                memset((void *) addr_start, 0, size);
+        }
+
+        if (vmr_flag)
+            return;
+#endif
+
         if (addr < cur_thread->owner->heap && addr >= cur_thread->owner->heap_start) {
-            page_map(page_addr, URWX);  /* FIXME */
+            page_map(page_addr, VM_URWX);  /* FIXME */
             memset((void *) page_addr, 0, PAGE_SIZE);
             return;
         }
@@ -561,12 +603,16 @@ void handle_page_fault(uintptr_t addr)
         signal_proc_send(cur_thread->owner, SIGSEGV);
         return;
 
-        //printk("[%d:%d] %s\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name);
-        //printk("-- addr %p\n", addr);
-        //printk("-- heap %p\n", cur_thread->owner->heap);
-        //x86_thread_t *arch = cur_thread->arch;
-        //x86_dump_registers(arch->regs);
-        //panic("Not implemented\n");
+#if 0
+        printk("[%d:%d] %s\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name);
+        printk("-- addr %p\n", addr);
+        printk("-- heap %p\n", cur_thread->owner->heap);
+        printk("-- arch %p\n", cur_thread->arch);
+        x86_thread_t *arch = cur_thread->arch;
+        printk("-- arch->regs %p\n", arch->regs);
+        x86_dump_registers(arch->regs);
+        panic("Not implemented\n");
+#endif
     }
 
     x86_thread_t *arch = cur_thread->arch;

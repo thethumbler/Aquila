@@ -12,6 +12,7 @@
 #include <core/string.h>
 #include <core/panic.h>
 #include <mm/mm.h>
+#include <mm/vm.h>
 
 int debug_kmalloc = 0;
 
@@ -37,7 +38,7 @@ vmm_node_t *nodes = (vmm_node_t *) VMM_NODES;
 void vmm_setup()
 {
     /* We start by mapping the space used for nodes into physical memory */
-    pmman.map(VMM_NODES, VMM_NODES_SIZE, KRW);
+    pmman.map(VMM_NODES, VMM_NODES_SIZE, VM_KRW);
 
     /* Now we have to clear it */
     memset((void *) VMM_NODES, 0, VMM_NODES_SIZE);
@@ -115,7 +116,7 @@ void *(kmalloc)(size_t size)
     kvmem_used += NODE_SIZE(nodes[i]);
     kvmem_obj_cnt++;
 
-    pmman.map(NODE_ADDR(nodes[i]), NODE_SIZE(nodes[i]), KRW);
+    pmman.map(NODE_ADDR(nodes[i]), NODE_SIZE(nodes[i]), VM_KRW);
 
     return (void *) NODE_ADDR(nodes[i]);
 }
@@ -202,4 +203,17 @@ void dump_nodes()
         if(nodes[i].next == LAST_NODE_INDEX) break;
         i = nodes[i].next;
     }
+}
+
+int mem_map(uintptr_t phys_addr, uintptr_t virt_addr, size_t size, int flags)
+{
+    if (phys_addr)
+        return pmman.map_to(phys_addr, virt_addr, size, flags);
+    else
+        return pmman.map(virt_addr, size, flags);
+}
+
+int vm_map(uintptr_t phys_addr, struct vmr *vmr)
+{
+    return mem_map(phys_addr, vmr->base, vmr->size, vmr->flags);
 }

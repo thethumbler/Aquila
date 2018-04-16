@@ -2,8 +2,13 @@
 #include <dev/fbdev.h>
 #include <fs/devfs.h>
 #include <video/vesa.h>
+#include <mm/vm.h>
 
 static char *vmem = (char *) 0xE0000000;
+static struct vmr vesa_vmr = {
+    .base = 0xE0000000,
+};
+
 static size_t len = 0;
 
 static struct fb_fix_screeninfo vesa_fix_screeninfo = {
@@ -30,8 +35,11 @@ static int fbdev_vesa_prope(int i __unused, struct fbdev *fb)
     struct mode_info_block *info = data->mode_info;
     size_t size = info->y_resolution * info->lin_bytes_per_scanline;
 
-    pmman.map_to(info->phys_base_ptr, (uintptr_t) vmem, size, KRW);
-    memset(vmem, 0x0A, size);
+    vesa_vmr.size = size;
+    vesa_vmr.flags = VM_KRW | VM_NOCACHE;
+
+    vm_map(info->phys_base_ptr, &vesa_vmr);
+    memset(vmem, 0x5A, size);
 
     len = size;
 

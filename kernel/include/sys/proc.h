@@ -72,7 +72,7 @@ struct proc {
 	uintptr_t	heap;	     /* Process current heap pointer */
 	uintptr_t	entry;	     /* Process entry point */	
 
-    //struct vmm  *vmm;       /* Virtual memory sgements */
+    queue_t     vmr;         /* Virtual memory regions */
 
     queue_t     threads;
     queue_t     thread_join; /* Threads join wait queue */

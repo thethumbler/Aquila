@@ -4,6 +4,10 @@
 #include <stdint.h>
 #include <dirent.h>
 #include <errno.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <pwd.h>
+#include <fcntl.h>
 
 #define FLAG_A  0x0000001
 #define FLAG_C  0x0000002
@@ -34,6 +38,97 @@
 #define MAX_ENTRIES 1024
 struct dirent entries[MAX_ENTRIES];
 
+char *file_mode(struct stat *buf)
+{
+    char a_t;
+    switch (buf->st_mode & S_IFMT) { 
+        case S_IFDIR:  a_t = 'd'; break;
+        case S_IFCHR:  a_t = 'c'; break;
+        case S_IFBLK:  a_t = 'b'; break;
+        case S_IFREG:  a_t = '-'; break;
+        case S_IFLNK:  a_t = 'l'; break;
+        case S_IFSOCK: a_t = 'x'; break;
+        case S_IFIFO:  a_t = 'p'; break;
+    };
+
+    static char mode[11];
+
+    mode[0] = a_t; 
+    mode[1] = buf->st_mode & S_IRUSR? 'r' : '-';
+    mode[2] = buf->st_mode & S_IWUSR? 'w' : '-';
+    mode[3] = buf->st_mode & S_IXUSR? 'x' : '-';
+    mode[4] = buf->st_mode & S_IRGRP? 'r' : '-';
+    mode[5] = buf->st_mode & S_IWGRP? 'w' : '-';
+    mode[6] = buf->st_mode & S_IXGRP? 'x' : '-';
+    mode[7] = buf->st_mode & S_IROTH? 'r' : '-';
+    mode[8] = buf->st_mode & S_IWOTH? 'w' : '-';
+    mode[9] = buf->st_mode & S_IXOTH? 'x' : '-';
+    mode[10] = '\0';
+
+    return mode;
+}
+
+int print_long_entry(char *path, char *fn)
+{
+    char full_path[512];
+    snprintf(full_path, 512, "%s/%s", path, fn);
+
+    struct stat buf = {0};
+
+    if (lstat(full_path, &buf)) {
+        fprintf(stderr, "stat: cannot stat '%s': ", fn);
+        perror("");
+        return -1;
+    }
+
+    /* <file mode> */
+    char *mode = file_mode(&buf);
+
+    /* <number of links> */
+    unsigned nlink = buf.st_nlink;
+
+    /* <owner name> */
+    struct passwd *passwd = getpwuid(buf.st_uid);
+    char *owner = passwd? passwd->pw_name : "";
+
+    /* <group name> */
+    char *group = "(grp)";
+
+    /* <device info> */
+    char device[16] = "";
+    dev_t dev = buf.st_rdev;
+
+    if (dev)
+        snprintf(device, 16, "%u, %u", (dev >> 8) & 0xFF, dev & 0xFF);
+
+    /* <size> */
+    size_t size = buf.st_size;
+
+    /* <date and time> */
+    char *time = "(time)";
+    
+    /* <pathname> */
+    char name[512];
+
+    if (S_ISLNK(buf.st_mode)) {
+        int fd = open(full_path, O_RDONLY | O_NOFOLLOW);
+        char symlink[512];
+        symlink[0] = 0;
+        read(fd, symlink, 512);
+        close(fd);
+        snprintf(name, 512, "%s -> %s", fn, symlink);
+    } else {
+        snprintf(name, 512, "%s", fn);
+    }
+
+    if (S_ISCHR(buf.st_mode) || S_ISBLK(buf.st_mode))
+        printf("%s %u %s %s %s %s %s\n", mode, nlink, owner, group, device, time, name);
+    else
+        printf("%s %u %s %s %u %s %s\n", mode, nlink, owner, group, size, time, name);
+
+    return 0;
+}
+
 int do_ls(char *path, uint32_t flags)
 {
     /* Open directory */
@@ -63,7 +158,7 @@ int do_ls(char *path, uint32_t flags)
     /* print entries */
     if (flags & FLAG_l) {   /* long mode */
         for (int i = 0; i < entries_idx + 1; ++i) {
-            printf("%s\n", entries[i].d_name);
+            print_long_entry(path, entries[i].d_name);
         }
     } else {
         for (int i = 0; i < entries_idx + 1; ++i) {
