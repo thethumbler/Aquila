@@ -82,7 +82,7 @@ static int earlycon_uart_putc(char c)
 static void earlycon_uart_init()
 {
 #if SERIAL_MMIO
-    pmman.map_to(0x9000B000, 0xCF00B000, PAGE_SIZE, KRW);
+    pmman.map_to(0x9000B000, 0xCF00B000, PAGE_SIZE, VM_KRW);
 #endif
     serial_init();
 

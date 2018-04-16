@@ -1,14 +1,17 @@
-#include <stdio.h>
+#include <core/system.h>
+#include <core/string.h>
+#include <console/earlycon.h>
+#include <cpu/io.h>
 
-char *vga_start = (char*) 0xC00B8000;
-char *vga = (char*) 0xC00B8000;
+static char *vga_start = (char*) 0xC00B8000;
+static char *vga = (char*) 0xC00B8000;
 
-struct __ioaddr __vga_ioaddr = {
+struct ioaddr __vga_ioaddr = {
     .addr = 0x3D4,
-    .type = __IOADDR_PORT,
-}
+    .type = IOADDR_PORT,
+};
 
-static void early_console_scroll(int n)
+static void earlycon_vga_scroll(int n)
 {
     memcpy(vga_start, vga_start + 160 * n, 160 * (25 - n));
     vga = vga_start + 160 * (25 - n);
@@ -20,13 +23,13 @@ static void early_console_scroll(int n)
     }
 }
 
-int early_console_putc(char c)
+static int earlycon_vga_putc(char c)
 {
     if (c) {
         if (c == '\n') {
             vga = vga_start + (vga - vga_start) / 160 * 160 + 160;
-            if(vga - vga_start >= 160 * 25)
-                early_console_scroll(1);
+            if (vga - vga_start >= 160 * 25)
+                earlycon_vga_scroll(1);
             return 1;
         }
 
@@ -34,10 +37,11 @@ int early_console_putc(char c)
         vga += 2;
         return 1;
     }
+
     return 0;
 }
 
-int earlycon_vga_puts(char *s)
+static int earlycon_vga_puts(char *s)
 {
     char *_s = s;
     while (*s) {
@@ -48,14 +52,20 @@ int earlycon_vga_puts(char *s)
     return (int)(s - _s);
 }
 
-void earlycon_vga_init()
+static void earlycon_vga_init()
 {
-    outb(0x3D4, 0x0F);
-    outb(0x3D5, 0xFF);
-    outb(0x3D4, 0x0E);
-    outb(0x3D5, 0xFF);
+    io_out8(&__vga_ioaddr, 0x00, 0x0F);
+    io_out8(&__vga_ioaddr, 0x01, 0xFF);
+    io_out8(&__vga_ioaddr, 0x00, 0x0E);
+    io_out8(&__vga_ioaddr, 0x01, 0xFF);
 
     unsigned i;
-    for(i = 0; i < 80*25; ++i)
+    for (i = 0; i < 80*25; ++i)
         vga_start[2*i] = 0;
 }
+
+struct __earlycon __earlycon_vga = {
+    .init = earlycon_vga_init,
+    .putc = earlycon_vga_putc,
+    .puts = earlycon_vga_puts,
+};

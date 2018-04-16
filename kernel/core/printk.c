@@ -1,15 +1,25 @@
 #include <core/system.h>
 #include <console/earlycon.h>
 
+static int use_earlycon = 1;
+void earlycon_disable()
+{
+    use_earlycon = 0;
+}
+
 #ifdef PRINTK_DEBUG
 static int putc(char c)
 {
-    return earlycon_putc(c);
+    if (use_earlycon)
+        return earlycon_putc(c);
+    return 0;
 }
 
 static int puts(char *s)
 {
-    return earlycon_puts(s? s : "(null)");
+    if (use_earlycon)
+        return earlycon_puts(s? s : "(null)");
+    return 0;
 }
 
 static int putx(uint32_t val)
