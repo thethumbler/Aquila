@@ -1,5 +1,5 @@
-#ifndef _IDE_H
-#define _IDE_H
+#ifndef _ATA_H
+#define _ATA_H
 
 #define ATADEV_UNKOWN   0
 #define ATADEV_PATA     1
@@ -9,7 +9,7 @@
 
 #define ATA_PORT_DATA   0x00   /* Data Port */
 #define ATA_PORT_ERROR  0x01   /* Features / Error Information */
-#define ATA_PORT_COUNT  0x02   /* Sector Count	*/
+#define ATA_PORT_COUNT  0x02   /* Sector Count  */
 #define ATA_PORT_LBALO  0x03   /* Sector Number / LBA */
 #define ATA_PORT_LBAMI  0x04   /* Cylinder Low / LBA */
 #define ATA_PORT_LBAHI  0x05   /* Cylinder High / LBA */

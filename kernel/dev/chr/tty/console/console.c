@@ -20,12 +20,12 @@
 
 #include <ds/queue.h>
 
-#define VGA_START   (VMA((char*)0xB8000))
+#define VGA_START   (VMA((char*)0xB8000))   /* FIXME */
 
 static char *vga = VGA_START;
-static struct __ioaddr __console_ioaddr = {
+static struct ioaddr __console_ioaddr = {
     .addr = 0x3D4,
-    .type = __IOADDR_PORT,
+    .type = IOADDR_PORT,
 };
 
 static void scroll(int n)
@@ -41,16 +41,16 @@ static void scroll(int n)
 
 static void set_cursor(unsigned pos)
 {
-    __io_out8(&__console_ioaddr, 0x00, 0x0F);
-    __io_out8(&__console_ioaddr, 0x01, (uint8_t)(pos & 0xFF));
+    io_out8(&__console_ioaddr, 0x00, 0x0F);
+    io_out8(&__console_ioaddr, 0x01, (uint8_t)(pos & 0xFF));
 
-    __io_out8(&__console_ioaddr, 0x00, 0x0E);
-    __io_out8(&__console_ioaddr, 0x01, (uint8_t)((pos >> 8) & 0xFF));
+    io_out8(&__console_ioaddr, 0x00, 0x0E);
+    io_out8(&__console_ioaddr, 0x01, (uint8_t)((pos >> 8) & 0xFF));
 }
 
 static ssize_t console_write(struct devid *dd __unused, off_t offset __unused, size_t size, void *buf)
 {
-    printk("console_write(dd=%p, offset=%d, size=%d, buf=%p)\n", dd, offset, size, buf);
+    //printk("console_write(dd=%p, offset=%d, size=%d, buf=%p)\n", dd, offset, size, buf);
     for (size_t i = 0; i < size; ++i) {
         
         char c = ((char *) buf)[i];
@@ -84,23 +84,6 @@ static ssize_t console_write(struct devid *dd __unused, off_t offset __unused, s
 
 static int console_probe()
 {
-#if 0
-    struct uio uio = {
-        .uid  = ROOT_UID,
-        .gid  = ROOT_GID,
-        .mask = 0600,
-    };
-
-    ret = vfs.create(&vdev_root, "console", &uio, &console);
-
-    if (ret)
-        return ret;
-
-    /* FIXME */
-    console->type = FS_CHRDEV;
-    console->dev = &condev;
-#endif
-
     return 0;
 }
 
@@ -114,3 +97,5 @@ struct dev condev = {
         .write = posix_file_write,
     },
 };
+
+MODULE_INIT(condev, console_probe, NULL)

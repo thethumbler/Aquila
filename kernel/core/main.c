@@ -21,6 +21,8 @@
 
 #include <boot/boot.h>
 
+#include <console/earlycon.h>
+
 void kmain(struct boot *boot)
 {
     kdev_init();
@@ -29,7 +31,7 @@ void kmain(struct boot *boot)
 
     load_ramdisk(&boot->modules[0]);
 
-    printk("Kernel: Loading init process\n");
+    printk("kernel: Loading init process\n");
 
     proc_t *init;
     int err;
@@ -39,6 +41,11 @@ void kmain(struct boot *boot)
         panic("Can not load init process");
     }
 
+#if EARLYCON_DISABLE_ON_INIT
+    earlycon_disable();
+#endif
+
     sched_init_spawn(init);
-    for(;;);
+
+    panic("Scheduler failed to spawn init");
 }

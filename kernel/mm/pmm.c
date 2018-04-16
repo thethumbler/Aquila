@@ -41,7 +41,7 @@ void pmm_setup(struct boot *boot)
 void pmm_lazy_alloc(uintptr_t addr)
 {
     if (addr < cur_thread->owner->heap) {
-        pmman.map(addr & ~PAGE_MASK, PAGE_SIZE, URW); 
+        pmman.map(addr & ~PAGE_MASK, PAGE_SIZE, VM_URW); 
     } else {
         /* Error */
     }

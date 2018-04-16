@@ -93,6 +93,9 @@ free_resources:
 
 void proc_kill(proc_t *proc)
 {
+    if (proc->pid == 1)
+        panic("init killed\n");
+
     proc->running = 0;
 
     /* Free resources */

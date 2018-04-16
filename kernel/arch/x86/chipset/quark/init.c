@@ -13,24 +13,24 @@
 
 int quark_pic_setup()
 {
-    struct __ioaddr pic_master;
-    struct __ioaddr pic_slave;
+    struct ioaddr pic_master;
+    struct ioaddr pic_slave;
 
     pic_master.addr = PIC_MASTER;
-    pic_master.type = __IOADDR_PORT;
+    pic_master.type = IOADDR_PORT;
     pic_slave.addr  = PIC_SLAVE;
-    pic_slave.type  = __IOADDR_PORT;
+    pic_slave.type  = IOADDR_PORT;
 
-    return __x86_pic_setup(&pic_master, &pic_slave);
+    return x86_pic_setup(&pic_master, &pic_slave);
 }
 
 void quark_pci_init()
 {
-    printk("Quark SoC: Initalizing PCI\n");
-    struct __ioaddr pci;
+    printk("Quark SoC: Initializing PCI\n");
+    struct ioaddr pci;
     pci.addr = 0xCF8;
-    pci.type = __IOADDR_PORT;
-    pci_ioaddress_set(&pci);
+    pci.type = IOADDR_PORT;
+    pci_ioaddr_set(&pci);
 }
 
 #define QRK_HSUART_VENDOR_ID  0x8086
@@ -46,9 +46,9 @@ void quark_pci_init()
 #define UART_LCR_DLAB    0x80
 
 static struct pci_dev hsuart;
-static struct __ioaddr __hsuart_ioaddr = {
+static struct ioaddr __hsuart_ioaddr = {
     .addr = 0xCF00B000,
-    .type = __IOADDR_MMIO32,
+    .type = IOADDR_MMIO32,
 };
 
 void quark_hsuart_setup()
@@ -75,10 +75,10 @@ void quark_hsuart_setup()
     printk("Quark SoC: HSUART: Switching to FIFO Interrupt-Mode Operation\n");
 
     /* Wait until all transmission ends */
-    while (!(__io_in8(&__hsuart_ioaddr, 5) & 0x20));
+    while (!(io_in8(&__hsuart_ioaddr, 5) & 0x20));
 
-    __io_out8(&__hsuart_ioaddr, UART_FCR, 0x07);    /* Enable FIFO, Rx trigger when 1 character in */
-    __io_out8(&__hsuart_ioaddr, UART_IER, 0x01);    /* Enable Rx interrupt */
+    io_out8(&__hsuart_ioaddr, UART_FCR, 0x07);    /* Enable FIFO, Rx trigger when 1 character in */
+    io_out8(&__hsuart_ioaddr, UART_IER, 0x01);    /* Enable Rx interrupt */
 }
 
 
@@ -86,7 +86,7 @@ void quark_hsuart_setup()
 void chipset_timer_setup(size_t period_ns, void (*handler)())
 {
     //pit_setup(timer_freq);
-    __x86_irq_handler_install(PIT_IRQ, handler);
+    x86_irq_handler_install(PIT_IRQ, handler);
     //hpet_timer_setup(1, x86_sched_handler);
 }
 

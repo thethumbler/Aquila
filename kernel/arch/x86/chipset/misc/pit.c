@@ -36,6 +36,7 @@ uint32_t x86_pit_period_set(uint32_t period_ns)
 
     if (div == 0) div = 1;
 
+    div = 1000; /* XXX */
     period_ns = 1000000000UL/FBASE/div;
 
     printk("8254 PIT: Setting period to %d ns\n", period_ns);

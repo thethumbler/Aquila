@@ -10,18 +10,22 @@
 
 void arch_thread_spawn(thread_t *thread)
 {
+    //printk("arch_thread_spawn(thread=%p)\n", thread);
     x86_thread_t *arch = thread->arch;
     x86_proc_t *parch = thread->owner->arch;
 
     switch_page_directory(parch->pd);
     x86_kernel_stack_set(arch->kstack);
 
+    //printk("x86_jump_user(%p, %p, %x, %x, %p, %x)\n", arch->eax, arch->eip, X86_CS, arch->eflags, arch->esp, X86_SS);
     extern void x86_jump_user(uintptr_t eax, uintptr_t eip, uintptr_t cs, uintptr_t eflags, uintptr_t esp, uintptr_t ss) __attribute__((noreturn));
     x86_jump_user(arch->eax, arch->eip, X86_CS, arch->eflags, arch->esp, X86_SS);
 }
 
 void arch_thread_switch(thread_t *thread)
 {
+    //printk("arch_thread_switch(thread=%p)\n", thread);
+
     x86_proc_t *parch = thread->owner->arch;
     x86_thread_t *tarch = thread->arch;
 

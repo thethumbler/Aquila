@@ -5,79 +5,50 @@
 #include <cpu/cpu.h>
 #include <cpu/io.h>
 
+#include <chipset/misc.h>   /* XXX */
+
+#define UART_MMIO   0
+
+#define UART_IER    1
+#define UART_FCR    2
+#define UART_LCR    3
+#define UART_MCR    4
+#define UART_DLL    0
+#define UART_DLH    1
+#define UART_LCR_DLAB    0x80
+
 struct __uart uart_8250;
+struct ioaddr io8250 = {
+#if UART_MMIO
+    .addr = 0xCF00B000,
+    .type = IOADDR_MMIO32,
+#else
+    .addr = 0x3F8,
+    .type = IOADDR_PORT,
+#endif
+};
 
-#define UART_MMIO   1
-
-//#define COM1 0x3F8
-#define COM1 0xCF00B000
 #define UART_8250_IRQ   4
 
-static inline int __inb(uintptr_t port, int offset)
-{
-#if UART_MMIO
-    return *(volatile uint32_t *) (port + (offset << 2));
-#else
-    return inb((uint16_t) (port + offset));
-#endif
-}
-
-static inline void __outb(uintptr_t port, int offset, int v)
-{
-#if UART_MMIO
-    *(volatile uint32_t *) (port + (offset << 2)) = v;
-#else
-    outb((uint16_t) (port + offset), (uint8_t) v);
-#endif
-}
-
-static void init_com1()
-{
-    __outb(COM1, 3, 0x03);  // 8 bits, no parity, one stop bit
-    __outb(COM1, 1, 0x00);  // Disable all interrupts
-    __outb(COM1, 2, 0x00);  // Disable FIFO
-    __outb(COM1, 4, 0x03);  // DTR + RTS
-
-    __outb(COM1, 3, 0x80);  // Enable DLAB
-    __outb(COM1, 0, 0x03);  // Set divisor to 3
-    __outb(COM1, 1, 0x00);
-
-	__outb(COM1, 1, 0x01);	// Enable Data/Empty interrupt
-}
-
-#if 0
-static void init_com1()
-{
-	outb(COM1 + 1, 0x00);	// Disable all interrupts
-	outb(COM1 + 3, 0x80);	// Enable DLAB
-	outb(COM1 + 0, 0x03);	// Set divisor to 3
-	outb(COM1 + 1, 0x00);
-	outb(COM1 + 3, 0x03);	// 8 bits, no parity, one stop bit
-	//outb(COM1 + 2, 0xC7);	// Enable FIFO, clear it with 14-byte threshold
-	outb(COM1 + 2, 0x00);	// Enable FIFO, clear it with 14-byte threshold
-	outb(COM1 + 4, 0x0B);	// IRQs enabled
-	outb(COM1 + 1, 0x01);	// Enable Data/Empty interrupt
-}
-#endif
 
 static int serial_empty()
 {
-	return __inb(COM1, 5) & 0x20;
+	return io_in8(&io8250, 5) & 0x20;
 }
 
 static int serial_received()
 {
-   return __inb(COM1, 5) & 0x01;
+   return io_in8(&io8250, 5) & 0x01;
 }
 
 char uart_8250_receive(struct __uart *u __unused)
 {
-    return __inb(COM1, 0);
+    return io_in8(&io8250, 0);
 }
 
 ssize_t uart_8250_transmit(struct __uart *u __unused, char c)
 {
-    __outb(COM1, 0, c);
+    io_out8(&io8250, 0, c);
     return 1;
 }
 
@@ -94,10 +65,32 @@ void uart_8250_irq()
     }
 }
 
+void uart_8250_comm_init(struct __uart *u __unused)
+{
+    while (!serial_empty());    /* Flush all output before reseting */
+
+    io_out8(&io8250, UART_IER, 0x00);  /* Disable all interrupts */
+
+    io_out8(&io8250, UART_LCR, 0x03);  /* 8 bits, no parity, one stop bit */
+    io_out8(&io8250, UART_FCR, 0xC7);  /* Enalbe FIFO, clear, 14 byte threshold */
+    io_out8(&io8250, UART_MCR, 0x0B);  /* DTR + RTS */
+
+    /* Enable DLAB and set divisor */
+    int lcr = io_in8(&io8250, UART_LCR);
+    io_out8(&io8250, UART_LCR, lcr | UART_LCR_DLAB);  /* Enable DLAB */
+    io_out8(&io8250, UART_DLL, 0x03);  /* Set divisor to 3 */
+    io_out8(&io8250, UART_DLH, 0x00);
+    io_out8(&io8250, UART_LCR, lcr & ~UART_LCR_DLAB);
+
+	io_out8(&io8250, UART_IER, 0x01);  /* Enable Data/Empty interrupt */
+}
+
 int uart_8250_init()
 {
-    //init_com1();
-    irq_install_handler(UART_8250_IRQ, uart_8250_irq);
+    //serial_init();
+    x86_irq_handler_install(UART_8250_IRQ, uart_8250_irq);
+
+#if 0
     struct pci_dev dev;
     int ret = pci_device_scan(0x8086, 0x0936, &dev);
 
@@ -139,12 +132,15 @@ int uart_8250_init()
 
         asm volatile ("cli;");
     }
+#endif
 
     uart_register(0, &uart_8250);
     return 0;
 }
 
 struct __uart uart_8250 = {
+    .name     = "8250",
+    .init     = uart_8250_comm_init,
     .transmit = uart_8250_transmit,
     .receive  = uart_8250_receive,
 };

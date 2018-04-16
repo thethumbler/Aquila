@@ -2,7 +2,7 @@
 #define _CONFIG_H
 
 /* Defaults */
-#define DEFAULT_WALLPAPER  "/etc/wallpaper.jpg"
+#define DEFAULT_WALLPAPER  "/usr/share/wallpapers/wallpaper.jpg"
 #define DEFAULT_FONT       "/etc/font.tf"
 #define DEFAULT_SHELL      "/bin/aqbox"
 

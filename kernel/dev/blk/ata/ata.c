@@ -2,14 +2,14 @@
 #include <core/panic.h>
 #include <cpu/io.h>
 #include <dev/dev.h>
-#include <dev/ata.h>
 #include <fs/vfs.h>
 #include <fs/devfs.h>
 #include <fs/posix.h>
 #include <fs/mbr.h>
 #include <bits/errno.h>
-
 #include <dev/pci.h>
+
+#include <ata.h>
 
 static struct ata_device {
     uint16_t base;

@@ -35,9 +35,6 @@ static void sys_exit(int code)
 {
     printk("[%d:%d] %s: exit(code=%d)\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name, code);
 
-    if (cur_thread->owner->pid == 1)
-        panic("init killed\n");
-
     proc_t *owner  = cur_thread->owner;
 
     owner->exit = _PROC_EXIT(code, 0);  /* Child exited normally */
@@ -163,7 +160,7 @@ static void sys_isatty(int fildes)
 static void sys_kill(pid_t pid, int sig)
 {
     printk("[%d:%d] %s: kill(pid=%d, sig=%d)\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name, pid, sig);
-    int ret = send_signal(pid, sig);
+    int ret = signal_send(pid, sig);
     arch_syscall_return(cur_thread, ret);
 }
 
@@ -280,9 +277,27 @@ static void sys_sbrk(ptrdiff_t incr)
     return;
 }
 
-static void sys_stat()
+static void sys_stat(const char *path, struct stat *buf)
 {
+    printk("[%d:%d] %s: stat(path=%s, buf=%p)\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name, path, buf);
 
+    struct vnode vnode;
+    struct inode *inode = NULL;
+    int ret = 0;
+    struct uio uio = _PROC_UIO(cur_thread->owner);
+
+    if ((ret = vfs_lookup(path, &uio, &vnode, NULL))) {
+        arch_syscall_return(cur_thread, ret);
+        return;
+    }
+
+    if ((ret = vfs_vget(&vnode, &inode))) {
+        arch_syscall_return(cur_thread, ret);
+        return;
+    }
+
+    ret = vfs_stat(inode, buf);
+    arch_syscall_return(cur_thread, ret);
 }
 
 static void sys_times()

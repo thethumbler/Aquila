@@ -11,4 +11,7 @@ void earlycon_init();
 int  earlycon_puts(char*);
 int  earlycon_putc(char);
 
+/* defined in core/printk.c */
+void earlycon_disable();
+
 #endif

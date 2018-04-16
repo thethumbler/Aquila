@@ -11,9 +11,9 @@
 #define QRK_LEG_BRDG_RC_IRQAGENT3  0x3146
 
 static char __rcrb[4 * PAGE_SIZE] __aligned(PAGE_SIZE);
-static struct __ioaddr __rcrb_ioaddr = {
+static struct ioaddr __rcrb_ioaddr = {
     .addr = (uintptr_t) __rcrb,
-    .type = __IOADDR_MMIO8, /* Direct offset */
+    .type = IOADDR_MMIO8, /* Direct offset */
 };
 
 #define PIC_ELCR   0x4D0
@@ -22,7 +22,7 @@ void quark_root_complex_io_fabric_route(int intr_pin, int irq)
     if (intr_pin < 1 || intr_pin > 4)
         panic("Invalid INTR_PIN");
 
-    uint32_t irqagent3 = __io_in16(&__rcrb_ioaddr, QRK_LEG_BRDG_RC_IRQAGENT3);
+    uint32_t irqagent3 = io_in16(&__rcrb_ioaddr, QRK_LEG_BRDG_RC_IRQAGENT3);
     printk("irqagent3 %x\n", irqagent3);
 
     uint32_t pirq = ((irqagent3) >> (intr_pin - 1) * 4) & 0x7;
@@ -70,5 +70,5 @@ void quark_root_complex_init()
 
     printk("Quark SoC: Legacy Bridge: Root Complex Base Address %x\n", rcba);
     printk("Quark SoC: Legacy Bridge: Mapping RCRB to %p\n", __rcrb);
-    pmman.map_to(rcba, (uintptr_t) __rcrb, 4 * PAGE_SIZE, KRW);
+    pmman.map_to(rcba, (uintptr_t) __rcrb, 4 * PAGE_SIZE, VM_KRW);
 }

@@ -23,6 +23,11 @@ static int binfmt_fmt_load(proc_t *proc, const char *fn, struct inode *file, int
         arch_specific_data = arch_binfmt_load();
         proc = proc_new();
     } else {
+        /* Remove VMRs */
+        struct vmr *vmr = NULL;
+        while ((vmr = dequeue(&proc->vmr)))
+            kfree(vmr);
+
         pmman.unmap_full(0, proc->heap);
         kfree(proc->name);
     }
@@ -33,7 +38,7 @@ static int binfmt_fmt_load(proc_t *proc, const char *fn, struct inode *file, int
     proc->name = strdup(fn);
 
     if (new_proc) {
-        pmman.map(USER_STACK_BASE, USER_STACK_SIZE, URW);
+        pmman.map(USER_STACK_BASE, USER_STACK_SIZE, VM_URW);
         arch_proc_init(arch_specific_data, proc);
         arch_binfmt_end(arch_specific_data);
 

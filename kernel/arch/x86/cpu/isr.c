@@ -97,13 +97,16 @@ void __x86_isr(struct x86_regs *regs)
     extern uint32_t int_num;
     extern uint32_t err_num;
 
+    //printk("__x86_isr %d\n",int_num);
     //x86_dump_registers(regs);
 
     if (int_num == 0xE && cur_thread) {// && regs->cs == X86_CS) {   /* Page fault from user-space */
 
+        x86_thread_t *arch = cur_thread->arch;
+        //arch->regs = regs;
+
         if (regs->eip == 0x0FFF) {  /* Signal return */
             //printk("Returned from signal [regs=%p]\n", regs);
-            x86_thread_t *arch = cur_thread->arch;
 
             /* Fix kstack and regs pointers*/
             arch->regs = (struct x86_regs *) arch->kstack;

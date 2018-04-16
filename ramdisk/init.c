@@ -36,9 +36,14 @@ int run_prog(char *name, char **argv)
 void parse_initrc()
 {
     FILE *initrc = fopen("/init.rc", "r");
+
     char line[1024];
 
-    while (fgets(line, 1024, initrc)) {
+    for (;;) {
+        memset(line, 0, sizeof(line));
+
+        if (!fgets(line, 1024, initrc))
+            break;
 
         /* Ignore empty lines and comments */
         if (strlen(line) < 2 || line[0] == '#')
@@ -50,7 +55,9 @@ void parse_initrc()
             line[llen-1] = 0;
 
         /* Tokenize line */
-        char *argv[50] = {0};
+        char *argv[50];
+        memset(argv, 0, sizeof(argv));
+
         int args_i = 0;
 
         char *tok = strtok(line, " \t\n");
@@ -67,7 +74,8 @@ void parse_initrc()
         char buf[1024];
 
         do {
-            sprintf(buf, "%s/%s", comp, argv[0]);
+            snprintf(buf, 1024, "%s/%s", comp, argv[0]);
+
             int fd = open(buf, O_RDONLY);
             if (fd > 0) {
                 close(fd);
@@ -89,19 +97,11 @@ void _start()
     open("/dev/ttyS0", O_WRONLY);
     open("/dev/ttyS0", O_WRONLY);
 
-    char *argp[] = {"/bin/aqbox", "sh", 0};
-    char *envp[] = {"PWD=/", 0};
-    execve("/bin/aqbox", argp, envp);
+    char *argp[] = {"/sbin/login", 0};
+    execve("/sbin/login", argp, 0);
 #endif
 
 #if USE_FBTERM
-    //struct {char *dev; char *opt} data;
-    //data.dev = "/dev/hda1";
-    //mount("ext2", "/", 0, &data);
-    //mount("devfs", "/dev", 0, 0);
-    ////mkdir("/dev/pts", 0);
-    //mount("devpts", "/dev/pts", 0, 0);
-
     if (!fork())
         execve("/bin/fbterm", 0, 0);
 
@@ -139,9 +139,8 @@ void _start()
 		int stdout_fd = open(pts_fn, O_WRONLY);
 		int stderr_fd = open(pts_fn, O_WRONLY);
 
-		char *argp[] = {"/bin/aqbox", "sh", 0};
-		char *envp[] = {"PWD=/", 0};
-		execve("/bin/aqbox", argp, envp);
+		char *argp[] = {"/sbin/login", 0};
+		execve("/sbin/login", argp, 0);
 	}
 #endif
 
