@@ -207,7 +207,7 @@ next:;
 
 void vfs_init(void)
 {
-    printk("VFS: Initializing\n");
+    printk("vfs: Initializing\n");
 }
 
 void vfs_install(struct fs *fs)
@@ -217,7 +217,7 @@ void vfs_install(struct fs *fs)
     node->fs = fs;
     node->next = registered_fs;
     registered_fs = node;
-    printk("VFS: Registered filesystem %s\n", fs->name);
+    printk("vfs: Registered filesystem %s\n", fs->name);
 }
 
 int vfs_lookup(const char *path, struct uio *uio, struct vnode *vnode, char **abs_path)
