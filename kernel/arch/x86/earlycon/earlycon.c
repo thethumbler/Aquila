@@ -15,6 +15,8 @@ int earlycon_putc(char c)
 void earlycon_init()
 {
     extern struct __earlycon __earlycon_uart;
+    extern struct __earlycon __earlycon_vga;
     __earlycon = &__earlycon_uart;
+    //__earlycon = &__earlycon_vga;
     __earlycon->init();
 }
