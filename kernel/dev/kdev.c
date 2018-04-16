@@ -189,16 +189,16 @@ int kdev_file_eof(struct devid *dd, struct file *file)
 void kdev_chrdev_register(devid_t major, struct dev *dev)
 {
     chrdev[major] = dev; /* XXX */
-    printk("KDev: Registered chrdev %d: %s\n", major, dev->name);
+    printk("kdev: Registered chrdev %d: %s\n", major, dev->name);
 }
 
 void kdev_blkdev_register(devid_t major, struct dev *dev)
 {
     blkdev[major] = dev; /* XXX */
-    printk("KDev: Registered blkdev %d: %s\n", major, dev->name);
+    printk("kdev: Registered blkdev %d: %s\n", major, dev->name);
 }
 
 void kdev_init()
 {
-    printk("KDev: Initalizing\n");
+    printk("kdev: Initializing\n");
 }
