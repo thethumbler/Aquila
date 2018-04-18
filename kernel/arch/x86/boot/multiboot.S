@@ -1,11 +1,11 @@
 /**********************************************************************
- *						Multiboot support
+ *                      Multiboot support
  *
  *
- *	This file is part of Aquila OS and is released under the terms of
- *	GNU GPLv3 - See LICENSE.
+ *  This file is part of Aquila OS and is released under the terms of
+ *  GNU GPLv3 - See LICENSE.
  *
- *	Copyright (C) 2016 Mohamed Anwar <mohamed_anwar@opmbx.org>
+ *  Copyright (C) 2016 Mohamed Anwar <mohamed_anwar@opmbx.org>
  */
 
 #include <config.h>
@@ -13,7 +13,7 @@
 #include <boot/multiboot.h>
 
 /*
- * 	Multiboot definitions
+ *  Multiboot definitions
  */
 
 #if MULTIBOOT_GFX
@@ -26,7 +26,7 @@
 #define MULTIBOOT_CHKSUM -(MULTIBOOT_HEADER_MAGIC + MULTIBOOT_FLAGS)
 
 /*
- *	Multiboot lookup header
+ *  Multiboot lookup header
  */
 
 /* struct multiboot_header */
@@ -51,16 +51,16 @@
 
 .global _start
 _start:
-	movl %eax, (multiboot_signature)
-	movl %ebx, (multiboot_info)
+    movl %eax, (multiboot_signature)
+    movl %ebx, (multiboot_info)
 
     and  $-16, %esp /* Align stack to 16 byte */
 
     cli
 
-	.extern early_init
-	call early_init
-	jmp .
+    .extern early_init
+    call early_init
+    jmp .
 
 .global multiboot_signature
 .global multiboot_info

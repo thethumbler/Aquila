@@ -42,10 +42,10 @@ static int rd_probe()
 }
 
 struct dev rddev = {
-	.name  = "ramdisk",
+    .name  = "ramdisk",
     .probe = rd_probe,
-	.read  = rd_read,
-	.write = rd_write,
+    .read  = rd_read,
+    .write = rd_write,
 };
 
 MODULE_INIT(rd, rd_probe, NULL);

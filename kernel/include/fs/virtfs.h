@@ -4,8 +4,8 @@
 #include <fs/vfs.h>
 
 struct virtfs_dir {
-	struct inode     *node;
-	struct virtfs_dir *next;
+    struct inode     *node;
+    struct virtfs_dir *next;
 };
 
 int virtfs_vmknod(struct vnode *dir, const char *fn, itype_t type, dev_t dev, struct uio *uio, struct inode **ref);

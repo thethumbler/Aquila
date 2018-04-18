@@ -48,20 +48,20 @@ static int fbdev_vesa_prope(int i __unused, struct fbdev *fb)
     fb->var_screeninfo = &vesa_var_screeninfo;
 
     /* Init fb structs */
-	vesa_fix_screeninfo.smem_start = (uintptr_t) vmem;
-	vesa_fix_screeninfo.smem_len   = size;
-	//vesa_fix_screenifo.type
-	//vesa_fix_screenifo.type_aux
-	//vesa_fix_screenifo.visual
-	vesa_fix_screeninfo.xpanstep      = 0;
-	vesa_fix_screeninfo.ypanstep      = 0;
-	vesa_fix_screeninfo.ywrapstep     = 0;
-	vesa_fix_screeninfo.line_length   = info->lin_bytes_per_scanline;
-	vesa_fix_screeninfo.mmio_start    = info->phys_base_ptr;
-	vesa_fix_screeninfo.mmio_len      = size;
-	//vesa_fix_screenifo.accel
-	//vesa_fix_screenifo.capabilities
-	//vesa_fix_screenifo.reserved[2]
+    vesa_fix_screeninfo.smem_start = (uintptr_t) vmem;
+    vesa_fix_screeninfo.smem_len   = size;
+    //vesa_fix_screenifo.type
+    //vesa_fix_screenifo.type_aux
+    //vesa_fix_screenifo.visual
+    vesa_fix_screeninfo.xpanstep      = 0;
+    vesa_fix_screeninfo.ypanstep      = 0;
+    vesa_fix_screeninfo.ywrapstep     = 0;
+    vesa_fix_screeninfo.line_length   = info->lin_bytes_per_scanline;
+    vesa_fix_screeninfo.mmio_start    = info->phys_base_ptr;
+    vesa_fix_screeninfo.mmio_len      = size;
+    //vesa_fix_screenifo.accel
+    //vesa_fix_screenifo.capabilities
+    //vesa_fix_screenifo.reserved[2]
     //
 
     vesa_var_screeninfo.xres          = info->x_resolution;

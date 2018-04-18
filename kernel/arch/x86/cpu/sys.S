@@ -11,39 +11,39 @@ err_num: .long 0
 .macro ISR_NOERR v
 .global __x86_isr\v
 __x86_isr\v:
-	cli
-	movl $0x0, (err_num)
-	movl $\v, (int_num)
-	jmp isr_handler
+    cli
+    movl $0x0, (err_num)
+    movl $\v, (int_num)
+    jmp isr_handler
 .endm
 
 .macro ISR_ERR v
 .global __x86_isr\v
 __x86_isr\v:
-	cli
-	popl (err_num)
-	movl $\v, (int_num)
-	jmp isr_handler
+    cli
+    popl (err_num)
+    movl $\v, (int_num)
+    jmp isr_handler
 .endm
 
 .macro push_context
-	push %eax
-	push %edx
-	push %ecx
-	push %ebx
-	push %ebp
-	push %esi
-	push %edi
+    push %eax
+    push %edx
+    push %ecx
+    push %ebx
+    push %ebp
+    push %esi
+    push %edi
 .endm
-	
+    
 .macro pop_context
-	pop %edi
-	pop %esi
-	pop %ebp
-	pop %ebx
-	pop %ecx
-	pop %edx
-	pop %eax
+    pop %edi
+    pop %esi
+    pop %ebp
+    pop %ebx
+    pop %ecx
+    pop %edx
+    pop %eax
 .endm
 
 /* Refer to 
@@ -89,12 +89,12 @@ ISR_NOERR 128
 
 .extern __x86_isr
 isr_handler:
-	push_context
-	push %esp
-	call __x86_isr
-	pop %eax
-	pop_context
-	iret
+    push_context
+    push %esp
+    call __x86_isr
+    pop %eax
+    pop_context
+    iret
 
 //
 // IRQs -- external interrupt requists (from PIC)
@@ -103,10 +103,10 @@ isr_handler:
 .macro IRQ n, i
 .global __x86_irq\n
 __x86_irq\n:
-	cli
-	//movl %eax, (err_num)
-	movl $\i, (int_num)
-	jmp irq_stub
+    cli
+    //movl %eax, (err_num)
+    movl $\i, (int_num)
+    jmp irq_stub
 .endm
 
 IRQ 0, 32
@@ -129,51 +129,51 @@ IRQ 15, 47
 
 .extern __x86_irq_handler
 irq_stub:
-	push_context
-	push %esp
-	call __x86_irq_handler
-	pop %eax
-	pop_context
-	iret
+    push_context
+    push %esp
+    call __x86_irq_handler
+    pop %eax
+    pop_context
+    iret
 
 .global x86_jump_user
-x86_jump_user:	/* eax, eip, cs, eflags, esp, ss */
-	pop  %eax 	/* Caller return address */
-	mov  $0x20 | 0x3, %ax
+x86_jump_user:  /* eax, eip, cs, eflags, esp, ss */
+    pop  %eax   /* Caller return address */
+    mov  $0x20 | 0x3, %ax
     movw %ax, %ds
     movw %ax, %es
     movw %ax, %fs
     movw %ax, %gs
-    pop	 %eax 	/* eax for sys_fork return */
+    pop  %eax   /* eax for sys_fork return */
     iret
 
 .global x86_read_eip
 x86_read_eip:
-	mov (%esp), %eax
-	ret
+    mov (%esp), %eax
+    ret
 
 .global x86_goto
 x86_goto:
-	pop %ebx	/* Caller return address */
-	pop %ebx    /* eip */
-	pop %ebp
-	pop %esp
-	mov $-1, %eax /* Return -1 -> Done switching */
-	jmp *%ebx
+    pop %ebx    /* Caller return address */
+    pop %ebx    /* eip */
+    pop %ebp
+    pop %esp
+    mov $-1, %eax /* Return -1 -> Done switching */
+    jmp *%ebx
 
 
 .extern internal_arch_sleep
 .global x86_sleep
 x86_sleep:
-	push_context
-	call internal_arch_sleep
-	pop_context
-	ret
+    push_context
+    call internal_arch_sleep
+    pop_context
+    ret
 
 .global x86_fork_return
 x86_fork_return:
-	pop_context
-	iret
+    pop_context
+    iret
 
 .global return_from_signal
 return_from_signal:

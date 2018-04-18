@@ -4,7 +4,7 @@
 #include <core/system.h>
 
 #if ARCH == X86
-	#include <arch/x86/include/bits/errno.h>
+    #include <arch/x86/include/bits/errno.h>
 #endif
 
 #endif

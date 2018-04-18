@@ -7,13 +7,13 @@
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 
 #define foreach(element, list) \
-	for (typeof(*list) *tmp = list, element = *tmp; element; element = *++tmp)
+    for (typeof(*list) *tmp = list, element = *tmp; element; element = *++tmp)
 
 #define forlinked(element, list, iter) \
-	for (typeof(list) element = list; element; element = iter)
+    for (typeof(list) element = list; element; element = iter)
 
-#define __unused	__attribute__((unused))
-#define __packed	__attribute__((packed))
+#define __unused    __attribute__((unused))
+#define __packed    __attribute__((packed))
 #define __aligned(n) __attribute__((aligned(n)))
 #define __section(s) __attribute__((section(s)))
 

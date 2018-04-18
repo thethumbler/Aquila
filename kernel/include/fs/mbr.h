@@ -23,10 +23,10 @@ typedef struct {
 } __packed partition_t;
 
 typedef struct {
-    uint8_t              bootloader[440];	// Actual Bootloader code
+    uint8_t              bootloader[440];   // Actual Bootloader code
     uint32_t             disk_signiture;
     uint16_t             copy_protected;
-    partition_t          ptab[4];			// Partition table
+    partition_t          ptab[4];           // Partition table
     uint16_t             boot_signature;
 } __packed mbr_t;
 
