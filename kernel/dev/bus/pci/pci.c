@@ -1,26 +1,7 @@
 #include <dev/pci.h>
-#include <dev/pci_list.h>
 #include <cpu/io.h>
 
 static struct ioaddr __pci_ioaddr;
-
-static inline const char *get_vendor_name(uint16_t vendor_id)
-{
-    for (size_t i = 0; i < PCI_VENTABLE_LEN; ++i)
-        if (PciVenTable[i].VenId == vendor_id)
-            return PciVenTable[i].VenFull;
-
-    return NULL;
-}
-
-static inline const char *get_device_name(uint16_t vendor_id, uint16_t device_id)
-{
-    for (size_t i = 0; i < PCI_DEVTABLE_LEN; ++i)
-        if (PciDevTable[i].VenId == vendor_id && PciDevTable[i].DevId == device_id)
-            return PciDevTable[i].ChipDesc;
-
-    return NULL;
-}
 
 static inline uint32_t pci_read_dword(uint8_t bus, uint8_t dev, uint8_t func, uint8_t reg)
 {
@@ -148,10 +129,12 @@ static void scan_device(uint8_t bus, uint8_t dev)
             uint32_t class_code = get_class_code(bus, dev, func);
             uint32_t subclass_code = get_subclass_code(bus, dev, func);
 
+            /*
             printk("Bus: %d, Device: %d, Function %d\n", bus, dev, func);
             printk("  -> Vendor ID: %x, Device ID: %x, Class: %x, Subclass: %x\n", vendor_id, device_id, class_code, subclass_code);
             printk("  -> Vednor: %s\n", get_vendor_name(vendor_id));
             printk("  -> Device: %s\n", get_device_name(vendor_id, device_id));
+            */
         }
     }
 }

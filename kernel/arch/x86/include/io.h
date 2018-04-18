@@ -5,43 +5,43 @@
 
 #define __inb(port) \
 ({ \
-	uint8_t ret; \
-	asm volatile ("inb %%dx, %%al":"=a"(ret):"d"(port)); \
-	ret; \
+    uint8_t ret; \
+    asm volatile ("inb %%dx, %%al":"=a"(ret):"d"(port)); \
+    ret; \
 })
 
 #define __inw(port) \
 ({ \
-	uint16_t ret; \
-	asm volatile ("inw %%dx, %%ax":"=a"(ret):"dN"(port)); \
-	ret; \
+    uint16_t ret; \
+    asm volatile ("inw %%dx, %%ax":"=a"(ret):"dN"(port)); \
+    ret; \
 })
 
 #define __inl(port) \
 ({ \
-	uint32_t ret; \
-	asm volatile ("inl %%dx, %%eax":"=a"(ret):"d"(port)); \
-	ret; \
+    uint32_t ret; \
+    asm volatile ("inl %%dx, %%eax":"=a"(ret):"d"(port)); \
+    ret; \
 })
 
 #define __insw(port, count, buf) \
 ({ \
-	asm volatile ("rep insw"::"D"(buf), "c"(count), "d"(port):"memory"); \
+    asm volatile ("rep insw"::"D"(buf), "c"(count), "d"(port):"memory"); \
 })
 
 #define __outb(port, value) \
 ({ \
-	asm volatile ("outb %%al, %%dx"::"d"((port)),"a"((value))); \
+    asm volatile ("outb %%al, %%dx"::"d"((port)),"a"((value))); \
 })
 
 #define __outw(port, value) \
 ({ \
-	asm volatile ("outw %%ax, %%dx"::"d"(port),"a"(value)); \
+    asm volatile ("outw %%ax, %%dx"::"d"(port),"a"(value)); \
 })
 
 #define __outl(port, value) \
 ({ \
-	asm volatile ("outl %%eax, %%dx"::"d"(port),"a"(value)); \
+    asm volatile ("outl %%eax, %%dx"::"d"(port),"a"(value)); \
 })
 
 #define __io_wait() \

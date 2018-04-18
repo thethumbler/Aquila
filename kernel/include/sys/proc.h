@@ -15,26 +15,26 @@ typedef pid_t tid_t;
 typedef struct thread thread_t;
 
 typedef enum {
-	RUNNABLE,
-	ISLEEP,	/* Interruptable SLEEP (I/O) */
-	USLEEP,	/* Uninterruptable SLEEP (Waiting for event) */
-	ZOMBIE,
+    RUNNABLE,
+    ISLEEP, /* Interruptable SLEEP (I/O) */
+    USLEEP, /* Uninterruptable SLEEP (Waiting for event) */
+    ZOMBIE,
 } state_t;
 
 struct thread {
-	tid_t 		tid;	    /* Thread ID */
-	state_t		state;      /* Thread current state */
-	proc_t 		*owner;     /* Thread owner process */
+    tid_t       tid;        /* Thread ID */
+    state_t     state;      /* Thread current state */
+    proc_t      *owner;     /* Thread owner process */
 
     struct queue      *sleep_queue; /* Current sleep queue */
     struct queue_node *sleep_node;  /* Sleep queue node */
     struct queue      *sched_queue; /* Scheduler queue */
     struct queue_node *sched_node;  /* Scheduler queue node */
 
-	void		*arch;	    /* Arch specific data */
+    void        *arch;      /* Arch specific data */
 
-	/* Thread flags */
-	int			spawned: 1;
+    /* Thread flags */
+    int         spawned: 1;
 } __packed;
 
 typedef struct session {
@@ -54,23 +54,23 @@ struct pgroup {
 };
 
 struct proc {
-	pid_t 		pid;	     /* Process ID */
+    pid_t       pid;         /* Process ID */
     pgroup_t    *pgrp;       /* Associated Process Group */
 
     struct queue_node *pgrp_node;   /* Process Group Queue Node */
 
-	char		*name;       /* Process name */
-	struct file *fds;	     /* Open file descriptors */
-	proc_t 		*parent;     /* Parent process */
-	char 		*cwd;	     /* Current Working Directory */
+    char        *name;       /* Process name */
+    struct file *fds;        /* Open file descriptors */
+    proc_t      *parent;     /* Parent process */
+    char        *cwd;        /* Current Working Directory */
 
     uint32_t    mask;        /* File mode creation mask */
     uint32_t    uid;         /* User ID */
     uint32_t    gid;         /* Groupd ID */
 
-	uintptr_t	heap_start;	 /* Process initial heap pointer */
-	uintptr_t	heap;	     /* Process current heap pointer */
-	uintptr_t	entry;	     /* Process entry point */	
+    uintptr_t   heap_start;  /* Process initial heap pointer */
+    uintptr_t   heap;        /* Process current heap pointer */
+    uintptr_t   entry;       /* Process entry point */  
 
     queue_t     vmr;         /* Virtual memory regions */
 
@@ -84,7 +84,7 @@ struct proc {
     queue_t     wait_queue;  /* Dummy queue for children wait */
     int         exit;        /* Exit status of process */
 
-	void		*arch;	     /* Arch specific data */
+    void        *arch;       /* Arch specific data */
 
     int         running: 1;  /* Process is running? */
 } __packed;

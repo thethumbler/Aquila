@@ -33,7 +33,7 @@ struct ioaddr io8250 = {
 
 static int serial_empty()
 {
-	return io_in8(&io8250, 5) & 0x20;
+    return io_in8(&io8250, 5) & 0x20;
 }
 
 static int serial_received()
@@ -82,7 +82,7 @@ void uart_8250_comm_init(struct __uart *u __unused)
     io_out8(&io8250, UART_DLH, 0x00);
     io_out8(&io8250, UART_LCR, lcr & ~UART_LCR_DLAB);
 
-	io_out8(&io8250, UART_IER, 0x01);  /* Enable Data/Empty interrupt */
+    io_out8(&io8250, UART_IER, 0x01);  /* Enable Data/Empty interrupt */
 }
 
 int uart_8250_init()

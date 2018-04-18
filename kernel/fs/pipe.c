@@ -9,27 +9,27 @@
 static ssize_t pipefs_read(struct inode *node, off_t offset __unused, size_t size, void *buf)
 {
     struct pipe *pipe = node->p;
-	return ringbuf_read(pipe->ring, size, buf);
+    return ringbuf_read(pipe->ring, size, buf);
 }
 
 static ssize_t pipefs_write(struct inode *node, off_t offset __unused, size_t size, void *buf)
 {
     struct pipe *pipe = node->p;
-	return ringbuf_write(pipe->ring, size, buf);
+    return ringbuf_write(pipe->ring, size, buf);
 }
 
 static int pipefs_can_read(struct file *file, size_t size)
 {
     struct inode *node = file->node;
     struct pipe *pipe = node->p;
-	return size <= ringbuf_available(pipe->ring);
+    return size <= ringbuf_available(pipe->ring);
 }
 
 static int pipefs_can_write(struct file *file, size_t size)
 {
     struct inode *node = file->node;
     struct pipe *pipe = node->p;
-	return size >= pipe->ring->size - ringbuf_available(pipe->ring);
+    return size >= pipe->ring->size - ringbuf_available(pipe->ring);
 }
 
 static int pipefs_mkpipe(struct pipe **pipe)
@@ -86,11 +86,11 @@ struct fs pipefs = {
         .write = pipefs_write,
     },
 
-	.fops = {
-		.read      = posix_file_read,
+    .fops = {
+        .read      = posix_file_read,
         .write     = posix_file_write,
         .can_read  = pipefs_can_read,
         .can_write = pipefs_can_write,
         .eof       = __vfs_never
-	},
+    },
 };

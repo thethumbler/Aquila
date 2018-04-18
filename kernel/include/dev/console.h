@@ -6,4 +6,4 @@
 
 extern struct dev console;
 
-#endif	/* !_CONSOLE_H */
+#endif  /* !_CONSOLE_H */

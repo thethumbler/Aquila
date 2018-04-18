@@ -4,8 +4,8 @@
 #include <cpu/io.h>
 #include <dev/pci.h>
 
-#define PIC_MASTER	0x20
-#define PIC_SLAVE	0xA0
+#define PIC_MASTER  0x20
+#define PIC_SLAVE   0xA0
 
 int x86_generic_pic_init()
 {
@@ -40,7 +40,7 @@ int x86_generic_i8042_init()
     return x86_i8042_setup(&i8042);
 }
 
-#define PIT_CHANNEL0	0x40
+#define PIT_CHANNEL0    0x40
 int x86_generic_pit_init()
 {
     struct ioaddr pit;
