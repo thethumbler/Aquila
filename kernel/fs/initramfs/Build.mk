@@ -1,2 +1,2 @@
 obj-y += initramfs.o
-dirs-y += cpio/
+dirs-$(INITRAMFS_CPIO) += cpio/

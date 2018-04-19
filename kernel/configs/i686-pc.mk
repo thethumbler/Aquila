@@ -68,3 +68,6 @@ FS_DEVFS=y
 FS_DEVPTS=y
 FS_EXT2=y
 FS_PROCFS=y
+
+# Initramfs
+INITRAMFS_CPIO=y

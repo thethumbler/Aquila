@@ -159,7 +159,7 @@ ssize_t vfs_read(struct inode *inode, size_t offset, size_t size, void *buf);
 ssize_t vfs_write(struct inode *inode, size_t offset, size_t size, void *buf);
 ssize_t vfs_readdir(struct inode *inode, off_t offset, struct dirent *dirent);
 int     vfs_ioctl(struct inode *inode, unsigned long request, void *argp);
-int     vfs_close(struct inode *node);
+int     vfs_close(struct inode *inode);
 
 /* file operations mappings */
 int     vfs_file_open(struct file *file);
