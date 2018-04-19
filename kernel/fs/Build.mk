@@ -4,6 +4,7 @@ dirs-y += posix/
 obj-y += vfs.o
 obj-y += pipe.o
 obj-y += itbl.o
+obj-y += ubc.o
 
 dirs-$(FS_TMPFS)  += tmpfs/
 dirs-$(FS_DEVFS)  += devfs/

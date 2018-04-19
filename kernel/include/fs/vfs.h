@@ -30,7 +30,7 @@ struct uio {    /* User I/O operation */
     uint32_t gid;
     uint32_t mask;
     uint32_t flags;
-};
+} __packed;
 
 /* Inode Operations */
 struct iops {
@@ -78,7 +78,7 @@ struct fs {
 
     /* flags */
     int nodev : 1;
-};
+} __packed;
 
 struct inode {    /* Actual inode, only one copy is permitted */
     vino_t      id;     /* Unique Identifier */
@@ -100,7 +100,7 @@ struct inode {    /* Actual inode, only one copy is permitted */
     ssize_t     ref;    /* Number of processes referencing this node */
     queue_t     *read_queue;
     queue_t     *write_queue;
-};
+} __packed;
 
 struct vnode {  /* Tag node, multiple copies are permitted */
     struct inode *super;  /* super node containing inode reference */
@@ -109,13 +109,14 @@ struct vnode {  /* Tag node, multiple copies are permitted */
     uint32_t     mask;   /* inode access mask */
     uint32_t     uid;    /* user ID */
     uint32_t     gid;    /* group ID */
-};
+} __packed;
 
 struct file {
     struct inode *node;
     off_t offset;
     int flags;
-};
+    int ref;
+} __packed;
 
 typedef struct  {
     struct inode *node;
@@ -130,7 +131,6 @@ struct fs_list {
 };
 
 extern struct fs_list *registered_fs;
-
 extern struct inode *vfs_root;
 
 static inline int __vfs_always(){return 1;}
