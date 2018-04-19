@@ -1,3 +1,4 @@
+# Mandatory targets
 dirs-y += virtfs/
 dirs-y += initramfs/
 dirs-y += posix/
@@ -6,6 +7,7 @@ obj-y += pipe.o
 obj-y += itbl.o
 obj-y += ubc.o
 
+# Optional targets
 dirs-$(FS_TMPFS)  += tmpfs/
 dirs-$(FS_DEVFS)  += devfs/
 dirs-$(FS_DEVPTS) += devpts/
