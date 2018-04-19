@@ -1,7 +1,7 @@
-# AquilaOS Kernel (no codename yet)
+# AquilaOS Kernel (Altair)
 
 ### Source tree structure
-- arch/     - all archticture dependent code
+- arch/     - all arch. dependent code
 - configs/  - configurations used during build
 - core/     - system components that do not fit anywhere else
 - dev/      - kdev and supported devices
