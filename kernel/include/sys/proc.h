@@ -107,7 +107,10 @@ int  proc_ptr_validate(proc_t *proc, void *ptr);
 int  proc_fd_get(proc_t *proc);
 void proc_fd_release(proc_t *proc, int fd);
 
-int  proc_pid_get();
+/* PID helpers */
+int  proc_pid_alloc();
+void proc_pid_free(int pid);
+
 int  proc_init(proc_t *proc);
 
 /* sys/thread.c */

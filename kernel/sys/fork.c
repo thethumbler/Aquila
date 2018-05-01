@@ -90,7 +90,7 @@ int proc_fork(thread_t *thread, proc_t **ref)
     }
 
     /* Allocate a new PID */
-    fork->pid = proc_pid_get();
+    fork->pid = proc_pid_alloc();
 
     /* Set fork parent */
     fork->parent = proc;

@@ -22,14 +22,31 @@
 #include <fs/vfs.h>
 
 #include <ds/queue.h>
+#include <ds/bitmap.h>
 
 queue_t *procs = QUEUE_NEW(); /* All processes queue */
 
-int proc_pid_get()
+bitmap_t pid_bitmap = BITMAP_NEW(4096);
+static int ff_pid = 1;
+
+int proc_pid_alloc()
 {
-    /* TODO: Use bitmap */
-    static int pid = 0;
-    return ++pid;
+    for (int i = ff_pid; (size_t) i < pid_bitmap.max_idx; ++i) {
+        if (!bitmap_check(&pid_bitmap, i)) {
+            bitmap_set(&pid_bitmap, i);
+            ff_pid = i;
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+void proc_pid_free(int pid)
+{
+    bitmap_clear(&pid_bitmap, pid);
+    if (pid < ff_pid)
+        ff_pid = pid;
 }
 
 proc_t *proc_new(void)
@@ -63,7 +80,7 @@ int proc_init(proc_t *proc)
     if (!proc)
         return -EINVAL;
 
-    proc->pid = proc_pid_get();
+    proc->pid = proc_pid_alloc();
 
     proc->fds  = kmalloc(FDS_COUNT * sizeof(struct file));
 
@@ -153,6 +170,8 @@ void proc_kill(proc_t *proc)
 
 int proc_reap(proc_t *proc)
 {
+    proc_pid_free(proc->pid);
+
     queue_remove(procs, proc);
     kfree(proc);
 
