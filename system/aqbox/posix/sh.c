@@ -26,7 +26,8 @@ int builtin_cd(int argc, char **argv)
 {
     char *path = NULL;
     if (argc == 1) {
-        path = "/";
+        if (!(path = getenv("HOME")))
+            path = "/";
     } else if (argc == 2) {
         path = argv[1];
     } else {
