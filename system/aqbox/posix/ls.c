@@ -155,14 +155,40 @@ int do_ls(char *path, uint32_t flags)
 
     /* sort entries - TODO */
 
+    size_t maxlen = 0;
+    for (int i = 0; i < entries_idx + 1; ++i) {
+        size_t len = strlen(entries[i].d_name);
+        if (len > maxlen)
+            maxlen = len;
+    }
+
+    size_t termwidth = 80;
+    size_t entries_per_line = termwidth / (maxlen + 2);
+
     /* print entries */
     if (flags & FLAG_l) {   /* long mode */
         for (int i = 0; i < entries_idx + 1; ++i) {
             print_long_entry(path, entries[i].d_name);
         }
     } else {
+        int j = 0;
         for (int i = 0; i < entries_idx + 1; ++i) {
-            printf("%s\n", entries[i].d_name);
+            if (entries[i].d_name[0] != '.') {
+                printf("%-*s  ", maxlen, entries[i].d_name);
+                fflush(stdout);
+                ++j;
+
+                if (j == entries_per_line) {
+                    j = 0;
+                    printf("\n");
+                    fflush(stdout);
+                }
+            }
+        }
+
+        if (j != 0) {
+            printf("\n");
+            fflush(stdout);
         }
     }
 
