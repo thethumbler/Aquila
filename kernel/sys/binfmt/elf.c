@@ -48,12 +48,10 @@ int binfmt_elf_load(proc_t *proc, struct inode *file)
             vmr->size  = shdr.size;
 
             /* access flags */
-            /*
             vmr->flags |= VM_UR;
             vmr->flags |= shdr.flags & SHF_WRITE ? VM_UW : 0;
             vmr->flags |= shdr.flags & SHF_EXEC ? VM_UX : 0;
-            */
-            vmr->flags = VM_URWX;   /* FIXME */
+            //vmr->flags = VM_URWX;   /* FIXME */
 
             vmr->qnode = enqueue(&proc->vmr, vmr);
 

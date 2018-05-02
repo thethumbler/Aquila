@@ -26,6 +26,8 @@
 #include <fs/pipe.h>
 #include <fs/stat.h>
 
+#include <mm/vm.h>
+
 #define DEBUG_SYSCALL
 #ifndef DEBUG_SYSCALL
 #define printk(...) {}
@@ -271,6 +273,7 @@ static void sys_sbrk(ptrdiff_t incr)
 
     uintptr_t ret = cur_thread->owner->heap;
     cur_thread->owner->heap += incr;
+    cur_thread->owner->heap_vmr->size += incr;
 
     arch_syscall_return(cur_thread, ret);
 

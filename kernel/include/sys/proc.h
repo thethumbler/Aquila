@@ -73,6 +73,8 @@ struct proc {
     uintptr_t   entry;       /* Process entry point */  
 
     queue_t     vmr;         /* Virtual memory regions */
+    struct vmr  *heap_vmr;   /* VMR used as heap */
+    struct vmr  *stack_vmr;  /* VMR used as stack */
 
     queue_t     threads;
     queue_t     thread_join; /* Threads join wait queue */
@@ -96,7 +98,9 @@ int proc_fork(thread_t *thread, proc_t **fork);
 int proc_execve(thread_t *thread, const char *fn, char * const argv[], char * const env[]);
 
 /* sys/proc.c */
-proc_t *proc_new(void);
+int  proc_pid_alloc();
+void proc_pid_free(int pid);
+int  proc_new(proc_t **ref);
 proc_t *proc_pid_find(pid_t pid);
 int session_new(proc_t *proc);
 int pgrp_new(proc_t *proc, pgroup_t **ref_pgrp);
@@ -106,10 +110,6 @@ int  proc_reap(proc_t *proc);
 int  proc_ptr_validate(proc_t *proc, void *ptr);
 int  proc_fd_get(proc_t *proc);
 void proc_fd_release(proc_t *proc, int fd);
-
-/* PID helpers */
-int  proc_pid_alloc();
-void proc_pid_free(int pid);
 
 int  proc_init(proc_t *proc);
 

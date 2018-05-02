@@ -49,17 +49,36 @@ void proc_pid_free(int pid)
         ff_pid = pid;
 }
 
-proc_t *proc_new(void)
+int proc_new(proc_t **ref)
 {
-    proc_t *proc = kmalloc(sizeof(proc_t));
+    int err = 0;
+    proc_t *proc = NULL;
+    thread_t *thread = NULL;
+    
+    if (!(proc = kmalloc(sizeof(proc_t)))) {
+        err = -ENOMEM;
+        goto error;
+    }
+
     memset(proc, 0, sizeof(proc_t));
 
-    thread_t *thread;
-    thread_new(proc, &thread);
+    if ((err = thread_new(proc, &thread)))
+        goto error;
+
     proc->running = 1;
 
     enqueue(procs, proc);   /* Add process to all processes queue */
-    return proc;
+
+    if (ref)
+        *ref = proc;
+
+    return 0;
+
+error:
+    if (proc)
+        kfree(proc);
+
+    return err;
 }
 
 proc_t *proc_pid_find(pid_t pid)
