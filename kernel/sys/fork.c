@@ -45,7 +45,7 @@ static int copy_vmr(proc_t *parent, proc_t *fork)
     return 0;
 }
 
-static int copy_proc(proc_t *parent, proc_t *fork)
+static int fork_proc_copy(proc_t *parent, proc_t *fork)
 {
     fork->pgrp = parent->pgrp;
     fork->pgrp_node = enqueue(fork->pgrp->procs, fork);
@@ -69,18 +69,18 @@ int proc_fork(thread_t *thread, proc_t **ref)
     proc_t *fork = NULL;
     thread_t *fork_thread = NULL;
 
-    /* Copy parent proc structure */
-    if (!(fork = proc_new())) {
-        err = -ENOMEM;
+    /* Create new process for fork */
+    if ((err = proc_new(&fork)))
         goto error;
-    }
 
+    /* New process main thread */
     fork_thread = (thread_t *) fork->threads.head->value;
 
+    /* Parent process */
     proc_t *proc = thread->owner;
 
     /* Copy process structure */
-    if ((err = copy_proc(proc, fork)))
+    if ((err = fork_proc_copy(proc, fork)))
         goto error;
 
     /* Copy process name */

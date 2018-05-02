@@ -2,6 +2,7 @@
 #define _MM_H
 
 #include <core/system.h>
+#include <mm/buddy.h>
 
 #if ARCH==X86
 #include <arch/x86/include/mm.h>
@@ -28,8 +29,7 @@
 #define VM_UWX  (VM_UW|VM_UX) /* User Write/eXecute */
 #define VM_URWX (VM_UR|VM_UW|VM_UX)  /* User Read/Write/eXecute */
 
-typedef struct
-{
+typedef struct {
     int     (*map)(uintptr_t addr, size_t size, int flags);
     int     (*map_to)(uintptr_t phys, uintptr_t virt, size_t size, int flags);
     void    (*unmap)(uintptr_t addr, size_t size);
@@ -46,8 +46,7 @@ typedef struct
 } pmman_t;
 
 
-struct paging
-{
+struct paging {
     size_t  size;
     int     (*map)  (uintptr_t addr, size_t nr, int flags);
     void    (*unmap)(uintptr_t addr, size_t nr);
@@ -56,11 +55,6 @@ struct paging
 
 extern struct paging paging[NR_PAGE_SIZE];
 extern pmman_t pmman;
-
-extern uintptr_t buddy_alloc(size_t);
-extern void buddy_free(uintptr_t, size_t);
-extern void buddy_dump();
-extern void buddy_set_unusable(uintptr_t, size_t);
 
 extern void pmm_lazy_alloc(uintptr_t addr);
 

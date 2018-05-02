@@ -14,8 +14,11 @@
 #include <core/printk.h>
 #include <core/chipset.h>
 
+#include <console/earlycon.h>
+
 #include <cpu/cpu.h>
 #include <mm/mm.h>
+#include <mm/vm.h>
 
 #include <boot/multiboot.h>
 #include <boot/boot.h>
@@ -30,15 +33,24 @@ struct boot *__kboot;
 
 void cpu_init()
 {
+    earlycon_init();
+    printk("x86: Welcome to AquilaOS!\n");
+
+    printk("x86: Installing GDT\n");
     x86_gdt_setup();
+
+    printk("x86: Installing IDT\n");
     x86_idt_setup();
+
+    printk("x86: Installing ISRs\n");
     x86_isr_setup();
 
     struct boot *boot = process_multiboot_info(multiboot_info);
     __kboot = boot;
 
     pmm_setup(boot);
-    vmm_setup();
+    //vmm_setup();
+    kvmem_setup();
 
     x86_tss_esp_set(VMA(0x100000));
     chipset_init();

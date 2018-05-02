@@ -12,6 +12,8 @@
 #include <sys/proc.h>
 #include <sys/sched.h>
 
+#include <mm/vm.h>
+
 struct procfs_entry {
     char *name;
     ssize_t (*read)();
@@ -109,6 +111,7 @@ static struct procfs_entry entries[] = {
     {"rdcmdline", procfs_rdcmdline},
     {"version", procfs_version},
     {"uptime",  procfs_uptime},
+    //{"zoneinfo",  procfs_zoneinfo},
 };
 
 #define PROCFS_ENTRIES  (sizeof(entries)/sizeof(entries[0]))
@@ -152,8 +155,57 @@ static ssize_t procfs_proc_status(int pid, off_t off, size_t size, void *buf)
     return 0;
 }
 
+static ssize_t procfs_proc_maps(int pid, off_t off, size_t size, void *buf)
+{
+    proc_t *proc = proc_pid_find(pid);
+
+    if (!proc)
+        return -ENONET;
+
+    char maps_buf[4096];
+
+    int sz = 0;
+
+    forlinked (node, proc->vmr.head, node->next) {
+        struct vmr *vmr = node->value;
+
+        char perm[5] = {0};
+        perm[0] = vmr->flags & VM_UR? 'r' : '-';
+        perm[1] = vmr->flags & VM_UW? 'w' : '-';
+        perm[2] = vmr->flags & VM_UX? 'x' : '-';
+        perm[3] = 'p';  /* TODO */
+
+        char *desc = "";
+
+        if (vmr == proc->stack_vmr)
+            desc = "[stack]";
+
+        if (vmr == proc->heap_vmr)
+            desc = "[heap]";
+
+        sz += snprintf(maps_buf + sz, sizeof(maps_buf) - sz,
+                "%x-%x %s %x %x %x %s\n",
+                vmr->base,  /* Start address */
+                vmr->base + vmr->size,  /* End address */
+                perm,   /* Access permissions */
+                vmr->off, /* Offset in file */
+                vmr->inode? vmr->inode->dev : 0, /* Device ID */
+                vmr->inode? vmr->inode->id : 0,  /* Inode ID */
+                desc); 
+    }
+    
+    if (off < sz) {
+        ssize_t ret = MIN(size, (size_t)(sz - off));
+        memcpy(buf, maps_buf + off, ret);
+        return ret;
+    }
+
+    return 0;
+}
+
 static struct procfs_entry proc_entries[] = {
     {"status", procfs_proc_status},
+    {"maps",   procfs_proc_maps},
 };
 
 #define PROCFS_PROC_ENTRIES  (sizeof(proc_entries)/sizeof(proc_entries[0]))
@@ -198,6 +250,13 @@ static ssize_t procfs_readdir(struct inode *inode, off_t offset, struct dirent *
 
         /* Processes go here */
         offset -= PROCFS_ENTRIES;
+        
+        if (!offset) {
+            snprintf(dirent->d_name, 10, "self");
+            return 1;
+        }
+
+        --offset;
 
         forlinked (node, procs->head, node->next) {
             if (!offset) {
@@ -242,6 +301,13 @@ static int procfs_vfind(struct vnode *parent, const char *name, struct vnode *ch
                 child->mask = 0444;
                 return 0;
             }
+        }
+
+        if (!strcmp(name, "self")) {
+            child->id   = cur_thread->owner->pid * (PROCFS_PROC_ENTRIES + 1);
+            child->type = FS_DIR;
+            child->mask = 0555;
+            return 0;
         }
 
         forlinked (node, procs->head, node->next) {

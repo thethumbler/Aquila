@@ -1,5 +1,4 @@
 #include <core/system.h>
-#include <console/earlycon.h>
 #include <chipset/misc.h>
 #include <cpu/io.h>
 #include <dev/pci.h>
@@ -64,9 +63,6 @@ void chipset_timer_setup(size_t period_ns, void (*handler)())
 
 int chipset_init()
 {
-    earlycon_init();
-    printk("x86: Welcome to AquilaOS!\n");
-
     x86_generic_pci_init();
     x86_generic_pic_init();
     x86_generic_i8042_init();

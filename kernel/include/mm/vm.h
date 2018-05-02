@@ -16,6 +16,8 @@ struct vmr {    /* Virtual Memory Region */
     struct queue_node *qnode;
 };
 
+void kvmem_setup();
 int vm_map(uintptr_t phys_addr, struct vmr *vmr);
+void vm_unmap(struct vmr *vmr);
 
 #endif  /* ! _VM_H */

@@ -67,7 +67,7 @@ static inline uintptr_t frame_mount(uintptr_t paddr)
 
 static inline uintptr_t frame_get()
 {
-    uintptr_t frame = buddy_alloc(PAGE_SIZE);
+    uintptr_t frame = buddy_alloc(BUDDY_ZONE_NORMAL, PAGE_SIZE);
 
     if (!frame) {
         panic("Could not allocate frame");
@@ -82,7 +82,7 @@ static inline uintptr_t frame_get()
 
 static inline uintptr_t frame_get_no_clr()
 {
-    uintptr_t frame = buddy_alloc(PAGE_SIZE);
+    uintptr_t frame = buddy_alloc(BUDDY_ZONE_NORMAL, PAGE_SIZE);
 
     if (!frame) {
         panic("Could not allocate frame");
@@ -95,7 +95,7 @@ static void frame_release(uintptr_t i)
 {
     /* Release frame if it is mapped */
     if (i & 0x1)
-        buddy_free(i, PAGE_SIZE);
+        buddy_free(BUDDY_ZONE_NORMAL, i, PAGE_SIZE);
 }
 
 /* ================== Page Helpers ================== */
