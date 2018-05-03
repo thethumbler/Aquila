@@ -48,7 +48,7 @@ void cpu_init()
     struct boot *boot = process_multiboot_info(multiboot_info);
     __kboot = boot;
 
-    pmm_setup(boot);
+    mm_setup(boot);
     //vmm_setup();
     kvmem_setup();
 

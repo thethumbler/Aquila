@@ -13,20 +13,12 @@
 #include <mm/mm.h>
 #include <mm/vm.h>
 
-int mem_map(uintptr_t phys_addr, uintptr_t virt_addr, size_t size, int flags)
+int vm_map(struct vmr *vmr)
 {
-    if (phys_addr)
-        return pmman.map_to(phys_addr, virt_addr, size, flags);
-    else
-        return pmman.map(virt_addr, size, flags);
-}
-
-int vm_map(uintptr_t phys_addr, struct vmr *vmr)
-{
-    return mem_map(phys_addr, vmr->base, vmr->size, vmr->flags);
+    return mm_map(vmr->paddr, vmr->base, vmr->size, vmr->flags);
 }
 
 void vm_unmap(struct vmr *vmr)
 {
-    pmman.unmap_full(vmr->base, vmr->size);
+    mm_unmap(vmr->base, vmr->size);
 }

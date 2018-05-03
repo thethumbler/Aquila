@@ -3,6 +3,7 @@
 #include <core/string.h>
 #include <core/module.h>
 #include <mm/mm.h>
+#include <mm/vm.h>
 
 #include <dev/dev.h>
 #include <dev/ramdev.h>

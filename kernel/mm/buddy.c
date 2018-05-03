@@ -98,7 +98,7 @@ static void buddy_recursive_free(int zone, size_t order, size_t idx)
     }
 }
 
-uintptr_t buddy_alloc(int zone, size_t _sz)
+paddr_t buddy_alloc(int zone, size_t _sz)
 {
     if (_sz > BUDDY_MAX_BS)
         panic("Cannot allocate buddy");
@@ -126,7 +126,7 @@ uintptr_t buddy_alloc(int zone, size_t _sz)
 }
 
 static uintptr_t kernel_bound = 0;
-void buddy_free(int zone, uintptr_t addr, size_t size)
+void buddy_free(int zone, paddr_t addr, size_t size)
 {
     //printk("buddy_free(%x, %d) => ", addr, size);
     
@@ -163,7 +163,7 @@ void buddy_dump()
 }
 #endif
 
-void buddy_set_unusable(uintptr_t addr, size_t size)
+void buddy_set_unusable(paddr_t addr, size_t size)
 {
     for (int zone = 0; size && zone < BUDDY_ZONE_NR; ++zone) {
 
@@ -188,7 +188,7 @@ void buddy_set_unusable(uintptr_t addr, size_t size)
     }
 }
 
-void buddy_setup(size_t total_mem)
+int buddy_setup(size_t total_mem)
 {
     printk("buddy: Setting up buddy allocator (total memory %p)\n", total_mem);
 
@@ -241,4 +241,6 @@ void buddy_setup(size_t total_mem)
     for (size_t i = 0; i < kernel_buddies; ++i) {
         buddy_alloc(BUDDY_ZONE_DMA, BUDDY_MAX_BS);
     }
+
+    return 0;
 }

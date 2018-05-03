@@ -14,6 +14,7 @@
 #include <core/arch.h>
 
 #include <mm/mm.h>
+#include <mm/vm.h>
 
 #include <sys/proc.h>
 #include <sys/elf.h>
@@ -137,9 +138,14 @@ void proc_kill(proc_t *proc)
     /* Free resources */
     arch_proc_kill(proc);
 
-    /* Unmap memory */
-    pmman.unmap_full((uintptr_t) NULL, (uintptr_t) proc->heap);
-    pmman.unmap_full(USER_STACK_BASE, USER_STACK_SIZE);
+    /* Unmap VMRs */
+    forlinked (node, proc->vmr.head, node->next) {
+        struct vmr *vmr = node->value;
+        vm_unmap(vmr);
+    }
+
+    //pmman.unmap_full((uintptr_t) NULL, (uintptr_t) proc->heap);
+    //pmman.unmap_full(USER_STACK_BASE, USER_STACK_SIZE);
 
     /* Free kernel-space resources */
     kfree(proc->fds);

@@ -13,7 +13,8 @@ void *arch_binfmt_load()
     ret.cur = get_current_page_directory();
     ret.new = get_new_page_directory();
 
-    pmman.switch_mapping(ret.new);
+    //pmman.switch_mapping(ret.new);
+    arch_switch_directory(ret.new);
 
     return &ret;
 }
@@ -21,5 +22,6 @@ void *arch_binfmt_load()
 void arch_binfmt_end(void *d)
 {
     struct arch_binfmt *p = (struct arch_binfmt *) d;
-    pmman.switch_mapping(p->cur);
+    //pmman.switch_mapping(p->cur);
+    arch_switch_directory(p->cur);
 }
