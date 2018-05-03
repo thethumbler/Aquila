@@ -48,7 +48,7 @@ static int binfmt_fmt_load(proc_t *proc, const char *fn, struct inode *file, int
     heap_vmr->size  = 0;
     heap_vmr->flags = VM_URW;
     heap_vmr->qnode = enqueue(&proc->vmr, heap_vmr);
-    proc->heap_vmr = heap_vmr;
+    proc->heap_vmr  = heap_vmr;
 
     /* Create stack VMR */
     struct vmr *stack_vmr = kmalloc(sizeof(struct vmr));
@@ -57,8 +57,8 @@ static int binfmt_fmt_load(proc_t *proc, const char *fn, struct inode *file, int
     stack_vmr->size  = USER_STACK_SIZE;
     stack_vmr->flags = VM_URW;
     stack_vmr->qnode = enqueue(&proc->vmr, stack_vmr);
-    vm_map(0, stack_vmr);
-    proc->stack_vmr = stack_vmr;
+    vm_map(stack_vmr);
+    proc->stack_vmr  = stack_vmr;
 
     if (new_proc) {
         //pmman.map(USER_STACK_BASE, USER_STACK_SIZE, VM_URW);

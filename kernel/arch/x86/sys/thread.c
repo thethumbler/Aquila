@@ -75,8 +75,8 @@ void arch_thread_kill(thread_t *thread)
         x86_kernel_stack_set(esp);
     }
 
-    if (arch->kstack)
-        kfree((void *) (arch->kstack - KERN_STACK_SIZE));
+    //if (arch->kstack)
+        //kfree((void *) (arch->kstack - KERN_STACK_SIZE));
 
     if (arch->fpu_context)
         kfree(arch->fpu_context);

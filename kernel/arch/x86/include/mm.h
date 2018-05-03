@@ -13,16 +13,22 @@ extern char _VMA; /* Must be defined in linker script */
 #define VMA(obj)  ((typeof((obj)))((uintptr_t)(void*)&_VMA + (uintptr_t)(void*)(obj)))
 #define LMA(obj)  ((typeof((obj)))((uintptr_t)(void*)(obj)) - (uintptr_t)(void*)&_VMA)
 
-static inline void TLB_flush()
+static inline void tlb_flush()
 {
     //asm volatile("mov %%cr3, %%eax; mov %%eax, %%cr3":::"eax");
     write_cr3(read_cr3());
 }
 
+#if 0
 void pmm_setup();
 void arch_pmm_setup();
-uintptr_t arch_get_frame();
 uintptr_t arch_get_frame_no_clr();
 void arch_release_frame(uintptr_t);
+#endif
 
-#endif /* !_X86_MM_H */
+typedef uint32_t paddr_t;
+paddr_t arch_get_frame();
+void arch_switch_directory(paddr_t new_dir);
+void arch_mm_fork(paddr_t base, paddr_t fork);
+
+#endif /* ! _X86_MM_H */

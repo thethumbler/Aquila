@@ -23,5 +23,6 @@ static inline uintptr_t get_new_page_directory()
 
 static inline void switch_page_directory(uintptr_t pd)
 {
-    pmman.switch_mapping(pd);
+    arch_switch_directory(pd);
+    //pmman.switch_mapping(pd);
 }

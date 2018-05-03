@@ -38,7 +38,8 @@ int arch_proc_fork(thread_t *thread, proc_t *fork)
         goto free_resources;
     }
 
-    pmman.copy_fork_mapping(cur_proc_pd, new_proc_pd);
+    //pmman.copy_fork_mapping(cur_proc_pd, new_proc_pd);
+    arch_mm_fork(cur_proc_pd, new_proc_pd);
 
     /* Setup kstack */
     uintptr_t fkstack_base = (uintptr_t) kmalloc(KERN_STACK_SIZE);

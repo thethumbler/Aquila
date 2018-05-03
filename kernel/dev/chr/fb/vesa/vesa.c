@@ -35,10 +35,12 @@ static int fbdev_vesa_prope(int i __unused, struct fbdev *fb)
     struct mode_info_block *info = data->mode_info;
     size_t size = info->y_resolution * info->lin_bytes_per_scanline;
 
-    vesa_vmr.size = size;
+    vesa_vmr.paddr = info->phys_base_ptr;
+    vesa_vmr.size  = size;
     vesa_vmr.flags = VM_KRW | VM_NOCACHE;
 
-    vm_map(info->phys_base_ptr, &vesa_vmr);
+    vm_map(&vesa_vmr);
+
     memset(vmem, 0x5A, size);
 
     len = size;

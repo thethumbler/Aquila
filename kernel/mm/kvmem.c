@@ -36,7 +36,7 @@ void kvmem_setup()
 {
     /* We start by mapping the space used for nodes into physical memory */
     //vm_map(VMM_NODES, VMM_NODES_SIZE, VM_KRW);
-    vm_map(0, &kvmem_nodes);
+    vm_map(&kvmem_nodes);
 
     /* Now we have to clear it */
     memset((void *) KVMEM_NODES, 0, KVMEM_NODES_SIZE);
@@ -114,7 +114,20 @@ void *(kmalloc)(size_t size)
     kvmem_used += NODE_SIZE(nodes[i]);
     kvmem_obj_cnt++;
 
-    pmman.map(NODE_ADDR(nodes[i]), NODE_SIZE(nodes[i]), VM_KRW);
+    vaddr_t map_base = UPPER_PAGE_BOUNDARY(NODE_ADDR(nodes[i]));
+    vaddr_t map_end  = UPPER_PAGE_BOUNDARY(NODE_ADDR(nodes[i]) + NODE_SIZE(nodes[i]));
+    size_t  map_size = (map_end - map_base)/PAGE_SIZE;
+
+    if (map_size) {
+        struct vmr vmr = {
+            .paddr = 0,
+            .base  = map_base,
+            .size  = map_size * PAGE_SIZE,
+            .flags = VM_KRW,
+        };
+
+        vm_map(&vmr);
+    }
 
     return (void *) NODE_ADDR(nodes[i]);
 }
@@ -182,7 +195,14 @@ void (kfree)(void *_ptr)
     cur_node = 0;
     while (nodes[cur_node].next < LAST_NODE_INDEX) {
         if (nodes[cur_node].free) {
-            pmman.unmap(NODE_ADDR(nodes[cur_node]), NODE_SIZE(nodes[cur_node]));
+            struct vmr vmr = {
+                .paddr = 0,
+                .base  = NODE_ADDR(nodes[cur_node]),
+                .size  = NODE_SIZE(nodes[cur_node]),
+                .flags = VM_KRW,
+            };
+
+            vm_unmap(&vmr);
         }
 
         cur_node = nodes[cur_node].next;

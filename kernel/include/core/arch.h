@@ -40,4 +40,12 @@ void arch_sys_execve(proc_t *proc, int argc, char * const argp[], int envc, char
 /* arch/ARCH/sys/signal.c */
 void arch_handle_signal(int sig);
 
+/* arch/ARCH/mm/mm.c */
+void arch_mm_setup();
+//void arch_switch_mapping();
+int  arch_page_map(paddr_t paddr, vaddr_t vaddr, int flags);
+int  arch_page_unmap(vaddr_t vaddr);
+paddr_t arch_page_get_mapping(vaddr_t vaddr);
+void arch_mm_page_fault(vaddr_t vaddr);
+
 #endif /* ! _ARCH_H */

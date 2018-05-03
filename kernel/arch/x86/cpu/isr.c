@@ -117,7 +117,8 @@ void __x86_isr(struct x86_regs *regs)
             return_from_signal((uintptr_t) arch->regs);
         }
 
-        pmman.handle_page_fault(read_cr2());
+        //pmman.handle_page_fault(read_cr2());
+        arch_mm_page_fault(read_cr2());
         return;
     }
 
