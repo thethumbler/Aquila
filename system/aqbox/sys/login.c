@@ -65,6 +65,10 @@ AQBOX_APPLET(login)(int argc, char **argv)
     chdir(passwd->pw_dir);
 
     extern char **environ;
-    char *args[] = {passwd->pw_shell, "sh", NULL}; /* XXX */
-    execve(passwd->pw_shell, args, environ);
+    char *args[] = {passwd->pw_shell, NULL}; /* XXX */
+    int pid, status;
+    if (pid = fork())
+        waitpid(pid, &status, 0);
+    else
+        execve(passwd->pw_shell, args, environ);
 }
