@@ -160,8 +160,6 @@ void mm_page_fault(vaddr_t vaddr)
         return;
     }
 
-    proc_dump(cur_thread->owner);
-    for (;;);
     signal_proc_send(cur_thread->owner, SIGSEGV);
     return;
 }
