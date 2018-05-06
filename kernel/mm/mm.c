@@ -16,51 +16,54 @@
 #include <mm/buddy.h>
 #include <sys/sched.h>
 
-static inline paddr_t __page_alloc(void)
+struct page pages[768*1024] = {0};
+
+paddr_t mm_page_alloc(void)
 {
+    /* Get new frame */
     return buddy_alloc(BUDDY_ZONE_NORMAL, PAGE_SIZE);
 }
 
-static inline void __page_release(paddr_t paddr)
+void mm_page_dealloc(paddr_t paddr)
 {
-    buddy_free(BUDDY_ZONE_NORMAL, paddr, PAGE_SIZE);
-}
-
-struct page pages[768*1024] = {0};
-
-static inline paddr_t mm_page_alloc(void)
-{
-    /* Get new frame */
-    paddr_t paddr = __page_alloc();
-    
-    /* Increment references count to physical page */
-    pages[paddr/PAGE_SIZE].refs++;
-
-    return paddr;
-}
-
-static inline void mm_page_dealloc(paddr_t paddr)
-{
-    /* Decrement references count to physical page */
-    pages[paddr/PAGE_SIZE].refs--;
-
+    /* Release frame if it is no longer referenced */
     if (!pages[paddr/PAGE_SIZE].refs)
-        __page_release(paddr);
+        buddy_free(BUDDY_ZONE_NORMAL, paddr, PAGE_SIZE);
 }
 
 int mm_page_map(paddr_t paddr, vaddr_t vaddr, int flags)
 {
+    /* Increment references count to physical page */
+    pages[paddr/PAGE_SIZE].refs++;
+
+    /* Call arch specific page mapper */
     return arch_page_map(paddr, vaddr, flags);
 }
 
 int mm_page_unmap(vaddr_t vaddr)
 {
-    return arch_page_unmap(vaddr);
+    /* Check if page is mapped */
+    paddr_t paddr = arch_page_get_mapping(vaddr);
+
+    if (paddr) {
+        /* Decrement references count to physical page */
+        pages[paddr/PAGE_SIZE].refs--;
+
+        /* Call arch specific page unmapper */
+        arch_page_unmap(vaddr);
+
+        /* Release page -- checks ref count */
+        mm_page_dealloc(paddr);
+        return 0;
+    }
+
+    return -EINVAL;
 }
+
+
 
 int mm_map(paddr_t paddr, vaddr_t vaddr, size_t size, int flags)
 {
-    //printk("mm_map(%p, %p, %x, %x)\n", paddr, vaddr, size, flags);
     int alloc = !paddr;
 
     vaddr_t endaddr = UPPER_PAGE_BOUNDARY(vaddr + size);
@@ -71,13 +74,10 @@ int mm_map(paddr_t paddr, vaddr_t vaddr, size_t size, int flags)
 
     while (nr--) {
         paddr_t phys = arch_page_get_mapping(vaddr);
-        //printk("phys %p\n", phys);
 
         if (!phys) {
             if (alloc)
                 paddr = mm_page_alloc();
-
-            //printk("paddr %p\n", paddr);
             mm_page_map(paddr, vaddr, flags);
         }
 
@@ -118,7 +118,6 @@ void mm_unmap_full(vaddr_t vaddr, size_t size)
 
 void mm_page_fault(vaddr_t vaddr)
 {
-    //printk("mm_page_fault(%p)\n", vaddr);
     vaddr_t page_addr = vaddr & ~PAGE_MASK;
     vaddr_t page_end  = page_addr + PAGE_SIZE;
 
@@ -132,8 +131,6 @@ void mm_page_fault(vaddr_t vaddr)
         /* exclude non overlapping VMRs */
         if (page_end <= vmr->base || page_addr >= vmr_end)
             continue;
-
-        //printk("vmr %p-%p\n", vmr->base, vmr_end);
 
         /* page overlaps vmr in at least one byte */
         vmr_flag = 1;
@@ -151,43 +148,23 @@ void mm_page_fault(vaddr_t vaddr)
         size_t file_off = addr_start - vmr->base;
 
         /* File backed */
-        if (vmr->flags & VM_FILE) {
-            //printk("File\n");
+        if (vmr->flags & VM_FILE)
             vfs_read(vmr->inode, vmr->off + file_off, size, (void *) addr_start);
-        }
 
         /* Zero fill */
-        if (vmr->flags & VM_ZERO) {
-            //printk("Zero\n");
+        if (vmr->flags & VM_ZERO)
             memset((void *) addr_start, 0, size);
-        }
     }
 
     if (vmr_flag) {
-        //for (;;);
         return;
     }
 
-#if 0
-    if (vaddr < cur_thread->owner->heap && vaddr >= cur_thread->owner->heap_start) {
-        mm_page_map(0, page_addr, VM_URWX);  /* FIXME */
-        memset((void *) page_addr, 0, PAGE_SIZE);
-        return;
-    }
-#endif
-
-    // Send signal
+    proc_dump(cur_thread->owner);
+    for (;;);
     signal_proc_send(cur_thread->owner, SIGSEGV);
     return;
-
-#if 0
-    } else {
-
-
-    }
-#endif
 }
-
 
 char *kernel_heap = NULL;
 void mm_setup(struct boot *boot)

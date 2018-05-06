@@ -2,7 +2,7 @@
  *                 Intel 32-Bit Paging Mode Handler
  *
  *
- *  This file is part of Aquila OS and is released under the terms of
+ *  This file is part of AquilaOS and is released under the terms of
  *  GNU GPLv3 - See LICENSE.
  *
  *  Copyright (C) Mohamed Anwar
@@ -32,10 +32,6 @@
 static volatile __table_t *bootstrap_processor_table = NULL;
 static volatile __page_t last_page_table[1024] __aligned(PAGE_SIZE) = {0};
 
-static struct {
-    int refs;
-} __packed tables[768] = {0};
-
 static inline void tlb_invalidate_page(uintptr_t virt)
 {
     asm("invlpg (%%eax)"::"a"(virt));
@@ -43,13 +39,12 @@ static inline void tlb_invalidate_page(uintptr_t virt)
 
 #define MOUNT_ADDR  ((void *) 0xFFBFF000)
 #define PAGE_DIR    ((__table_t *) 0xFFFFF000)
-#define PAGE_TBL(i) ((__page_t *) (0xFFC00000 + 0x1000 * i))
+#define PAGE_TBL(i) ((__page_t *) (0xFFC00000 + 0x1000 * (i)))
 
 /* ================== Frame Helpers ================== */
 
 static inline uintptr_t frame_mount(uintptr_t paddr)
 {
-    //printk("frame_mount(%p)\n", paddr);
     if (!paddr)
         return (uintptr_t) last_page_table[1023].raw & ~PAGE_MASK;
 
@@ -150,7 +145,7 @@ static inline int __page_map(paddr_t paddr, size_t pdidx, size_t ptidx, int flag
 {
     /* Sanity checking */
     if (pdidx > 1023 || ptidx > 1023) {
-        return -1;
+        return -EINVAL;
     }
 
     __page_t page = {.raw = paddr};
@@ -165,11 +160,11 @@ static inline int __page_map(paddr_t paddr, size_t pdidx, size_t ptidx, int flag
         table_map(table, pdidx, flags);
     }
 
-    //__page_t *page_table = PAGE_TBL(pdidx);
     PAGE_TBL(pdidx)[ptidx] = page;
 
     /* Increment references to table */
-    tables[pdidx].refs++;
+    paddr_t table = GET_PHYS_ADDR(&PAGE_DIR[pdidx]);
+    pages[table/PAGE_SIZE].refs++;
 
     return 0;
 }
@@ -184,10 +179,14 @@ static inline void __page_unmap(vaddr_t vaddr)
     size_t ptidx = virtaddr.table;
 
     if (PAGE_DIR[pdidx].present) {
-        tables[pdidx].refs--;
+
         PAGE_TBL(pdidx)[ptidx].raw = 0;
 
-        if (!tables[pdidx].refs)
+        /* Decrement references to table */
+        paddr_t table = GET_PHYS_ADDR(&PAGE_DIR[pdidx]);
+        pages[table/PAGE_SIZE].refs--;
+
+        if (!pages[table/PAGE_SIZE].refs)
             table_unmap(pdidx);
 
         tlb_invalidate_page(vaddr);
@@ -217,74 +216,6 @@ paddr_t arch_page_get_mapping(vaddr_t vaddr)
 
     return 0;
 }
-
-#if 0
-/*
- *  Copy from physical source to physical destination
- *  _phys_dest and _phys_src must be aligned to 4K
- *  Note: n is count of bytes not pages
- */
-
-static char page_buffer[PAGE_SIZE];
-static void *copy_physical_to_physical(uintptr_t _phys_dest, uintptr_t _phys_src, size_t n)
-{
-    //printk("copy_physical_to_physical(%p, %p, %d)\n", _phys_dest, _phys_src, n);
-
-    if (_phys_dest & PAGE_MASK || _phys_src & PAGE_MASK)
-        panic("Copy must be on page (4K) boundaries\n");
-
-    char *phys_dest = (char *) _phys_dest;
-    char *phys_src  = (char *) _phys_src;
-    void *ret = phys_dest;
-    uintptr_t prev_mount = frame_mount(0);
-
-    /* Copy full pages */
-    char *p = MOUNT_ADDR;
-    size_t size = n / PAGE_SIZE;
-    while (size--) {
-        frame_mount((uintptr_t) phys_src);
-        memcpy(page_buffer, p, PAGE_SIZE);
-        frame_mount((uintptr_t) phys_dest);
-        memcpy(p, page_buffer, PAGE_SIZE);
-        phys_src += PAGE_SIZE;
-        phys_dest += PAGE_SIZE;
-    }
-
-    /* Copy what is remainig */
-    size = n % PAGE_SIZE;
-    frame_mount((uintptr_t) phys_src);
-    memcpy(page_buffer, p, size);
-
-    frame_mount((uintptr_t) phys_dest);
-    memcpy(p, page_buffer, size);
-
-    frame_mount(prev_mount);
-    return ret;
-}
-
-static inline void page_dealloc(paddr_t paddr)
-{
-    /* Sanity checking */
-    if (pdidx > 1023 || ptidx > 1023)
-        panic("Invlaid PDE or PTE");
-
-    if (PAGE_DIR[pdidx].structure.present) {
-        __page_t *page_table = PAGE_TBL(pdidx);
-        __page_t page = page_table[ptidx];
-
-        if (page.structure.present) {
-            page.structure.present = 0;
-
-            size_t page_idx = page.raw/PAGE_SIZE;
-
-            if (pages[page_idx].refs == 1)
-                frame_release(page.raw & ~PAGE_MASK);
-
-            pages[page_idx].refs--;
-        }
-    }
-}
-#endif
 
 static void *copy_physical_to_virtual(void *_virt_dest, void *_phys_src, size_t n)
 {
@@ -359,26 +290,6 @@ static void *copy_virtual_to_physical(void *_phys_dest, void *_virt_src, size_t 
     return ret;
 }
 
-#if 0
-static int map_phys_to_virt(uintptr_t phys, uintptr_t virt, size_t size, int flags)
-{
-    //printk("map_to_physical(ptr=%p, size=0x%x, flags=%x)\n", ptr, size, flags);
-
-    uintptr_t endptr = UPPER_PAGE_BOUNDARY(virt + size);
-    uintptr_t ptr    = LOWER_PAGE_BOUNDARY(virt);
-
-    size_t nr = (endptr - ptr) / PAGE_SIZE;
-
-    while (nr--) {
-        page_map_phys_to_virt(phys, ptr, flags);
-        ptr += PAGE_SIZE;
-        phys += PAGE_SIZE;
-    }
-
-    return 1;
-}
-#endif
-
 static paddr_t cur_pd = 0;
 void arch_switch_directory(paddr_t new_dir)
 {
@@ -396,56 +307,44 @@ void arch_switch_directory(paddr_t new_dir)
 
 void arch_mm_fork(paddr_t base, paddr_t fork)
 {
-   arch_switch_directory(fork);
+    //printk("arch_mm_fork(%p, %p)\n", base, fork);
 
-   uintptr_t old_mount = frame_mount(base);
-   __table_t *p = (__table_t *) MOUNT_ADDR;
+    arch_switch_directory(fork);
 
-   for (int i = 0; i < 768; ++i) {
-       if (p[i].present) {
-           paddr_t table = table_alloc();
-           table_map(table, i, VM_URWX);
+    uintptr_t old_mount = frame_mount(base);
+    __table_t *tbl = (__table_t *) MOUNT_ADDR;
 
-           uintptr_t _m = frame_mount(GET_PHYS_ADDR(&p[i]));
-           __page_t *_p = MOUNT_ADDR;
-           
-           for (int j = 0; j < 1024; ++j) {
-               if (_p[j].present) {
-                   PAGE_TBL(i)[j].raw = _p[j].raw;
+    for (int i = 0; i < 768; ++i) {
+        if (tbl[i].present) {
+            /* Allocate new table for mapping */
+            paddr_t table = table_alloc();
+            table_map(table, i, VM_URWX);
 
-                   if (_p[j].write) {
-                       _p[j].write = 0;
-                       PAGE_TBL(i)[j].write = 0;
-                   }
+            uintptr_t _mnt = frame_mount(GET_PHYS_ADDR(&tbl[i]));
+            __page_t *pg   = MOUNT_ADDR;
 
-                   pages[GET_PHYS_ADDR(&_p[j])/PAGE_SIZE].refs++;
-               }
-           }
+            
+            for (int j = 0; j < 1024; ++j) {
+                if (pg[j].present) {
+                    if (pg[j].write)
+                        pg[j].write = 0;
 
-           frame_mount(_m);
-       }
-   }
+                    PAGE_TBL(i)[j].raw = pg[j].raw;
+                    pages[table/PAGE_SIZE].refs++;
 
-   tlb_flush();
+                    pages[GET_PHYS_ADDR(&pg[j])/PAGE_SIZE].refs++;
+                }
+            }
 
-   frame_mount(old_mount);
-   arch_switch_directory(base);
+            frame_mount(_mnt);
+        }
+    }
+
+    tlb_flush();
+
+    frame_mount(old_mount);
+    arch_switch_directory(base);
 }
-
-#if 0
-pmman_t pmman = (pmman_t) {
-    .map = &map_to_physical,
-    .map_to = &map_phys_to_virt,
-    .unmap = &unmap_from_physical,
-    .unmap_full = &unmap_full_from_physical,
-    .memcpypv = &copy_physical_to_virtual,
-    .memcpyvp = &copy_virtual_to_physical,
-    .memcpypp = &copy_physical_to_physical,
-    .switch_mapping = &switch_directory,
-    .copy_fork_mapping = &copy_fork_mapping,
-    .handle_page_fault = &handle_page_fault,
-};
-#endif
 
 void setup_32_bit_paging()
 {
@@ -518,8 +417,8 @@ void arch_mm_page_fault(vaddr_t vaddr)
     __page_t *page = __page_get_mapping(page_addr);
 
     if (page) { /* Page is mapped */
-        uintptr_t phys = GET_PHYS_ADDR(page);
-        size_t page_idx = phys/PAGE_SIZE;
+        paddr_t paddr = GET_PHYS_ADDR(page);
+        size_t page_idx = paddr/PAGE_SIZE;
 
         if (pages[page_idx].refs == 1) {
             page->write = 1;
@@ -528,7 +427,7 @@ void arch_mm_page_fault(vaddr_t vaddr)
             pages[page_idx].refs--;
             page->present = 0;
             mm_map(0, page_addr, PAGE_SIZE, VM_URWX);   /* FIXME */ 
-            copy_physical_to_virtual((void *) page_addr, (void *) phys, PAGE_SIZE);
+            copy_physical_to_virtual((void *) page_addr, (void *) paddr, PAGE_SIZE);
         }
 
         return;

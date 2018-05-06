@@ -28,11 +28,10 @@ static int binfmt_fmt_load(proc_t *proc, const char *fn, struct inode *file, int
         /* Remove VMRs */
         struct vmr *vmr = NULL;
         while ((vmr = dequeue(&proc->vmr))) {
+            vm_unmap_full(vmr);
             kfree(vmr);
-            vm_unmap(vmr);
         }
 
-        //pmman.unmap_full(0, proc->heap);
         kfree(proc->name);
     }
 
@@ -41,12 +40,16 @@ static int binfmt_fmt_load(proc_t *proc, const char *fn, struct inode *file, int
 
     proc->name = strdup(fn);
 
+    /* Align heap */
+    proc->heap_start = UPPER_PAGE_BOUNDARY(proc->heap_start);
+    proc->heap = proc->heap_start;
+
     /* Create heap VMR */
     struct vmr *heap_vmr = kmalloc(sizeof(struct vmr));
     memset(heap_vmr, 0, sizeof(struct vmr));
     heap_vmr->base  = proc->heap_start;
     heap_vmr->size  = 0;
-    heap_vmr->flags = VM_URW;
+    heap_vmr->flags = VM_URW | VM_ZERO;
     heap_vmr->qnode = enqueue(&proc->vmr, heap_vmr);
     proc->heap_vmr  = heap_vmr;
 
@@ -57,7 +60,7 @@ static int binfmt_fmt_load(proc_t *proc, const char *fn, struct inode *file, int
     stack_vmr->size  = USER_STACK_SIZE;
     stack_vmr->flags = VM_URW;
     stack_vmr->qnode = enqueue(&proc->vmr, stack_vmr);
-    vm_map(stack_vmr);
+    //vm_map(stack_vmr);
     proc->stack_vmr  = stack_vmr;
 
     if (new_proc) {

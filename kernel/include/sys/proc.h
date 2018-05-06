@@ -110,6 +110,7 @@ int  proc_reap(proc_t *proc);
 int  proc_ptr_validate(proc_t *proc, void *ptr);
 int  proc_fd_get(proc_t *proc);
 void proc_fd_release(proc_t *proc, int fd);
+void proc_dump(proc_t *proc);
 
 int  proc_init(proc_t *proc);
 

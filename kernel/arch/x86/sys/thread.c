@@ -10,27 +10,22 @@
 
 void arch_thread_spawn(thread_t *thread)
 {
-    //printk("arch_thread_spawn(thread=%p)\n", thread);
-    x86_thread_t *arch = thread->arch;
-    x86_proc_t *parch = thread->owner->arch;
+    x86_thread_t *arch  = thread->arch;
+    x86_proc_t   *parch = thread->owner->arch;
 
     switch_page_directory(parch->pd);
     x86_kernel_stack_set(arch->kstack);
 
-    //printk("x86_jump_user(%p, %p, %x, %x, %p, %x)\n", arch->eax, arch->eip, X86_CS, arch->eflags, arch->esp, X86_SS);
-    extern void x86_jump_user(uintptr_t eax, uintptr_t eip, uintptr_t cs, uintptr_t eflags, uintptr_t esp, uintptr_t ss) __attribute__((noreturn));
     x86_jump_user(arch->eax, arch->eip, X86_CS, arch->eflags, arch->esp, X86_SS);
 }
 
 void arch_thread_switch(thread_t *thread)
 {
-    //printk("arch_thread_switch(thread=%p)\n", thread);
-
-    x86_proc_t *parch = thread->owner->arch;
-    x86_thread_t *tarch = thread->arch;
+    x86_thread_t *arch  = thread->arch;
+    x86_proc_t   *parch = thread->owner->arch;
 
     switch_page_directory(parch->pd);
-    x86_kernel_stack_set(tarch->kstack);
+    x86_kernel_stack_set(arch->kstack);
     disable_fpu();
 
     if (thread->owner->sig_queue->count) {
@@ -39,8 +34,7 @@ void arch_thread_switch(thread_t *thread)
         for (;;);
     }
 
-    extern void x86_goto(uintptr_t eip, uintptr_t ebp, uintptr_t esp) __attribute__((noreturn));
-    x86_goto(tarch->eip, tarch->ebp, tarch->esp);
+    x86_goto(arch->eip, arch->ebp, arch->esp);
 }
 
 void arch_thread_create(thread_t *thread, uintptr_t stack, uintptr_t entry, uintptr_t uentry, uintptr_t arg)
@@ -51,15 +45,14 @@ void arch_thread_create(thread_t *thread, uintptr_t stack, uintptr_t entry, uint
     arch->kstack = (uintptr_t) kmalloc(KERN_STACK_SIZE) + KERN_STACK_SIZE;
     arch->eip = entry;
 
-    /* Push arg */
-    stack -= sizeof(void *);
-    *((void **) stack) = (void *) arg;
+    /* Push thread argument */
+    PUSH(stack, void *, arg);
 
-    /* Push uentry */
-    stack -= sizeof(void *);
-    *((void **) stack) = (void *) uentry;
+    /* Push user entry point */
+    PUSH(stack, void *, uentry);
 
-    stack -= sizeof(void *);    /* Dummy return address */
+    /* Dummy return address */
+    PUSH(stack, void *, 0);
 
     arch->esp = stack;
     thread->arch = arch;
@@ -75,8 +68,8 @@ void arch_thread_kill(thread_t *thread)
         x86_kernel_stack_set(esp);
     }
 
-    //if (arch->kstack)
-        //kfree((void *) (arch->kstack - KERN_STACK_SIZE));
+    if (arch->kstack)
+        kfree((void *) (arch->kstack - KERN_STACK_SIZE));
 
     if (arch->fpu_context)
         kfree(arch->fpu_context);

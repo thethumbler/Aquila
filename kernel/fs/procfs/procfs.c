@@ -13,6 +13,8 @@
 #include <sys/sched.h>
 
 #include <mm/vm.h>
+#include <mm/buddy.h>
+#include <ds/buddy.h>
 
 struct procfs_entry {
     char *name;
@@ -105,6 +107,39 @@ static ssize_t procfs_rdcmdline(off_t off, size_t size, char *buf)
     return 0;
 }
 
+/* proc/buddyinfo */
+static ssize_t procfs_buddyinfo(off_t off, size_t size, char *buf)
+{
+    char buddyinfo_buf[4096];
+
+    extern struct buddy buddies[BUDDY_ZONE_NR][BUDDY_MAX_ORDER+1];
+
+    int sz = 0;
+
+    sz += snprintf(buddyinfo_buf + sz, sizeof(buddyinfo_buf) - sz, "Zone DMA\t");
+    for (int i = 0; i < BUDDY_MAX_ORDER + 1; ++i) {
+        sz += snprintf(buddyinfo_buf + sz, sizeof(buddyinfo_buf) - sz, "%d\t",
+                buddies[0][i].usable);
+    }
+
+    sz += snprintf(buddyinfo_buf + sz, sizeof(buddyinfo_buf) - sz, "\nZone Normal\t");
+    for (int i = 0; i < BUDDY_MAX_ORDER + 1; ++i) {
+        sz += snprintf(buddyinfo_buf + sz, sizeof(buddyinfo_buf) - sz, "%d\t",
+                buddies[1][i].usable);
+    }
+
+    sz += snprintf(buddyinfo_buf + sz, sizeof(buddyinfo_buf) - sz, "\n");
+
+
+    if (off < sz) {
+        ssize_t ret = MIN(size, (size_t)(sz - off));
+        memcpy(buf, buddyinfo_buf + off, ret);
+        return ret;
+    }
+
+    return 0;
+}
+
 static struct procfs_entry entries[] = {
     {"meminfo", procfs_meminfo},
     //{"cmdline", procfs_cmdline},
@@ -112,6 +147,7 @@ static struct procfs_entry entries[] = {
     {"version", procfs_version},
     {"uptime",  procfs_uptime},
     //{"zoneinfo",  procfs_zoneinfo},
+    {"buddyinfo", procfs_buddyinfo},
 };
 
 #define PROCFS_ENTRIES  (sizeof(entries)/sizeof(entries[0]))
