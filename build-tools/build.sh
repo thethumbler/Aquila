@@ -32,7 +32,7 @@ fi;
 
 
 if [[ ! -d gcc-7.3.0 ]]; then
-	tar xzf "pkgs/gcc-7.3.0.tar.gz";
+	tar xzvf "pkgs/gcc-7.3.0.tar.gz";
     cd "gcc-7.3.0";
     ./contrib/download_prerequisites;
     cd ..;
