@@ -22,3 +22,8 @@ void vm_unmap(struct vmr *vmr)
 {
     mm_unmap(vmr->base, vmr->size);
 }
+
+void vm_unmap_full(struct vmr *vmr)
+{
+    mm_unmap_full(vmr->base, vmr->size);
+}

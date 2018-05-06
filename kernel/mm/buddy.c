@@ -38,7 +38,7 @@ static size_t buddy_recursive_alloc(int zone, size_t order)
 
                 /* Mark the bit as used */
                 bitmap_set(&buddies[zone][order].bitmap, i);
-                --buddies[zone][order].usable;
+                buddies[zone][order].usable--;
 
                 /* Shift first_free_idx to search after child_idx */
                 buddies[zone][order].first_free_idx = i + 1;
@@ -63,7 +63,7 @@ static size_t buddy_recursive_alloc(int zone, size_t order)
 
         /* Mark it's buddy as free */
         bitmap_clear(&buddies[zone][order].bitmap, BUDDY_IDX(child_idx));
-        ++buddies[zone][order].usable;
+        buddies[zone][order].usable++;
 
         /* Shift first_free_idx to search after child_idx */
         buddies[zone][order].first_free_idx = child_idx + 1;
@@ -85,12 +85,12 @@ static void buddy_recursive_free(int zone, size_t order, size_t idx)
     /* Check if buddy bit is free, then combine */
     if (order < BUDDY_MAX_ORDER && !bitmap_check(&buddies[zone][order].bitmap, BUDDY_IDX(idx))) {
         bitmap_set(&buddies[zone][order].bitmap, BUDDY_IDX(idx));
-        --buddies[zone][order].usable;
+        buddies[zone][order].usable--;
 
         buddy_recursive_free(zone, order + 1, idx >> 1);
     } else {
         bitmap_clear(&buddies[zone][order].bitmap, idx);
-        ++buddies[zone][order].usable;
+        buddies[zone][order].usable++;
 
         /* Update first_free_idx */
         if (buddies[zone][order].first_free_idx > idx)
@@ -129,7 +129,6 @@ static uintptr_t kernel_bound = 0;
 void buddy_free(int zone, paddr_t addr, size_t size)
 {
     //printk("buddy_free(%x, %d) => ", addr, size);
-    
     if (addr < kernel_bound)
         panic("Trying to free from kernel code");
 
@@ -145,7 +144,8 @@ void buddy_free(int zone, paddr_t addr, size_t size)
 
     k_used_mem -= sz;
 
-    size_t idx = (addr / (BUDDY_MIN_BS << order)) & (sz - 1);
+    addr -= buddy_zone_offset[zone];
+    size_t idx = (addr / (BUDDY_MIN_BS << order));  // & (sz - 1);
     buddy_recursive_free(zone, order, idx);
 }
 
@@ -195,8 +195,6 @@ int buddy_setup(size_t total_mem)
     k_total_mem = total_mem;
     k_used_mem  = 0;
 
-    //size_t total_size = 0;
-    
     for (int zone = 0; zone < BUDDY_ZONE_NR; ++zone) {
         size_t bits_cnt = 0;
 
@@ -207,16 +205,12 @@ int buddy_setup(size_t total_mem)
             bits_cnt = (total_mem - buddy_zone_offset[zone]) / BUDDY_MAX_BS;
         }
 
-        //printk("buddy: Setting up zone %d with %d bit(s) map\n", zone, bits_cnt);
-
         for (int i = BUDDY_MAX_ORDER; i >= 0; --i) {
             size_t bmsize = bitmap_size(bits_cnt);
 
             buddies[zone][i].bitmap.map = heap_alloc(bmsize, 4);
             buddies[zone][i].bitmap.max_idx = bits_cnt - 1;
 
-            //total_size += bmsize;
-                
             bits_cnt <<= 1;
         }
 

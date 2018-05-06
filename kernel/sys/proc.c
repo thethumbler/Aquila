@@ -2,10 +2,10 @@
  *          Process managment helpers
  *
  *
- *  This file is part of Aquila OS and is released under
+ *  This file is part of AquilaOS and is released under
  *  the terms of GNU GPLv3 - See LICENSE.
  *
- *  Copyright (C) 2016 Mohamed Anwar <mohamed_anwar@opmbx.org>
+ *  Copyright (C) Mohamed Anwar
  */
 
 
@@ -139,13 +139,11 @@ void proc_kill(proc_t *proc)
     arch_proc_kill(proc);
 
     /* Unmap VMRs */
-    forlinked (node, proc->vmr.head, node->next) {
-        struct vmr *vmr = node->value;
-        vm_unmap(vmr);
+    struct vmr *vmr = NULL;
+    while ((vmr = dequeue(&proc->vmr))) {
+        vm_unmap_full(vmr);
+        kfree(vmr);
     }
-
-    //pmman.unmap_full((uintptr_t) NULL, (uintptr_t) proc->heap);
-    //pmman.unmap_full(USER_STACK_BASE, USER_STACK_SIZE);
 
     /* Free kernel-space resources */
     kfree(proc->fds);
@@ -275,4 +273,73 @@ int pgrp_new(proc_t *proc, pgroup_t **ref)
         *ref = pgrp;
 
     return 0;
+}
+
+void proc_dump(proc_t *proc)
+{
+    printk("== proc dump ==\n");
+    printk("PID: %d\n", proc->pid);
+    printk("Name: %s\n", proc->name);
+    printk("Parent PID: %d\n", proc->parent? proc->parent->pid : 0);
+    printk("Mask: %x\n", proc->mask);
+    printk("UID: %d\n", proc->uid);
+    printk("GID: %d\n", proc->gid);
+    printk("CWD: %s\n", proc->cwd);
+
+    printk("Process Group: %p\n", proc->pgrp);
+    printk("  - node: %p\n", proc->pgrp_node);
+
+    printk("File Descriptors:\n");
+
+    for (int i = 0; i < FDS_COUNT; ++i) {
+        if (proc->fds[i].node) {
+            struct file *file = &proc->fds[i];
+            printk("  - fd: %d\n", i);
+            printk("  - inode: %p\n", file->node);
+            printk("  - offset: %d\n", file->offset);
+            printk("  - flags: %x\n", file->flags);
+        }
+    }
+
+    //printk("Heap: %p-%p\n", proc->heap_start, proc->heap);
+    printk("Entry: %p\n", proc->entry);
+
+    printk("Virtual Memory Regions:\n");
+    forlinked (node, proc->vmr.head, node->next) {
+        struct vmr *vmr = node->value;
+
+        char perm[4] = {
+            vmr->flags & VM_UR? 'r' : '-',
+            vmr->flags & VM_UW? 'w' : '-',
+            vmr->flags & VM_UX? 'x' : '-',
+            0
+        };
+
+        char *desc = "";
+
+        if (vmr == proc->stack_vmr)
+            desc = "[stack]";
+
+        if (vmr == proc->heap_vmr)
+            desc = "[heap]";
+
+        printk("  - %x-%x %s %x %x %x %s\n",
+                vmr->base,  /* Start address */
+                vmr->base + vmr->size,  /* End address */
+                perm,   /* Access permissions */
+                vmr->off, /* Offset in file */
+                vmr->inode? vmr->inode->dev : 0, /* Device ID */
+                vmr->inode? vmr->inode->id : 0,  /* Inode ID */
+                desc); 
+    }
+
+#if 0
+    printk("queue_t     threads");
+    printk("size_t      threads_nr");
+    printk("queue_t     *sig_queue");
+#endif
+
+    printk("Exit Status: %d\n", proc->exit);
+    printk("Running: %s\n", proc->running? "Yes" : "No");
+    printk("== end proc dump ==\n");
 }

@@ -115,7 +115,7 @@ struct file {
     struct inode *node;
     off_t offset;
     int flags;
-    int ref;
+    //int ref;
 } __packed;
 
 typedef struct  {
