@@ -7,11 +7,7 @@ install:
 cache:
   directories:
     # Cache Packages
-    # - build-tools/autoconf-2.69.tar.gz
-    # - build-tools/automake-1.12.1.tar.gz
-    # - build-tools/binutils-2.28.tar.gz
-    # - build-tools/gcc-7.3.0.tar.gz
-    # - build-tools/newlib-3.0.0.tar.gz
+  - build-tools/pkgs
     # And unpacked directories
   - build-tools/binutils-2.28
   - build-tools/gcc-7.3.0

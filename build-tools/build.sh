@@ -10,17 +10,21 @@ top_dir=$(pwd)
 # Cross binutils and GCC
 #
 
-if [[ ! -f binutils-2.28.tar.gz ]]; then
+if [[ ! -f "pkgs/binutils-2.28.tar.gz" ]]; then
 	wget https://ftp.gnu.org/gnu/binutils/binutils-2.28.tar.gz;
+    mv "binutils-2.28.tar.gz" "pkgs/binutils-2.28.tar.gz";
+    rm -rf "binutils-2.28";
 fi;
 
-if [[ ! -f gcc-7.3.0.tar.gz ]]; then
+if [[ ! -f "pkgs/gcc-7.3.0.tar.gz" ]]; then
 	wget https://ftp.gnu.org/gnu/gcc/gcc-7.3.0/gcc-7.3.0.tar.gz;
+    mv "gcc-7.3.0.tar.gz" "pkgs/gcc-7.3.0.tar.gz";
+    rm -rf "gcc-7.3.0";
 fi;
 
 if [[ ! -d binutils-2.28 ]]; then
-	tar xzf binutils-2.28.tar.gz;
-    cd binutils-2.28;
+	tar xzf "pkgs/binutils-2.28.tar.gz";
+    cd "binutils-2.28";
     ./configure --prefix=$top_dir/sys --target=i686-elf --disable-nls --disable-werror --with-sysroot;
     make && make install;
     cd ..;
@@ -28,11 +32,11 @@ fi;
 
 
 if [[ ! -d gcc-7.3.0 ]]; then
-	tar xzf gcc-7.3.0.tar.gz;
-    cd gcc-7.3.0;
+	tar xzf "pkgs/gcc-7.3.0.tar.gz";
+    cd "gcc-7.3.0";
     ./contrib/download_prerequisites;
     cd ..;
-    mkdir -p build-gcc && cd build-gcc;
+    mkdir -p "build-gcc" && cd "build-gcc";
     ../gcc-7.3.0/configure --prefix=$top_dir/sys --target=i686-elf --disable-nls --enable-languages=c,c++ --without-headers;
     make all-gcc;
     make all-target-libgcc;
@@ -46,41 +50,31 @@ fi;
 #
 
 # Fetch autoconf and automake if not present
-#if [[ ! -f autoconf-2.65.tar.gz ]]; then
-if [[ ! -f autoconf-2.69.tar.gz ]]; then
-    wget https://ftp.gnu.org/gnu/autoconf/autoconf-2.69.tar.gz;
-fi;
-
-if [[ ! -f automake-1.12.1.tar.gz ]]; then
-	wget https://ftp.gnu.org/gnu/automake/automake-1.12.1.tar.gz;
-fi;
-
-# Unpack and build
-
-#if [[ ! -d autoconf-2.65 ]]; then
-if [[ ! -d autoconf-2.69 ]]; then
-	tar xzf autoconf-2.69.tar.gz;
+if [[ ! -f "pkgs/autoconf-2.69.tar.gz" ]]; then
+    wget "https://ftp.gnu.org/gnu/autoconf/autoconf-2.69.tar.gz";
+    mv "autoconf-2.69.tar.gz" "pkgs/autoconf-2.69.tar.gz";
+    rm -rf "autoconf-2.69";
+	tar xzf "pkgs/autoconf-2.69.tar.gz";
     cd autoconf-2.69 && ./configure --prefix=$top_dir/sys && make && make install;
     cd ..;
 fi;
 
-
-if [[ ! -d automake-1.12.1 ]]; then
-	tar xzf automake-1.12.1.tar.gz;
+if [[ ! -f "pkgs/automake-1.12.1.tar.gz" ]]; then
+	wget "https://ftp.gnu.org/gnu/automake/automake-1.12.1.tar.gz";
+    mv "automake-1.12.1.tar.gz" "pkgs/automake-1.12.1.tar.gz";
+    rm -rf "automake-1.12.1";
+	tar "pkgs/xzf automake-1.12.1.tar.gz";
     cd automake-1.12.1 && ./configure --prefix=$top_dir/sys && make && make install;
     cd ..;
 fi;
 
 # newlib
-# Fetch
-if [[ ! -f "newlib-3.0.0.tar.gz" ]]; then
+# Fetch & patch
+if [[ ! -f "pkgs/newlib-3.0.0.tar.gz" ]]; then
     wget "ftp://sourceware.org/pub/newlib/newlib-3.0.0.tar.gz";
-fi;
-
-
-# Patch & Build
-if [[ ! -d newlib-3.0.0 ]]; then
-    tar -xzf newlib-3.0.0.tar.gz;
+    mv "newlib-3.0.0.tar.gz" "pkgs/newlib-3.0.0.tar.gz";
+    rm -rf "newlib-3.0.0";
+    tar -xzf "pkgs/newlib-3.0.0.tar.gz";
     cp aquila newlib-3.0.0/newlib/libc/sys/ -r;
     cd newlib-3.0.0;
     patch -p1 < ../patches/newlib.patch;
