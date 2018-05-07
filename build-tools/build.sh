@@ -71,8 +71,7 @@ fi;
 # newlib
 # Fetch & patch
 if [[ ! -f "pkgs/newlib-3.0.0.tar.gz" ]]; then
-    wget "ftp://sourceware.org/pub/newlib/newlib-3.0.0.tar.gz";
-    mv "newlib-3.0.0.tar.gz" "pkgs/newlib-3.0.0.tar.gz";
+    wget -O "pkgs/newlib-3.0.0.tar.gz" "ftp://sourceware.org/pub/newlib/newlib-3.0.0.tar.gz";
     rm -rf "newlib-3.0.0";
     tar -xzf "pkgs/newlib-3.0.0.tar.gz";
     cp aquila newlib-3.0.0/newlib/libc/sys/ -r;
