@@ -63,7 +63,7 @@ if [[ ! -f "pkgs/automake-1.12.1.tar.gz" ]]; then
 	wget "https://ftp.gnu.org/gnu/automake/automake-1.12.1.tar.gz";
     mv "automake-1.12.1.tar.gz" "pkgs/automake-1.12.1.tar.gz";
     rm -rf "automake-1.12.1";
-	tar "pkgs/xzf automake-1.12.1.tar.gz";
+	tar xzf "pkgs/automake-1.12.1.tar.gz";
     cd automake-1.12.1 && ./configure --prefix=$top_dir/sys && make && make install;
     cd ..;
 fi;
