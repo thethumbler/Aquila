@@ -189,6 +189,9 @@ void proc_kill(proc_t *proc)
         /* Orphan zombie, just reap it */
         proc_reap(proc);
     }
+
+    if (cur_thread->owner == proc)
+        kernel_idle();
 }
 
 int proc_reap(proc_t *proc)
