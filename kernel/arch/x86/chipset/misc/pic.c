@@ -99,6 +99,7 @@ void x86_irq_unmask(int irq)
         io_out8(&__master,  PIC_DATA, pic_mask & 0xFF);
     } else if (irq < 16) {  /* Slave */
         pic_mask &= ~(1 << irq);
+        pic_mask &= ~(1 << 2);  /* Unmask slave */
         io_out8(&__slave,  PIC_DATA, (pic_mask >> 8) & 0xFF);
     } else {
         panic("Invalid IRQ number\n");
