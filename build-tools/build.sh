@@ -72,35 +72,35 @@ fi;
 # Fetch & patch
 if [[ ! -f "pkgs/newlib-3.0.0.tar.gz" ]]; then
     wget -O "pkgs/newlib-3.0.0.tar.gz" "ftp://sourceware.org/pub/newlib/newlib-3.0.0.tar.gz";
-    rm -rf "newlib-3.0.0";
-    tar -xzf "pkgs/newlib-3.0.0.tar.gz";
-    cp aquila newlib-3.0.0/newlib/libc/sys/ -r;
-    cd newlib-3.0.0;
-    patch -p1 < ../patches/newlib.patch;
-    cd newlib/libc/sys/aquila;
-
-    cd pthread; $top_dir/sys/bin/aclocal -I ../../../..;
-    $top_dir/sys/bin/automake --cygnus Makefile;
-    $top_dir/sys/bin/autoconf;
-    cd ..;
-
-    $top_dir/sys/bin/aclocal -I ../../..;
-    $top_dir/sys/bin/automake --cygnus Makefile;
-    cd ..;
-    $top_dir/sys/bin/autoconf;
-    cd aquila;
-    $top_dir/sys/bin/autoconf;
-    cd $top_dir;
-
-    # Link binaries
-    ln sys/bin/i686-elf-ar sys/bin/i686-aquila-ar
-    ln sys/bin/i686-elf-as sys/bin/i686-aquila-as
-    ln sys/bin/i686-elf-gcc sys/bin/i686-aquila-gcc
-    ln sys/bin/i686-elf-gcc sys/bin/i686-aquila-cc
-    ln sys/bin/i686-elf-ranlib sys/bin/i686-aquila-ranlib
 fi;
 
 # Always rebuild newlib
+rm -rf "newlib-3.0.0";
+tar -xzf "pkgs/newlib-3.0.0.tar.gz";
+cp aquila newlib-3.0.0/newlib/libc/sys/ -r;
+cd newlib-3.0.0;
+patch -p1 < ../patches/newlib.patch;
+cd newlib/libc/sys/aquila;
+
+cd pthread; $top_dir/sys/bin/aclocal -I ../../../..;
+$top_dir/sys/bin/automake --cygnus Makefile;
+$top_dir/sys/bin/autoconf;
+cd ..;
+
+$top_dir/sys/bin/aclocal -I ../../..;
+$top_dir/sys/bin/automake --cygnus Makefile;
+cd ..;
+$top_dir/sys/bin/autoconf;
+cd aquila;
+$top_dir/sys/bin/autoconf;
+cd $top_dir;
+
+# Link binaries
+ln sys/bin/i686-elf-ar sys/bin/i686-aquila-ar
+ln sys/bin/i686-elf-as sys/bin/i686-aquila-as
+ln sys/bin/i686-elf-gcc sys/bin/i686-aquila-gcc
+ln sys/bin/i686-elf-gcc sys/bin/i686-aquila-cc
+ln sys/bin/i686-elf-ranlib sys/bin/i686-aquila-ranlib
 export PATH=$top_dir/sys/bin:$PATH;
 rm -rf build-newlib && mkdir -p build-newlib && cd build-newlib;
 ../newlib-3.0.0/configure --prefix=/usr --target=i686-aquila;
