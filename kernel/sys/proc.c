@@ -164,6 +164,8 @@ void proc_kill(proc_t *proc)
 
     kfree(proc->name);
 
+    int kill_cur_thread = 0;
+
     /* Kill all threads */
     while (proc->threads.count) {
         thread_t *thread = dequeue(&proc->threads);
@@ -173,6 +175,11 @@ void proc_kill(proc_t *proc)
 
         if (thread->sched_node) /* Thread is in the scheduler queue */
             queue_node_remove(thread->sched_queue, thread->sched_node);
+
+        if (thread == cur_thread) {
+            kill_cur_thread = 1;
+            continue;
+        }
 
         thread_kill(thread);
         kfree(thread);
@@ -190,8 +197,11 @@ void proc_kill(proc_t *proc)
         proc_reap(proc);
     }
 
-    if (cur_thread->owner == proc)
+    if (kill_cur_thread) {
+        thread_kill(cur_thread);
+        kfree(cur_thread);
         kernel_idle();
+    }
 }
 
 int proc_reap(proc_t *proc)
