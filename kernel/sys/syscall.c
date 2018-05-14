@@ -37,7 +37,7 @@ static void sys_exit(int code)
 {
     printk("[%d:%d] %s: exit(code=%d)\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name, code);
 
-    proc_t *owner  = cur_thread->owner;
+    proc_t *owner = cur_thread->owner;
 
     owner->exit = _PROC_EXIT(code, 0);  /* Child exited normally */
 
