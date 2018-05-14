@@ -4,10 +4,12 @@
 #include <stdint.h>
 #include <dirent.h>
 #include <errno.h>
-#include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <pwd.h>
 #include <fcntl.h>
+#include <time.h>
 
 #define FLAG_A  0x0000001
 #define FLAG_C  0x0000002
@@ -92,7 +94,7 @@ int print_long_entry(char *path, char *fn)
     char *owner = passwd? passwd->pw_name : "";
 
     /* <group name> */
-    char *group = "(grp)";
+    char *group = "root";
 
     /* <device info> */
     char device[16] = "";
@@ -105,7 +107,9 @@ int print_long_entry(char *path, char *fn)
     size_t size = buf.st_size;
 
     /* <date and time> */
-    char *time = "(time)";
+    char time[64] = "";
+    struct tm *tm = gmtime(&buf.st_atime);
+    strftime(time, 64, "%b %e %H:%M", tm);
     
     /* <pathname> */
     char name[512];
@@ -122,9 +126,9 @@ int print_long_entry(char *path, char *fn)
     }
 
     if (S_ISCHR(buf.st_mode) || S_ISBLK(buf.st_mode))
-        printf("%s %u %s %s %s %s %s\n", mode, nlink, owner, group, device, time, name);
+        printf("%s %u %s %s %8s %s %s\n", mode, nlink, owner, group, device, time, name);
     else
-        printf("%s %u %s %s %u %s %s\n", mode, nlink, owner, group, size, time, name);
+        printf("%s %u %s %s %8u %s %s\n", mode, nlink, owner, group, size, time, name);
 
     return 0;
 }
