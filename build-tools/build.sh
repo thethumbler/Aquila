@@ -4,6 +4,7 @@
 
 mkdir -p sys
 mkdir -p libc/sysroot
+mkdir -p pkgs
 top_dir=$(pwd)
 
 #
