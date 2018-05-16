@@ -2,10 +2,12 @@
 # Init
 #
 
+set -e #don't continue if a command return non zero
 mkdir -p sys
 mkdir -p libc/sysroot
 mkdir -p pkgs
 top_dir=$(pwd)
+PERL_26=$(perl -e "if ($] gt '5.026000') { print 1 } else {print 0};")
 
 #
 # Cross binutils and GCC
@@ -61,11 +63,18 @@ if [[ ! -f "pkgs/autoconf-2.69.tar.gz" ]]; then
 fi;
 
 if [[ ! -f "pkgs/automake-1.12.1.tar.gz" ]]; then
-	wget "https://ftp.gnu.org/gnu/automake/automake-1.12.1.tar.gz";
+    wget "https://ftp.gnu.org/gnu/automake/automake-1.12.1.tar.gz";
     mv "automake-1.12.1.tar.gz" "pkgs/automake-1.12.1.tar.gz";
     rm -rf "automake-1.12.1";
-	tar xzf "pkgs/automake-1.12.1.tar.gz";
-    cd automake-1.12.1 && ./configure --prefix=$top_dir/sys && make -j $(nproc) && make install;
+    tar xzf "pkgs/automake-1.12.1.tar.gz";
+    cd automake-1.12.1;
+    
+    if [ $PERL_26 -eq 1 ] #patch if version > 26
+    then
+	patch < ../patches/automake.patch;
+    fi
+    
+    ./configure --prefix=$top_dir/sys && make -j $(nproc) && make install;
     cd ..;
 fi;
 
@@ -97,11 +106,11 @@ $top_dir/sys/bin/autoconf;
 cd $top_dir;
 
 # Link binaries
-ln sys/bin/i686-elf-ar sys/bin/i686-aquila-ar
-ln sys/bin/i686-elf-as sys/bin/i686-aquila-as
-ln sys/bin/i686-elf-gcc sys/bin/i686-aquila-gcc
-ln sys/bin/i686-elf-gcc sys/bin/i686-aquila-cc
-ln sys/bin/i686-elf-ranlib sys/bin/i686-aquila-ranlib
+ln -f sys/bin/i686-elf-ar sys/bin/i686-aquila-ar
+ln -f sys/bin/i686-elf-as sys/bin/i686-aquila-as
+ln -f sys/bin/i686-elf-gcc sys/bin/i686-aquila-gcc
+ln -f sys/bin/i686-elf-gcc sys/bin/i686-aquila-cc
+ln -f sys/bin/i686-elf-ranlib sys/bin/i686-aquila-ranlib
 export PATH=$top_dir/sys/bin:$PATH;
 rm -rf build-newlib && mkdir -p build-newlib && cd build-newlib;
 ../newlib-3.0.0/configure --prefix=/usr --target=i686-aquila;
@@ -109,3 +118,5 @@ make -j $(nproc) CFLAGS=-march=i586 all;
 make DESTDIR=$top_dir/libc/sysroot install;
 cd ..;
 cp -ar $top_dir/libc/sysroot/usr/i686-aquila/* $top_dir/libc/sysroot/usr/
+
+echo "The build was successful, you can now build the image"
