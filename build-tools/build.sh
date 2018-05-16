@@ -27,7 +27,7 @@ if [[ ! -d binutils-2.28 ]]; then
 	tar xzf "pkgs/binutils-2.28.tar.gz";
     cd "binutils-2.28";
     ./configure --prefix=$top_dir/sys --target=i686-elf --disable-nls --disable-werror --with-sysroot;
-    make && make install;
+    make -j $(nproc) && make install;
     cd ..;
 fi;
 
@@ -39,10 +39,10 @@ if [[ ! -d gcc-7.3.0 ]]; then
     cd ..;
     mkdir -p "build-gcc" && cd "build-gcc";
     ../gcc-7.3.0/configure --prefix=$top_dir/sys --target=i686-elf --disable-nls --enable-languages=c,c++ --without-headers;
-    make all-gcc;
-    make all-target-libgcc;
-    make install-gcc;
-    make install-target-libgcc;
+    make -j $(nproc) all-gcc;
+    make -j $(nproc) all-target-libgcc;
+    make -j $(nproc) install-gcc;
+    make -j $(nproc) install-target-libgcc;
     cd ..;
 fi;
 
@@ -56,7 +56,7 @@ if [[ ! -f "pkgs/autoconf-2.69.tar.gz" ]]; then
     mv "autoconf-2.69.tar.gz" "pkgs/autoconf-2.69.tar.gz";
     rm -rf "autoconf-2.69";
 	tar xzf "pkgs/autoconf-2.69.tar.gz";
-    cd autoconf-2.69 && ./configure --prefix=$top_dir/sys && make && make install;
+    cd autoconf-2.69 && ./configure --prefix=$top_dir/sys && make -j $(nproc) && make install;
     cd ..;
 fi;
 
@@ -65,7 +65,7 @@ if [[ ! -f "pkgs/automake-1.12.1.tar.gz" ]]; then
     mv "automake-1.12.1.tar.gz" "pkgs/automake-1.12.1.tar.gz";
     rm -rf "automake-1.12.1";
 	tar xzf "pkgs/automake-1.12.1.tar.gz";
-    cd automake-1.12.1 && ./configure --prefix=$top_dir/sys && make && make install;
+    cd automake-1.12.1 && ./configure --prefix=$top_dir/sys && make -j $(nproc) && make install;
     cd ..;
 fi;
 
@@ -105,7 +105,7 @@ ln sys/bin/i686-elf-ranlib sys/bin/i686-aquila-ranlib
 export PATH=$top_dir/sys/bin:$PATH;
 rm -rf build-newlib && mkdir -p build-newlib && cd build-newlib;
 ../newlib-3.0.0/configure --prefix=/usr --target=i686-aquila;
-make CFLAGS=-march=i586 all;
+make -j $(nproc) CFLAGS=-march=i586 all;
 make DESTDIR=$top_dir/libc/sysroot install;
 cd ..;
 cp -ar $top_dir/libc/sysroot/usr/i686-aquila/* $top_dir/libc/sysroot/usr/
