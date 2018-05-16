@@ -81,12 +81,6 @@ void arch_thread_kill(thread_t *thread)
     kfree(arch);
 }
 
-void arch_sleep()
-{
-    extern void x86_sleep();
-    x86_sleep();
-}
-
 void internal_arch_sleep()
 {
     x86_thread_t *arch = cur_thread->arch;

@@ -198,9 +198,8 @@ void proc_kill(proc_t *proc)
     }
 
     if (kill_cur_thread) {
-        thread_kill(cur_thread);
-        kfree(cur_thread);
-        kernel_idle();
+        arch_cur_thread_kill();
+        /* We shouldn't get here */
     }
 }
 

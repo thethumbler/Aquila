@@ -61,3 +61,26 @@ void arch_idle()
     extern void x86_goto(uintptr_t eip, uintptr_t ebp, uintptr_t esp) __attribute__((noreturn));
     x86_goto((uintptr_t) __arch_idle, stack, stack);
 }
+
+static void __arch_cur_thread_kill(void)
+{
+    thread_kill(cur_thread);    /* Will set the stack to VMA(0x100000) */
+    kfree(cur_thread);
+    cur_thread = NULL;
+    kernel_idle();
+}
+
+void arch_cur_thread_kill(void)
+{
+    uintptr_t stack = (uintptr_t) __idle_stack + 8192;
+
+    extern void x86_goto(uintptr_t eip, uintptr_t ebp, uintptr_t esp) __attribute__((noreturn));
+    x86_goto((uintptr_t) __arch_cur_thread_kill, stack, stack);
+}
+
+void arch_sleep()
+{
+    extern void x86_sleep();
+    x86_sleep();
+}
+
