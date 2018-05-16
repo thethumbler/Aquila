@@ -29,6 +29,10 @@ arch/: $(dirs-y) arch/Makefile
 	@echo -e "  MK      " $@
 	@$(MAKE) -C $@ $(param)
 
+arch/Makefile: arch/Build.mk
+	@echo -e "  PL      " $<
+	@cd $(dir $@) && $(PERL) $(PDIR)/scripts/gen.pl >> Makefile
+
 $(patsubst %/,%/Makefile, $(dirs-y)): $(patsubst %/,%/Build.mk, $(dirs-y))
 	@echo -e "  PL      " $<
 	@cd $(dir $@) && $(PERL) $(PDIR)/scripts/gen.pl >> Makefile
