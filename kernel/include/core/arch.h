@@ -33,6 +33,7 @@ void arch_syscall_return(thread_t *thread, uintptr_t val);
 /* arch/ARCH/sys/sched.c */
 void arch_sched_init();
 void arch_sched();
+void arch_cur_thread_kill(void) __attribute__((noreturn));
 
 /* arch/ARCH/sys/execve.c */
 void arch_sys_execve(proc_t *proc, int argc, char * const argp[], int envc, char * const envp[]);
