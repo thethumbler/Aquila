@@ -106,11 +106,11 @@ $top_dir/sys/bin/autoconf;
 cd $top_dir;
 
 # Link binaries
-ln sys/bin/i686-elf-ar sys/bin/i686-aquila-ar
-ln sys/bin/i686-elf-as sys/bin/i686-aquila-as
-ln sys/bin/i686-elf-gcc sys/bin/i686-aquila-gcc
-ln sys/bin/i686-elf-gcc sys/bin/i686-aquila-cc
-ln sys/bin/i686-elf-ranlib sys/bin/i686-aquila-ranlib
+ln -f sys/bin/i686-elf-ar sys/bin/i686-aquila-ar
+ln -f sys/bin/i686-elf-as sys/bin/i686-aquila-as
+ln -f sys/bin/i686-elf-gcc sys/bin/i686-aquila-gcc
+ln -f sys/bin/i686-elf-gcc sys/bin/i686-aquila-cc
+ln -f sys/bin/i686-elf-ranlib sys/bin/i686-aquila-ranlib
 export PATH=$top_dir/sys/bin:$PATH;
 rm -rf build-newlib && mkdir -p build-newlib && cd build-newlib;
 ../newlib-3.0.0/configure --prefix=/usr --target=i686-aquila;
