@@ -118,3 +118,5 @@ make -j $(nproc) CFLAGS=-march=i586 all;
 make DESTDIR=$top_dir/libc/sysroot install;
 cd ..;
 cp -ar $top_dir/libc/sysroot/usr/i686-aquila/* $top_dir/libc/sysroot/usr/
+
+echo "The build was successful, you can now build the image"
