@@ -1,14 +1,13 @@
 #
 # Init
 #
+
 set -e #don't continue if a command return non zero
 mkdir -p sys
 mkdir -p libc/sysroot
 mkdir -p pkgs
 top_dir=$(pwd)
-
 PERL_26=$(perl -e "if ($] gt '5.026000') { print 1 } else {print 0};")
-
 
 #
 # Cross binutils and GCC
