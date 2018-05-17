@@ -38,6 +38,7 @@ ln -s /bin/aqbox out/sbin/kbd
 
 cp ../system/fbterm/fbterm out/bin/
 cp ../system/nuklear/nuklear out/bin/
+cp ../system/kilo/kilo out/bin/
 
 cp dist/* out/ -r
 

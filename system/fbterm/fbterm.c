@@ -162,7 +162,7 @@ int movecursor(VTermPos pos, VTermPos oldpos, int visible, void *user)
     fbterm_putc(ctx, oldpos.row, oldpos.col, cell.chars[0], fg, bg);
 
     /* Set new cursor if visible */
-    if (visible)
+    //if (visible)
         fbterm_set_cursor(ctx, pos.row, pos.col);
 }
 
