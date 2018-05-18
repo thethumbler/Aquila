@@ -8,7 +8,6 @@
 #endif
 
 extern void (*syscall_table[])();
-
-#define SYSCALL_COUNT 37
+extern size_t syscall_cnt;
 
 #endif /* ! _SYSCALL_H */

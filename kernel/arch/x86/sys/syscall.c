@@ -7,7 +7,7 @@
 
 void arch_syscall(struct x86_regs *r)
 {
-    if(r->eax > SYSCALL_COUNT)
+    if(r->eax >= syscall_cnt)
     {
 	printk("[%d:%d] %s: Not Defined Syscall\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name);
 	arch_syscall_return(cur_thread,-ENOSYS);
