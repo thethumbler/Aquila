@@ -1,7 +1,6 @@
 *.o
 *.iso
 *.elf
-*.a
 *.img
 
 tools/
@@ -19,5 +18,6 @@ ramdisk/out
 
 system/usr
 system/nuklear/nuklear
+system/nuklear/libnk.a
 system/fbterm/fbterm
 system/aqbox/aqbox
