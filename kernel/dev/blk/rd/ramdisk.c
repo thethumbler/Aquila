@@ -41,11 +41,17 @@ static int rd_probe()
     return 0;
 }
 
+static size_t rd_getbs(struct devid *dd __unused)
+{
+    return 1;   /* FIXME */
+}
+
 struct dev rddev = {
     .name  = "ramdisk",
     .probe = rd_probe,
     .read  = rd_read,
     .write = rd_write,
+    .getbs = rd_getbs,
 };
 
-MODULE_INIT(rd, rd_probe, NULL);
+MODULE_INIT(rd, rd_probe, NULL)

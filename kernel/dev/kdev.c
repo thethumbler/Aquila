@@ -30,6 +30,132 @@ int kdev_close(struct devid *dev __unused)
     return 0;
 }
 
+ssize_t kdev_bread(struct devid *dd, off_t offset, size_t size, void *buf)
+{
+    struct dev *dev = kdev_get(dd);
+    size_t bs = dev->getbs(dd);
+
+    ssize_t ret = 0;
+
+    char *cbuf = buf;
+    char *bbuf = NULL;
+
+    /* Read up to block boundary */
+    if (offset % bs) {
+        if (!bbuf && !(bbuf = kmalloc(bs)))
+            return -ENOMEM;
+
+        size_t start = MIN(bs - offset % bs, size);
+
+        if (start) {
+            dev->read(dd, offset/bs, 1, bbuf);
+            memcpy(cbuf, bbuf + (offset % bs), start);
+
+            ret    += start;
+            size   -= start;
+            cbuf   += start;
+            offset += start;
+
+            if (!size)
+                goto done;
+        }
+    }
+
+    /* Read entire blocks */
+    size_t count = size/bs;
+
+    dev->read(dd, offset/bs, count, cbuf);
+
+    ret    += count * bs;
+    size   -= count * bs;
+    cbuf   += count * bs;
+    offset += count * bs;
+
+    if (!size)
+        goto done;
+
+    size_t end = size % bs;
+
+    if (end) {
+        if (!bbuf && !(bbuf = kmalloc(bs)))
+            return -ENOMEM;
+
+        dev->read(dd, offset/bs, 1, bbuf);
+        memcpy(cbuf, bbuf, end);
+        ret += end;
+    }
+
+done:
+    if (bbuf)
+        kfree(bbuf);
+
+    return ret;
+}
+
+ssize_t kdev_bwrite(struct devid *dd, off_t offset, size_t size, void *buf)
+{
+    struct dev *dev = kdev_get(dd);
+    size_t bs = dev->getbs(dd);
+
+    ssize_t ret = 0;
+    char *cbuf = buf;
+    char *bbuf = NULL;
+
+    if (offset % bs) {
+        if (!bbuf && !(bbuf = kmalloc(bs)))
+            return -ENOMEM;
+
+        /* Write up to block boundary */
+        size_t start = MIN(bs - offset % bs, size);
+
+        if (start) {
+            dev->read(dd, offset/bs, 1, bbuf);
+            memcpy(bbuf + (offset % bs), cbuf, start);
+            dev->write(dd, offset/bs, 1, bbuf);
+
+            ret    += start;
+            size   -= start;
+            cbuf   += start;
+            offset += start;
+
+            if (!size)
+                goto done;
+        }
+    }
+
+
+    /* Write entire blocks */
+    size_t count = size/bs;
+
+    dev->write(dd, offset/bs, count, cbuf);
+
+    ret    += count * bs;
+    size   -= count * bs;
+    cbuf   += count * bs;
+    offset += count * bs;
+
+    if (!size)
+        goto done;
+
+    size_t end = size % bs;
+
+    if (end) {
+        if (!bbuf && !(bbuf = kmalloc(bs)))
+            return -ENOMEM;
+
+        dev->read(dd, offset/bs, 1, bbuf);
+        memcpy(bbuf, cbuf, end);
+        dev->write(dd, offset/bs, 1, bbuf);
+        ret += end;
+    }
+
+done:
+    if (bbuf)
+        kfree(bbuf);
+
+    return ret;
+}
+
 ssize_t kdev_read(struct devid *dd, off_t offset, size_t size, void *buf)
 {
     struct dev *dev = NULL;
@@ -40,7 +166,10 @@ ssize_t kdev_read(struct devid *dd, off_t offset, size_t size, void *buf)
     if (!dev->read)
         return -ENXIO;
 
-    return dev->read(dd, offset, size, buf);
+    if (dd->type == CHRDEV)
+        return dev->read(dd, offset, size, buf);
+    else
+        return kdev_bread(dd, offset, size, buf);
 }
 
 ssize_t kdev_write(struct devid *dd, off_t offset, size_t size, void *buf)
@@ -53,7 +182,10 @@ ssize_t kdev_write(struct devid *dd, off_t offset, size_t size, void *buf)
     if (!dev->write)
         return -ENXIO;
 
-    return dev->write(dd, offset, size, buf);
+    if (dd->type == CHRDEV)
+        return dev->write(dd, offset, size, buf);
+    else
+        return kdev_bwrite(dd, offset, size, buf);
 }
 
 int kdev_ioctl(struct devid *dd, int request, void *argp)
