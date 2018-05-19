@@ -718,3 +718,5 @@ void (*syscall_table[])() =  {
     /* 36 */    sys_getuid,
     /* 37 */    sys_getgid,
 };
+
+size_t const syscall_cnt = sizeof(syscall_table)/sizeof(syscall_table[0]);

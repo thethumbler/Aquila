@@ -3,10 +3,17 @@
 #include <sys/proc.h>
 #include <sys/sched.h>
 #include <sys/syscall.h>
+#include <bits/errno.h>
 
 void arch_syscall(struct x86_regs *r)
 {
-    /* FIXME: Add some out-of-bounds checking code here */
+    if(r->eax >= syscall_cnt)
+    {
+	printk("[%d:%d] %s: Not Defined Syscall\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name);
+	arch_syscall_return(cur_thread,-ENOSYS);
+	return;
+    }
+	
     void (*syscall)() = syscall_table[r->eax];
     syscall(r->ebx, r->ecx, r->edx);
 }
