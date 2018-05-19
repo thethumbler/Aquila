@@ -3,17 +3,15 @@ export
 MAKEFLAGS += --no-print-directory
 
 PDIR := $(SRC_DIR)/system/nuklear
-CFLAGS += -I$(PDIR)/include
-LDFLAGS += -L$(PDIR)/libnk
-#LDLIBS += -lnk
+CFLAGS += -I$(PDIR)/include -Iinclude/
 
 include Build.mk
 
-all: builtin.o nuklear
+all: builtin.o libnk.a
 
-nuklear: builtin.o libnk/libnk.a
-	@echo -e "  LD      " $@
-	@$(LD) $(LDFLAGS) $< -lnk $(LDLIBS) -o $@;
+libnk.a: builtin.o
+	@echo -e "  AR      " $@ $<
+	@$(AR) rcs $@ $<
 
 builtin.o: $(obj-y) $(dirs-y)
 	@echo -e "  LD      " builtin.o;
@@ -31,4 +29,4 @@ $(dirs-y): $(patsubst %/,%/Makefile, $(dirs-y))
 .PHONY: clean
 clean: param = clean
 clean: $(dirs-y)
-	$(RM) -f nuklear builtin.o $(obj-y)
+	$(RM) -f libnk.a builtin.o $(obj-y)

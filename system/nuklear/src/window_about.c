@@ -1,4 +1,6 @@
 #include <limits.h>
+#include <stdlib.h>
+#include <string.h>
 #include <nk/nuklear.h>
 #include <nk/window.h>
 #include <nk/rawfb.h>
