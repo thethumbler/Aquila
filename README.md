@@ -4,6 +4,9 @@
 UNIX-like Operating System, including the kernel and system tools.
 Intended to be fully **POSIX** compliant. Oh, and it compiles with -O3.
 
+#### Build Instructions
+Follow the instructions in this [wiki page.](https://github.com/mohamed-anwar/Aquila/wiki/Build-Instructions)
+
 #### CPU-based Features:
 ##### Supported Archetictures:
 > - [X] x86
