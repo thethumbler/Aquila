@@ -27,6 +27,7 @@ struct dev {
     struct fops fops;
 
     struct dev *(*mux)(struct devid *dev);    /* Device Multiplexr */
+    size_t  (*getbs)(struct devid *dev);      /* Block size, for blkdev */
 } __packed;
 
 /* Kernel Device Subsystem Handlers */
