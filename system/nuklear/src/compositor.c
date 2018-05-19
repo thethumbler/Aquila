@@ -121,6 +121,9 @@ int main(int argc, char **argv)
     
     //set_style(&rawfb->ctx, THEME_DARK);
 
+    /* Window layout padding is client responsibility */
+    rawfb->ctx.style.window.padding = nk_vec2(0, 0);
+
     int about_window = 1, calc_window = 0, term_window = 0, editor_window = 0;
 
     while (running) {
