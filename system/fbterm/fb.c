@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/ioctl.h>
+#include <sys/mman.h>
 #include <fb.h>
 
 #define _NJ_INCLUDE_HEADER_ONLY
@@ -14,6 +15,7 @@
 static struct fb_fix_screeninfo fix_screeninfo;
 static struct fb_var_screeninfo var_screeninfo;
 static int fb = -1;
+static void *fb_addr = NULL;
 static unsigned xres = 0, yres = 0, line_length = 0, bpp = 0;
 
 #define COLORMERGE(f, b, c)	((b) + (((f) - (b)) * (c) >> 8u))
@@ -94,8 +96,9 @@ void fb_rect_move(struct fbterm_ctx *ctx, size_t dx0, size_t dx1, size_t dy0, si
 
 void fb_render(struct fbterm_ctx *ctx)
 {
-    lseek(fb, 0, SEEK_SET);
-    write(fb, ctx->backbuf, line_length * yres);
+    //lseek(fb, 0, SEEK_SET);
+    //write(fb, ctx->backbuf, line_length * yres);
+    memcpy(fb_addr, ctx->backbuf, line_length * yres);
 }
 
 void fb_term_init(struct fbterm_ctx *ctx)
@@ -192,20 +195,16 @@ void fb_debug(char r, char g, char b)
 int fb_init(char *path)
 {
     if ((fb = open(path, O_RDWR)) < 0) {
-        //fprintf(stderr, "Error opening framebuffer %s", path);
-        //perror("");
         return errno;
     }
 
     if (ioctl(fb, FBIOGET_FSCREENINFO, &fix_screeninfo) < 0) {
-        //perror("ioctl error");
         return errno;
     }
 
     line_length = fix_screeninfo.line_length;
 
     if (ioctl(fb, FBIOGET_VSCREENINFO, &var_screeninfo) < 0) {
-        //perror("ioctl error");
         return errno;
     }
 
@@ -213,6 +212,11 @@ int fb_init(char *path)
     yres = var_screeninfo.yres;
 
     bpp  = var_screeninfo.bits_per_pixel/8;
+
+    fb_addr = 0xB0000000;
+    if (mmap(fb_addr, line_length * yres, PROT_WRITE, MAP_SHARED|MAP_FIXED, fb, 0)) {
+        return errno;
+    }
 
     return 0;
 }
