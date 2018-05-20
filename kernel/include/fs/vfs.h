@@ -7,6 +7,7 @@
 #include <sys/proc.h>
 #include <ds/queue.h>
 #include <fs/stat.h>
+#include <mm/vm.h>
 
 struct fs;  /* File System Structure */
 struct inode;
@@ -44,6 +45,7 @@ struct iops {
     int     (*vunlink) (struct vnode *dir, const char *fn, struct uio *uio);
     int     (*vfind)   (struct vnode *dir, const char *name, struct vnode *child);
     int     (*vget)    (struct vnode *vnode, struct inode **inode);
+    int     (*mmap)    (struct vmr *vmr);
 } __packed;
 
 /* File Operations */
@@ -154,6 +156,7 @@ int     vfs_vmkdir(struct vnode *dir, const char *dname, struct uio *uio, struct
 int     vfs_vunlink(struct vnode *dir, const char *fn, struct uio *uio);
 int     vfs_vfind(struct vnode *vnode, const char *name, struct vnode *child);
 int     vfs_vget(struct vnode *vnode, struct inode **inode);
+int     vfs_mmap(struct vmr *vmr);
 
 ssize_t vfs_read(struct inode *inode, size_t offset, size_t size, void *buf);
 ssize_t vfs_write(struct inode *inode, size_t offset, size_t size, void *buf);

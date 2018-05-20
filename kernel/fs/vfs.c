@@ -493,6 +493,23 @@ int vfs_vget(struct vnode *vnode, struct inode **inode)
     return ret;
 }
 
+int vfs_mmap(struct vmr *vmr)
+{
+    printk("vfs_mmap(vmr=%p)\n", vmr);
+    struct inode *inode = vmr->inode;
+
+    if (!inode || !inode->fs)
+        return -EINVAL;
+
+    if (ISDEV(inode))
+        return kdev_mmap(&_INODE_DEV(inode), vmr);
+
+    if (!inode->fs->iops.mmap)
+        return -ENOSYS;
+
+    return inode->fs->iops.mmap(vmr);
+}
+
 /* ================== VFS file ops mappings ================== */
 
 int vfs_file_open(struct file *file)

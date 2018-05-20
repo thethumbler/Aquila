@@ -21,6 +21,7 @@
 #include <bits/dirent.h>
 #include <bits/utsname.h>
 #include <bits/fcntl.h>
+#include <bits/mman.h>
 
 #include <fs/devpts.h>
 #include <fs/pipe.h>
@@ -678,6 +679,74 @@ static void sys_getgid(void)
     arch_syscall_return(cur_thread, cur_thread->owner->gid);
 }
 
+struct mmap_args {
+    void    *addr;
+    size_t  len;
+    int     prot;
+    int     flags;
+    int     fildes;
+    off_t   off;
+} __packed;
+
+static void sys_mmap(struct mmap_args *args, void **ret)
+{
+    printk("[%d:%d] %s: mmap(addr=%p, len=%d, prot=%x, flags=%x, fildes=%d, off=%d, ret=%p)\n",
+            cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name,
+            args->addr, args->len, args->prot, args->flags, args->fildes, args->off, ret);
+
+    int fildes = args->fildes;
+    if (fildes < 0 || fildes >= FDS_COUNT) {  /* Out of bounds */
+        arch_syscall_return(cur_thread, -EBADFD);
+        return; 
+    }
+
+    struct file *file = &cur_thread->owner->fds[fildes];
+
+    if (!file->node) {    /* Invalid File Descriptor */
+        arch_syscall_return(cur_thread, -EBADFD);
+        return;
+    }
+
+    struct vmr *vmr = NULL;
+
+    if (args->flags & MAP_FIXED) {
+        /* TODO Sanity checking */
+        vmr = kmalloc(sizeof(struct vmr));
+        vmr->base = (uintptr_t) args->addr;
+        vmr->size = args->len;
+    } else {
+        /* Allocate VMR */
+        panic("Unsupported");
+    }
+
+    vmr->flags  = args->prot & PROT_READ  ? VM_UR : 0;
+    vmr->flags |= args->prot & PROT_WRITE ? VM_UW : 0;
+    vmr->flags |= args->prot & PROT_EXEC  ? VM_UX : 0;
+    vmr->inode  = file->node;
+    vmr->off    = args->off;
+    vmr->qnode  = enqueue(&cur_thread->owner->vmr, vmr);
+
+    int err = 0;
+    if ((err = vfs_mmap(vmr)))
+        goto error;
+
+    *ret = (void *) vmr->base;
+
+error:
+    /* TODO remove VMR */
+    arch_syscall_return(cur_thread, err);
+    return;
+}
+
+static void sys_munmap(void *addr, size_t len)
+{
+    printk("[%d:%d] %s: munmap(addr=%p, len=%d)\n",
+            cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name,
+            addr, len);
+
+    panic("Unsupported");
+}
+
 void (*syscall_table[])() =  {
     /* 00 */    NULL,
     /* 01 */    sys_exit,
@@ -717,6 +786,8 @@ void (*syscall_table[])() =  {
     /* 35 */    sys_auth,
     /* 36 */    sys_getuid,
     /* 37 */    sys_getgid,
+    /* 38 */    sys_mmap,
+    /* 39 */    sys_munmap,
 };
 
 size_t const syscall_cnt = sizeof(syscall_table)/sizeof(syscall_table[0]);

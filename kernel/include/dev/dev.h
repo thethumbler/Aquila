@@ -23,6 +23,7 @@ struct dev {
     ssize_t (*read) (struct devid *dev, off_t offset, size_t size, void *buf);
     ssize_t (*write)(struct devid *dev, off_t offset, size_t size, void *buf);
     int     (*ioctl)(struct devid *dev, int request, void *argp);
+    int     (*mmap)(struct devid *dev, struct vmr *vmr);
 
     struct fops fops;
 
@@ -38,6 +39,7 @@ void    kdev_blkdev_register(devid_t major, struct dev *dev);
 ssize_t kdev_read(struct devid *dd, off_t offset, size_t size, void *buf);
 ssize_t kdev_write(struct devid *dd, off_t offset, size_t size, void *buf);
 int     kdev_ioctl(struct devid *dd, int request, void *argp);
+int     kdev_mmap(struct devid *dd, struct vmr *vmr);
 
 int     kdev_file_open(struct devid *dd, struct file *file);
 ssize_t kdev_file_read(struct devid *dd, struct file *file, void *buf, size_t size);    
