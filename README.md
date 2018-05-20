@@ -1,4 +1,4 @@
-# Aquila OS ![https://travis-ci.org/mohamed-anwar/Aquila](https://api.travis-ci.org/mohamed-anwar/Aquila.svg?branch=master)
+# Aquila OS ![https://travis-ci.org/mohamed-anwar/Aquila](https://api.travis-ci.org/mohamed-anwar/Aquila.svg?branch=master) [![Gitter chat](https://badges.gitter.im/mohamed-anwar/aquila.png)](https://gitter.im/_aquila)
 ![Image of Aquila](http://aquilaos.com/img/screenshot.png)
 
 UNIX-like Operating System, including the kernel and system tools.
