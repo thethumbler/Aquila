@@ -64,15 +64,17 @@ ssize_t kdev_bread(struct devid *dd, off_t offset, size_t size, void *buf)
     /* Read entire blocks */
     size_t count = size/bs;
 
-    dev->read(dd, offset/bs, count, cbuf);
+    if (count) {
+        dev->read(dd, offset/bs, count, cbuf);
 
-    ret    += count * bs;
-    size   -= count * bs;
-    cbuf   += count * bs;
-    offset += count * bs;
+        ret    += count * bs;
+        size   -= count * bs;
+        cbuf   += count * bs;
+        offset += count * bs;
 
-    if (!size)
-        goto done;
+        if (!size)
+            goto done;
+    }
 
     size_t end = size % bs;
 
@@ -127,15 +129,17 @@ ssize_t kdev_bwrite(struct devid *dd, off_t offset, size_t size, void *buf)
     /* Write entire blocks */
     size_t count = size/bs;
 
-    dev->write(dd, offset/bs, count, cbuf);
+    if (count) {
+        dev->write(dd, offset/bs, count, cbuf);
 
-    ret    += count * bs;
-    size   -= count * bs;
-    cbuf   += count * bs;
-    offset += count * bs;
+        ret    += count * bs;
+        size   -= count * bs;
+        cbuf   += count * bs;
+        offset += count * bs;
 
-    if (!size)
-        goto done;
+        if (!size)
+            goto done;
+    }
 
     size_t end = size % bs;
 
