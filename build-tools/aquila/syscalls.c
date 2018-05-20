@@ -6,6 +6,7 @@
 #include <sys/time.h>
 #include <sys/mount.h>
 #include <sys/utsname.h>
+#include <sys/mman.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <dirent.h>
@@ -44,6 +45,8 @@
 #define SYS_AUTH    35
 #define SYS_GETUID  36
 #define SYS_GETGID  37
+#define SYS_MMAP    38
+#define SYS_MUNMAP  39
 
 #define SYSCALL3(ret, v, arg1, arg2, arg3) \
 	asm volatile("int $0x80;":"=a"(ret):"a"(v), "b"(arg1), "c"(arg2), "d"(arg3));
@@ -505,3 +508,41 @@ gid_t getgid(void)
     return gid;
 }
 
+void *mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off)
+{
+    struct {
+        void    *addr;
+        size_t  len;
+        int     prot;
+        int     flags;
+        int     fd;
+        off_t   off;
+    } __attribute__((packed)) args = {
+        addr, len, prot, flags, fd, off
+    };
+
+    void *ret;
+    int err;
+
+    SYSCALL2(err, SYS_MMAP, &args, &ret);
+
+    if (err < 0) {
+        errno = -err;
+        return MAP_FAILED;
+    }
+
+    return ret;
+}
+
+int munmap(void *addr, size_t len)
+{
+    int err;
+    SYSCALL2(err, SYS_MUNMAP, addr, len);
+
+    if (err < 0) {
+        errno = -err;
+        return -1;
+    }
+
+    return 0;
+}
