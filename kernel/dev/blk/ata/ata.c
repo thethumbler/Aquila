@@ -12,25 +12,27 @@
 #include <ata.h>
 
 static struct ata_device {
-    uint16_t base;
-    uint16_t ctrl;
+    struct ioaddr base;
+    struct ioaddr ctrl;
     uint8_t  slave;
 
     size_t   poff[4];
 } __devices[4] = {0};
 
-
 static void ata_wait(struct ata_device *dev)
 {
     for (int i = 0; i < 4; ++i)
-        inb(dev->base + ATA_PORT_CMD);
+        io_in8(&dev->base, ATA_PORT_CMD);
+        //inb(dev->base + ATA_PORT_CMD);
 }
 
 static void ata_soft_reset(struct ata_device *dev)
 {
-    outb(dev->ctrl, ATA_CMD_RESET);
+    //outb(dev->ctrl, ATA_CMD_RESET);
+    io_out8(&dev->ctrl, 0, ATA_CMD_RESET);
     ata_wait(dev);
-    outb(dev->ctrl, 0);
+    //outb(dev->ctrl, 0);
+    io_out8(&dev->ctrl, 0, 0);
 }
 
 static void ata_poll(struct ata_device *dev, int advanced_check)
@@ -39,12 +41,12 @@ static void ata_poll(struct ata_device *dev, int advanced_check)
 
     uint8_t s;
     /* Wait until busy clears */
-    while ((s = inb(dev->base + ATA_PORT_CMD)) & ATA_STATUS_BSY);
+    while ((s = io_in8(&dev->base, ATA_PORT_CMD)) & ATA_STATUS_BSY);
 
     if (advanced_check) {
         if ((s & ATA_STATUS_ERR) || (s & ATA_STATUS_DF)) {
             ata_wait(dev);
-            uint8_t err = inb(dev->base + ATA_PORT_ERROR);
+            uint8_t err = io_in8(&dev->base, ATA_PORT_ERROR);
             printk("DRIVE ERROR! %d\n", err);
             panic("");
         }
@@ -59,7 +61,7 @@ static struct ata_device *__last_selected_dev = NULL;
 static void ata_select_device(struct ata_device *dev)
 {
     if (dev != __last_selected_dev) {
-        outb(dev->base + ATA_PORT_DRIVE, ATA_DRIVE_LBA48 | (dev->slave << 4));
+        io_out8(&dev->base, ATA_PORT_DRIVE, ATA_DRIVE_LBA48 | (dev->slave << 4));
         ata_wait(dev);
         __last_selected_dev = dev;
     }
@@ -71,25 +73,26 @@ static ssize_t ata_read_sectors(struct ata_device *dev, uint64_t lba, size_t cou
     ata_select_device(dev);
 
     /* Send NULL byte to error port */
-    outb(dev->base + ATA_PORT_ERROR, 0);
+    io_out8(&dev->base, ATA_PORT_ERROR, 0);
 
     /* Send sectors count and LBA */
-    outb(dev->base + ATA_PORT_COUNT, (count >> 8) & 0xFF);
-    outb(dev->base + ATA_PORT_LBALO, (uint8_t) (lba >> (8 * 3)));
-    outb(dev->base + ATA_PORT_LBAMI, (uint8_t) (lba >> (8 * 4)));
-    outb(dev->base + ATA_PORT_LBAHI, (uint8_t) (lba >> (8 * 5)));
-    outb(dev->base + ATA_PORT_COUNT, count & 0xFF);
-    outb(dev->base + ATA_PORT_LBALO, (uint8_t) (lba >> (8 * 0)));
-    outb(dev->base + ATA_PORT_LBAMI, (uint8_t) (lba >> (8 * 1)));
-    outb(dev->base + ATA_PORT_LBAHI, (uint8_t) (lba >> (8 * 2)));
+    io_out8(&dev->base, ATA_PORT_COUNT, (count >> 8) & 0xFF);
+    io_out8(&dev->base, ATA_PORT_LBALO, (uint8_t) (lba >> (8 * 3)));
+    io_out8(&dev->base, ATA_PORT_LBAMI, (uint8_t) (lba >> (8 * 4)));
+    io_out8(&dev->base, ATA_PORT_LBAHI, (uint8_t) (lba >> (8 * 5)));
+    io_out8(&dev->base, ATA_PORT_COUNT, count & 0xFF);
+    io_out8(&dev->base, ATA_PORT_LBALO, (uint8_t) (lba >> (8 * 0)));
+    io_out8(&dev->base, ATA_PORT_LBAMI, (uint8_t) (lba >> (8 * 1)));
+    io_out8(&dev->base, ATA_PORT_LBAHI, (uint8_t) (lba >> (8 * 2)));
 
     /* Send read command */
     ata_wait(dev);
-    outb(dev->base + ATA_PORT_CMD, ATA_CMD_READ_SECOTRS_EXT);
+    io_out8(&dev->base, ATA_PORT_CMD, ATA_CMD_READ_SECOTRS_EXT);
 
     while (count--) {
         ata_poll(dev, 1);
-        insw(dev->base + ATA_PORT_DATA, 256, buf);
+        /* FIXME */
+        __insw(dev->base.addr + ATA_PORT_DATA, 256, buf);
         buf += 512;
     }
 
@@ -104,34 +107,34 @@ static ssize_t ata_write_sectors(struct ata_device *dev, uint64_t lba, size_t co
     ata_select_device(dev);
 
     /* Send NULL byte to error port */
-    outb(dev->base + ATA_PORT_ERROR, 0);
+    io_out8(&dev->base, ATA_PORT_ERROR, 0);
 
     /* Send sectors count and LBA */
-    outb(dev->base + ATA_PORT_COUNT, (count >> 8) & 0xFF);
-    outb(dev->base + ATA_PORT_LBALO, (uint8_t) (lba >> (8 * 3)));
-    outb(dev->base + ATA_PORT_LBAMI, (uint8_t) (lba >> (8 * 4)));
-    outb(dev->base + ATA_PORT_LBAHI, (uint8_t) (lba >> (8 * 5)));
-    outb(dev->base + ATA_PORT_COUNT, count & 0xFF);
-    outb(dev->base + ATA_PORT_LBALO, (uint8_t) (lba >> (8 * 0)));
-    outb(dev->base + ATA_PORT_LBAMI, (uint8_t) (lba >> (8 * 1)));
-    outb(dev->base + ATA_PORT_LBAHI, (uint8_t) (lba >> (8 * 2)));
+    io_out8(&dev->base, ATA_PORT_COUNT, (count >> 8) & 0xFF);
+    io_out8(&dev->base, ATA_PORT_LBALO, (uint8_t) (lba >> (8 * 3)));
+    io_out8(&dev->base, ATA_PORT_LBAMI, (uint8_t) (lba >> (8 * 4)));
+    io_out8(&dev->base, ATA_PORT_LBAHI, (uint8_t) (lba >> (8 * 5)));
+    io_out8(&dev->base, ATA_PORT_COUNT, count & 0xFF);
+    io_out8(&dev->base, ATA_PORT_LBALO, (uint8_t) (lba >> (8 * 0)));
+    io_out8(&dev->base, ATA_PORT_LBAMI, (uint8_t) (lba >> (8 * 1)));
+    io_out8(&dev->base, ATA_PORT_LBAHI, (uint8_t) (lba >> (8 * 2)));
 
     /* Send write command */
     ata_wait(dev);
-    outb(dev->base + ATA_PORT_CMD, ATA_CMD_WRITE_SECOTRS_EXT);
+    io_out8(&dev->base, ATA_PORT_CMD, ATA_CMD_WRITE_SECOTRS_EXT);
 
     while (count--) {
         uint16_t *_buf = (uint16_t *) buf;
 
         ata_poll(dev, 1);
         for (int i = 0; i < 256; ++i)
-            outw(dev->base + ATA_PORT_DATA, _buf[i]);
+            io_out16(&dev->base, ATA_PORT_DATA, _buf[i]);
 
         buf += 512;
     }
 
     ata_poll(dev, 0);
-    outb(dev->base + ATA_PORT_CMD, ATA_CMD_CACHE_FLUSH);
+    io_out8(&dev->base, ATA_PORT_CMD, ATA_CMD_CACHE_FLUSH);
     ata_poll(dev, 0);
 
     return 0;
@@ -155,11 +158,12 @@ static size_t ata_partition_offset(struct ata_device *dev, size_t p)
     ata_read_sectors(dev, 0, 1, read_buf);
     mbr = (mbr_t *) read_buf;
 
-    return dev->poff[p] = mbr->ptab[p].start_lba * BLOCK_SIZE;
+    return dev->poff[p] = mbr->ptab[p].start_lba;
 }
 
 static ssize_t ata_read(struct devid *dd, off_t offset, size_t size, void *buf)
 {
+    //printk("ata_read(dd=%p, offset=%d, size=%d, buf=%p)\n", dd, offset, size, buf);
     ssize_t ret = 0;
     char *_buf = buf;
 
@@ -169,55 +173,12 @@ static ssize_t ata_read(struct devid *dd, off_t offset, size_t size, void *buf)
     struct ata_device *dev = &__devices[dev_id];
     offset += ata_partition_offset(dev, partition);
 
-    if (offset % BLOCK_SIZE) {
-        /* Read up to block boundary */
-        size_t start = MIN(BLOCK_SIZE - offset % BLOCK_SIZE, size);
-
-        if (start) {
-            ata_read_sectors(dev, offset/BLOCK_SIZE, 1, read_buf);
-            memcpy(_buf, read_buf + (offset % BLOCK_SIZE), start);
-
-            ret += start;
-            size -= start;
-            _buf += start;
-            offset += start;
-
-            if (!size)
-                return ret;
-        }
-    }
-
-    /* Read whole sectors */
-    size_t count = size/BLOCK_SIZE;
-
-    while (count) {
-        ata_read_sectors(dev, offset/BLOCK_SIZE, 1, read_buf);
-        memcpy(_buf, read_buf, BLOCK_SIZE);
-
-        ret    += BLOCK_SIZE;
-        size   -= BLOCK_SIZE;
-        _buf   += BLOCK_SIZE;
-        offset += BLOCK_SIZE;
-        --count;
-    }
-
-    if (!size)
-        return ret;
-
-    size_t end = size % BLOCK_SIZE;
-
-    if (end) {
-        ata_read_sectors(dev, offset/BLOCK_SIZE, 1, read_buf);
-        memcpy(_buf, read_buf, end);
-        ret += end;
-    }
-
-    return ret;
+    ata_read_sectors(dev, offset, size, buf);
+    return size;
 }
 
 static ssize_t ata_write(struct devid *dd, off_t offset, size_t size, void *buf)
 {
-    //printk("ata_write(node=%p, offset=%x, size=%d, buf=%p)\n", node, offset, size, buf);
     ssize_t ret = 0;
     char *_buf = buf;
 
@@ -227,65 +188,20 @@ static ssize_t ata_write(struct devid *dd, off_t offset, size_t size, void *buf)
     struct ata_device *dev = &__devices[dev_id];
     offset += ata_partition_offset(dev, partition);
 
-    if (offset % BLOCK_SIZE) {
-        /* Write up to block boundary */
-        size_t start = MIN(BLOCK_SIZE - offset % BLOCK_SIZE, size);
-
-        if (start) {
-            ata_read_sectors(dev, offset/BLOCK_SIZE, 1, read_buf);
-            memcpy(read_buf + (offset % BLOCK_SIZE), _buf, start);
-            ata_write_sectors(dev, offset/BLOCK_SIZE, 1, read_buf);
-
-            ret += start;
-            size -= start;
-            _buf += start;
-            offset += start;
-
-            if (!size)
-                return ret;
-        }
-    }
-
-
-    /* Write whole sectors */
-    size_t count = size/BLOCK_SIZE;
-
-    while (count) {
-        memcpy(read_buf, _buf, BLOCK_SIZE);
-        ata_write_sectors(dev, offset/BLOCK_SIZE, 1, read_buf);
-
-        ret    += BLOCK_SIZE;
-        size   -= BLOCK_SIZE;
-        _buf   += BLOCK_SIZE;
-        offset += BLOCK_SIZE;
-        --count;
-    }
-
-    if (!size)
-        return ret;
-
-    size_t end = size % BLOCK_SIZE;
-
-    if (end) {
-        ata_read_sectors(dev, offset/BLOCK_SIZE, 1, read_buf);
-        memcpy(read_buf, _buf, end);
-        ata_write_sectors(dev, offset/BLOCK_SIZE, 1, read_buf);
-        ret += end;
-    }
-
-    return ret;
+    ata_write_sectors(dev, offset, size, buf);
+    return size;
 }
 
 uint8_t ata_detect_device(struct ata_device *dev)
 {
     ata_select_device(dev);
 
-    uint8_t status = inb(dev->base + ATA_PORT_CMD);
+    uint8_t status = io_in8(&dev->base, ATA_PORT_CMD);
     if (!status) /* No Device, bail */
         return ATADEV_UNKOWN;
 
-    uint8_t type_low  = inb(dev->base + ATA_PORT_LBAMI);
-    uint8_t type_high = inb(dev->base + ATA_PORT_LBAHI);
+    uint8_t type_low  = io_in8(&dev->base, ATA_PORT_LBAMI);
+    uint8_t type_high = io_in8(&dev->base, ATA_PORT_LBAHI);
 
     if (type_low == 0x14 && type_high == 0xEB)
         return ATADEV_PATAPI;
@@ -317,8 +233,10 @@ int ata_probe()
     }
 #endif
 
-    __devices[0].base = ATA_PIO_PORT_BASE;
-    __devices[0].ctrl = ATA_PIO_PORT_CONTROL;
+    __devices[0].base.addr = ATA_PIO_PORT_BASE;
+    __devices[0].base.type = IOADDR_PORT;
+    __devices[0].ctrl.addr = ATA_PIO_PORT_CONTROL;
+    __devices[0].ctrl.type = IOADDR_PORT;
 
     uint8_t type = ata_detect_device(&__devices[0]);
 
@@ -332,10 +250,16 @@ int ata_probe()
     return 0;
 }
 
+size_t ata_getbs(struct devid *dd __unused)
+{
+    return BLOCK_SIZE;
+}
+
 struct dev atadev = {
     .probe = ata_probe,
     .read  = ata_read,
     .write = ata_write,
+    .getbs = ata_getbs,
 
     .fops = {
         .open  = posix_file_open,
@@ -344,4 +268,4 @@ struct dev atadev = {
     },
 };
 
-MODULE_INIT(ata, ata_probe, NULL);
+MODULE_INIT(ata, ata_probe, NULL)

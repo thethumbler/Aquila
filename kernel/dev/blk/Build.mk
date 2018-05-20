@@ -1,2 +1,2 @@
 dirs-y += rd/
-#dirs-y += ata/
+dirs-$(DEV_ATA) += ata/

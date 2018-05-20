@@ -55,6 +55,7 @@ DEV_KEYBOARD_PS2=y
 DEV_UART=y
 DEV_PTY=y
 DEV_MEMDEV=y
+DEV_ATA=y
 
 #
 # Framebuffer
