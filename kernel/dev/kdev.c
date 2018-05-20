@@ -205,6 +205,19 @@ int kdev_ioctl(struct devid *dd, int request, void *argp)
     return dev->ioctl(dd, request, argp);
 }
 
+int kdev_mmap(struct devid *dd, struct vmr *vmr)
+{
+    struct dev *dev = NULL;
+
+    if (!(dev = kdev_get(dd)))
+        return -ENXIO;
+
+    if (!dev->mmap)
+        return -ENXIO;
+
+    return dev->mmap(dd, vmr);
+}
+
 int kdev_file_open(struct devid *dd, struct file *file)
 {
     struct dev *dev = NULL;

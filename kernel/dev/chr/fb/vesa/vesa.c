@@ -28,6 +28,13 @@ static ssize_t fbdev_vesa_write(struct devid *dd __unused, off_t offset, size_t 
     return size;
 }
 
+static int fbdev_vesa_mmap(struct devid *dd __unused, struct vmr *vmr)
+{
+    printk("fbdev_vesa_mmap(vmr=%p)\n", vmr);
+    vmr->paddr = vesa_vmr.paddr;
+    return vm_map(vmr);
+}
+
 static int fbdev_vesa_prope(int i __unused, struct fbdev *fb)
 {
     struct __fbdev_vesa *data = (struct __fbdev_vesa *) fb->data;
@@ -103,4 +110,5 @@ static int fbdev_vesa_prope(int i __unused, struct fbdev *fb)
 struct dev fbdev_vesa = {
     .probe = fbdev_vesa_prope,
     .write = fbdev_vesa_write,
+    .mmap  = fbdev_vesa_mmap,
 };
