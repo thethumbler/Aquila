@@ -114,13 +114,17 @@ int ext2_mount(const char *dir, int flags, void *data)
         panic("Could not load device");
     }
 
-    vfs_vget(&vnode, &dev);
+    if ((ret = vfs_vget(&vnode, &dev)))
+        goto error;
 
     struct inode *fs;
-    ext2fs.load(dev, &fs);
-    vfs_bind(dir, fs);
+    if ((ret = ext2fs.load(dev, &fs)))
+        goto error;
 
-    return 0;
+    return vfs_bind(dir, fs);
+
+error:
+    return ret;
 }
 
 struct fs ext2fs = {
