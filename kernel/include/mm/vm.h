@@ -14,6 +14,7 @@
 #define VM_NOCACHE    0x0040  /* Disable caching */
 #define VM_FILE       0x0080  /* File backed */
 #define VM_ZERO       0x0100  /* Zero fill */
+#define VM_SHARED     0x0200  /* Shared mapping */
 
 #define VM_KRW  (VM_KR|VM_KW) /* Kernel Read/Write */
 #define VM_KRX  (VM_KR|VM_KX) /* Kernel Read/eXecute */
