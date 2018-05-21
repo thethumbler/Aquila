@@ -30,7 +30,14 @@ static ssize_t fbdev_vesa_write(struct devid *dd __unused, off_t offset, size_t 
 
 static int fbdev_vesa_mmap(struct devid *dd __unused, struct vmr *vmr)
 {
-    printk("fbdev_vesa_mmap(vmr=%p)\n", vmr);
+    /* We do not support private maps */
+    if (!(vmr->flags & VM_SHARED))
+        return -ENOTSUP;
+
+    /* Mapping framebuffer must start at 0 */
+    if (vmr->off != 0 || vmr->size > vesa_vmr.size)
+        return -ENXIO;
+
     vmr->paddr = vesa_vmr.paddr;
     return vm_map(vmr);
 }
