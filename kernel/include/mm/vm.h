@@ -41,5 +41,6 @@ void kvmem_setup();
 int  vm_map(struct vmr *vmr);
 void vm_unmap(struct vmr *vmr);
 void vm_unmap_full(struct vmr *vmr);
+int  vm_vmr_insert(queue_t *queue, struct vmr *vmr);
 
 #endif  /* ! _VM_H */
