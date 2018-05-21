@@ -694,6 +694,8 @@ static void sys_mmap(struct mmap_args *args, void **ret)
             cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name,
             args->addr, args->len, args->prot, args->flags, args->fildes, args->off, ret);
 
+    int err = 0;
+
     int fildes = args->fildes;
     if (fildes < 0 || fildes >= FDS_COUNT) {  /* Out of bounds */
         arch_syscall_return(cur_thread, -EBADFD);
@@ -707,38 +709,46 @@ static void sys_mmap(struct mmap_args *args, void **ret)
         return;
     }
 
+    /* Allocate VMR */
     struct vmr *vmr = NULL;
-
-    if (args->flags & MAP_FIXED) {
-        /* TODO Sanity checking */
-        vmr = kmalloc(sizeof(struct vmr));
-        vmr->base = (uintptr_t) args->addr;
-        vmr->size = args->len;
-    } else {
-        /* Allocate VMR */
-        panic("Unsupported");
+    if (!(vmr = kmalloc(sizeof(struct vmr)))) {
+        err = -ENOMEM;
+        goto error;
     }
 
+    /* Initialize VMR */
+    vmr->base   = (uintptr_t) args->addr;
+    vmr->size   = args->len;
     vmr->flags  = args->prot & PROT_READ  ? VM_UR : 0;
     vmr->flags |= args->prot & PROT_WRITE ? VM_UW : 0;
     vmr->flags |= args->prot & PROT_EXEC  ? VM_UX : 0;
+    vmr->flags |= args->flags & MAP_SHARED ? VM_SHARED : 0;
+    vmr->flags |= VM_FILE;  /* TODO Support anonymous maps */
     vmr->inode  = file->node;
     vmr->off    = args->off;
 
-    int err = 0;
+    if (!(args->flags & MAP_FIXED))
+        vmr->base = 0;  /* Allocate memory region */
 
     if ((err = vm_vmr_insert(&cur_thread->owner->vmr, vmr)))
         goto error;
-
-    //vmr->qnode  = enqueue(&cur_thread->owner->vmr, vmr);
 
     if ((err = vfs_mmap(vmr)))
         goto error;
 
     *ret = (void *) vmr->base;
 
+    arch_syscall_return(cur_thread, err);
+    return;
+
 error:
-    /* TODO remove VMR */
+    if (vmr) {
+        if (vmr->qnode)
+            queue_node_remove(&cur_thread->owner->vmr, vmr->qnode);
+
+        kfree(vmr);
+    }
+
     arch_syscall_return(cur_thread, err);
     return;
 }
