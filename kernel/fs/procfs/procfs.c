@@ -209,7 +209,7 @@ static ssize_t procfs_proc_maps(int pid, off_t off, size_t size, void *buf)
         perm[0] = vmr->flags & VM_UR? 'r' : '-';
         perm[1] = vmr->flags & VM_UW? 'w' : '-';
         perm[2] = vmr->flags & VM_UX? 'x' : '-';
-        perm[3] = 'p';  /* TODO */
+        perm[3] = vmr->flags & VM_SHARED? 's' : 'p';
 
         char *desc = "";
 
