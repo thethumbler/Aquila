@@ -724,9 +724,14 @@ static void sys_mmap(struct mmap_args *args, void **ret)
     vmr->flags |= args->prot & PROT_EXEC  ? VM_UX : 0;
     vmr->inode  = file->node;
     vmr->off    = args->off;
-    vmr->qnode  = enqueue(&cur_thread->owner->vmr, vmr);
 
     int err = 0;
+
+    if ((err = vm_vmr_insert(&cur_thread->owner->vmr, vmr)))
+        goto error;
+
+    //vmr->qnode  = enqueue(&cur_thread->owner->vmr, vmr);
+
     if ((err = vfs_mmap(vmr)))
         goto error;
 

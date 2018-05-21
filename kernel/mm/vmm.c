@@ -12,6 +12,7 @@
 #include <core/panic.h>
 #include <mm/mm.h>
 #include <mm/vm.h>
+#include <ds/queue.h>
 
 int vm_map(struct vmr *vmr)
 {
@@ -26,4 +27,38 @@ void vm_unmap(struct vmr *vmr)
 void vm_unmap_full(struct vmr *vmr)
 {
     mm_unmap_full(vmr->base, vmr->size);
+}
+
+int vm_vmr_insert(queue_t *queue, struct vmr *vmr)
+{
+    uintptr_t end = vmr->base + vmr->size;
+
+    struct queue_node *cur = NULL;
+    uintptr_t prev_end = 0;
+
+    forlinked (node, queue->head, node->next) {
+        struct vmr *cur_vmr = (struct vmr *) node->value;
+        if (cur_vmr->base >= end && prev_end <= vmr->base) {
+            cur = node;
+            break;
+        }
+        prev_end = cur_vmr->base + cur_vmr->size;
+    }
+
+    if (!cur)
+        return -ENOMEM;
+
+    struct queue_node *node = kmalloc(sizeof(struct queue_node));
+    node->value = vmr;
+    node->next = cur;
+    node->prev = cur->prev;
+
+    if (cur->prev)
+        cur->prev->next = node;
+
+    cur->prev  = node;
+    vmr->qnode = node;
+    ++queue->count;
+
+    return 0;
 }
