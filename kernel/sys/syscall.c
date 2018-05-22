@@ -733,7 +733,7 @@ static void sys_mmap(struct mmap_args *args, void **ret)
     if ((err = vm_vmr_insert(&cur_thread->owner->vmr, vmr)))
         goto error;
 
-    if ((err = vfs_mmap(vmr)))
+    if (!(args->flags & MAP_PRIVATE) && (err = vfs_mmap(vmr)))
         goto error;
 
     *ret = (void *) vmr->base;
@@ -759,7 +759,21 @@ static void sys_munmap(void *addr, size_t len)
             cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name,
             addr, len);
 
-    panic("Unsupported");
+    /* Find VMR */
+    forlinked (node, cur_thread->owner->vmr.head, node->next) {
+        struct vmr *vmr = node->value;
+        if (vmr->base == (uintptr_t) addr && vmr->size == len) {
+            queue_node_remove(&cur_thread->owner->vmr, vmr->qnode);
+            vm_unmap_full(vmr);
+            kfree(vmr);
+            arch_syscall_return(cur_thread, 0);
+            return;
+        }
+    }
+
+    /* Not found */
+    arch_syscall_return(cur_thread, -EINVAL);
+    return;
 }
 
 void (*syscall_table[])() =  {
