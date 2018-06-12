@@ -48,6 +48,14 @@
 #define SYS_MMAP    38
 #define SYS_MUNMAP  39
 
+#define SYS_SOCKET  40
+#define SYS_ACCEPT  41
+#define SYS_BIND    42
+#define SYS_CONNECT 43
+#define SYS_LISTEN  44
+#define SYS_SEND    45
+#define SYS_RECV    46
+
 #define SYSCALL3(ret, v, arg1, arg2, arg3) \
 	asm volatile("int $0x80;":"=a"(ret):"a"(v), "b"(arg1), "c"(arg2), "d"(arg3));
 #define SYSCALL2(ret, v, arg1, arg2) \
@@ -545,4 +553,106 @@ int munmap(void *addr, size_t len)
     }
 
     return 0;
+}
+
+int socket(int domain, int type, int protocol)
+{
+    int err;
+    SYSCALL3(err, SYS_SOCKET, domain, type, protocol);
+
+    if (err < 0) {
+        errno = -err;
+        return -1;
+    }
+
+    return err;
+}
+
+int accept(int fd, const struct sockaddr *addr, uint32_t len)
+{
+    int err;
+    SYSCALL3(err, SYS_ACCEPT, fd, addr, len);
+
+    if (err < 0) {
+        errno = -err;
+        return -1;
+    }
+
+    return err;
+}
+
+int bind(int fd, const struct sockaddr *addr, uint32_t len)
+{
+    int err;
+    SYSCALL3(err, SYS_BIND, fd, addr, len);
+
+    if (err < 0) {
+        errno = -err;
+        return -1;
+    }
+
+    return 0;
+}
+
+int connect(int fd, const struct sockaddr *addr, uint32_t len)
+{
+    int err;
+    SYSCALL3(err, SYS_CONNECT, fd, addr, len);
+
+    if (err < 0) {
+        errno = -err;
+        return -1;
+    }
+
+    return err;
+}
+
+int listen(int fd, int backlog)
+{
+    int err;
+    SYSCALL2(err, SYS_LISTEN, fd, backlog);
+
+    if (err < 0) {
+        errno = -err;
+        return -1;
+    }
+
+    return 0;
+}
+
+struct socket_io_syscall {
+    int fd;
+    void *buf;
+    size_t len;
+    int flags;
+} __attribute__((packed));
+
+ssize_t send(int fd, void *buf, size_t len, int flags)
+{
+    struct socket_io_syscall s = {fd, buf, len, flags};
+
+    ssize_t err;
+    SYSCALL1(err, SYS_SEND, &s);
+
+    if (err < 0) {
+        errno = -err;
+        return -1;
+    }
+
+    return err;
+}
+
+ssize_t recv(int fd, void *buf, size_t len, int flags)
+{
+    struct socket_io_syscall s = {fd, buf, len, flags};
+
+    ssize_t err;
+    SYSCALL1(err, SYS_RECV, &s);
+
+    if (err < 0) {
+        errno = -err;
+        return -1;
+    }
+
+    return err;
 }
