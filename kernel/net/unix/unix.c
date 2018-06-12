@@ -194,6 +194,8 @@ static ssize_t socket_unix_send(struct file *file, void *buf, size_t len, int fl
     }
 
     ssize_t retval = 0;
+    ssize_t incr   = 0;
+
     for (;;) {
         if (!ring)  /* Connection closed */
             return retval;
