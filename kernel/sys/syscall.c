@@ -17,6 +17,8 @@
 #include <sys/sched.h>
 #include <sys/signal.h>
 
+#include <net/socket.h>
+
 #include <bits/errno.h>
 #include <bits/dirent.h>
 #include <bits/utsname.h>
@@ -776,6 +778,221 @@ static void sys_munmap(void *addr, size_t len)
     return;
 }
 
+static void sys_socket(int domain, int type, int protocol)
+{
+    printk("[%d:%d] %s: socket(domain=%d, type=%d, protocol=%d)\n",
+            cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name,
+            domain, type, protocol);
+
+    int fd = proc_fd_get(cur_thread->owner);  /* Find a free file descriptor */
+
+    if (fd == -1) {     /* No free file descriptor */
+        /* Reached maximum number of open file descriptors */
+        arch_syscall_return(cur_thread, -EMFILE);
+        return;
+    }
+    
+    int err = 0;
+    struct file *file = &cur_thread->owner->fds[fd];
+
+    if ((err = socket_create(file, domain, type, protocol))) {
+        proc_fd_release(cur_thread->owner, fd);
+        arch_syscall_return(cur_thread, err);
+        return;
+    }
+
+    arch_syscall_return(cur_thread, fd);
+    return;
+}
+
+static void sys_accept(int fd, const struct sockaddr *addr, uint32_t *len)
+{
+    printk("[%d:%d] %s: accept(fd=%d, addr=%p, len=%p)\n",
+            cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name,
+            fd, addr, len);
+
+    if (fd < 0 || fd >= FDS_COUNT) {  /* Out of bounds */
+        arch_syscall_return(cur_thread, -EBADFD);
+        return; 
+    }
+
+    int conn_fd = proc_fd_get(cur_thread->owner);
+
+    if (conn_fd == -1) {
+        arch_syscall_return(cur_thread, -EMFILE);
+        return; 
+    }
+
+    struct file *socket = &cur_thread->owner->fds[fd];
+    struct file *conn   = &cur_thread->owner->fds[conn_fd];
+
+    int err = 0;
+    if ((err = socket_accept(socket, conn, addr, len))) {
+        proc_fd_release(cur_thread->owner, conn_fd);
+        arch_syscall_return(cur_thread, err);
+        return; 
+    }
+
+    arch_syscall_return(cur_thread, conn_fd);
+    return;
+}
+
+static void sys_bind(int fd, const struct sockaddr *addr, uint32_t len)
+{
+    printk("[%d:%d] %s: bind(fd=%d, addr=%p, len=%d)\n",
+            cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name,
+            fd, addr, len);
+
+    if (fd < 0 || fd >= FDS_COUNT) {  /* Out of bounds */
+        arch_syscall_return(cur_thread, -EBADFD);
+        return; 
+    }
+
+    struct file *file = &cur_thread->owner->fds[fd];
+
+    if (!file) {
+        arch_syscall_return(cur_thread, -EBADFD);
+        return; 
+    }
+
+    int err = 0;
+
+    if ((err = socket_bind(file, addr, len))) {
+        arch_syscall_return(cur_thread, err);
+        return; 
+    }
+
+    arch_syscall_return(cur_thread, 0);
+    return;
+}
+
+static void sys_connect(int fd, const struct sockaddr *addr, uint32_t len)
+{
+    printk("[%d:%d] %s: connect(fd=%d, addr=%p, len=%d)\n",
+            cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name,
+            fd, addr, len);
+
+    if (fd < 0 || fd >= FDS_COUNT) {  /* Out of bounds */
+        arch_syscall_return(cur_thread, -EBADFD);
+        return; 
+    }
+
+    struct file *socket = &cur_thread->owner->fds[fd];
+    int err = 0;
+
+    if ((err = socket_connect(socket, addr, len))) {
+        arch_syscall_return(cur_thread, err);
+        return; 
+    }
+
+    arch_syscall_return(cur_thread, 0);
+    return;
+}
+
+static void sys_listen(int fd, int backlog)
+{
+    printk("[%d:%d] %s: listen(fd=%d, backlog=%d)\n",
+            cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name,
+            fd, backlog);
+
+    if (fd < 0 || fd >= FDS_COUNT) {  /* Out of bounds */
+        arch_syscall_return(cur_thread, -EBADFD);
+        return; 
+    }
+
+    struct file *file = &cur_thread->owner->fds[fd];
+
+    if (!file) {
+        arch_syscall_return(cur_thread, -EBADFD);
+        return; 
+    }
+
+    int err = 0;
+
+    if ((err = socket_listen(file, backlog))) {
+        arch_syscall_return(cur_thread, err);
+        return; 
+    }
+
+    arch_syscall_return(cur_thread, 0);
+    return;
+}
+
+struct socket_io_syscall {
+    int fd;
+    void *buf;
+    size_t len;
+    int flags;
+} __attribute__((packed));
+
+static void sys_send(struct socket_io_syscall *s)
+{
+    int fd = s->fd;
+    void *buf = s->buf;
+    size_t len = s->len;
+    int flags = s->flags;
+
+    printk("[%d:%d] %s: send(fd=%d, buf=%p, len=%d, flags=%x)\n",
+            cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name,
+            fd, buf, len, flags);
+
+    if (fd < 0 || fd >= FDS_COUNT) {  /* Out of bounds */
+        arch_syscall_return(cur_thread, -EBADFD);
+        return; 
+    }
+
+    struct file *file = &cur_thread->owner->fds[fd];
+
+    if (!file) {
+        arch_syscall_return(cur_thread, -EBADFD);
+        return; 
+    }
+
+    int err = 0;
+
+    if ((err = socket_send(file, buf, len, flags))) {
+        arch_syscall_return(cur_thread, err);
+        return; 
+    }
+
+    arch_syscall_return(cur_thread, 0);
+    return;
+}
+
+static void sys_recv(struct socket_io_syscall *s)
+{
+    int fd = s->fd;
+    void *buf = s->buf;
+    size_t len = s->len;
+    int flags = s->flags;
+
+    printk("[%d:%d] %s: recv(fd=%d, buf=%p, len=%d, flags=%x)\n",
+            cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name,
+            fd, buf, len, flags);
+
+    if (fd < 0 || fd >= FDS_COUNT) {  /* Out of bounds */
+        arch_syscall_return(cur_thread, -EBADFD);
+        return; 
+    }
+
+    struct file *file = &cur_thread->owner->fds[fd];
+
+    if (!file) {
+        arch_syscall_return(cur_thread, -EBADFD);
+        return; 
+    }
+
+    int err = 0;
+
+    if ((err = socket_recv(file, buf, len, flags))) {
+        arch_syscall_return(cur_thread, err);
+        return; 
+    }
+
+    arch_syscall_return(cur_thread, 0);
+    return;
+}
+
 void (*syscall_table[])() =  {
     /* 00 */    NULL,
     /* 01 */    sys_exit,
@@ -817,6 +1034,13 @@ void (*syscall_table[])() =  {
     /* 37 */    sys_getgid,
     /* 38 */    sys_mmap,
     /* 39 */    sys_munmap,
+    /* 40 */    sys_socket,
+    /* 41 */    sys_accept,
+    /* 42 */    sys_bind,
+    /* 43 */    sys_connect,
+    /* 44 */    sys_listen,
+    /* 45 */    sys_send,
+    /* 46 */    sys_recv,
 };
 
-size_t const syscall_cnt = sizeof(syscall_table)/sizeof(syscall_table[0]);
+const size_t syscall_cnt = sizeof(syscall_table)/sizeof(syscall_table[0]);

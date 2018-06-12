@@ -1,7 +1,7 @@
 OUTPUT_FORMAT(elf32-i386)
 ENTRY(_start)
 INPUT(boot/builtin.o cpu/builtin.o earlycon/builtin.o mm/builtin.o sys/builtin.o chipset/builtin.o ../../core/builtin.o
-../../fs/builtin.o ../../dev/builtin.o ../../sys/builtin.o ../../mm/builtin.o)
+../../fs/builtin.o ../../dev/builtin.o ../../sys/builtin.o ../../mm/builtin.o ../../net/builtin.o)
 OUTPUT(kernel.elf)
 
 SECTIONS {
