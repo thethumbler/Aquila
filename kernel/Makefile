@@ -12,7 +12,7 @@ include configs/$(CONFIG).mk
 
 PERL := perl
 
-dirs-y = core/ fs/ dev/ sys/ mm/
+dirs-y = core/ fs/ dev/ sys/ mm/ net/
 
 all: $(dirs-y) arch/
 

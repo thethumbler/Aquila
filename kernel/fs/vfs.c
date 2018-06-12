@@ -7,6 +7,7 @@
 #include <bits/fcntl.h>
 #include <bits/errno.h>
 #include <dev/dev.h>
+#include <net/socket.h>
 
 /* List of registered filesystems */
 struct fs_list *registered_fs = NULL;
@@ -531,6 +532,9 @@ int vfs_file_open(struct file *file)
 
 ssize_t vfs_file_read(struct file *file, void *buf, size_t nbytes)
 {
+    if (file && file->flags & FILE_SOCKET)
+        return socket_recv(file, buf, nbytes, 0);
+
     if (!file || !file->node)
         return -EINVAL;
 
@@ -548,6 +552,9 @@ ssize_t vfs_file_read(struct file *file, void *buf, size_t nbytes)
 
 ssize_t vfs_file_write(struct file *file, void *buf, size_t nbytes)
 {
+    if (file && file->flags & FILE_SOCKET)
+        return socket_send(file, buf, nbytes, 0);
+
     if (!file || !file->node)
         return -EINVAL;
 
@@ -613,6 +620,9 @@ ssize_t vfs_file_readdir(struct file *file, struct dirent *dirent)
 
 ssize_t vfs_file_close(struct file *file)
 {
+    if (file && file->flags & FILE_SOCKET)
+        return socket_shutdown(file, SHUT_RDWR);
+
     if (!file || !file->node)
         return -EINVAL;
 

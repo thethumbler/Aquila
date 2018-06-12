@@ -114,7 +114,10 @@ struct vnode {  /* Tag node, multiple copies are permitted */
 } __packed;
 
 struct file {
-    struct inode *node;
+    union {
+        struct inode *node;
+        struct socket *socket;
+    };
     off_t offset;
     int flags;
     //int ref;
