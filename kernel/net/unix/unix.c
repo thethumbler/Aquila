@@ -5,7 +5,7 @@
 #include <net/socket.h>
 #include <unix.h>
 
-#define SOCKBUF 512
+#define SOCKBUF 8192
 
 struct sock_ops socket_unix_ops;
 static queue_t *sockets = QUEUE_NEW();  /* Open sockets */
@@ -200,9 +200,12 @@ static ssize_t socket_unix_send(struct file *file, void *buf, size_t len, int fl
         if (!ring)  /* Connection closed */
             return retval;
 
-        size_t wlen = MIN(len - retval, ringbuf_available(ring));
+        size_t wlen = MIN(len - retval, SOCKBUF - ringbuf_available(ring));
 
         incr = ringbuf_write(ring, wlen, (char *) buf + retval);
+
+        if (incr > 0)
+            thread_queue_wakeup(recv_queue);
 
         if (incr > 0 && !(flags & MSG_WAITALL))
             return incr;
@@ -212,7 +215,6 @@ static ssize_t socket_unix_send(struct file *file, void *buf, size_t len, int fl
         if ((size_t) retval == len)
             return retval;
 
-        thread_queue_wakeup(recv_queue);
         if (thread_queue_sleep(send_queue))
             return -EINTR;
     }
@@ -253,6 +255,9 @@ static ssize_t socket_unix_recv(struct file *file, void *buf, size_t len, int fl
 
         incr = ringbuf_read(ring, len - retval, (char *) buf + retval);
 
+        if (incr > 0)
+            thread_queue_wakeup(send_queue);
+
         if (incr > 0 && !(flags & MSG_WAITALL))
             return incr;
 
@@ -261,7 +266,6 @@ static ssize_t socket_unix_recv(struct file *file, void *buf, size_t len, int fl
         if ((size_t) retval == len)
             return retval;
 
-        thread_queue_wakeup(send_queue);
         if (thread_queue_sleep(recv_queue))
             return -EINTR;
     }
