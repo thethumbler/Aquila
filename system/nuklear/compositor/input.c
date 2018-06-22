@@ -1,5 +1,5 @@
 #include <aquila/input.h>
-#include <nk/nuklear.h>
+#include <libnk/nuklear.h>
 #include <nk/rawfb.h>
 
 void cb_keyboard(struct rawfb_context *rawfb, int key, int flags)

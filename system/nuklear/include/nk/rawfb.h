@@ -32,7 +32,7 @@
 #ifndef NK_RAWFB_H_
 #define NK_RAWFB_H_
 
-#include <nk/nuklear.h>
+#include <libnk/nuklear.h>
 
 struct rawfb_context;
 
@@ -947,6 +947,7 @@ nk_rawfb_render(const struct rawfb_context *rawfb,
         nk_rawfb_clear(rawfb, clear);
 
     nk_foreach(cmd, (struct nk_context*)&rawfb->ctx) {
+        //fprintf(stderr, "cmd->type %d\n", cmd->type);
         switch (cmd->type) {
         case NK_COMMAND_NOP: break;
         case NK_COMMAND_SCISSOR: {

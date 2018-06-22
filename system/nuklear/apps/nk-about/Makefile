@@ -4,7 +4,11 @@ MAKEFLAGS += --no-print-directory
 
 include Build.mk
 
-all: builtin.o
+all: $(app)
+
+$(app): builtin.o
+	@echo -e "  LD      " $@
+	@$(LD) $(LDFLAGS) $< -lnk $(LDLIBS) -o $@;
 
 builtin.o: $(obj-y) $(dirs-y)
 	@echo -e "  LD      " builtin.o;
@@ -17,9 +21,9 @@ $(dirs-y): $(patsubst %/,%/Makefile, $(dirs-y))
 
 %.o:%.c
 	@echo -e "  CC      " $@;
-	@ $(CC) $(CFLAGS) -c $< -o $@
+	@$(CC) $(CFLAGS) -c $< -o $@
 
 .PHONY: clean
 clean: param = clean
 clean: $(dirs-y)
-	$(RM) -f builtin.o $(obj-y)
+	$(RM) -f builtin.o $(app) $(obj-y)
