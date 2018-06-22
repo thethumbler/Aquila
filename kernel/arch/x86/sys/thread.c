@@ -34,6 +34,8 @@ void arch_thread_switch(thread_t *thread)
         for (;;);
     }
 
+    //printk("[%d:%d] switch\n", thread->owner->pid, thread->tid);
+
     x86_goto(arch->eip, arch->ebp, arch->esp);
 }
 
@@ -43,6 +45,7 @@ void arch_thread_create(thread_t *thread, uintptr_t stack, uintptr_t entry, uint
     memset(arch, 0, sizeof(x86_thread_t));
 
     arch->kstack = (uintptr_t) kmalloc(KERN_STACK_SIZE) + KERN_STACK_SIZE;
+    arch->eflags = X86_EFLAGS;
     arch->eip = entry;
 
     /* Push thread argument */
