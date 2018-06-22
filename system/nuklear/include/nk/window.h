@@ -1,26 +1,22 @@
 #ifndef _NK_WINDOWN_H
 #define _NK_WINDOWN_H
 
-#include <nk/nuklear.h>
+#include <sys/types.h>
+#include <libnk/nuklear.h>
 #include <nk/rawfb.h>
 
-struct window {
+struct nkui_window {
+    int client;
+    //struct nk_window *nk_window;
+    const char *name;
     char *title;
-    struct rawfb_context *rawfb;
     struct nk_rect bounds;
-    struct nk_image image;
+    int flags;
 
-    void (*redraw)(struct window *);
+    void *cmdbuf;
+    size_t cmdbuf_size;
+
+    struct nkui_window *next;
 };
-
-static void window_image_init(struct window *window, struct nk_image *image)
-{
-    image->w = window->bounds.w;
-    image->h = window->bounds.h;
-    image->region[0] = 0;
-    image->region[1] = 0;
-    image->region[2] = window->bounds.w;
-    image->region[3] = window->bounds.h;
-}
 
 #endif

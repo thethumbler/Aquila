@@ -9,7 +9,12 @@ LDFLAGS += -L$(PDIR)/libnk
 
 include Build.mk
 
-all: builtin.o nuklear
+all: builtin.o nuklear apps
+
+.PHONY: apps
+apps:
+	@echo -e "  MK      " $@
+	@$(MAKE) -C apps/ $(param)
 
 nuklear: builtin.o libnk/libnk.a
 	@echo -e "  LD      " $@
@@ -26,9 +31,9 @@ $(dirs-y): $(patsubst %/,%/Makefile, $(dirs-y))
 
 %.o:%.c
 	@echo -e "  CC      " $@;
-	@ $(CC) $(CFLAGS) -c $< -o $@
+	@$(CC) $(CFLAGS) -c $< -o $@
 
 .PHONY: clean
 clean: param = clean
-clean: $(dirs-y)
+clean: $(dirs-y) apps 
 	$(RM) -f nuklear builtin.o $(obj-y)

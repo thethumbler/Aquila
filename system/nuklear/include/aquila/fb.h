@@ -2,17 +2,8 @@
 #define _AQUILA_FB_H
 
 #include <stdint.h>
-#include <stdlib.h>
-#include <fcntl.h>
-#include <errno.h>
-
-static struct fb_fix_screeninfo fix_screeninfo;
-static struct fb_var_screeninfo var_screeninfo;
-static int fb_fd = -1;
-static unsigned xres = 0, yres = 0, line_length = 0, bpp = 0;
 
 /* Framebuffer API */
-
 #define FBIOGET_VSCREENINFO	0x4600
 #define FBIOPUT_VSCREENINFO	0x4601
 #define FBIOGET_FSCREENINFO	0x4602
@@ -83,89 +74,25 @@ struct fb_var_screeninfo {
     uint32_t reserved[4];       /* Reserved for future compatibility */
 };
 
-NK_API int nk_aquilafb_init(char *path, int *aqfb_xres, int *aqfb_yres, int *aqfb_pitch, void **fb)
-{
-    if ((fb_fd = open(path, O_RDWR)) < 0) {
-        fprintf(stderr, "Error opening framebuffer %s", path);
-        perror("");
-        return errno;
-    }
-
-    if (ioctl(fb_fd, FBIOGET_FSCREENINFO, &fix_screeninfo) < 0) {
-        //perror("ioctl error");
-        return errno;
-    }
-
-    line_length = fix_screeninfo.line_length;
-
-    if (ioctl(fb_fd, FBIOGET_VSCREENINFO, &var_screeninfo) < 0) {
-        perror("ioctl error");
-        return errno;
-    }
-
-    xres = var_screeninfo.xres;
-    yres = var_screeninfo.yres;
-    bpp  = var_screeninfo.bits_per_pixel/8;
-
-    *aqfb_xres = xres;
-    *aqfb_yres = yres;
-    *aqfb_pitch = xres * bpp;
-
-    *fb = calloc(1, yres * line_length);
-
-    return 0;
-}
-
-NK_API void nk_aquilafb_wallpaper(char *fb, struct rawfb_image *wp)
-{
-    char *p = wp->pixels;
-
-    for (int i = 0; i < yres; ++i) {
-        //memcpy(fb + i * line_length, p + i * wp->pitch, line_length);
-        
-        for (int j = 0; j < xres; ++j) {
-            fb[i * line_length + bpp * j + 0] = p[i * wp->pitch + 4 * j + 2];
-            fb[i * line_length + bpp * j + 1] = p[i * wp->pitch + 4 * j + 1];
-            fb[i * line_length + bpp * j + 2] = p[i * wp->pitch + 4 * j + 0];
-        }
-    }
-}
-
-NK_API void nk_aquilafb_clear(char *fb, struct nk_color color)
-{
-    char pixel[bpp];
-    pixel[0] = color.b;
-    pixel[1] = color.g;
-    pixel[2] = color.r;
-
-    for (int i = 0; i < yres; ++i) {
-        for (int j = 0; j < xres; ++j) {
-            fb[i * line_length + bpp * j + 0] = pixel[0];
-            fb[i * line_length + bpp * j + 1] = pixel[1];
-            fb[i * line_length + bpp * j + 2] = pixel[2];
-        }
-    }
-
-#if 0
-    /* Create line */
-    char line[line_length];
-    for (int i = 0; i < xres; ++i)
-        memcpy(line[i * bpp], pixel, 3);
-
-    /* Fill */
-    for (int i = 0; i < yres; ++i)
-        memcpy(fb + i * line_length, line, line_length);
-#endif
-}
-
-NK_API void nk_aquilafb_render(void *fb)
-{
-    lseek(fb_fd, 0, SEEK_SET);
-    write(fb_fd, fb, line_length * yres);
-}
-
 #define _RGBA(r, g, b, a) (((r) << 3*8) | ((g) << 2*8) | ((b) << 1*8) | ((a) << 0*8))
 #define _RGB(r, g, b) (((r) << 3*8) | ((g) << 2*8) | ((b) << 1*8))
 #define _ALPHA(c, a) (((c) & (~0xFF)) | ((a) & 0xFF))
+
+struct aquilafb {
+    struct fb_fix_screeninfo fix_screeninfo;
+    struct fb_var_screeninfo var_screeninfo;
+    int fd;
+    void *mmap;
+    unsigned xres, yres, pitch, bpp;
+};
+
+struct aquilafb_image {
+    unsigned xres, yres, pitch, bpp;
+    void *buf;
+};
+
+int aquilafb_init(struct aquilafb *fb, char *path);
+void aquilafb_wallpaper(struct aquilafb *fb, char *backbuf, struct aquilafb_image *img);
+void aquilafb_render(struct aquilafb *fb, void *backbuf);
 
 #endif
