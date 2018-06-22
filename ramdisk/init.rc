@@ -21,3 +21,6 @@ mount -t procfs /proc
 # Use tmpfs for /root and /home/live
 mount -t tmpfs /root
 mount -t tmpfs /home/live
+
+# Use tmpfs for /tmp
+mount -t tmpfs /tmp
