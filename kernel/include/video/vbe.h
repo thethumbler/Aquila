@@ -4,8 +4,7 @@
 #include <core/system.h>
 
 // The official VBE Information Block
-struct vbe_info_block
-{
+struct vbe_info_block {
    union        {
        uint8_t      sig_chr[4];
        uint32_t     sig32;
@@ -24,8 +23,7 @@ struct vbe_info_block
    uint8_t      oemdata[256];
 } __packed;
 
-struct mode_info_block
-{
+struct mode_info_block {
 // Mandatory information for all VBE revisions
    uint16_t mode_attributes;
    uint8_t  win_a_attributes;

@@ -381,7 +381,7 @@ static int procfs_vget(struct vnode *vnode, struct inode **inode)
             *inode = procfs_root;
         return 0;
     } else if ((ssize_t) vnode->id < 0) {
-        int id = -vnode->id - 1;
+        intptr_t id = -vnode->id - 1;
 
         if ((size_t) id < PROCFS_ENTRIES) {
             struct inode *node = NULL;

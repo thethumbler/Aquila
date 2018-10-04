@@ -1,4 +1,4 @@
-.code32
+#include <config.h>
 
 /*
  * ISRs -- Interrupt Service Routines
@@ -12,8 +12,13 @@ err_num: .long 0
 .global __x86_isr\v
 __x86_isr\v:
     cli
+#if ARCH_BITS==32
     movl $0x0, (err_num)
     movl $\v, (int_num)
+#else
+    movl $0x0, err_num(%rip)
+    movl $\v, int_num(%rip)
+#endif
     jmp isr_handler
 .endm
 
@@ -21,12 +26,26 @@ __x86_isr\v:
 .global __x86_isr\v
 __x86_isr\v:
     cli
+#if ARCH_BITS==32
     popl (err_num)
     movl $\v, (int_num)
     jmp isr_handler
+#else
+    push %rax
+    push %rbx
+    movl -16(%esp), %ebx
+    movabs err_num, %rax
+    movl %ebx, (%rax)
+    movabs int_num, %rax
+    movl $\v, (%rax)
+    pop  %rbx
+    pop  %rax
+    jmp isr_handler
+#endif
 .endm
 
 .macro push_context
+#if ARCH_BITS==32
     push %eax
     push %edx
     push %ecx
@@ -34,9 +53,19 @@ __x86_isr\v:
     push %ebp
     push %esi
     push %edi
+#else
+    push %rax
+    push %rdx
+    push %rcx
+    push %rbx
+    push %rbp
+    push %rsi
+    push %rdi
+#endif
 .endm
     
 .macro pop_context
+#if ARCH_BITS==32
     pop %edi
     pop %esi
     pop %ebp
@@ -44,6 +73,15 @@ __x86_isr\v:
     pop %ecx
     pop %edx
     pop %eax
+#else
+    pop %rdi
+    pop %rsi
+    pop %rbp
+    pop %rbx
+    pop %rcx
+    pop %rdx
+    pop %rax
+#endif
 .endm
 
 /* Refer to 
@@ -90,9 +128,15 @@ ISR_NOERR 128
 .extern __x86_isr
 isr_handler:
     push_context
+#if ARCH_BITS==32
     push %esp
     call __x86_isr
     pop %eax
+#else
+    push %rsp
+    call __x86_isr
+    pop %rax
+#endif
     pop_context
     iret
 
@@ -103,10 +147,14 @@ isr_handler:
 .macro IRQ n, i
 .global __x86_irq\n
 __x86_irq\n:
+#if ARCH_BITS==32
     cli
     //movl %eax, (err_num)
     movl $\i, (int_num)
     jmp irq_stub
+#else
+    /* TODO */
+#endif
 .endm
 
 IRQ 0, 32
@@ -129,15 +177,20 @@ IRQ 15, 47
 
 .extern __x86_irq_handler
 irq_stub:
+#if ARCH_BITS==32
     push_context
     push %esp
     call __x86_irq_handler
     pop %eax
     pop_context
     iret
+#else
+    /* TODO */
+#endif
 
 .global x86_jump_user
 x86_jump_user:  /* eax, eip, cs, eflags, esp, ss */
+#if ARCH_BITS==32
     pop  %eax   /* Caller return address */
     mov  $0x20 | 0x3, %ax
     movw %ax, %ds
@@ -146,6 +199,9 @@ x86_jump_user:  /* eax, eip, cs, eflags, esp, ss */
     movw %ax, %gs
     pop  %eax   /* eax for sys_fork return */
     iret
+#else
+    /* TODO */
+#endif
 
 .global x86_read_eip
 x86_read_eip:
@@ -154,12 +210,16 @@ x86_read_eip:
 
 .global x86_goto
 x86_goto:
+#if ARCH_BITS==32
     pop %ebx    /* Caller return address */
     pop %ebx    /* eip */
     pop %ebp
     pop %esp
     mov $-1, %eax /* Return -1 -> Done switching */
     jmp *%ebx
+#else
+    /* TODO */
+#endif
 
 
 .extern internal_arch_sleep

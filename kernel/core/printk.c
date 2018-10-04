@@ -46,8 +46,7 @@ static int putlx(uint64_t val)
     char buf[17];
     buf[16] = '\0';
     uint8_t i = 16;
-    while(i)
-    {
+    while (i) {
         buf[--i] = enc[val&0xF];
         val >>= 4;
     }
@@ -60,8 +59,7 @@ static int putud(uint32_t val)
     buf[10] = '\0';
     if(!val) { buf[9] = '0'; return puts(&buf[9]); }
     uint8_t i = 10;
-    while(val)
-    {
+    while (val) {
         buf[--i] = val%10 + '0';
         val = (val-val%10)/10;
     }
@@ -73,8 +71,7 @@ static int putul(uint64_t val)
     char buf[21];
     buf[20] = '\0';
     uint8_t i = 20;
-    while(val)
-    {
+    while (val) {
         buf[--i] = val%10 + '0';
         val = (val-val%10)/10;
     }
@@ -86,8 +83,7 @@ static int putb(uint8_t val)
     char buf[9];
     buf[8] = '\0';
     uint8_t i = 8;
-    while(i)
-    {
+    while (i) {
         buf[--i] = '0' + (val & 1);
         val >>= 1;
     }
@@ -97,13 +93,11 @@ static int putb(uint8_t val)
 int vprintk(char *fmt, va_list args)
 {
     int ret = 0;
-    while(*fmt)
-    switch(*fmt)
-    {
+    while (*fmt)
+    switch (*fmt) {
         case '%':
             ++fmt;
-            switch(*fmt)
-            {
+            switch (*fmt) {
                 case 'c':   /* char */
                     ret += putc((char)va_arg(args, int));
                     break;
@@ -134,9 +128,9 @@ int vprintk(char *fmt, va_list args)
                     break;
                 case 'p': /* Pointer */
                     ret += puts("0x");
-#if ARCH_BITS == 32
+#if ARCH_BITS==32
                     ret += putx((uint32_t)va_arg(args, uint32_t));
-#elif ARCH_BITS == 64 
+#elif ARCH_BITS==64 
                     ret += putlx((uint64_t)va_arg(args, uint64_t));
 #endif
                     break;

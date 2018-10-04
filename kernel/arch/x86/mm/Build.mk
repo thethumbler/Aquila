@@ -1,2 +1,2 @@
-obj-y += pmm.o
+obj-y  += pmm.o
 dirs-y += paging/

@@ -44,14 +44,14 @@ static inline int get_multiboot_mmap_count(multiboot_info_t *info)
 {
     int count = 0;
     uint32_t _mmap = info->mmap_addr;
-    multiboot_mmap_t *mmap = (multiboot_mmap_t*)_mmap;
+    multiboot_mmap_t *mmap = (multiboot_mmap_t *)(uintptr_t)_mmap;
     uint32_t mmap_end = _mmap + info->mmap_length;
 
     while (_mmap < mmap_end) {
         //if (mmap->type == MULTIBOOT_MEMORY_AVAILABLE)
         ++count;
         _mmap += mmap->size + sizeof(uint32_t);
-        mmap   = (multiboot_mmap_t*) _mmap;
+        mmap   = (multiboot_mmap_t *)(uintptr_t) _mmap;
     }
     return count;
 }
@@ -60,7 +60,7 @@ static inline void
 build_multiboot_mmap(multiboot_info_t *info, mmap_t *boot_mmap)
 {
     uint32_t _mmap = info->mmap_addr;
-    multiboot_mmap_t *mmap = (multiboot_mmap_t *) _mmap;
+    multiboot_mmap_t *mmap = (multiboot_mmap_t *)(uintptr_t) _mmap;
     uint32_t mmap_end = _mmap + info->mmap_length;
 
     while (_mmap < mmap_end) {
@@ -73,7 +73,7 @@ build_multiboot_mmap(multiboot_info_t *info, mmap_t *boot_mmap)
 
         ++boot_mmap;
         _mmap += mmap->size + sizeof(uint32_t);
-        mmap   = (multiboot_mmap_t*) _mmap;
+        mmap   = (multiboot_mmap_t *)(uintptr_t) _mmap;
     }
 }
 
@@ -81,17 +81,17 @@ static inline void
 build_multiboot_modules(multiboot_info_t *info, module_t *modules)
 {
     extern char *lower_kernel_heap;
-    multiboot_module_t *mods = (multiboot_module_t *) info->mods_addr;
+    multiboot_module_t *mods = (multiboot_module_t *)(uintptr_t) info->mods_addr;
 
     for (unsigned i = 0; i < info->mods_count; ++i) {
         modules[i] = (module_t) {
-            .addr = (void *) VMA(mods[i].mod_start),
+            .addr = (void *) VMA((uintptr_t) mods[i].mod_start),
             .size = mods[i].mod_end - mods[i].mod_start,
-            .cmdline = (char *) VMA(mods[i].cmdline)
+            .cmdline = (char *) VMA((uintptr_t) mods[i].cmdline)
         };
 
-        if ((uint32_t) lower_kernel_heap < mods[i].mod_start)
-            lower_kernel_heap = (char *) mods[i].mod_end;
+        if ((uintptr_t) lower_kernel_heap < mods[i].mod_start)
+            lower_kernel_heap = (char *)(uintptr_t) mods[i].mod_end;
     }
 }
 
@@ -99,9 +99,9 @@ static inline struct boot *process_multiboot_info(multiboot_info_t *info)
 {
     static struct boot boot;
 
-    boot.cmdline = (char *) VMA(info->cmdline);
+    boot.cmdline = (char *) VMA((uintptr_t) info->cmdline);
     boot.total_mem = info->mem_lower + info->mem_upper;
-    
+
     boot.mmap_count = get_multiboot_mmap_count(info);
     static mmap_t mmap[32] = {0};
     boot.mmap = mmap;
@@ -111,8 +111,8 @@ static inline struct boot *process_multiboot_info(multiboot_info_t *info)
     /* We report video memory as mmap region */
     boot.mmap[boot.mmap_count].type = MMAP_RESERVED;
 
-    struct vbe_info_block  *vinfo = (struct vbe_info_block *) multiboot_info->vbe_control_info;
-    struct mode_info_block *minfo = (struct mode_info_block *) multiboot_info->vbe_mode_info;
+    struct vbe_info_block  *vinfo = (struct vbe_info_block *)(uintptr_t)  info->vbe_control_info;
+    struct mode_info_block *minfo = (struct mode_info_block *)(uintptr_t) info->vbe_mode_info;
 
     boot.mmap[boot.mmap_count].start = minfo->phys_base_ptr;
     boot.mmap[boot.mmap_count].end   = minfo->phys_base_ptr + minfo->y_resolution * minfo->lin_bytes_per_scanline;

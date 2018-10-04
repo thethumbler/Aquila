@@ -30,7 +30,10 @@ void kmain(struct boot *boot)
     vfs_init();
     modules_init();
 
-    load_ramdisk(&boot->modules[0]);
+    if (boot->modules_count)
+        load_ramdisk(&boot->modules[0]);
+    else
+        panic("No modules loaded: unable to load ramdisk");
 
     printk("kernel: Loading init process\n");
 
@@ -41,6 +44,7 @@ void kmain(struct boot *boot)
         printk("error: %d\n", err);
         panic("Can not load init process");
     }
+
 
 #if EARLYCON_DISABLE_ON_INIT
     earlycon_disable();

@@ -99,6 +99,10 @@ struct inode {    /* Actual inode, only one copy is permitted */
     uint32_t    mask;   /* File access mask */
     uint32_t    nlink;  /* Number of links to inode */
 
+    struct timespec atim;
+    struct timespec mtim;
+    struct timespec ctim;
+
     ssize_t     ref;    /* Number of processes referencing this node */
     queue_t     *read_queue;
     queue_t     *write_queue;

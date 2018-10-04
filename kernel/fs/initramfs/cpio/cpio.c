@@ -90,10 +90,13 @@ static int __cpio_new_inode(char *name, struct __cpio_hdr *hdr, size_t sz, size_
     node->fs   = &__cpio;
     node->p    = p;
 
-    node->uid  = 0;
-    node->gid  = 0;
-    node->mask = hdr->mode & CPIO_PERM_MASK;
+    node->uid   = 0;
+    node->gid   = 0;
+    node->mask  = hdr->mode & CPIO_PERM_MASK;
     node->nlink = hdr->nlink;
+
+    node->mtim.tv_sec  = hdr->mtime[0] * 0x10000 + hdr->mtime[1];
+    node->mtim.tv_nsec = 0;
 
     node->rdev = hdr->rdev;
 

@@ -23,7 +23,7 @@ endif
 KERNEL_MAKE_FLAGS := CONFIG=$(KERNEL_CONFIG)
 
 aquila.iso: kernel ramdisk
-	$(GRUB_MKRESCUE) -o aquila.iso iso/
+	$(GRUB_MKRESCUE) -d /usr/lib/grub/i386-pc/ -o aquila.iso iso/
 
 .PHONY: kernel ramdisk system
 kernel: iso/kernel.elf

@@ -3,9 +3,10 @@
 #
 
 CC := $(PDIR)/../build-tools/sys/bin/i686-elf-gcc
+#CC := $(PDIR)/../build-tools/sys/bin/x86_64-elf-gcc
 CFLAGS := -std=gnu99 -I. -I$(PDIR)/arch/$$(ARCH_DIR)/chipset/$$(CHIPSET_DIR)/include -I$(PDIR)/arch/$$(ARCH_DIR)/include -I $(PDIR) -I $(PDIR)/include/ -nostdlib -ffreestanding -m32 \
 		  -O3 -Wall -Wextra -Werror -funsigned-bitfields -fuse-ld=bfd \
-		  -Wno-unused -march=i586
+		  -Wno-unused -march=i686
 
 AS := $(CC)
 ASFLAGS := $(CFLAGS)

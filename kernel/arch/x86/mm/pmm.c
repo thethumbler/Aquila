@@ -23,6 +23,13 @@ void arch_mm_setup()
     extern char *kernel_heap;
     kernel_heap = VMA(lower_kernel_heap);
 
+#if ARCH_BITS==64
+    /* FIXME */
+    extern void setup_64_bit_paging();
+    setup_64_bit_paging();
+    return;
+#endif
+
     struct cpu_features features;
     get_cpu_features(&features);
 
@@ -41,9 +48,4 @@ void arch_mm_setup()
         printk("[0] Kernel: PMM -> Found PSE support\n");
     }
 #endif
-
-    //BSP_PD = (uint32_t *) VMA(read_cr3());
-    //BSP_PD[1023] = LMA((uint32_t) BSP_LPT) | P | RW;
-    //TLB_flush();
-
 }

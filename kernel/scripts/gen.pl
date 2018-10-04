@@ -17,7 +17,7 @@ print "\t", '@echo -e "  PL      " Makefile', "\n\t", '@cd $(dir $@) && $(PERL) 
 
 print "%.o:%.c\n", "\t", '@echo -e "  CC      " $@;', "\n\t", '@ $(CC) $(CFLAGS) -c $< -o $@', "\n";
 print "%.o:%.S\n", "\t", '@echo -e "  AS      " $@;', "\n\t", '@ $(AS) $(ASFLAGS) -c $< -o $@', "\n";
-print '%.elf: builtin.o', "\n\t",  '@echo -e "  ELF     " $@;', "\n\t", '@ $(CC) $(CFLAGS) -Wl,-Tlink.ld -lgcc -o $@', "\n";
+#print '%.elf: builtin.o', "\n\t",  '@echo -e "  ELF     " $@;', "\n\t", '@ $(CC) $(CFLAGS) -Wl,-Tlink.ld -lgcc -o $@', "\n";
 
 print '.PHONY: clean', "\n", 'clean: param = clean', "\n", 'clean: $(dirs-y)', "\n\t",
 	'$(RM) $(obj-y) $(elf)', " builtin.o\n";

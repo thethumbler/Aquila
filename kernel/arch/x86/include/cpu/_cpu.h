@@ -39,14 +39,21 @@ struct cpu_features {
 } __packed;
 
 struct x86_regs {
+#if ARCH_BITS==32
     uint32_t
     edi, esi, ebp, ebx, ecx, edx, eax,
     eip, cs, eflags, esp, ss;
+#else
+    uint64_t
+    edi, esi, ebp, ebx, ecx, edx, eax,
+    eip, cs, eflags, esp, ss;
+#endif
 } __packed;
 
 static inline void x86_dump_registers(struct x86_regs *regs)
 {
     printk("Registers dump:\n");
+#if ARCH_BITS==32
     printk("edi = %p\n", regs->edi);
     printk("esi = %p\n", regs->esi);
     printk("ebp = %p\n", regs->ebp);
@@ -59,6 +66,20 @@ static inline void x86_dump_registers(struct x86_regs *regs)
     printk("eflags = %p\n", regs->eflags);
     printk("esp = %p\n", regs->esp);
     printk("ss  = %p\n", regs->ss);
+#else
+    printk("rdi = %p\n", regs->edi);
+    printk("rsi = %p\n", regs->esi);
+    printk("rbp = %p\n", regs->ebp);
+    printk("rbx = %p\n", regs->ebx);
+    printk("rcx = %p\n", regs->ecx);
+    printk("rdx = %p\n", regs->edx);
+    printk("rax = %p\n", regs->eax);
+    printk("rip = %p\n", regs->eip);
+    printk("cs  = %p\n", regs->cs );
+    printk("rflags = %p\n", regs->eflags);
+    printk("rsp = %p\n", regs->esp);
+    printk("ss  = %p\n", regs->ss);
+#endif
 }
 
 struct cpu {
@@ -77,68 +98,109 @@ struct cpu {
 #define CR4_PSE _BV(4)
 
 /* CPU function */
-static inline uint32_t read_cr0()
+static inline uintptr_t read_cr0()
 {
     uint32_t retval = 0;
+#if ARCH_BITS==32
     asm volatile("mov %%cr0, %%eax":"=a"(retval));
+#else
+    asm volatile("movq %%cr0, %%rax":"=a"(retval));
+#endif
     return retval;
 }
 
-static inline uint32_t read_cr1()
+static inline uintptr_t read_cr1()
 {
-    uint32_t retval = 0;
+    uintptr_t retval = 0;
+#if ARCH_BITS==32
     asm volatile("mov %%cr1, %%eax":"=a"(retval));
+#else
+    asm volatile("movq %%cr1, %%rax":"=a"(retval));
+#endif
     return retval;
 }
 
-static inline uint32_t read_cr2()
+static inline uintptr_t read_cr2()
 {
-    uint32_t retval = 0;
+    uintptr_t retval = 0;
+#if ARCH_BITS==32
     asm volatile("mov %%cr2, %%eax":"=a"(retval));
+#else
+    asm volatile("movq %%cr2, %%rax":"=a"(retval));
+#endif
     return retval;
 }
 
-static inline uint32_t read_cr3()
+static inline uintptr_t read_cr3()
 {
-    uint32_t retval = 0;
+    uintptr_t retval = 0;
+#if ARCH_BITS==32
     asm volatile("mov %%cr3, %%eax":"=a"(retval));
+#else
+    asm volatile("movq %%cr3, %%rax":"=a"(retval));
+#endif
     return retval;
 }
 
-static inline uint32_t read_cr4()
+static inline uintptr_t read_cr4()
 {
-    uint32_t retval = 0;
+    uintptr_t retval = 0;
+#if ARCH_BITS==32
     asm volatile("mov %%cr4, %%eax":"=a"(retval));
+#else
+    asm volatile("movq %%cr4, %%rax":"=a"(retval));
+#endif
     return retval;
 }
 
-static inline void write_cr0(uint32_t val)
+static inline void write_cr0(uintptr_t val)
 {
+#if ARCH_BITS==32
     asm volatile("mov %%eax, %%cr0"::"a"(val));
+#else
+    asm volatile("movq %%rax, %%cr0"::"a"(val));
+#endif
 }
 
-static inline void write_cr1(uint32_t val)
+static inline void write_cr1(uintptr_t val)
 {
+#if ARCH_BITS==32
     asm volatile("mov %%eax, %%cr1"::"a"(val));
+#else
+    asm volatile("movq %%rax, %%cr1"::"a"(val));
+#endif
 }
 
-static inline void write_cr2(uint32_t val)
+static inline void write_cr2(uintptr_t val)
 {
+#if ARCH_BITS==32
     asm volatile("mov %%eax, %%cr2"::"a"(val));
+#else
+    asm volatile("movq %%rax, %%cr2"::"a"(val));
+#endif
 }
 
-static inline void write_cr3(uint32_t val)
+static inline void write_cr3(uintptr_t val)
 {
+#if ARCH_BITS==32
     asm volatile("mov %%eax, %%cr3"::"a"(val));
+#else
+    asm volatile("movq %%rax, %%cr3"::"a"(val));
+#endif
 }
 
-static inline void write_cr4(uint32_t val)
+static inline void write_cr4(uintptr_t val)
 {
+#if ARCH_BITS==32
     asm volatile("mov %%eax, %%cr4"::"a"(val));
+#else
+    asm volatile("movq %%rax, %%cr4"::"a"(val));
+#endif
 }
 
 static inline int check_cpuid()
 {
+#if ARCH_BITS==32
     int retval = 0;
     asm volatile(
         "pushf \n"
@@ -152,6 +214,10 @@ static inline int check_cpuid()
         "popf \n"
     :"=a"(retval));
     return retval;
+#else
+    /* TODO */
+    return 0;
+#endif
 }
 
 static inline struct cpu_features *get_cpu_features(struct cpu_features *features)
@@ -185,13 +251,18 @@ static inline union vendor_id cpu_get_vendor_id()
 
 /* cpu/gdt.c */
 void x86_gdt_setup();
-void x86_tss_esp_set(uint32_t esp);
-void x86_kernel_stack_set(uintptr_t esp);
+void x86_tss_sp_set(uintptr_t sp);
+void x86_kernel_stack_set(uintptr_t sp);
 
 /* cpu/idt.c */
 void x86_idt_setup();
+#if 0
 void x86_idt_gate_set(uint32_t id, uint32_t offset);
 void x86_idt_gate_user_set(uint32_t id, uint32_t offset);
+#else
+void x86_idt_gate_set(uint32_t id, uintptr_t offset);
+void x86_idt_gate_user_set(uint32_t id, uintptr_t offset);
+#endif
 
 /* cpu/isr.c */
 void x86_isr_setup();

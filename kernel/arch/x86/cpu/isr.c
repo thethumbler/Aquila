@@ -2,10 +2,10 @@
  *              Interrupt Service Routines (ISRs)
  *
  *
- *  This file is part of Aquila OS and is released under the terms of
+ *  This file is part of AquilaOS and is released under the terms of
  *  GNU GPLv3 - See LICENSE.
  *
- *  Copyright (C) 2016 Mohamed Anwar <mohamed_anwar@opmbx.org>
+ *  Copyright (C) Mohamed Anwar
  */
 
 #include <core/system.h>
@@ -97,10 +97,7 @@ void __x86_isr(struct x86_regs *regs)
     extern uint32_t int_num;
     extern uint32_t err_num;
 
-    //printk("__x86_isr %d\n",int_num);
-    //x86_dump_registers(regs);
-
-    if (int_num == 0xE && cur_thread) {// && regs->cs == X86_CS) {   /* Page fault from user-space */
+    if (int_num == 0xE && cur_thread) { /* Page Fault */
 
         x86_thread_t *arch = cur_thread->arch;
         //arch->regs = regs;
@@ -117,7 +114,6 @@ void __x86_isr(struct x86_regs *regs)
             return_from_signal((uintptr_t) arch->regs);
         }
 
-        //pmman.handle_page_fault(read_cr2());
         arch_mm_page_fault(read_cr2());
         return;
     }
@@ -130,6 +126,7 @@ void __x86_isr(struct x86_regs *regs)
     if (int_num == 0x80) {  /* syscall */
         x86_thread_t *arch = cur_thread->arch;
         arch->regs = regs;
+        //asm volatile ("sti");
         arch_syscall(regs);
         return;
     }
@@ -152,37 +149,37 @@ void __x86_isr(struct x86_regs *regs)
 
 void x86_isr_setup()
 {   
-    x86_idt_gate_set(0x00, (uint32_t) __x86_isr0);
-    x86_idt_gate_set(0x01, (uint32_t) __x86_isr1);
-    x86_idt_gate_set(0x02, (uint32_t) __x86_isr2);
-    x86_idt_gate_set(0x03, (uint32_t) __x86_isr3);
-    x86_idt_gate_set(0x04, (uint32_t) __x86_isr4);
-    x86_idt_gate_set(0x05, (uint32_t) __x86_isr5);
-    x86_idt_gate_set(0x06, (uint32_t) __x86_isr6);
-    x86_idt_gate_set(0x07, (uint32_t) __x86_isr7);
-    x86_idt_gate_set(0x08, (uint32_t) __x86_isr8);
-    x86_idt_gate_set(0x09, (uint32_t) __x86_isr9);
-    x86_idt_gate_set(0x0A, (uint32_t) __x86_isr10);
-    x86_idt_gate_set(0x0B, (uint32_t) __x86_isr11);
-    x86_idt_gate_set(0x0C, (uint32_t) __x86_isr12);
-    x86_idt_gate_set(0x0D, (uint32_t) __x86_isr13);
-    x86_idt_gate_set(0x0E, (uint32_t) __x86_isr14);
-    x86_idt_gate_set(0x0F, (uint32_t) __x86_isr15);
-    x86_idt_gate_set(0x10, (uint32_t) __x86_isr16);
-    x86_idt_gate_set(0x11, (uint32_t) __x86_isr17);
-    x86_idt_gate_set(0x12, (uint32_t) __x86_isr18);
-    x86_idt_gate_set(0x13, (uint32_t) __x86_isr19);
-    x86_idt_gate_set(0x14, (uint32_t) __x86_isr20);
-    x86_idt_gate_set(0x15, (uint32_t) __x86_isr21);
-    x86_idt_gate_set(0x16, (uint32_t) __x86_isr22);
-    x86_idt_gate_set(0x17, (uint32_t) __x86_isr23);
-    x86_idt_gate_set(0x18, (uint32_t) __x86_isr24);
-    x86_idt_gate_set(0x19, (uint32_t) __x86_isr25);
-    x86_idt_gate_set(0x1A, (uint32_t) __x86_isr26);
-    x86_idt_gate_set(0x1B, (uint32_t) __x86_isr27);
-    x86_idt_gate_set(0x1C, (uint32_t) __x86_isr28);
-    x86_idt_gate_set(0x1D, (uint32_t) __x86_isr29);
-    x86_idt_gate_set(0x1E, (uint32_t) __x86_isr30);
-    x86_idt_gate_set(0x1F, (uint32_t) __x86_isr31);
-    x86_idt_gate_user_set(0x80, (uint32_t) __x86_isr128);
+    x86_idt_gate_set(0x00, (uintptr_t) __x86_isr0);
+    x86_idt_gate_set(0x01, (uintptr_t) __x86_isr1);
+    x86_idt_gate_set(0x02, (uintptr_t) __x86_isr2);
+    x86_idt_gate_set(0x03, (uintptr_t) __x86_isr3);
+    x86_idt_gate_set(0x04, (uintptr_t) __x86_isr4);
+    x86_idt_gate_set(0x05, (uintptr_t) __x86_isr5);
+    x86_idt_gate_set(0x06, (uintptr_t) __x86_isr6);
+    x86_idt_gate_set(0x07, (uintptr_t) __x86_isr7);
+    x86_idt_gate_set(0x08, (uintptr_t) __x86_isr8);
+    x86_idt_gate_set(0x09, (uintptr_t) __x86_isr9);
+    x86_idt_gate_set(0x0A, (uintptr_t) __x86_isr10);
+    x86_idt_gate_set(0x0B, (uintptr_t) __x86_isr11);
+    x86_idt_gate_set(0x0C, (uintptr_t) __x86_isr12);
+    x86_idt_gate_set(0x0D, (uintptr_t) __x86_isr13);
+    x86_idt_gate_set(0x0E, (uintptr_t) __x86_isr14);
+    x86_idt_gate_set(0x0F, (uintptr_t) __x86_isr15);
+    x86_idt_gate_set(0x10, (uintptr_t) __x86_isr16);
+    x86_idt_gate_set(0x11, (uintptr_t) __x86_isr17);
+    x86_idt_gate_set(0x12, (uintptr_t) __x86_isr18);
+    x86_idt_gate_set(0x13, (uintptr_t) __x86_isr19);
+    x86_idt_gate_set(0x14, (uintptr_t) __x86_isr20);
+    x86_idt_gate_set(0x15, (uintptr_t) __x86_isr21);
+    x86_idt_gate_set(0x16, (uintptr_t) __x86_isr22);
+    x86_idt_gate_set(0x17, (uintptr_t) __x86_isr23);
+    x86_idt_gate_set(0x18, (uintptr_t) __x86_isr24);
+    x86_idt_gate_set(0x19, (uintptr_t) __x86_isr25);
+    x86_idt_gate_set(0x1A, (uintptr_t) __x86_isr26);
+    x86_idt_gate_set(0x1B, (uintptr_t) __x86_isr27);
+    x86_idt_gate_set(0x1C, (uintptr_t) __x86_isr28);
+    x86_idt_gate_set(0x1D, (uintptr_t) __x86_isr29);
+    x86_idt_gate_set(0x1E, (uintptr_t) __x86_isr30);
+    x86_idt_gate_set(0x1F, (uintptr_t) __x86_isr31);
+    x86_idt_gate_user_set(0x80, (uintptr_t) __x86_isr128);
 }

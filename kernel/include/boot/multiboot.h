@@ -217,7 +217,7 @@ struct multiboot_mod_list
 typedef struct multiboot_mod_list multiboot_module_t;
 
 extern uint32_t multiboot_signature;
-extern multiboot_info_t *multiboot_info;
+extern uint32_t multiboot_info;
 
 #endif /* ! ASM_FILE */
 

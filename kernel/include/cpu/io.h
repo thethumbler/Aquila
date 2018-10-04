@@ -3,8 +3,6 @@
 
 #include <core/system.h>
 
-#ifdef ARCH_X86
-#include <arch/x86/include/io.h>
-#endif
+/* Overrided with arch specific header */
 
 #endif /* _IO_H */
