@@ -20,8 +20,12 @@ static void x86_sched_handler(struct x86_regs *r)
         extern uintptr_t x86_read_eip();
 
         volatile uintptr_t eip = 0, esp = 0, ebp = 0;    
+#if ARCH_BITS==32
         asm volatile("mov %%esp, %0":"=r"(esp)); /* read esp */
         asm volatile("mov %%ebp, %0":"=r"(ebp)); /* read ebp */
+#else
+        /* TODO */
+#endif
         eip = x86_read_eip();
 
         if (eip == (uintptr_t) -1) {    /* Done switching */

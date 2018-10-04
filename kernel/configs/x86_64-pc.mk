@@ -2,26 +2,27 @@
 # Compilation flags
 #
 
-CC := $(PDIR)/../build-tools/sys/bin/i686-elf-gcc
-#CC := $(PDIR)/../build-tools/sys/bin/x86_64-elf-gcc
-CFLAGS := -std=gnu99 -I. -I$(PDIR)/arch/$$(ARCH_DIR)/chipset/$$(CHIPSET_DIR)/include -I$(PDIR)/arch/$$(ARCH_DIR)/include -I $(PDIR) -I $(PDIR)/include/ -nostdlib -ffreestanding -m32 \
+CC := $(PDIR)/../build-tools/sys/bin/x86_64-elf-gcc
+CFLAGS := -std=gnu99 -I. -I$(PDIR)/arch/$$(ARCH_DIR)/chipset/$$(CHIPSET_DIR)/include -I$(PDIR)/arch/$$(ARCH_DIR)/include -I $(PDIR) -I $(PDIR)/include/ -nostdlib -ffreestanding \
 		  -O3 -Wall -Wextra -Werror -funsigned-bitfields -fuse-ld=bfd \
-		  -Wno-unused -march=i686
+		  -Wno-unused \
+		  -mcmodel=large -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -z max-page-size=0x1000
 
 AS := $(CC)
 ASFLAGS := $(CFLAGS)
 
-LD := $(PDIR)/../build-tools/sys/bin/i686-elf-ld.bfd
-LDFLAGS := -nostdlib -melf_i386
+LD := $(PDIR)/../build-tools/sys/bin/x86_64-elf-ld.bfd
+LDFLAGS := -nostdlib
+#-melf64_x86_64
 
 #
 # Configurations
 #
 
-ARCH=X86
-ARCH_DIR=x86
-ARCH_X86=y
-ARCH_BITS=32
+ARCH=X86_64
+ARCH_DIR=x86_64
+ARCH_X86_64=y
+ARCH_BITS=64
 
 #
 # Boot Definitions
@@ -47,7 +48,7 @@ CHIPSET_X86_MISC_I8042=y
 #
 
 # Generic framebuffer (fbdev) support
-DEV_FRAMEBUFFER=y
+#DEV_FRAMEBUFFER=y
 # Generic console (condev) support
 DEV_CONSOLE=y
 DEV_KEYBOARD=y
@@ -68,7 +69,7 @@ FBDEV_VESA=y
 FS_TMPFS=y
 FS_DEVFS=y
 FS_DEVPTS=y
-FS_EXT2=y
+#FS_EXT2=y
 FS_PROCFS=y
 
 # Initramfs

@@ -2,10 +2,10 @@
  *                      Multiboot support
  *
  *
- *  This file is part of Aquila OS and is released under the terms of
+ *  This file is part of AquilaOS and is released under the terms of
  *  GNU GPLv3 - See LICENSE.
  *
- *  Copyright (C) 2016 Mohamed Anwar <mohamed_anwar@opmbx.org>
+ *  Copyright (C) Mohamed Anwar
  */
 
 #include <config.h>
@@ -58,8 +58,13 @@ _start:
 
     cli
 
+#if ARCH_BITS==32
     .extern early_init
     call early_init
+#else
+    .extern x86_64_bootstrap
+    call x86_64_bootstrap
+#endif
     jmp .
 
 .global multiboot_signature
@@ -67,3 +72,6 @@ _start:
 
 multiboot_signature: .long 0
 multiboot_info: .long 0
+
+/* vim: ft=gas:
+ */

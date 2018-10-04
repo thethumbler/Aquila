@@ -29,12 +29,10 @@ void arch_thread_switch(thread_t *thread)
     disable_fpu();
 
     if (thread->owner->sig_queue->count) {
-        int sig = (int) dequeue(thread->owner->sig_queue);
+        int sig = (int)(intptr_t) dequeue(thread->owner->sig_queue);
         arch_handle_signal(sig);
         for (;;);
     }
-
-    //printk("[%d:%d] switch\n", thread->owner->pid, thread->tid);
 
     x86_goto(arch->eip, arch->ebp, arch->esp);
 }
@@ -90,8 +88,12 @@ void internal_arch_sleep()
     extern uintptr_t x86_read_eip();
 
     uintptr_t eip = 0, esp = 0, ebp = 0;    
+#if ARCH_BITS==32
     asm("mov %%esp, %0":"=r"(esp)); /* read esp */
     asm("mov %%ebp, %0":"=r"(ebp)); /* read ebp */
+#else
+    /* TODO */
+#endif
     eip = x86_read_eip();
 
     if (eip == (uintptr_t) -1) {  /* Done switching */

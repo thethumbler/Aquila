@@ -27,10 +27,11 @@ struct __cpio_hdr {
     uint16_t gid;
     uint16_t nlink;
     uint16_t rdev;
-    uint16_t mtimes[2];
+    //uint32_t mtime;
+    uint16_t mtime[2];
     uint16_t namesize;
     uint16_t filesize[2];
-};
+} __packed;
 
 struct __cpio_priv {
     struct inode *super;

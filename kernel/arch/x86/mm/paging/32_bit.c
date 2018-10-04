@@ -291,7 +291,7 @@ static void *copy_virtual_to_physical(void *_phys_dest, void *_virt_src, size_t 
 }
 
 static paddr_t cur_pd = 0;
-void arch_switch_directory(paddr_t new_dir)
+void arch_switch_mapping(paddr_t new_dir)
 {
     //printk("switch_directory(%p)\n", new_dir);
     if (cur_pd == new_dir) return;
@@ -309,7 +309,7 @@ void arch_mm_fork(paddr_t base, paddr_t fork)
 {
     //printk("arch_mm_fork(%p, %p)\n", base, fork);
 
-    arch_switch_directory(fork);
+    arch_switch_mapping(fork);
 
     uintptr_t old_mount = frame_mount(base);
     __table_t *tbl = (__table_t *) MOUNT_ADDR;
@@ -343,7 +343,7 @@ void arch_mm_fork(paddr_t base, paddr_t fork)
     tlb_flush();
 
     frame_mount(old_mount);
-    arch_switch_directory(base);
+    arch_switch_mapping(base);
 }
 
 void setup_32_bit_paging()
@@ -371,7 +371,7 @@ void setup_32_bit_paging()
  *  Archeticture Interface
  */
 
-uintptr_t arch_get_frame()
+paddr_t arch_get_frame()
 {
     return frame_get();
 }
@@ -381,7 +381,7 @@ uintptr_t arch_get_frame_no_clr()
     return frame_get_no_clr();
 }
 
-void arch_release_frame(uintptr_t p)
+void arch_release_frame(paddr_t p)
 {
     frame_release(p);
 }

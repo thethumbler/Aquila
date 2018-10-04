@@ -3,10 +3,10 @@
  *           (Setup CPU structures and memory managment)
  *
  *
- *  This file is part of Aquila OS and is released under the terms of
+ *  This file is part of AquilaOS and is released under the terms of
  *  GNU GPLv3 - See LICENSE.
  *
- *  Copyright (C) 2016 Mohamed Anwar <mohamed_anwar@opmbx.org>
+ *  Copyright (C) Mohamed Anwar
  */
 
 #include <core/system.h>
@@ -45,14 +45,14 @@ void cpu_init()
     printk("x86: Installing ISRs\n");
     x86_isr_setup();
 
-    struct boot *boot = process_multiboot_info(multiboot_info);
+    printk("x86: Processing multiboot info block %p\n", (uintptr_t) multiboot_info);
+    struct boot *boot = process_multiboot_info((multiboot_info_t *)(uintptr_t) multiboot_info);
     __kboot = boot;
 
     mm_setup(boot);
-    //vmm_setup();
     kvmem_setup();
 
-    x86_tss_esp_set(VMA(0x100000));
+    x86_tss_sp_set(VMA(0x100000ULL));
     chipset_init();
 
 #if 1

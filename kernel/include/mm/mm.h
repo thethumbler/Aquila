@@ -18,10 +18,6 @@ extern int debug_kmalloc;
 void *(kmalloc)(size_t);
 void (kfree)(void*);
 
-
-typedef uint32_t paddr_t;
-typedef uint32_t vaddr_t;
-
 #define LOWER_PAGE_BOUNDARY(ptr) ((ptr) & ~PAGE_MASK)
 #define UPPER_PAGE_BOUNDARY(ptr) (((ptr) + PAGE_MASK) & ~PAGE_MASK)
 

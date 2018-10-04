@@ -35,7 +35,6 @@ vmm_node_t *nodes = (vmm_node_t *) KVMEM_NODES;
 void kvmem_setup()
 {
     /* We start by mapping the space used for nodes into physical memory */
-    //vm_map(VMM_NODES, VMM_NODES_SIZE, VM_KRW);
     vm_map(&kvmem_nodes);
 
     /* Now we have to clear it */

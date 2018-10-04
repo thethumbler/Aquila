@@ -789,6 +789,9 @@ int vfs_stat(struct inode *inode, struct stat *buf)
     buf->st_gid   = inode->gid;
     buf->st_rdev  = inode->rdev;
     buf->st_size  = inode->size;
+    buf->st_mtim  = inode->mtim;
+
+    //memcpy(&buf->st_mtim, &inode->mtim, sizeof(struct timespec));
 
     return 0;
 }

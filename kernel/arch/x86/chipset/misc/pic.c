@@ -186,22 +186,22 @@ void __x86_irq_handler(struct x86_regs *r)
 
 static void x86_irq_gates_setup(void)
 {
-    x86_idt_gate_set(32, (uint32_t) __x86_irq0);
-    x86_idt_gate_set(33, (uint32_t) __x86_irq1);
-    x86_idt_gate_set(34, (uint32_t) __x86_irq2);
-    x86_idt_gate_set(35, (uint32_t) __x86_irq3);
-    x86_idt_gate_set(36, (uint32_t) __x86_irq4);
-    x86_idt_gate_set(37, (uint32_t) __x86_irq5);
-    x86_idt_gate_set(38, (uint32_t) __x86_irq6);
-    x86_idt_gate_set(39, (uint32_t) __x86_irq7);
-    x86_idt_gate_set(40, (uint32_t) __x86_irq8);
-    x86_idt_gate_set(41, (uint32_t) __x86_irq9);
-    x86_idt_gate_set(42, (uint32_t) __x86_irq10);
-    x86_idt_gate_set(43, (uint32_t) __x86_irq11);
-    x86_idt_gate_set(44, (uint32_t) __x86_irq12);
-    x86_idt_gate_set(45, (uint32_t) __x86_irq13);
-    x86_idt_gate_set(46, (uint32_t) __x86_irq14);
-    x86_idt_gate_set(47, (uint32_t) __x86_irq15);
+    x86_idt_gate_set(32, (uintptr_t) __x86_irq0);
+    x86_idt_gate_set(33, (uintptr_t) __x86_irq1);
+    x86_idt_gate_set(34, (uintptr_t) __x86_irq2);
+    x86_idt_gate_set(35, (uintptr_t) __x86_irq3);
+    x86_idt_gate_set(36, (uintptr_t) __x86_irq4);
+    x86_idt_gate_set(37, (uintptr_t) __x86_irq5);
+    x86_idt_gate_set(38, (uintptr_t) __x86_irq6);
+    x86_idt_gate_set(39, (uintptr_t) __x86_irq7);
+    x86_idt_gate_set(40, (uintptr_t) __x86_irq8);
+    x86_idt_gate_set(41, (uintptr_t) __x86_irq9);
+    x86_idt_gate_set(42, (uintptr_t) __x86_irq10);
+    x86_idt_gate_set(43, (uintptr_t) __x86_irq11);
+    x86_idt_gate_set(44, (uintptr_t) __x86_irq12);
+    x86_idt_gate_set(45, (uintptr_t) __x86_irq13);
+    x86_idt_gate_set(46, (uintptr_t) __x86_irq14);
+    x86_idt_gate_set(47, (uintptr_t) __x86_irq15);
 }
 
 int x86_pic_probe()
@@ -239,7 +239,6 @@ int x86_pic_setup(struct ioaddr *master, struct ioaddr *slave)
     printk("8259 PIC: Initializing [Master: %p (%s), Salve: %p (%s)]\n",
             master->addr, ioaddr_type_str(master),
             slave->addr, ioaddr_type_str(slave));
-
 
     /* Initialize */
     x86_irq_remap();

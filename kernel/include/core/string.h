@@ -4,11 +4,6 @@
 #include <core/system.h>
 #include <mm/mm.h>
 
-#if ARCH==X86
-#include <arch/x86/include/string.h>
-#else
-#endif
-
 int snprintf(char *s, size_t n, const char *fmt, ...);
 
 static inline int strcmp(const char *s1, const char *s2)

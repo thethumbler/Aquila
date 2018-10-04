@@ -1,8 +1,15 @@
 #ifndef _STAT_H
 #define _STAT_H
 
-struct  stat 
-{
+typedef uint64_t time_t;
+
+/* FIXME move to types */
+struct timespec {
+    time_t   tv_sec;
+    uint32_t tv_nsec;
+};
+
+struct  stat {
   uint16_t   st_dev;
   uint16_t   st_ino;
   uint32_t   st_mode;
@@ -12,20 +19,23 @@ struct  stat
   uint16_t   st_rdev;
   uint32_t   st_size;
 
-  //time_t  st_atime;
-  //time_t  st_mtime;
-  //time_t  st_ctime;
+  struct timespec  st_atim;
+  struct timespec  st_mtim;
+  struct timespec  st_ctim;
+
+  uint32_t   st_blksize;
+  uint32_t   st_blocks;
 };
 
 
-#define _IFMT       0170000 /* type of file */
-#define     _IFDIR  0040000 /* directory */
-#define     _IFCHR  0020000 /* character special */
-#define     _IFBLK  0060000 /* block special */
-#define     _IFREG  0100000 /* regular */
-#define     _IFLNK  0120000 /* symbolic link */
-#define     _IFSOCK 0140000 /* socket */
-#define     _IFIFO  0010000 /* fifo */
+#define _IFMT   0170000 /* type of file */
+#define _IFDIR  0040000 /* directory */
+#define _IFCHR  0020000 /* character special */
+#define _IFBLK  0060000 /* block special */
+#define _IFREG  0100000 /* regular */
+#define _IFLNK  0120000 /* symbolic link */
+#define _IFSOCK 0140000 /* socket */
+#define _IFIFO  0010000 /* fifo */
 
 #define     S_BLKSIZE  1024 /* size of a block */
 

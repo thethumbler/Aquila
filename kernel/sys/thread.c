@@ -4,6 +4,8 @@
 #include <sys/sched.h>
 #include <ds/queue.h>
 
+#define DEBUG_SLEEP_QUEUE
+
 int thread_new(proc_t *proc, thread_t **ref)
 {
     thread_t *thread = kmalloc(sizeof(thread_t));

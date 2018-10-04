@@ -9,7 +9,7 @@
 
 int ext2_inode_build(struct __ext2 *desc, size_t inode, struct inode **ref_inode)
 {
-    printk("ext2_inode_build(desc=%p, inode=%d, ref_inode=%p)\n", desc, inode, ref_inode);
+    //printk("ext2_inode_build(desc=%p, inode=%d, ref_inode=%p)\n", desc, inode, ref_inode);
 
     struct inode *node = NULL;
 
@@ -37,6 +37,13 @@ int ext2_inode_build(struct __ext2 *desc, size_t inode, struct inode **ref_inode
     node->mask = i->permissions;
     node->uid  = i->uid;
     node->gid  = i->gid;
+
+    node->atim.tv_sec  = i->last_access_time;
+    node->atim.tv_nsec = 0;
+    node->mtim.tv_sec  = i->last_modified_time;
+    node->mtim.tv_nsec = 0;
+    node->ctim.tv_sec  = i->creation_time;
+    node->ctim.tv_nsec = 0;
 
     node->fs   = &ext2fs;
     kfree(i);

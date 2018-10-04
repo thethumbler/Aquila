@@ -71,6 +71,7 @@ int mm_map(paddr_t paddr, vaddr_t vaddr, size_t size, int flags)
     paddr = LOWER_PAGE_BOUNDARY(paddr);
 
     size_t nr = (endaddr - vaddr) / PAGE_SIZE;
+    //printk("mm_map paddr=%p, vaddr=%p, nr=%d\n", paddr, vaddr, nr);
 
     while (nr--) {
         paddr_t phys = arch_page_get_mapping(vaddr);
@@ -167,7 +168,7 @@ void mm_page_fault(vaddr_t vaddr)
 char *kernel_heap = NULL;
 void mm_setup(struct boot *boot)
 {
-    //printk("[0] Kernel: PMM -> Total memory: %d KiB, %d MiB\n", boot->total_mem, boot->total_mem / 1024);
+    printk("kernel: Total memory: %d KiB, %d MiB\n", boot->total_mem, boot->total_mem / 1024);
 
     /* XXX */
     /* Fix kernel heap pointer */

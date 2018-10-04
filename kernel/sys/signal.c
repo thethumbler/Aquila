@@ -55,7 +55,7 @@ int signal_proc_send(proc_t *proc, int signal)
     if (proc == cur_thread->owner) {
         arch_handle_signal(signal);
     } else {
-        enqueue(proc->sig_queue, (void *) signal);
+        enqueue(proc->sig_queue, (void *)(intptr_t) signal);
     }
 
     return 0;
