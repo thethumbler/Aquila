@@ -5,18 +5,28 @@
 extern void _exit(int code);
 extern int main();
  
-asm(" \
+asm(
+"\
 .globl _start \n\
 _start: \n\
+"
+#if __x86_64__
+"\
+    pop %rdi\n\
+    pop %rsi\n\
+    pop %rdx\n\
+" 
+#endif
+"\
 	call _start_c \n\
 	jmp . \n\
 ");
 
 void _start_c(int argc, char **argv, char **env)
 {
-    //environ = env;
-    for (; *env; ++env)  /* Populate environment variables */
-        putenv(*env);
+    /* Populate environment variables */
+    if (env)
+        for (; *env; ++env) putenv(*env);
 
     int ex = main(argc, argv);
     _exit(ex);

@@ -2,11 +2,15 @@
 # Init
 #
 
-mkdir -p sys
-mkdir -p libc/sysroot
+mkdir -p autotools
+mkdir -p sysroot
+
+#mkdir -p libc/sysroot
 mkdir -p pkgs
 top_dir=$(pwd)
 PERL_26=$(perl -e "if ($] gt '5.026000') { print 1 } else {print 0};")
+ARCH=i686
+#ARCH=x86_64
 
 #
 # PKGS
@@ -97,7 +101,7 @@ if [[ ! -d $AUTOCONF ]]; then
     tar xzf "pkgs/$AUTOCONF.tar.gz";
     cd $AUTOCONF;
     echo "Configuraing autoconf..."
-    ./configure --prefix=$top_dir/sys
+    ./configure --prefix=$top_dir/autotools
     echo "Building autoconf..."
     make -j $(nproc) && make install;
     echo "Done"
@@ -112,7 +116,7 @@ if [[ ! -d $AUTOMAKE ]]; then
         patch -N < ../patches/automake.patch;
     fi;
     echo "Configuraing automake..."
-    ./configure --prefix=$top_dir/sys
+    ./configure --prefix=$top_dir/autotools
     echo "Building automake..."
     make -j $(nproc) && make install;
     echo "Done"
@@ -123,7 +127,7 @@ if [[ ! -d $BINUTILS ]]; then
     tar xzf "pkgs/$BINUTILS.tar.gz";
     cd $BINUTILS;
     echo "Configuraing binutils...";
-    ./configure --prefix=$top_dir/sys --target=i686-elf --disable-nls --disable-werror --with-sysroot;
+    ./configure --prefix=$top_dir/sysroot --target=$ARCH-elf --disable-nls --disable-werror --with-sysroot;
     echo "Building binutils...";
     make -j $(nproc) && make install;
     echo "Done";
@@ -139,7 +143,7 @@ if [[ ! -d "build-gcc" ]]; then
     cd ..;
     mkdir -p "build-gcc" && cd "build-gcc";
     echo "Configuraing gcc...";
-    ../$GCC/configure --prefix=$top_dir/sys --target=i686-elf --disable-nls --enable-languages=c,c++ --without-headers;
+    ../$GCC/configure --prefix=$top_dir/sysroot --target=$ARCH-elf --disable-nls --enable-languages=c,c++ --without-headers;
     echo "Building gcc..."
     make -j $(nproc) all-gcc;
     make -j $(nproc) all-target-libgcc;
@@ -157,34 +161,35 @@ if [[ ! -d $NEWLIB ]]; then
     cd $NEWLIB;
     patch -p1 < ../patches/newlib.patch;
     cd newlib/libc/sys/aquila;
-    cd pthread; $top_dir/sys/bin/aclocal -I ../../../..;
-    $top_dir/sys/bin/automake --cygnus Makefile;
-    $top_dir/sys/bin/autoconf;
+    cd pthread; $top_dir/autotools/bin/aclocal -I ../../../..;
+    $top_dir/autotools/bin/automake --cygnus Makefile;
+    $top_dir/autotools/bin/autoconf;
     cd ..;
 
-    $top_dir/sys/bin/aclocal -I ../../..;
-    $top_dir/sys/bin/automake --cygnus Makefile;
+    $top_dir/autotools/bin/aclocal -I ../../..;
+    $top_dir/autotools/bin/automake --cygnus Makefile;
     cd ..;
-    $top_dir/sys/bin/autoconf;
+    $top_dir/autotools/bin/autoconf;
     cd aquila;
-    $top_dir/sys/bin/autoconf;
+    $top_dir/autotools/bin/autoconf;
     cd $top_dir;
 
     # Link binaries
-    ln -f sys/bin/i686-elf-ar sys/bin/i686-aquila-ar
-    ln -f sys/bin/i686-elf-as sys/bin/i686-aquila-as
-    ln -f sys/bin/i686-elf-gcc sys/bin/i686-aquila-gcc
-    ln -f sys/bin/i686-elf-gcc sys/bin/i686-aquila-cc
-    ln -f sys/bin/i686-elf-ranlib sys/bin/i686-aquila-ranlib
-    export PATH=$top_dir/sys/bin:$PATH;
+    ln -f sysroot/bin/$ARCH-elf-ar      sysroot/bin/$ARCH-aquila-ar
+    ln -f sysroot/bin/$ARCH-elf-as      sysroot/bin/$ARCH-aquila-as
+    ln -f sysroot/bin/$ARCH-elf-gcc     sysroot/bin/$ARCH-aquila-gcc
+    ln -f sysroot/bin/$ARCH-elf-gcc     sysroot/bin/$ARCH-aquila-cc
+    ln -f sysroot/bin/$ARCH-elf-ranlib  sysroot/bin/$ARCH-aquila-ranlib
+    ln -f sysroot/bin/$ARCH-elf-readelf sysroot/bin/$ARCH-aquila-readelf
+    export PATH=$top_dir/sysroot/bin:$PATH;
     rm -rf build-newlib && mkdir -p build-newlib && cd build-newlib;
     echo "Configuring newlib...";
-    ../$NEWLIB/configure --prefix=/usr --target=i686-aquila;
+    ../$NEWLIB/configure --prefix=/usr --target=$ARCH-aquila;
     echo "Building newlib...";
-    make -j $(nproc) CFLAGS=-march=i586 all;
-    make DESTDIR=$top_dir/libc/sysroot install;
+    make -j $(nproc) all;
+    make DESTDIR=$top_dir/sysroot install;
     cd ..;
-    cp -ar $top_dir/libc/sysroot/usr/i686-aquila/* $top_dir/libc/sysroot/usr/
+    #cp -ar $top_dir/libc/sysroot/usr/$ARCH-aquila/* $top_dir/libc/sysroot/usr/
     echo "Done"
     cd ..
 fi;
