@@ -3,7 +3,7 @@ before_install:
   - sudo apt-get update -qq
   - sudo apt-get install -qq texinfo grub-pc-bin xorriso
 install:
-  - cd build-tools && bash build.sh && cd ..
+  - cd build-tools && bash build.sh distclean && bash build.sh && cd ..
 cache:
   directories:
     # Cache Packages
