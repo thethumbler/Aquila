@@ -12,6 +12,8 @@ PERL_26=$(perl -e "if ($] gt '5.026000') { print 1 } else {print 0};")
 ARCH=i686
 #ARCH=x86_64
 
+set -x
+
 #
 # PKGS
 #
@@ -86,7 +88,7 @@ if [[ ! -f "pkgs/$AUTOMAKE.tar.gz" ]]; then
 fi;
 
 if [[ ! -f "pkgs/$NEWLIB.tar.gz" ]]; then
-    wget -P pkgs/ "ftp://sourceware.org/pub/newlib/$NEWLIB.tar.gz";
+    wget -P pkgs/ "https://sourceware.org/pub/newlib/$NEWLIB.tar.gz";
 fi;
 
 echo "The packages are here now"
@@ -138,7 +140,7 @@ if [[ ! -d "build-gcc" ]]; then
     if [[ ! -d $GCC ]]; then
         tar xzf "pkgs/$GCC.tar.gz";
     fi;
-    cd "$GCC";
+    cd $GCC;
     ./contrib/download_prerequisites;
     cd ..;
     mkdir -p "build-gcc" && cd "build-gcc";
