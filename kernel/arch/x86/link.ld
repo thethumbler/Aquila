@@ -9,7 +9,16 @@ SECTIONS {
     LMA = 0x100000;
     . = LMA;
 
-    .boot : AT(LMA) {
+    .boot.text : /* AT(LMA) */ {
+        *boot*.o(.text*)
+        *boot*.o(.rodata*)
+    }
+
+    .boot.data : /* AT(LMA) */ {
+        *boot*.o(.data)
+    }
+
+    .boot.bss (NOLOAD) : /* AT(LMA) */ {
         *boot*.o(*)
     }
 
