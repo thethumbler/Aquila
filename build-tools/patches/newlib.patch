@@ -1,6 +1,6 @@
 diff -ruN ../newlib-3.0.0/config.sub ./config.sub
 --- ../newlib-3.0.0/config.sub	2018-01-18 20:07:45.000000000 +0200
-+++ ./config.sub	2018-04-05 11:36:23.309916781 +0200
++++ ./config.sub	2018-07-29 11:10:35.835693792 +0200
 @@ -1378,7 +1378,7 @@
  	      | -hpux* | -unos* | -osf* | -luna* | -dgux* | -auroraux* | -solaris* \
  	      | -sym* | -kopensolaris* | -plan9* \
@@ -12,7 +12,7 @@ diff -ruN ../newlib-3.0.0/config.sub ./config.sub
  	      | -hiux* | -386bsd* | -knetbsd* | -mirbsd* | -netbsd* \
 diff -ruN ../newlib-3.0.0/newlib/configure.host ./newlib/configure.host
 --- ../newlib-3.0.0/newlib/configure.host	2018-01-18 20:07:45.000000000 +0200
-+++ ./newlib/configure.host	2018-04-05 11:36:57.497316303 +0200
++++ ./newlib/configure.host	2018-07-29 11:11:20.462756916 +0200
 @@ -571,6 +571,12 @@
    z8k-*-coff)
  	sys_dir=z8ksim
@@ -21,14 +21,44 @@ diff -ruN ../newlib-3.0.0/newlib/configure.host ./newlib/configure.host
 +    posix_dir=posix
 +    unix_dir=unix
 +    sys_dir=aquila
-+    newlib_cflags="${newlib_cflags} -march=i586 -D_NO_GETLOGIN -D_NO_GETUT -D_NO_GETCWD -D_NO_GETPASS -D_NO_TTYNAME -DSIGNAL_PROVIDED -DHAVE_OPENDIR -DHAVE_MMAP=0 -DHAVE_MREMAP=0 -D_I386MACH_ALLOW_HW_INTERRUPTS"
++    newlib_cflags="${newlib_cflags} -D__aquila__ -D_NO_GETLOGIN -D_NO_GETUT -D_NO_GETCWD -D_NO_GETPASS -D_NO_TTYNAME -DSIGNAL_PROVIDED -DHAVE_OPENDIR -DHAVE_MMAP=0 -DHAVE_MREMAP=0 -D_I386MACH_ALLOW_HW_INTERRUPTS"
 +	;;
  esac
  
  # Host specific flag settings -- usually for features that are not
+diff -ruN ../newlib-3.0.0/newlib/libc/include/sys/stat.h ./newlib/libc/include/sys/stat.h
+--- ../newlib-3.0.0/newlib/libc/include/sys/stat.h	2018-01-18 20:07:45.000000000 +0200
++++ ./newlib/libc/include/sys/stat.h	2018-07-29 11:13:33.304944844 +0200
+@@ -34,7 +34,7 @@
+   gid_t		st_gid;
+   dev_t		st_rdev;
+   off_t		st_size;
+-#if defined(__rtems__)
++#if defined(__rtems__) || defined(__aquila__)
+   struct timespec st_atim;
+   struct timespec st_mtim;
+   struct timespec st_ctim;
+@@ -60,7 +60,7 @@
+ #endif
+ };
+ 
+-#if defined(__rtems__)
++#if defined(__rtems__) || defined(__aquila__)
+ #define st_atime st_atim.tv_sec
+ #define st_ctime st_ctim.tv_sec
+ #define st_mtime st_mtim.tv_sec
+@@ -152,7 +152,7 @@
+ int	stat (const char *__restrict __path, struct stat *__restrict __sbuf );
+ mode_t	umask (mode_t __mask );
+ 
+-#if defined (__SPU__) || defined(__rtems__) || defined(__CYGWIN__) && !defined(__INSIDE_CYGWIN__)
++#if defined (__SPU__) || defined(__rtems__) || defined(__aquila__) || defined(__CYGWIN__) && !defined(__INSIDE_CYGWIN__)
+ int	lstat (const char *__restrict __path, struct stat *__restrict __buf );
+ int	mknod (const char *__path, mode_t __mode, dev_t __dev );
+ #endif
 diff -ruN ../newlib-3.0.0/newlib/libc/stdlib/malign.c ./newlib/libc/stdlib/malign.c
 --- ../newlib-3.0.0/newlib/libc/stdlib/malign.c	2018-01-18 20:07:45.000000000 +0200
-+++ ./newlib/libc/stdlib/malign.c	2018-04-05 11:36:23.309916781 +0200
++++ ./newlib/libc/stdlib/malign.c	2018-07-29 11:10:35.836693793 +0200
 @@ -1,3 +1,4 @@
 +#if 0
  #ifndef MALLOC_PROVIDED
@@ -41,7 +71,7 @@ diff -ruN ../newlib-3.0.0/newlib/libc/stdlib/malign.c ./newlib/libc/stdlib/malig
 +#endif
 diff -ruN ../newlib-3.0.0/newlib/libc/sys/configure.in ./newlib/libc/sys/configure.in
 --- ../newlib-3.0.0/newlib/libc/sys/configure.in	2018-01-18 20:07:45.000000000 +0200
-+++ ./newlib/libc/sys/configure.in	2018-04-05 11:36:23.310916793 +0200
++++ ./newlib/libc/sys/configure.in	2018-07-29 11:10:35.836693793 +0200
 @@ -49,6 +49,7 @@
  	tirtos) AC_CONFIG_SUBDIRS(tirtos) ;;
  	w65) AC_CONFIG_SUBDIRS(w65) ;;
