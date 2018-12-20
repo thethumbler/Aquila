@@ -1,3 +1,4 @@
+#define __aquila__
 #include <aqbox.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,6 +11,7 @@
 #include <pwd.h>
 #include <fcntl.h>
 #include <time.h>
+#include <string.h>
 
 #define FLAG_A  0x0000001
 #define FLAG_C  0x0000002
@@ -108,8 +110,8 @@ int print_long_entry(char *path, char *fn)
 
     /* <date and time> */
     char time[64] = "";
-    struct tm *tm = gmtime(&buf.st_atime);
-    strftime(time, 64, "%b %e %H:%M", tm);
+    struct tm *tm = gmtime(&buf.st_mtim.tv_sec);
+    strftime(time, 64, "%b %e %Y %H:%M", tm);
     
     /* <pathname> */
     char name[512];
@@ -215,7 +217,7 @@ AQBOX_APPLET(ls)(int argc, char **argv)
     uint32_t flags = 0;
 
     int pathc = 0;
-    char **pathv[argc];
+    char *pathv[argc];
 
     /* parse arguments */
     for (int i = 1; i < argc; ++i) {

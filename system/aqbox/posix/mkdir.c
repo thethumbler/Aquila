@@ -1,5 +1,6 @@
 #include <aqbox.h>
 #include <sys/stat.h>
+#include <stdio.h>
 
 AQBOX_APPLET(mkdir)(int argc, char **argv)
 {

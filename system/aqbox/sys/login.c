@@ -3,11 +3,13 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <termios.h>
-#include <sys/ioctl.h>
-#include <sys/types.h>
+#include <signal.h>
 #include <pwd.h>
 #include <sys/utsname.h>
 #include <sys/aq_auth.h>
+#include <sys/ioctl.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 AQBOX_APPLET(login)(int argc, char **argv)
 {
@@ -67,8 +69,25 @@ AQBOX_APPLET(login)(int argc, char **argv)
     extern char **environ;
     char *args[] = {passwd->pw_shell, NULL}; /* XXX */
     int pid, status;
-    if (pid = fork())
-        waitpid(pid, &status, 0);
-    else
-        execve(passwd->pw_shell, args, environ);
+
+    if (pid = fork()) {
+        int r = waitpid(pid, &status, 0);
+        printf("Shell returned status %x\n", status);
+
+        if (WIFSIGNALED(status)) {   /* Terminated due to signal */
+            switch (WTERMSIG(status)) {
+                case SIGINT:    /* Ignore */
+                    break;
+                case SIGSEGV:
+                    fprintf(stderr, "Segmentation fault\n");
+                    break;
+                default:
+                    fprintf(stderr, "Terminated due to signal %d\n", WTERMSIG(status));
+                    break;
+            }
+        }
+    } else {
+        int x = execve(passwd->pw_shell, args, environ);
+        exit(x);
+    }
 }

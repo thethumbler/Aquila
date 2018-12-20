@@ -1,5 +1,6 @@
 #include <aqbox.h>
 #include <unistd.h>
+#include <stdio.h>
 
 AQBOX_APPLET(unlink)(int argc, char **argv)
 {
