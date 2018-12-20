@@ -16,6 +16,9 @@
 #define SHF_ALLOC   0x2
 #define SHF_EXEC    0x4
 
+#define ELF_CLASS_32    1
+#define ELF_CLASS_64    2
+
 typedef struct {
     uint8_t  magic[4];
     uint8_t  class;
