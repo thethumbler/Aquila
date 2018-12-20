@@ -169,20 +169,20 @@ static void x86_irq_ack(uint32_t irq_no)
 
 void __x86_irq_handler(struct x86_regs *r)
 {
-    extern uint32_t int_num;
+    extern uint32_t __x86_isr_int_num;
 
     x86_irq_handler_t handler = NULL;
 
-    if (int_num > 47 || int_num < 32) /* Out of range */
+    if (__x86_isr_int_num > 47 || __x86_isr_int_num < 32) /* Out of range */
         handler = NULL;
     else
-        handler = irq_handlers[int_num - 32];
+        handler = irq_handlers[__x86_isr_int_num - 32];
 
-    x86_irq_ack(int_num - 32);
+    x86_irq_ack(__x86_isr_int_num - 32);
 
-    if (handler) handler(r);
+    if (handler)
+        handler(r);
 }
-
 
 static void x86_irq_gates_setup(void)
 {

@@ -94,15 +94,24 @@ static const char *int_msg[32] = {
 
 void __x86_isr(struct x86_regs *regs)
 {
-    extern uint32_t int_num;
-    extern uint32_t err_num;
+    //x86_dump_registers(regs);
 
-    if (int_num == 0xE && cur_thread) { /* Page Fault */
+    extern uint32_t __x86_isr_int_num;
+    extern uint32_t __x86_isr_err_num;
+
+    if (__x86_isr_int_num == 0xE && cur_thread) { /* Page Fault */
+        //if (!read_cr2()) {
+        //    x86_dump_registers(regs);
+        //}
 
         x86_thread_t *arch = cur_thread->arch;
         //arch->regs = regs;
 
+#if ARCH_BITS==32
         if (regs->eip == 0x0FFF) {  /* Signal return */
+#else
+        if (regs->rip == 0x0FFF) {  /* Signal return */
+#endif
             //printk("Returned from signal [regs=%p]\n", regs);
 
             /* Fix kstack and regs pointers*/
@@ -118,12 +127,12 @@ void __x86_isr(struct x86_regs *regs)
         return;
     }
 
-    if (int_num == 0x07) {  /* FPU Trap */
+    if (__x86_isr_int_num == 0x07) {  /* FPU Trap */
         trap_fpu();
         return;
     }
     
-    if (int_num == 0x80) {  /* syscall */
+    if (__x86_isr_int_num == 0x80) {  /* syscall */
         x86_thread_t *arch = cur_thread->arch;
         arch->regs = regs;
         //asm volatile ("sti");
@@ -132,17 +141,17 @@ void __x86_isr(struct x86_regs *regs)
     }
 
 
-    if (int_num < 32) {
-        const char *msg = int_msg[int_num];
-        printk("Recieved interrupt %d [err=%d]: %s\n", int_num, err_num, msg);
+    if (__x86_isr_int_num < 32) {
+        const char *msg = int_msg[__x86_isr_int_num];
+        printk("Recieved interrupt %d [err=%d]: %s\n", __x86_isr_int_num, __x86_isr_err_num, msg);
 
-        if (int_num == 0x0E) { /* Page Fault */
+        if (__x86_isr_int_num == 0x0E) { /* Page Fault */
             printk("CR2 = %p\n", read_cr2());
         }
         x86_dump_registers(regs);
         panic("Kernel Exception");
     } else {
-        printk("Unhandled interrupt %d\n", int_num);
+        printk("Unhandled interrupt %d\n", __x86_isr_int_num);
         panic("Kernel Exception");
     }
 }
