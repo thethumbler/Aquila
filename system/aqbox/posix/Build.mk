@@ -1,4 +1,4 @@
-dirs-y += sh/
+obj-y += sh.o
 obj-y += cat.o
 obj-y += echo.o
 obj-y += env.o
