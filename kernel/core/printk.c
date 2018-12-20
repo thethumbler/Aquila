@@ -57,7 +57,7 @@ static int putud(uint32_t val)
 {
     char buf[11];
     buf[10] = '\0';
-    if(!val) { buf[9] = '0'; return puts(&buf[9]); }
+    if (!val) { buf[9] = '0'; return puts(&buf[9]); }
     uint8_t i = 10;
     while (val) {
         buf[--i] = val%10 + '0';
@@ -70,6 +70,7 @@ static int putul(uint64_t val)
 {
     char buf[21];
     buf[20] = '\0';
+    if (!val) { buf[19] = '0'; return puts(&buf[19]); }
     uint8_t i = 20;
     while (val) {
         buf[--i] = val%10 + '0';
