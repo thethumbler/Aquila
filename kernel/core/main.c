@@ -2,6 +2,7 @@
 #include <core/panic.h>
 #include <core/string.h>
 #include <core/module.h>
+#include <core/arch.h>
 #include <mm/mm.h>
 #include <mm/vm.h>
 
@@ -45,6 +46,10 @@ void kmain(struct boot *boot)
         panic("Can not load init process");
     }
 
+    char *cmdline = boot->modules[0].cmdline;
+    char *argp[] = {cmdline, 0};
+    char *envp[] = {0};
+    arch_init_execve(init, 2, argp, 1, envp);
 
 #if EARLYCON_DISABLE_ON_INIT
     earlycon_disable();
