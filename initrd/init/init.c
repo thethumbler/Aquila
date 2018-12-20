@@ -38,17 +38,17 @@ int main(int argc, char **argv)
         }
     }
 
+    if (use_fbterm || !use_serial) {
+        char *argp[] = {"/bin/fbterm", NULL};
+        if (!fork()) execv(argp[0], argp);
+    }
+
     if (use_serial) {
         open("/dev/ttyS0", O_RDONLY);
         open("/dev/ttyS0", O_WRONLY);
         open("/dev/ttyS0", O_WRONLY);
 
         char *argp[] = {"/sbin/login", NULL};
-        if (!fork()) execv(argp[0], argp);
-    }
-
-    if (use_fbterm || !use_serial) {
-        char *argp[] = {"/bin/fbterm", NULL};
         if (!fork()) execv(argp[0], argp);
     }
 
