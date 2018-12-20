@@ -18,7 +18,7 @@
 
 /* Minimalistic Paging structure for BSP */
 #if ARCH_BITS==32
-volatile uint32_t _BSP_PD[1024] __aligned(PAGE_SIZE);
+volatile uint32_t _BSP_PD[1024]  __aligned(PAGE_SIZE);
 #else
 volatile uint64_t _BSP_PD[512]   __aligned(PAGE_SIZE);
 volatile uint64_t _BSP_PDPT[512] __aligned(PAGE_SIZE);
