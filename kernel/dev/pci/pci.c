@@ -63,6 +63,7 @@ static inline uint32_t get_bar(uint8_t bus, uint8_t dev, uint8_t func, uint8_t i
 
 int pci_device_scan(uint16_t vendor_id, uint16_t device_id, struct pci_dev *ref)
 {
+    /* TODO cache bus entries */
     uint8_t bus = 0;
     for (uint8_t dev = 0; dev < 32; ++dev) {
         for (uint8_t func = 0; func < 8; ++func) {
@@ -123,18 +124,16 @@ static void scan_device(uint8_t bus, uint8_t dev)
 {
     for (uint8_t func = 0; func < 8; ++func) {
         uint16_t vendor_id = get_vendor_id(bus, dev, func);
-        if (vendor_id != 0xFFFF) {
 
+        if (vendor_id != 0xFFFF) {
             uint32_t device_id = get_device_id(bus, dev, func);
             uint32_t class_code = get_class_code(bus, dev, func);
             uint32_t subclass_code = get_subclass_code(bus, dev, func);
 
-            /*
             printk("Bus: %d, Device: %d, Function %d\n", bus, dev, func);
             printk("  -> Vendor ID: %x, Device ID: %x, Class: %x, Subclass: %x\n", vendor_id, device_id, class_code, subclass_code);
-            printk("  -> Vednor: %s\n", get_vendor_name(vendor_id));
-            printk("  -> Device: %s\n", get_device_name(vendor_id, device_id));
-            */
+            //printk("  -> Vednor: %s\n", get_vendor_name(vendor_id));
+            //printk("  -> Device: %s\n", get_device_name(vendor_id, device_id));
         }
     }
 }
@@ -169,27 +168,39 @@ void pci_ioaddr_set(struct ioaddr *io)
  * PCI Bus Interface
  */
 
-int pci_scan_device(uint8_t class, uint8_t subclass, struct pci_dev *_dev)
+int pci_scan_device(uint8_t class, uint8_t subclass, struct pci_dev *_dev, size_t nr)
 {
+    size_t  idx = 0;
     uint8_t bus = 0;
+
     for (uint8_t dev = 0; dev < 32; ++dev) {
         for (uint8_t func = 0; func < 8; ++func) {
             uint16_t vendor_id = get_vendor_id(bus, dev, func);
+
             if (vendor_id != 0xFFFF) {
-                //uint32_t device_id = get_device_id(bus, dev, func);
                 uint32_t class_code = get_class_code(bus, dev, func);
                 uint32_t subclass_code = get_subclass_code(bus, dev, func);
+
                 if (class_code == class && subclass_code == subclass) {
-                    _dev->bus = bus;
-                    _dev->dev = dev;
-                    _dev->func = func;
-                    return 0;
+                    _dev[idx].bus  = bus;
+                    _dev[idx].dev  = dev;
+                    _dev[idx].func = func;
+                    ++idx;
+                    --nr;
+
+                    if (!nr)
+                        return idx;
                 }
             }
         }
     }
 
-    return -1;
+    return idx;
+}
+
+uint32_t pci_read_bar(struct pci_dev *dev, uint8_t id)
+{
+    return pci_read_dword(dev->bus, dev->dev, dev->func, 0x10 + 4 * id);
 }
 
 MODULE_INIT(pci, pci_prope, NULL)
