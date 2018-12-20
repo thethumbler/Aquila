@@ -17,6 +17,7 @@
 #include <sys/sched.h>
 
 struct page pages[768*1024] = {0};
+#define PAGE(addr)    (pages[(addr)/PAGE_SIZE])
 
 paddr_t mm_page_alloc(void)
 {
@@ -26,15 +27,19 @@ paddr_t mm_page_alloc(void)
 
 void mm_page_dealloc(paddr_t paddr)
 {
+    /* TODO: Check out of bounds */
+
     /* Release frame if it is no longer referenced */
-    if (!pages[paddr/PAGE_SIZE].refs)
+    if (!PAGE(paddr).refs)
         buddy_free(BUDDY_ZONE_NORMAL, paddr, PAGE_SIZE);
 }
 
 int mm_page_map(paddr_t paddr, vaddr_t vaddr, int flags)
 {
+    /* TODO: Check out of bounds */
+
     /* Increment references count to physical page */
-    pages[paddr/PAGE_SIZE].refs++;
+    PAGE(paddr).refs++;
 
     /* Call arch specific page mapper */
     return arch_page_map(paddr, vaddr, flags);
@@ -42,12 +47,14 @@ int mm_page_map(paddr_t paddr, vaddr_t vaddr, int flags)
 
 int mm_page_unmap(vaddr_t vaddr)
 {
+    /* TODO: Check out of bounds */
+
     /* Check if page is mapped */
     paddr_t paddr = arch_page_get_mapping(vaddr);
 
     if (paddr) {
         /* Decrement references count to physical page */
-        pages[paddr/PAGE_SIZE].refs--;
+        PAGE(paddr).refs--;
 
         /* Call arch specific page unmapper */
         arch_page_unmap(vaddr);
@@ -64,6 +71,8 @@ int mm_page_unmap(vaddr_t vaddr)
 
 int mm_map(paddr_t paddr, vaddr_t vaddr, size_t size, int flags)
 {
+    /* TODO: Check out of bounds */
+
     int alloc = !paddr;
 
     vaddr_t endaddr = UPPER_PAGE_BOUNDARY(vaddr + size);
@@ -91,6 +100,8 @@ int mm_map(paddr_t paddr, vaddr_t vaddr, size_t size, int flags)
 
 void mm_unmap(vaddr_t vaddr, size_t size)
 {
+    /* TODO: Check out of bounds */
+
     if (size < PAGE_SIZE) return;
 
     vaddr_t start = UPPER_PAGE_BOUNDARY(vaddr);
@@ -106,6 +117,8 @@ void mm_unmap(vaddr_t vaddr, size_t size)
 
 void mm_unmap_full(vaddr_t vaddr, size_t size)
 {
+    /* TODO: Check out of bounds */
+
     vaddr_t start = LOWER_PAGE_BOUNDARY(vaddr);
     vaddr_t end   = UPPER_PAGE_BOUNDARY(vaddr + size);
 
@@ -119,6 +132,8 @@ void mm_unmap_full(vaddr_t vaddr, size_t size)
 
 void mm_page_fault(vaddr_t vaddr)
 {
+    /* TODO: Check out of bounds */
+
     vaddr_t page_addr = vaddr & ~PAGE_MASK;
     vaddr_t page_end  = page_addr + PAGE_SIZE;
 
