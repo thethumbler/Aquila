@@ -10,7 +10,8 @@
 int ext2_inode_build(struct __ext2 *desc, size_t inode, struct inode **ref_inode)
 {
     //printk("ext2_inode_build(desc=%p, inode=%d, ref_inode=%p)\n", desc, inode, ref_inode);
-
+    
+    int err = 0;
     struct inode *node = NULL;
 
     /* In open inode table? */
@@ -20,9 +21,13 @@ int ext2_inode_build(struct __ext2 *desc, size_t inode, struct inode **ref_inode
     node = kmalloc(sizeof(struct inode));
     memset(node, 0, sizeof(*node));
 
-    struct ext2_inode *i = ext2_inode_read(desc, inode);
+    struct ext2_inode i;
+    
+    if ((err = ext2_inode_read(desc, inode, &i))) {
 
-    switch (i->type) {
+    }
+
+    switch (i.type) {
         case EXT2_INODE_TYPE_FIFO:  node->type = FS_FIFO; break;
         case EXT2_INODE_TYPE_CHR:   node->type = FS_CHRDEV; break;
         case EXT2_INODE_TYPE_DIR:   node->type = FS_DIR; break;
@@ -33,20 +38,19 @@ int ext2_inode_build(struct __ext2 *desc, size_t inode, struct inode **ref_inode
     }
 
     node->id   = inode;
-    node->size = i->size;
-    node->mask = i->permissions;
-    node->uid  = i->uid;
-    node->gid  = i->gid;
+    node->size = i.size;
+    node->mask = i.permissions;
+    node->uid  = i.uid;
+    node->gid  = i.gid;
 
-    node->atim.tv_sec  = i->last_access_time;
+    node->atim.tv_sec  = i.last_access_time;
     node->atim.tv_nsec = 0;
-    node->mtim.tv_sec  = i->last_modified_time;
+    node->mtim.tv_sec  = i.last_modified_time;
     node->mtim.tv_nsec = 0;
-    node->ctim.tv_sec  = i->creation_time;
+    node->ctim.tv_sec  = i.creation_time;
     node->ctim.tv_nsec = 0;
 
     node->fs   = &ext2fs;
-    kfree(i);
     node->p = desc;
 
     itbl_insert(desc->itbl, node);
@@ -68,15 +72,21 @@ int ext2_init()
 
 int ext2_load(struct inode *dev, struct inode **super)
 {
+    int err = 0;
+
     /* Read Superblock */
     struct ext2_superblock *sb = kmalloc(sizeof(*sb));
-    vfs_read(dev, 1024, sizeof(*sb), sb);
+
+    if ((err = vfs_read(dev, 1024, sizeof(*sb), sb)) < 0)
+        return err;
 
     /* Valid Ext2? */
     if (sb->ext2_signature != EXT2_SIGNATURE) {
         kfree(sb);
         return -EINVAL;
     }
+
+    printk("Valid EXT2\n");
 
     /* Build descriptor structure */
     struct __ext2 *desc = kmalloc(sizeof(struct __ext2));
@@ -86,13 +96,23 @@ int ext2_load(struct inode *dev, struct inode **super)
 
     /* Read block group descriptor table */
     uint32_t bgd_table = (desc->bs == 1024)? 2048 : desc->bs;
-    size_t bgds_count = sb->blocks_count/sb->blocks_per_block_group;
-    size_t bgds_size  = bgds_count * sizeof(struct ext2_block_group_descriptor);
-    desc->bgds_count = bgds_count;
+    size_t bgds_count  = (sb->blocks_count + sb->blocks_per_block_group - 1)/ sb->blocks_per_block_group;
+    size_t bgds_size   = bgds_count * sizeof(struct ext2_block_group_descriptor);
+    desc->bgds_count   = bgds_count;
+
     desc->bgd_table = kmalloc(bgds_size);
-    vfs_read(desc->supernode, bgd_table, bgds_size, desc->bgd_table);
+
+    if (!desc->bgd_table)
+        return -ENOMEM;
+
+    if ((err = vfs_read(desc->supernode, bgd_table, bgds_size, desc->bgd_table)) < 0)
+        return err;
 
     desc->itbl = kmalloc(sizeof(struct itbl));
+    
+    if (!desc->itbl)
+        return -ENOMEM;
+
     itbl_init(desc->itbl);
 
     if (super)
@@ -101,37 +121,36 @@ int ext2_load(struct inode *dev, struct inode **super)
     return 0;
 }
 
-int ext2_mount(const char *dir, int flags, void *data)
+int ext2_mount(const char *dir, int flags, void *_args)
 {
-    printk("ext2_mount(dir=%s, flags=%x, data=%p)\n", dir, flags, data);
+    printk("ext2_mount(dir=%s, flags=%x, args=%p)\n", dir, flags, _args);
 
     struct {
         char *dev;
         char *opt;
-    } *sdata = data;
-
-    //printk("data{dev=%s, opt=%s}\n", sdata->dev, sdata->opt);
+    } *args = _args;
 
     struct vnode vnode;
     struct inode *dev;
-    int ret;
+    int err;
 
     struct uio uio = {0};   /* FIXME */
-    if ((ret = vfs_lookup(sdata->dev, &uio, &vnode, NULL))) {
-        panic("Could not load device");
-    }
 
-    if ((ret = vfs_vget(&vnode, &dev)))
+    if ((err = vfs_lookup(args->dev, &uio, &vnode, NULL)))
+        goto error;
+
+    if ((err = vfs_vget(&vnode, &dev)))
         goto error;
 
     struct inode *fs;
-    if ((ret = ext2fs.load(dev, &fs)))
+
+    if ((err = ext2fs.load(dev, &fs)))
         goto error;
 
     return vfs_bind(dir, fs);
 
 error:
-    return ret;
+    return err;
 }
 
 struct fs ext2fs = {

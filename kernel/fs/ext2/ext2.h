@@ -170,7 +170,7 @@ void *ext2_block_write(struct __ext2 *desc, uint32_t number, void *buf);
 uint32_t ext2_block_allocate(struct __ext2 *desc);
 
 /* inode.c */
-struct ext2_inode *ext2_inode_read(struct __ext2 *desc, uint32_t inode);
+int ext2_inode_read(struct __ext2 *desc, uint32_t inode, struct ext2_inode *ref);
 struct ext2_inode *ext2_inode_write(struct __ext2 *desc, uint32_t inode, struct ext2_inode *i);
 size_t ext2_inode_block_read(struct __ext2 *desc, struct ext2_inode *inode, size_t idx, void *buf);
 size_t ext2_inode_block_write(struct __ext2 *desc, struct ext2_inode *inode, uint32_t inode_nr, size_t idx, void *buf);
