@@ -8,8 +8,13 @@ void arch_sys_execve(proc_t *proc, int argc, char * const _argp[], int envc, cha
     thread_t *thread = (thread_t *) proc->threads.head->value;
     x86_thread_t *arch = thread->arch;
 
+#if ARCH_BITS==32
     arch->eip = proc->entry;
     arch->eflags = X86_EFLAGS;
+#else
+    arch->rip = proc->entry;
+    arch->rflags = X86_EFLAGS;
+#endif
 
     char **argp = (char **) _argp;
     char **u_argp = kmalloc(argc * sizeof(char *));
@@ -18,7 +23,8 @@ void arch_sys_execve(proc_t *proc, int argc, char * const _argp[], int envc, cha
     char **u_envp = kmalloc(envc * sizeof(char *));
 
     /* Start at the top of user stack */
-    uintptr_t stack = USER_STACK;
+    volatile char *stack = (volatile char *) USER_STACK;
+    tlb_flush();
 
     /* Push envp strings */
     int tmp_envc = envc;
@@ -43,25 +49,34 @@ void arch_sys_execve(proc_t *proc, int argc, char * const _argp[], int envc, cha
     stack -= envc * sizeof(char *);
     memcpy((void *) stack, u_envp, envc * sizeof(char *));
 
-    uintptr_t env_ptr = stack;
+    uintptr_t env_ptr = (uintptr_t) stack;
 
     stack -= argc * sizeof(char *);
     memcpy((void *) stack, u_argp, argc * sizeof(char *));
 
-    uintptr_t arg_ptr = stack;
+    uintptr_t arg_ptr = (uintptr_t) stack;
 
     /* main(int argc, char **argv, char **envp) */
     stack -= sizeof(uintptr_t);
-    *(uintptr_t *) stack = env_ptr;
+    *(volatile uintptr_t *) stack = env_ptr;
 
     stack -= sizeof(uintptr_t);
-    *(uintptr_t *) stack = arg_ptr;
+    *(volatile uintptr_t *) stack = arg_ptr;
 
-    stack -= sizeof(int);
-    *(int *) stack = argc - 1;
+#if ARCH_BITS==32
+    stack -= sizeof(int32_t);
+    *(volatile int32_t *) stack = argc - 1;
+#else
+    stack -= sizeof(int64_t);
+    *(volatile int64_t *) stack = argc - 1;
+#endif
 
     kfree(u_envp);
     kfree(u_argp);
 
-    arch->esp = stack;
+#if ARCH_BITS==32
+    arch->esp = (uintptr_t) stack;
+#else
+    arch->rsp = (uintptr_t) stack;
+#endif
 }

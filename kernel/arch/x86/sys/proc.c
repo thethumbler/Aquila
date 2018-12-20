@@ -6,8 +6,6 @@
 #include <sys/signal.h>
 #include <ds/queue.h>
 
-#include "sys.h"
-
 void arch_proc_init(void *d, proc_t *p)
 {
     x86_proc_t *parch = kmalloc(sizeof(x86_proc_t));
@@ -18,14 +16,20 @@ void arch_proc_init(void *d, proc_t *p)
 
     struct arch_binfmt *s = d;
 
-    parch->pd = s->new;
+    parch->map = s->new_map;
 
     uintptr_t kstack_base = (uintptr_t) kmalloc(KERN_STACK_SIZE);
 
     tarch->kstack = kstack_base + KERN_STACK_SIZE;   /* Kernel stack */
+#if ARCH_BITS==32
     tarch->eip = p->entry;
     tarch->esp = USER_STACK;
     tarch->eflags = X86_EFLAGS;
+#else
+    tarch->rip = p->entry;
+    tarch->rsp = USER_STACK;
+    tarch->rflags = X86_EFLAGS;
+#endif
 
     p->arch = parch;
 
@@ -37,6 +41,17 @@ void arch_proc_kill(proc_t *proc)
 {
     x86_proc_t *arch = (x86_proc_t *) proc->arch;
 
-    arch_release_frame(arch->pd);
+    arch_release_frame(arch->map);
     kfree(arch);
+}
+
+void arch_init_execve(proc_t *proc, int argc, char * const _argp[], int envc, char * const _envp[])
+{
+    thread_t     *thread = (thread_t *) proc->threads.head->value;
+    x86_proc_t   *arch  = thread->owner->arch;
+
+    cur_thread = thread;
+    arch_switch_mapping(arch->map);
+    arch_sys_execve(proc, argc, _argp, envc, _envp);
+    cur_thread = NULL;
 }

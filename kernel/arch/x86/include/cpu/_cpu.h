@@ -45,8 +45,9 @@ struct x86_regs {
     eip, cs, eflags, esp, ss;
 #else
     uint64_t
-    edi, esi, ebp, ebx, ecx, edx, eax,
-    eip, cs, eflags, esp, ss;
+    r15, r14, r13, r12, r11, r10, r9, r8,
+    rdi, rsi, rbp, rbx, rcx, rdx, rax,
+    rip, cs, rflags, rsp, ss;
 #endif
 } __packed;
 
@@ -67,17 +68,25 @@ static inline void x86_dump_registers(struct x86_regs *regs)
     printk("esp = %p\n", regs->esp);
     printk("ss  = %p\n", regs->ss);
 #else
-    printk("rdi = %p\n", regs->edi);
-    printk("rsi = %p\n", regs->esi);
-    printk("rbp = %p\n", regs->ebp);
-    printk("rbx = %p\n", regs->ebx);
-    printk("rcx = %p\n", regs->ecx);
-    printk("rdx = %p\n", regs->edx);
-    printk("rax = %p\n", regs->eax);
-    printk("rip = %p\n", regs->eip);
+    printk("r15 = %p\n", regs->r15);
+    printk("r14 = %p\n", regs->r14);
+    printk("r13 = %p\n", regs->r13);
+    printk("r12 = %p\n", regs->r12);
+    printk("r11 = %p\n", regs->r11);
+    printk("r10 = %p\n", regs->r10);
+    printk("r9  = %p\n", regs->r9);
+    printk("r8  = %p\n", regs->r8);
+    printk("rdi = %p\n", regs->rdi);
+    printk("rsi = %p\n", regs->rsi);
+    printk("rbp = %p\n", regs->rbp);
+    printk("rbx = %p\n", regs->rbx);
+    printk("rcx = %p\n", regs->rcx);
+    printk("rdx = %p\n", regs->rdx);
+    printk("rax = %p\n", regs->rax);
+    printk("rip = %p\n", regs->rip);
     printk("cs  = %p\n", regs->cs );
-    printk("rflags = %p\n", regs->eflags);
-    printk("rsp = %p\n", regs->esp);
+    printk("rflags = %p\n", regs->rflags);
+    printk("rsp = %p\n", regs->rsp);
     printk("ss  = %p\n", regs->ss);
 #endif
 }
