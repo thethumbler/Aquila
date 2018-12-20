@@ -4,20 +4,20 @@
  * ISRs -- Interrupt Service Routines
  */
 
-.global int_num, err_num
-int_num: .long 0
-err_num: .long 0
+.global __x86_isr_int_num, __x86_isr_err_num
+__x86_isr_int_num: .long 0
+__x86_isr_err_num: .long 0
 
 .macro ISR_NOERR v
 .global __x86_isr\v
 __x86_isr\v:
     cli
 #if ARCH_BITS==32
-    movl $0x0, (err_num)
-    movl $\v, (int_num)
+    movl $0,  (__x86_isr_err_num)
+    movl $\v, (__x86_isr_int_num)
 #else
-    movl $0x0, err_num(%rip)
-    movl $\v, int_num(%rip)
+    movl $0,  __x86_isr_err_num(%rip)
+    movl $\v, __x86_isr_int_num(%rip)
 #endif
     jmp isr_handler
 .endm
@@ -27,19 +27,16 @@ __x86_isr\v:
 __x86_isr\v:
     cli
 #if ARCH_BITS==32
-    popl (err_num)
-    movl $\v, (int_num)
+    popl (__x86_isr_err_num)
+    movl $\v, (__x86_isr_int_num)
     jmp isr_handler
 #else
-    push %rax
     push %rbx
-    movl -16(%esp), %ebx
-    movabs err_num, %rax
-    movl %ebx, (%rax)
-    movabs int_num, %rax
-    movl $\v, (%rax)
+    movq 8(%rsp), %rbx
+    movl %ebx, __x86_isr_err_num(%rip)
     pop  %rbx
-    pop  %rax
+    add  $8, %rsp
+    movl $\v, __x86_isr_int_num(%rip)
     jmp isr_handler
 #endif
 .endm
@@ -61,6 +58,14 @@ __x86_isr\v:
     push %rbp
     push %rsi
     push %rdi
+    push %r8
+    push %r9
+    push %r10
+    push %r11
+    push %r12
+    push %r13
+    push %r14
+    push %r15
 #endif
 .endm
     
@@ -74,6 +79,14 @@ __x86_isr\v:
     pop %edx
     pop %eax
 #else
+    pop %r15
+    pop %r14
+    pop %r13
+    pop %r12
+    pop %r11
+    pop %r10
+    pop %r9
+    pop %r8
     pop %rdi
     pop %rsi
     pop %rbp
@@ -124,21 +137,22 @@ ISR_NOERR 30
 ISR_NOERR 31
 ISR_NOERR 128
 
-
 .extern __x86_isr
 isr_handler:
-    push_context
 #if ARCH_BITS==32
+    push_context
     push %esp
     call __x86_isr
     pop %eax
-#else
-    push %rsp
-    call __x86_isr
-    pop %rax
-#endif
     pop_context
     iret
+#else
+    push_context
+    mov %rsp, %rdi
+    call __x86_isr
+    pop_context
+    iretq
+#endif
 
 //
 // IRQs -- external interrupt requists (from PIC)
@@ -149,11 +163,12 @@ isr_handler:
 __x86_irq\n:
 #if ARCH_BITS==32
     cli
-    //movl %eax, (err_num)
-    movl $\i, (int_num)
+    movl $\i, (__x86_isr_int_num)
     jmp irq_stub
 #else
-    /* TODO */
+    cli
+    movl $\i, __x86_isr_int_num(%rip)
+    jmp irq_stub
 #endif
 .endm
 
@@ -185,7 +200,11 @@ irq_stub:
     pop_context
     iret
 #else
-    /* TODO */
+    push_context
+    mov %rsp, %rdi
+    call __x86_irq_handler
+    pop_context
+    iretq
 #endif
 
 .global x86_jump_user
@@ -200,12 +219,30 @@ x86_jump_user:  /* eax, eip, cs, eflags, esp, ss */
     pop  %eax   /* eax for sys_fork return */
     iret
 #else
-    /* TODO */
+    pop  %rax   /* Caller return address */
+    /* set segments */
+    mov  $0x20 | 0x3, %ax
+    movw %ax, %ds
+    movw %ax, %es
+    movw %ax, %fs
+    movw %ax, %gs
+    mov  %rdi, %rax   /* rax for sys_fork return */
+    /* push registers */
+    pushq %r9    /* ss */
+    pushq %r8    /* rsp */
+    pushq %rcx   /* rflags */
+    pushq %rdx   /* cs */
+    pushq %rsi   /* rip */
+    iretq
 #endif
 
-.global x86_read_eip
-x86_read_eip:
+.global x86_read_ip
+x86_read_ip:
+#if ARCH_BITS==32
     mov (%esp), %eax
+#else
+    mov (%rsp), %rax
+#endif
     ret
 
 .global x86_goto
@@ -218,7 +255,12 @@ x86_goto:
     mov $-1, %eax /* Return -1 -> Done switching */
     jmp *%ebx
 #else
-    /* TODO */
+    pop %rbx        /* Caller return address */
+    mov %rdi, %rbx  /* rip */
+    mov %rsi, %rbp
+    mov %rdx, %rsp
+    mov $-1, %rax /* Return -1 -> Done switching */
+    jmp *%rbx
 #endif
 
 
@@ -232,8 +274,13 @@ x86_sleep:
 
 .global x86_fork_return
 x86_fork_return:
+#if ARCH_BITS==32
     pop_context
     iret
+#else
+    pop_context
+    iretq
+#endif
 
 .global return_from_signal
 return_from_signal:
