@@ -9,7 +9,7 @@
 
 #define MAX_FBDEV   2
 
-static struct fbdev __registered_fbs[MAX_FBDEV];
+static struct fbdev registered_fbs[MAX_FBDEV];
 static size_t fbdev_cnt = 0;
 
 int fbdev_register(int type, void *data)
@@ -17,27 +17,27 @@ int fbdev_register(int type, void *data)
     if (fbdev_cnt == MAX_FBDEV)
         return -1;
 
-    __registered_fbs[fbdev_cnt].type = type;
-    __registered_fbs[fbdev_cnt++].data = data;
+    registered_fbs[fbdev_cnt].type = type;
+    registered_fbs[fbdev_cnt++].data = data;
 
     return 0;
 }
 
 static ssize_t fbdev_read(struct devid *dd, off_t offset, size_t size, void *buf)
 {
-    struct fbdev *fb = &__registered_fbs[dd->minor];
+    struct fbdev *fb = &registered_fbs[dd->minor];
     return fb->dev->read(dd, offset, size, buf);
 }
 
 static ssize_t fbdev_write(struct devid *dd, off_t offset, size_t size, void *buf)
 {
-    struct fbdev *fb = &__registered_fbs[dd->minor];
+    struct fbdev *fb = &registered_fbs[dd->minor];
     return fb->dev->write(dd, offset, size, buf);
 }
 
 static int fbdev_ioctl(struct devid *dd, int request, void *argp)
 {
-    struct fbdev *fb = &__registered_fbs[dd->minor];
+    struct fbdev *fb = &registered_fbs[dd->minor];
 
     switch (request) {
     case FBIOGET_FSCREENINFO:
@@ -53,14 +53,14 @@ static int fbdev_ioctl(struct devid *dd, int request, void *argp)
 
 static int fbdev_mmap(struct devid *dd, struct vmr *vmr)
 {
-    struct fbdev *fb = &__registered_fbs[dd->minor];
+    struct fbdev *fb = &registered_fbs[dd->minor];
     return fb->dev->mmap(dd, vmr);
 }
 
 int fbdev_probe()
 {
     for (size_t i = 0; i < fbdev_cnt; ++i) {
-        struct fbdev *fb = &__registered_fbs[i];
+        struct fbdev *fb = &registered_fbs[i];
 
         switch (fb->type) {
             case FBDEV_TYPE_VESA:

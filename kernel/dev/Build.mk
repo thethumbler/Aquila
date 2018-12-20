@@ -1,4 +1,10 @@
-dirs-y += bus/
-dirs-y += chr/
-dirs-y += blk/
-obj-y += kdev.o
+dirs-y += pci/
+dirs-$(DEV_KEYBOARD) += kbd/
+dirs-$(DEV_FRAMEBUFFER) += fb/
+dirs-y += tty/
+dirs-$(DEV_MOUSE) += mouse/
+dirs-$(DEV_MEMDEV) += mem/
+dirs-y += rd/
+dirs-$(DEV_ATA) += ata/
+dirs-$(DEV_FDC) += fdc/
+obj-y  += kdev.o
