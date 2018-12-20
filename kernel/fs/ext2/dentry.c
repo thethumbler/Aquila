@@ -38,6 +38,8 @@ found:
 
 int ext2_dentry_create(struct vnode *dir, const char *name, uint32_t inode, uint8_t type)
 {
+    int err = 0;
+
     if (dir->type != FS_DIR)    /* Not a directory */
         return -ENOTDIR;
 
@@ -50,14 +52,19 @@ int ext2_dentry_create(struct vnode *dir, const char *name, uint32_t inode, uint
     /* Look for a candidate entry */
     char *buf = kmalloc(desc->bs);
     struct ext2_dentry *cur = NULL;
-    struct ext2_inode *dir_inode = ext2_inode_read(desc, dir->id);
+
+    struct ext2_inode dir_inode;
+    if ((err = ext2_inode_read(desc, dir->id, &dir_inode))) {
+        /* TODO Error checking */
+    }
+
     size_t bs = desc->bs;
-    size_t blocks_nr = dir_inode->size / bs;
+    size_t blocks_nr = dir_inode.size / bs;
     size_t flag = 0;    /* 0 => allocate, 1 => replace, 2 => split */
     size_t block = 0;
 
     for (block = 0; block < blocks_nr; ++block) {
-        ext2_inode_block_read(desc, dir_inode, block, buf);
+        ext2_inode_block_read(desc, &dir_inode, block, buf);
         cur = (struct ext2_dentry *) buf;
 
         while ((char *) cur < (char *) buf + bs) {
@@ -82,7 +89,7 @@ done:
         cur->name_length = name_length;
         cur->type = type;
         /* Update block */
-        ext2_inode_block_write(desc, dir_inode, dir->id, block, buf);
+        ext2_inode_block_write(desc, &dir_inode, dir->id, block, buf);
     } else if (flag == 2) { /* Split */
         size_t new_size = (cur->name_length + sizeof(struct ext2_dentry) + 3) & ~3;
         struct ext2_dentry *next = (struct ext2_dentry *) ((char *) cur + new_size);
@@ -96,12 +103,11 @@ done:
         cur->size = new_size;
 
         /* Update block */
-        ext2_inode_block_write(desc, dir_inode, dir->id, block, buf);
+        ext2_inode_block_write(desc, &dir_inode, dir->id, block, buf);
     } else {    /* Allocate */
         panic("Not impelemented\n");
     }
 
-    kfree(dir_inode);
     kfree(buf);
     return 0;
 }

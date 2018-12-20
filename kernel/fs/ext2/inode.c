@@ -2,19 +2,31 @@
 #include <ds/bitmap.h>
 #include <core/panic.h> /* XXX */
 
-struct ext2_inode *ext2_inode_read(struct __ext2 *desc, uint32_t inode)
+int ext2_inode_read(struct __ext2 *desc, uint32_t inode, struct ext2_inode *ref)
 {
     if (inode >= desc->superblock->inodes_count)    /* Invalid inode */
-        return NULL;
+        return -EINVAL;
 
     uint32_t block_group = (inode - 1) / desc->superblock->inodes_per_block_group;
     struct ext2_block_group_descriptor *bgd = &desc->bgd_table[block_group];
 
     uint32_t index = (inode - 1) % desc->superblock->inodes_per_block_group;
     
-    struct ext2_inode *i = kmalloc(sizeof(struct ext2_inode));
-    vfs_read(desc->supernode, bgd->inode_table * desc->bs + index * desc->superblock->inode_size, sizeof(*i), i);
-    return i;
+    if (ref) {
+        off_t off = bgd->inode_table * desc->bs + index * desc->superblock->inode_size;
+        size_t size = sizeof(struct ext2_inode);
+        ssize_t r;
+
+        if ((r = vfs_read(desc->supernode, off, size, ref)) != (ssize_t) size) {
+            if (r < 0)
+                return r;
+
+            /* FIXME Check for further errors? */
+            return -EINVAL;
+        }
+    }
+
+    return 0;
 }
 
 struct ext2_inode *ext2_inode_write(struct __ext2 *desc, uint32_t inode, struct ext2_inode *i)
