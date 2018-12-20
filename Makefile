@@ -1,5 +1,6 @@
 export
 
+#ARCH = x86_64
 ARCH = x86
 CP = cp
 BASH = bash
@@ -18,16 +19,18 @@ endif
 KERNEL_CONFIG := $(CONFIG)
 ifeq ($(KERNEL_CONFIG),)
 KERNEL_CONFIG := i686-pc
+#KERNEL_CONFIG := x86_64-pc
 endif
 
 KERNEL_MAKE_FLAGS := CONFIG=$(KERNEL_CONFIG)
 
-aquila.iso: kernel ramdisk
-	$(GRUB_MKRESCUE) -d /usr/lib/grub/i386-pc/ -o aquila.iso iso/
+aquila.iso: kernel initrd
+	#$(GRUB_MKRESCUE) -d /usr/lib/grub/i386-pc/ -o aquila.iso iso/
+	$(GRUB_MKRESCUE) -d /usr/lib/grub/i386-pc/ --install-modules="multiboot normal" --locales="en@quot" --fonts=ascii -o aquila.iso iso/
 
-.PHONY: kernel ramdisk system
+.PHONY: kernel initrd system
 kernel: iso/kernel.elf
-ramdisk: iso/initrd.img
+initrd: iso/initrd.img
 system:
 	$(MAKE) -C system/
 
@@ -41,21 +44,20 @@ iso/kernel.elf: kernel/arch/$(ARCH)/kernel.elf
 %$(ARCH)/kernel.elf:
 	$(MAKE) $(KERNEL_MAKE_FLAGS) -C kernel/
 
-iso/initrd.img: ramdisk/initrd.img
-	cp ramdisk/initrd.img iso/initrd.img
+iso/initrd.img: initrd/initrd.img
+	cp initrd/initrd.img iso/initrd.img
 
-ramdisk/initrd.img: system
-	cd ramdisk; $(BASH) build.sh
+initrd/initrd.img: system
+	$(MAKE) -C initrd/
 
 try: aquila.iso
-	qemu-kvm -cdrom aquila.iso -serial stdio -m 1G -d cpu_reset -no-reboot -hda hd.img -boot d
+	qemu-kvm -fda floppy.img -cdrom aquila.iso -hda hd.img -serial stdio -m 1G -d cpu_reset -no-reboot -boot d
 
 .PHONY: clean
 clean:
 	$(MAKE) $(KERNEL_MAKE_FLAGS) clean -C kernel
 	$(MAKE) clean -C system
-	$(RM) -f ramdisk/out/* -r
-	$(RM) -f ramdisk/initrd.img
+	$(MAKE) clean -C initrd
 	$(RM) -f iso/kernel.elf iso/initrd.img aquila.iso
 
 .PHONY: distclean
