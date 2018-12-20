@@ -1,3 +1,4 @@
+#define __aquila__ 
 #include <aqbox.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -370,12 +371,21 @@ int eval(char *buf)
     char *argv[50];
     int args_i = 0;
 
+    /* replace # with NULL */
+    char *hash;
+    if ((hash = strchr(buf, '#')))
+        *hash = 0;
+
     char *tok = strtok(buf, " \t\n");
 
     while (tok) {
         argv[args_i++] = tok;
         tok = strtok(NULL, " \t\n");
     }
+
+    /* return if line is empty */
+    if (!args_i)
+        return 0;
 
     argv[args_i] = NULL;
 
@@ -396,10 +406,6 @@ int eval(char *buf)
     int (*f)() = aqsh_get_command(argv[0]);
     if (f) return f(args_i, argv);
 
-    /* Check if command is built-in in aqbox - FIXME */
-    //f = aqbox_get_applet(argv[0]);
-    //if (f) return f(args_i, argv);
-
     /* Check commands from PATH */
     char *env_path = getenv("PATH");
     if (env_path) {
@@ -411,14 +417,14 @@ int eval(char *buf)
             int fd = open(buf, O_RDONLY);
             if (fd > 0) {
                 close(fd);
-                int ret =  run_prog(buf, argv);
+                int ret = run_prog(buf, argv);
                 free(path);
                 return ret;
             }
         } while (comp = strtok(NULL, ":"));
     }
 
-    printf("aqsh: %s: command not found\n", argv[0]);
+    fprintf(stderr, "aqsh: %s: command not found\n", argv[0]);
     return -1;
 }
 
@@ -446,8 +452,33 @@ void shell()
     }
 }
 
+void shell_batch(const char *path)
+{
+    FILE *file = fopen(path, "r");
+
+    if (!file) {
+        fprintf(stderr, "aqsh: can not execute %s: ", path);
+        perror("");
+        return;
+    }
+
+    char buf[1024];
+
+    while (fgets(buf, sizeof(buf), file)) {
+        eval(buf);
+    }
+}
+
 AQBOX_APPLET(sh)(int argc, char **argv)
 {
-    shell();
+    if (argc > 1) {
+        /* batch */
+        for (int i = 1; i < argc; ++i)
+            shell_batch(argv[i]);
+    } else {
+        /* interactive */
+        shell();
+    }
+
     return 0;
 }
