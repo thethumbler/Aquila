@@ -15,6 +15,7 @@ void arch_proc_init(void *arch, proc_t *proc);
 void arch_proc_spawn(proc_t *init);
 void arch_proc_switch(proc_t *proc) __attribute__((noreturn));
 void arch_proc_kill(proc_t *proc);
+void arch_init_execve(proc_t *proc, int argc, char * const _argp[], int envc, char * const _envp[]);
 void arch_sleep();
 
 /* arch/ARCH/sys/thread.c */
