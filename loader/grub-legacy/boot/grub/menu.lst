@@ -1,0 +1,7 @@
+default=0
+timeout=5
+
+title AquilaOS
+	kernel /boot/kernel.elf
+	module /boot/initrd.img
+	vbeset 0x142
