@@ -5,6 +5,7 @@ int cmd_cat(int, char**);
 int cmd_clear(int, char**);
 int cmd_echo(int, char**);
 int cmd_env(int, char**);
+int cmd_getty(int, char**);
 int cmd_login(int, char**);
 int cmd_ls(int, char**);
 int cmd_mkdir(int, char**);
@@ -12,6 +13,7 @@ int cmd_mknod(int, char**);
 int cmd_mount(int, char**);
 int cmd_ps(int, char**);
 int cmd_pwd(int, char**);
+int cmd_readmbr(int, char**);
 int cmd_screenfetch(int, char**);
 int cmd_sh(int, char**);
 int cmd_stat(int, char**);
@@ -28,6 +30,7 @@ struct applet {
     APPLET(clear),
     APPLET(echo),
     APPLET(env),
+    APPLET(getty),
     APPLET(login),
     APPLET(ls),
     APPLET(mkdir),
@@ -35,6 +38,7 @@ struct applet {
     APPLET(mount),
     APPLET(ps),
     APPLET(pwd),
+    APPLET(readmbr),
     APPLET(screenfetch),
     APPLET(sh),
     APPLET(stat),
