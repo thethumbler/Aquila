@@ -74,7 +74,8 @@ static int vfs_parse_path(const char *path, struct uio *uio, char **abs_path)
             if (token[1] == '.' && i > 0)
                 valid_tokens[--i] = NULL;
         } else {
-            valid_tokens[i++] = token;
+            if (*token)
+                valid_tokens[i++] = token;
         }
     }
 
