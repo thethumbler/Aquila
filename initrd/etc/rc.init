@@ -1,0 +1,29 @@
+#!/bin/sh
+export PATH=/bin:/sbin
+
+# Mount devfs on /dev
+mount -t devfs /dev
+
+# Populate static devices
+mknod /dev/console c 5 1 
+mknod /dev/ptmx c 5 2 
+mknod /dev/kbd c 11 0 
+mknod /dev/fb0 c 29 0 
+mknod /dev/hda b 3 0 
+mknod /dev/hda1 b 3 1 
+mknod /dev/ttyS0 c 4 64 
+mknod /dev/mouse c 10 1 
+
+# Mount devpts on /dev/pts
+mkdir /dev/pts
+mount -t devpts /dev/pts
+
+# Mount procfs on /proc
+#mount -t procfs /proc
+
+# Use tmpfs for /root and /home/live
+#mount -t tmpfs /root
+#mount -t tmpfs /home/live
+
+# Use tmpfs for /tmp
+#mount -t tmpfs /tmp
