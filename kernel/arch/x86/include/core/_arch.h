@@ -8,16 +8,25 @@
 #define X86_CS      (0x18 | 3)
 
 typedef struct {
-    uintptr_t   pd; /* Page Directory */
+    uintptr_t   map; /* Process paging structure */
 } __attribute__((packed)) x86_proc_t;
 
 typedef struct {
     uintptr_t   kstack; /* Kernel stack */
+
+#if ARCH_BITS==32
     uintptr_t   eip;
     uintptr_t   esp;
     uintptr_t   ebp;
     uintptr_t   eflags;
     uintptr_t   eax;    /* For syscall return if thread is not spawned */
+#else
+    uintptr_t   rip;
+    uintptr_t   rsp;
+    uintptr_t   rbp;
+    uintptr_t   rflags;
+    uintptr_t   rax;    /* For syscall return if thread is not spawned */
+#endif
 
     struct x86_regs *regs;  /* Pointer to registers on the stack */
 
@@ -26,7 +35,6 @@ typedef struct {
     /* Flags */
     int fpu_enabled : 1;
     int isr : 1;
-
 } __attribute__((packed)) x86_thread_t;
 
 void arch_syscall(struct x86_regs *r);
@@ -45,5 +53,13 @@ static inline void arch_interrupts_disable()
 {
     asm volatile ("cli");
 }
+
+void x86_jump_user(uintptr_t eax, uintptr_t eip, uintptr_t cs, uintptr_t eflags, uintptr_t esp, uintptr_t ss) __attribute__((noreturn));
+void x86_goto(uintptr_t eip, uintptr_t ebp, uintptr_t esp) __attribute__((noreturn));
+
+struct arch_binfmt {
+    uintptr_t cur_map;
+    uintptr_t new_map;
+};
 
 #endif /* ! _X86_ARCH_H */

@@ -6,17 +6,25 @@
 #include <sys/signal.h>
 #include <ds/queue.h>
 
-#include "sys.h"
+#define PUSH(stack, type, value)\
+do {\
+    (stack) -= sizeof(type);\
+    *((type *) (stack)) = (type) (value);\
+} while (0)
 
 void arch_thread_spawn(thread_t *thread)
 {
     x86_thread_t *arch  = thread->arch;
     x86_proc_t   *parch = thread->owner->arch;
 
-    switch_page_directory(parch->pd);
+    arch_switch_mapping(parch->map);
     x86_kernel_stack_set(arch->kstack);
 
+#if ARCH_BITS==32
     x86_jump_user(arch->eax, arch->eip, X86_CS, arch->eflags, arch->esp, X86_SS);
+#else
+    x86_jump_user(arch->rax, arch->rip, X86_CS, arch->rflags, arch->rsp, X86_SS);
+#endif
 }
 
 void arch_thread_switch(thread_t *thread)
@@ -24,7 +32,7 @@ void arch_thread_switch(thread_t *thread)
     x86_thread_t *arch  = thread->arch;
     x86_proc_t   *parch = thread->owner->arch;
 
-    switch_page_directory(parch->pd);
+    arch_switch_mapping(parch->map);
     x86_kernel_stack_set(arch->kstack);
     disable_fpu();
 
@@ -34,7 +42,11 @@ void arch_thread_switch(thread_t *thread)
         for (;;);
     }
 
+#if ARCH_BITS==32
     x86_goto(arch->eip, arch->ebp, arch->esp);
+#else
+    x86_goto(arch->rip, arch->rbp, arch->rsp);
+#endif
 }
 
 void arch_thread_create(thread_t *thread, uintptr_t stack, uintptr_t entry, uintptr_t uentry, uintptr_t arg)
@@ -43,8 +55,13 @@ void arch_thread_create(thread_t *thread, uintptr_t stack, uintptr_t entry, uint
     memset(arch, 0, sizeof(x86_thread_t));
 
     arch->kstack = (uintptr_t) kmalloc(KERN_STACK_SIZE) + KERN_STACK_SIZE;
+#if ARCH_BITS==32
     arch->eflags = X86_EFLAGS;
     arch->eip = entry;
+#else
+    arch->rflags = X86_EFLAGS;
+    arch->rip = entry;
+#endif
 
     /* Push thread argument */
     PUSH(stack, void *, arg);
@@ -55,7 +72,11 @@ void arch_thread_create(thread_t *thread, uintptr_t stack, uintptr_t entry, uint
     /* Dummy return address */
     PUSH(stack, void *, 0);
 
+#if ARCH_BITS==32
     arch->esp = stack;
+#else
+    arch->rsp = stack;
+#endif
     thread->arch = arch;
 }
 
@@ -85,23 +106,30 @@ void arch_thread_kill(thread_t *thread)
 void internal_arch_sleep()
 {
     x86_thread_t *arch = cur_thread->arch;
-    extern uintptr_t x86_read_eip();
+    extern uintptr_t x86_read_ip();
 
-    uintptr_t eip = 0, esp = 0, ebp = 0;    
+    uintptr_t ip = 0, sp = 0, bp = 0;    
 #if ARCH_BITS==32
-    asm("mov %%esp, %0":"=r"(esp)); /* read esp */
-    asm("mov %%ebp, %0":"=r"(ebp)); /* read ebp */
+    asm("mov %%esp, %0":"=r"(sp)); /* read esp */
+    asm("mov %%ebp, %0":"=r"(bp)); /* read ebp */
 #else
-    /* TODO */
+    asm("mov %%rsp, %0":"=r"(sp)); /* read rsp */
+    asm("mov %%rbp, %0":"=r"(bp)); /* read rbp */
 #endif
-    eip = x86_read_eip();
+    ip = x86_read_ip();
 
-    if (eip == (uintptr_t) -1) {  /* Done switching */
+    if (ip == (uintptr_t) -1) {  /* Done switching */
         return;
     }
 
-    arch->eip = eip;
-    arch->esp = esp;
-    arch->ebp = ebp;
+#if ARCH_BITS==32
+    arch->eip = ip;
+    arch->esp = sp;
+    arch->ebp = bp;
+#else
+    arch->rip = ip;
+    arch->rsp = sp;
+    arch->rbp = bp;
+#endif
     kernel_idle();
 }

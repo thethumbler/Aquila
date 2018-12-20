@@ -17,24 +17,31 @@ static void x86_sched_handler(struct x86_regs *r)
     if (!kidle) {
         x86_thread_t *arch = (x86_thread_t *) cur_thread->arch;
 
-        extern uintptr_t x86_read_eip();
+        extern uintptr_t x86_read_ip();
 
-        volatile uintptr_t eip = 0, esp = 0, ebp = 0;    
+        volatile uintptr_t ip = 0, sp = 0, bp = 0;    
 #if ARCH_BITS==32
-        asm volatile("mov %%esp, %0":"=r"(esp)); /* read esp */
-        asm volatile("mov %%ebp, %0":"=r"(ebp)); /* read ebp */
+        asm volatile("mov %%esp, %0":"=r"(sp)); /* read esp */
+        asm volatile("mov %%ebp, %0":"=r"(bp)); /* read ebp */
 #else
-        /* TODO */
+        asm volatile("mov %%rsp, %0":"=r"(sp)); /* read rsp */
+        asm volatile("mov %%rbp, %0":"=r"(bp)); /* read rbp */
 #endif
-        eip = x86_read_eip();
+        ip = x86_read_ip();
 
-        if (eip == (uintptr_t) -1) {    /* Done switching */
+        if (ip == (uintptr_t) -1) {    /* Done switching */
             return;
         }
 
-        arch->eip = eip;
-        arch->esp = esp;
-        arch->ebp = ebp;
+#if ARCH_BITS==32
+        arch->eip = ip;
+        arch->esp = sp;
+        arch->ebp = bp;
+#else
+        arch->rip = ip;
+        arch->rsp = sp;
+        arch->rbp = bp;
+#endif
     }
 
     schedule();
@@ -61,7 +68,6 @@ void arch_idle()
     uintptr_t esp = VMA(0x100000);
     x86_kernel_stack_set(esp);
     uintptr_t stack = (uintptr_t) __idle_stack + 8192;
-
     extern void x86_goto(uintptr_t eip, uintptr_t ebp, uintptr_t esp) __attribute__((noreturn));
     x86_goto((uintptr_t) __arch_idle, stack, stack);
 }

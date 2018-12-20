@@ -109,7 +109,7 @@ typedef union __page {
 #define LOWER_TABLE_BOUNDARY(ptr) ((ptr) & ~TABLE_MASK)
 #define UPPER_TABLE_BOUNDARY(ptr) (((ptr) + TABLE_MASK) & ~TABLE_MASK)
 
-#define GET_PHYS_ADDR(s) (((s)->phys_addr) << 12)
+#define GET_PHYS_ADDR(s) (((s)->phys_addr) << 12U)
 
 typedef union {
     struct {

@@ -7,8 +7,6 @@
 
 #include <bits/errno.h>
 
-#include "sys.h"
-
 int arch_proc_fork(thread_t *thread, proc_t *fork)
 {
     int err = 0;
@@ -29,17 +27,16 @@ int arch_proc_fork(thread_t *thread, proc_t *fork)
         goto free_resources;
     }
 
-    uintptr_t cur_proc_pd = pparch->pd;
-    uintptr_t new_proc_pd = get_new_page_directory();
+    uintptr_t cur_proc_map = pparch->map;
+    uintptr_t new_proc_map = arch_get_frame();
     
-    if (!new_proc_pd) {
-        /* Failed to allocate page directory */
+    if (!new_proc_map) {
+        /* Failed to allocate paging structure */
         err = -ENOMEM;
         goto free_resources;
     }
 
-    //pmman.copy_fork_mapping(cur_proc_pd, new_proc_pd);
-    arch_mm_fork(cur_proc_pd, new_proc_pd);
+    arch_mm_fork(cur_proc_map, new_proc_map);
 
     /* Setup kstack */
     uintptr_t fkstack_base = (uintptr_t) kmalloc(KERN_STACK_SIZE);
@@ -53,12 +50,16 @@ int arch_proc_fork(thread_t *thread, proc_t *fork)
     memcpy((void *) fkstack_base, (void *) (ptarch->kstack - KERN_STACK_SIZE), KERN_STACK_SIZE);
 
     extern void x86_fork_return();
+#if ARCH_BITS==32
     ftarch->eip = (uintptr_t) x86_fork_return;
     ftarch->esp = (uintptr_t) fork_regs;
+#else
+    ftarch->rip = (uintptr_t) x86_fork_return;
+    ftarch->rsp = (uintptr_t) fork_regs;
+#endif
 
-    fparch->pd = new_proc_pd;
-
-    fork->arch = fparch;
+    fparch->map = new_proc_map;
+    fork->arch  = fparch;
 
     thread_t *fthread = (thread_t *) fork->threads.head->value;
     fthread->arch = ftarch;
