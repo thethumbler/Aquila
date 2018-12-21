@@ -22,7 +22,7 @@ struct pty {
     queue_t pts_write_queue; /* Slave write, Master read wait queue */
 };
 
-#define PTY_BUF 512
+#define PTY_BUF 1024
 
 static struct pty *ptys[256] = {0};
 
