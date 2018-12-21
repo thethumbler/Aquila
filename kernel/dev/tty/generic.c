@@ -104,15 +104,18 @@ ssize_t tty_slave_write(struct tty *tty, size_t size, void *buf)
         for (written = 0; written < size; ++written) {
             char c = ((char *) buf)[written];
             if (c == '\n' && (tty->tios.c_oflag & ONLCR)) {
-                tty->master_write(tty, 2, "\r\n");
+                if (tty->master_write(tty, 2, "\r\n") != 2) /* FIXME should handle special cases */
+                    break;
             } else if (c == '\r' && (tty->tios.c_oflag & OCRNL)) {
-                tty->master_write(tty, 1, "\n");
+                if (tty->master_write(tty, 1, "\n") != 1)
+                    break;
             } else if (c == '\r' && (tty->tios.c_oflag & ONOCR)) {
                 /* TODO */
             } else if (c == '\n' && (tty->tios.c_oflag & ONLRET)) {
                 /* TODO */
             } else {
-                tty->master_write(tty, 1, &c);
+                if (tty->master_write(tty, 1, &c) != 1)
+                    break;
             }
         }
         return written;
