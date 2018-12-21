@@ -24,7 +24,7 @@ struct pty {
 
 #define PTY_BUF 512
 
-static struct pty *__pty[256] = {0};
+static struct pty *ptys[256] = {0};
 
 struct dev ptmdev;
 struct dev ptsdev;
@@ -72,19 +72,19 @@ static int ptm_new(struct pty *pty, struct inode **ref)
 
 static ssize_t ptm_read(struct devid *dd, off_t offset __unused, size_t size, void *buf)
 {
-    struct pty *pty = __pty[dd->minor];
+    struct pty *pty = ptys[dd->minor];
     return ringbuf_read(pty->out, size, buf);  
 }
 
 static ssize_t ptm_write(struct devid *dd, off_t offset __unused, size_t size, void *buf)
 {
-    struct pty *pty = __pty[dd->minor];
+    struct pty *pty = ptys[dd->minor];
     return tty_master_write(pty->tty, size, buf);  
 }
 
 static int pty_ioctl(struct devid *dd, int request, void *argp)
 {
-    struct pty *pty = __pty[dd->minor];
+    struct pty *pty = ptys[dd->minor];
 
     switch (request) {
         case TIOCGPTN:
@@ -130,13 +130,13 @@ static int pts_new(struct pty *pty, struct inode **ref)
 
 ssize_t pts_read(struct devid *dd, off_t offset __unused, size_t size, void *buf)
 {
-    struct pty *pty = __pty[dd->minor];
+    struct pty *pty = ptys[dd->minor];
     return ringbuf_read(pty->in, size, buf);
 }
 
 ssize_t pts_write(struct devid *dd, off_t offset __unused, size_t size, void *buf)
 {
-    struct pty *pty = __pty[dd->minor];
+    struct pty *pty = ptys[dd->minor];
     return tty_slave_write(pty->tty, size, buf);
 }
 
@@ -189,7 +189,7 @@ int pty_new(proc_t *proc, struct inode **master)
     if ((err = pts_new(pty, &pty->slave)))
         goto error;
 
-    __pty[pty->id] = pty;
+    ptys[pty->id] = pty;
 
     return 0;
 
