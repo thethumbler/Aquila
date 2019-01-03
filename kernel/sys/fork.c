@@ -2,7 +2,7 @@
  *          fork() syscall handler
  *
  *
- *  This file is part of Aquila OS and is released under
+ *  This file is part of AquilaOS and is released under
  *  the terms of GNU GPLv3 - See LICENSE.
  *
  *  Copyright (C) Mohamed Anwar
@@ -18,7 +18,7 @@
 #include <ds/queue.h>
 #include <bits/errno.h>
 
-static int copy_fds(proc_t *parent, proc_t *fork)
+static int copy_fds(struct proc *parent, struct proc *fork)
 {
     /* Copy open files descriptors */
     fork->fds = kmalloc(FDS_COUNT * sizeof(struct file));
@@ -31,7 +31,7 @@ static int copy_fds(proc_t *parent, proc_t *fork)
     return 0;
 }
 
-static int copy_vmr(proc_t *parent, proc_t *fork)
+static int copy_vmr(struct proc *parent, struct proc *fork)
 {
     /* Copy VMRs */
     forlinked (node, parent->vmr.head, node->next) {
@@ -45,7 +45,7 @@ static int copy_vmr(proc_t *parent, proc_t *fork)
     return 0;
 }
 
-static int fork_proc_copy(proc_t *parent, proc_t *fork)
+static int fork_proc_copy(struct proc *parent, struct proc *fork)
 {
     fork->pgrp = parent->pgrp;
     fork->pgrp_node = enqueue(fork->pgrp->procs, fork);
@@ -63,21 +63,21 @@ static int fork_proc_copy(proc_t *parent, proc_t *fork)
     return 0;
 }
 
-int proc_fork(thread_t *thread, proc_t **ref)
+int proc_fork(struct thread *thread, struct proc **ref)
 {
     int err = 0;
-    proc_t *fork = NULL;
-    thread_t *fork_thread = NULL;
+    struct proc *fork = NULL;
+    struct thread *fork_thread = NULL;
 
     /* Create new process for fork */
     if ((err = proc_new(&fork)))
         goto error;
 
     /* New process main thread */
-    fork_thread = (thread_t *) fork->threads.head->value;
+    fork_thread = (struct thread *) fork->threads.head->value;
 
     /* Parent process */
-    proc_t *proc = thread->owner;
+    struct proc *proc = thread->owner;
 
     /* Copy process structure */
     if ((err = fork_proc_copy(proc, fork)))

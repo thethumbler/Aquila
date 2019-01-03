@@ -1,11 +1,13 @@
 #include <core/system.h>
+#include <core/module.h>
+
 #include <dev/tty.h>
 #include <dev/uart.h>
 #include <dev/pci.h>
 #include <cpu/cpu.h>
 #include <cpu/io.h>
 
-#include <chipset/misc.h>   /* XXX */
+#include <platform/misc.h>   /* XXX */
 
 #define UART_MMIO   0
 
@@ -17,7 +19,7 @@
 #define UART_DLH    1
 #define UART_LCR_DLAB    0x80
 
-struct __uart uart_8250;
+struct uart uart_8250;
 struct ioaddr io8250 = {
 #if UART_MMIO
     .addr = 0xCF00B000,
@@ -31,22 +33,22 @@ struct ioaddr io8250 = {
 #define UART_8250_IRQ   4
 
 
-static int serial_empty()
+static int serial_empty(void)
 {
     return io_in8(&io8250, 5) & 0x20;
 }
 
-static int serial_received()
+static int serial_received(void)
 {
    return io_in8(&io8250, 5) & 0x01;
 }
 
-char uart_8250_receive(struct __uart *u __unused)
+char uart_8250_receive(struct uart *u __unused)
 {
     return io_in8(&io8250, 0);
 }
 
-ssize_t uart_8250_transmit(struct __uart *u __unused, char c)
+ssize_t uart_8250_transmit(struct uart *u __unused, char c)
 {
     io_out8(&io8250, 0, c);
     return 1;
@@ -65,7 +67,7 @@ void uart_8250_irq()
     }
 }
 
-void uart_8250_comm_init(struct __uart *u __unused)
+void uart_8250_comm_init(struct uart *u __unused)
 {
     while (!serial_empty());    /* Flush all output before reseting */
 
@@ -138,7 +140,7 @@ int uart_8250_init()
     return 0;
 }
 
-struct __uart uart_8250 = {
+struct uart uart_8250 = {
     .name     = "8250",
     .init     = uart_8250_comm_init,
     .transmit = uart_8250_transmit,

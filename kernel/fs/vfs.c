@@ -9,6 +9,9 @@
 #include <dev/dev.h>
 #include <net/socket.h>
 
+static int vfs_log_level = LOG_NONE;
+static inline DEF_LOGGER(vfs, vfs_log, vfs_log_level)
+
 /* List of registered filesystems */
 struct fs_list *registered_fs = NULL;
 
@@ -35,14 +38,14 @@ void vfs_mount_root(struct inode *node)
     vfs_graph.children = NULL;  /* XXX */
 }
 
-static char **canonicalize_path(const char * const path)
+char **canonicalize_path(const char * const path)
 {
     /* Tokenize slash seperated words in path into tokens */
     char **tokens = tokenize(path, '/');
     return tokens;
 }
 
-static int vfs_parse_path(const char *path, struct uio *uio, char **abs_path)
+int vfs_parse_path(const char *path, struct uio *uio, char **abs_path)
 {
     if (!path || !*path)
         return -ENOENT;
@@ -106,7 +109,7 @@ static int vfs_parse_path(const char *path, struct uio *uio, char **abs_path)
     return 0;
 }
 
-static struct vfs_path *vfs_get_mountpoint(char **tokens)
+struct vfs_path *vfs_get_mountpoint(char **tokens)
 {
     struct vfs_path *path = kmalloc(sizeof(struct vfs_path));
     path->tokens = tokens;
@@ -209,7 +212,7 @@ next:;
 
 void vfs_init(void)
 {
-    printk("vfs: Initializing\n");
+    vfs_log(LOG_INFO, "Initializing\n");
 }
 
 void vfs_install(struct fs *fs)
@@ -219,7 +222,8 @@ void vfs_install(struct fs *fs)
     node->fs = fs;
     node->next = registered_fs;
     registered_fs = node;
-    printk("vfs: Registered filesystem %s\n", fs->name);
+
+    vfs_log(LOG_INFO, "Registered filesystem %s\n", fs->name);
 }
 
 int vfs_lookup(const char *path, struct uio *uio, struct vnode *vnode, char **abs_path)
@@ -245,8 +249,8 @@ int vfs_lookup(const char *path, struct uio *uio, struct vnode *vnode, char **ab
     struct vnode cur, next;
 
     cur.super  = p->mountpoint;
-    cur.id     = p->mountpoint->id;
-    cur.type   = FS_DIR;
+    cur.ino  = p->mountpoint->ino;
+    cur.mode = S_IFDIR; /* XXX */
     next.super = p->mountpoint;
 
     foreach (token, p->tokens) {
@@ -265,13 +269,16 @@ int vfs_lookup(const char *path, struct uio *uio, struct vnode *vnode, char **ab
     kfree(_path);
 
     /* Resolve symbolic links */
-    if (cur.type == FS_SYMLINK && !(uio->flags & O_NOFOLLOW)) {
+    if (S_ISLNK(cur.mode) && !(uio->flags & O_NOFOLLOW)) {
         /* TODO enforce limit */
-        char sym[1024];
+        //char sym[64];
+        char *sym = kmalloc(1024);
+        memset(sym, 0, 1024);
         struct inode *inode;
         vfs_vget(&cur, &inode);
         vfs_read(inode, 0, 1024, sym);
-        int ret = vfs_lookup(sym, uio, vnode, NULL);
+        ret = vfs_lookup(sym, uio, vnode, NULL);
+        kfree(sym);
         vfs_close(inode);
         return ret;
     }
@@ -291,17 +298,19 @@ error:
 
 /* ================== VFS inode ops mappings ================== */
 
-#define ISDEV(inode) ((inode)->type == FS_CHRDEV || (inode)->type == FS_BLKDEV)
+#define ISDEV(inode) (S_ISCHR((inode)->mode) || S_ISBLK((inode)->mode))
 
-ssize_t vfs_read(struct inode *inode, size_t offset, size_t size, void *buf)
+ssize_t vfs_read(struct inode *inode, off_t offset, size_t size, void *buf)
 {
+    vfs_log(LOG_DEBUG, "vfs_read(inode=%p, offset=%d, size=%d, buf=%p)\n", inode, offset, size, buf);
+
     /* Invalid request */
     if (!inode)
         return -EINVAL;
 
     /* Device node */
     if (ISDEV(inode))
-        return kdev_read(&_INODE_DEV(inode), offset, size, buf);
+        return kdev_read(&INODE_DEV(inode), offset, size, buf);
 
     /* Invalid request */
     if (!inode->fs)
@@ -314,15 +323,17 @@ ssize_t vfs_read(struct inode *inode, size_t offset, size_t size, void *buf)
     return inode->fs->iops.read(inode, offset, size, buf);
 }
 
-ssize_t vfs_write(struct inode *inode, size_t offset, size_t size, void *buf)
+ssize_t vfs_write(struct inode *inode, off_t offset, size_t size, void *buf)
 {
+    vfs_log(LOG_DEBUG, "vfs_write(inode=%p, offset=%d, size=%d, buf=%p)\n", inode, offset, size, buf);
+
     /* Invalid request */
     if (!inode)
         return -EINVAL;
 
     /* Device node */
     if (ISDEV(inode))
-        return kdev_write(&_INODE_DEV(inode), offset, size, buf);
+        return kdev_write(&INODE_DEV(inode), offset, size, buf);
 
     /* Invalid request */
     if (!inode->fs)
@@ -338,6 +349,8 @@ ssize_t vfs_write(struct inode *inode, size_t offset, size_t size, void *buf)
 
 int vfs_ioctl(struct inode *inode, unsigned long request, void *argp)
 {
+    vfs_log(LOG_DEBUG, "vfs_ioctl(inode=%p, request=%ld, argp=%p)\n", inode, request, argp);
+
     /* TODO Basic ioctl handling */
     /* Invalid request */
     if (!inode)
@@ -345,7 +358,7 @@ int vfs_ioctl(struct inode *inode, unsigned long request, void *argp)
 
     /* Device node */
     if (ISDEV(inode))
-        return kdev_ioctl(&_INODE_DEV(inode), request, argp);
+        return kdev_ioctl(&INODE_DEV(inode), request, argp);
 
     /* Invalid request */
     if (!inode->fs)
@@ -425,7 +438,7 @@ int vfs_vfind(struct vnode *parent, const char *name, struct vnode *child)
     if (!parent->super->fs->iops.vfind)
         return -ENOSYS;
 
-    if (parent->type != FS_DIR)
+    if (!S_ISDIR(parent->mode))
         return -ENOTDIR;
 
     return parent->super->fs->iops.vfind(parent, name, child);
@@ -433,21 +446,21 @@ int vfs_vfind(struct vnode *parent, const char *name, struct vnode *child)
 
 /* ================== VFS vnode ops mappings ================== */
 
-int vfs_vmknod(struct vnode *dir, const char *name, itype_t type, dev_t dev, struct uio *uio, struct inode **ref)
+int vfs_vmknod(struct vnode *dir, const char *name, mode_t mode, dev_t dev, struct uio *uio, struct inode **ref)
 {
     /* Invalid request */
     if (!dir || !dir->super || !dir->super->fs)
         return -EINVAL;
 
     /* Not a directory */
-    if (dir->type != FS_DIR)
+    if (!S_ISDIR(dir->mode))
         return -ENOTDIR;
 
     /* Operation not supported */
     if (!dir->super->fs->iops.vmknod)
         return -ENOSYS;
 
-    int ret = dir->super->fs->iops.vmknod(dir, name, type, dev, uio, ref);
+    int ret = dir->super->fs->iops.vmknod(dir, name, mode, dev, uio, ref);
 
     if (!ret && ref && *ref)
         (*ref)->ref++;
@@ -457,12 +470,12 @@ int vfs_vmknod(struct vnode *dir, const char *name, itype_t type, dev_t dev, str
 
 int vfs_vcreat(struct vnode *dir, const char *name, struct uio *uio, struct inode **ref)
 {
-    return vfs_vmknod(dir, name, FS_RGL, 0, uio, ref);
+    return vfs_vmknod(dir, name, S_IFREG, 0, uio, ref);
 }
 
 int vfs_vmkdir(struct vnode *dir, const char *name, struct uio *uio, struct inode **ref)
 {
-    return vfs_vmknod(dir, name, FS_DIR, 0, uio, ref);
+    return vfs_vmknod(dir, name, S_IFDIR, 0, uio, ref);
 }
 
 int vfs_vunlink(struct vnode *dir, const char *fn, struct uio *uio)
@@ -497,14 +510,13 @@ int vfs_vget(struct vnode *vnode, struct inode **inode)
 
 int vfs_mmap(struct vmr *vmr)
 {
-    printk("vfs_mmap(vmr=%p)\n", vmr);
     struct inode *inode = vmr->inode;
 
     if (!inode || !inode->fs)
         return -EINVAL;
 
     if (ISDEV(inode))
-        return kdev_mmap(&_INODE_DEV(inode), vmr);
+        return kdev_mmap(&INODE_DEV(inode), vmr);
 
     if (!inode->fs->iops.mmap)
         return -ENOSYS;
@@ -516,19 +528,19 @@ int vfs_mmap(struct vmr *vmr)
 
 int vfs_file_open(struct file *file)
 {
-    if (!file || !file->node || !file->node->fs)
+    if (!file || !file->inode || !file->inode->fs)
         return -EINVAL;
 
-    if (file->node->type == FS_DIR && !(file->flags & O_SEARCH))
+    if (S_ISDIR(file->inode->mode) && !(file->flags & O_SEARCH))
         return -EISDIR;
 
-    if (ISDEV(file->node))
-        return kdev_file_open(&_INODE_DEV(file->node), file);
+    if (ISDEV(file->inode))
+        return kdev_file_open(&INODE_DEV(file->inode), file);
 
-    if (!file->node->fs->fops.open)
+    if (!file->inode->fs->fops.open)
         return -ENOSYS;
 
-    return file->node->fs->fops.open(file);
+    return file->inode->fs->fops.open(file);
 }
 
 ssize_t vfs_file_read(struct file *file, void *buf, size_t nbytes)
@@ -536,19 +548,19 @@ ssize_t vfs_file_read(struct file *file, void *buf, size_t nbytes)
     if (file && file->flags & FILE_SOCKET)
         return socket_recv(file, buf, nbytes, 0);
 
-    if (!file || !file->node)
+    if (!file || !file->inode)
         return -EINVAL;
 
-    if (ISDEV(file->node))
-        return kdev_file_read(&_INODE_DEV(file->node), file, buf, nbytes);
+    if (ISDEV(file->inode))
+        return kdev_file_read(&INODE_DEV(file->inode), file, buf, nbytes);
 
-    if (!file->node->fs)
+    if (!file->inode->fs)
         return -EINVAL;
 
-    if (!file->node->fs->fops.read)
+    if (!file->inode->fs->fops.read)
         return -ENOSYS;
 
-    return file->node->fs->fops.read(file, buf, nbytes);
+    return file->inode->fs->fops.read(file, buf, nbytes);
 }
 
 ssize_t vfs_file_write(struct file *file, void *buf, size_t nbytes)
@@ -556,67 +568,67 @@ ssize_t vfs_file_write(struct file *file, void *buf, size_t nbytes)
     if (file && file->flags & FILE_SOCKET)
         return socket_send(file, buf, nbytes, 0);
 
-    if (!file || !file->node)
+    if (!file || !file->inode)
         return -EINVAL;
 
-    if (ISDEV(file->node))
-        return kdev_file_write(&_INODE_DEV(file->node), file, buf, nbytes);
+    if (ISDEV(file->inode))
+        return kdev_file_write(&INODE_DEV(file->inode), file, buf, nbytes);
 
-    if (!file->node->fs)
+    if (!file->inode->fs)
         return -EINVAL;
 
-    if (!file->node->fs->fops.write)
+    if (!file->inode->fs->fops.write)
         return -ENOSYS;
 
-    return file->node->fs->fops.write(file, buf, nbytes);
+    return file->inode->fs->fops.write(file, buf, nbytes);
 }
 
 int vfs_file_ioctl(struct file *file, int request, void *argp)
 {
-    if (!file || !file->node)
+    if (!file || !file->inode)
         return -EINVAL;
 
-    if (ISDEV(file->node))
-        return kdev_file_ioctl(&_INODE_DEV(file->node), file, request, argp);
+    if (ISDEV(file->inode))
+        return kdev_file_ioctl(&INODE_DEV(file->inode), file, request, argp);
 
-    if (!file->node->fs)
+    if (!file->inode->fs)
         return -EINVAL;
 
-    if (!file->node->fs->fops.ioctl)
+    if (!file->inode->fs->fops.ioctl)
         return -ENOSYS;
 
-    return file->node->fs->fops.ioctl(file, request, argp);
+    return file->inode->fs->fops.ioctl(file, request, argp);
 }
 
 off_t vfs_file_lseek(struct file *file, off_t offset, int whence)
 {
-    if (!file || !file->node)
+    if (!file || !file->inode)
         return -EINVAL;
 
-    if (ISDEV(file->node))
-        return kdev_file_lseek(&_INODE_DEV(file->node), file, offset, whence);
+    if (ISDEV(file->inode))
+        return kdev_file_lseek(&INODE_DEV(file->inode), file, offset, whence);
 
-    if (!file->node->fs)
+    if (!file->inode->fs)
         return -EINVAL;
 
-    if (!file->node->fs->fops.lseek)
+    if (!file->inode->fs->fops.lseek)
         return -ENOSYS;
 
-    return file->node->fs->fops.lseek(file, offset, whence);
+    return file->inode->fs->fops.lseek(file, offset, whence);
 }
 
 ssize_t vfs_file_readdir(struct file *file, struct dirent *dirent)
 {
-    if (!file || !file->node || !file->node->fs)
+    if (!file || !file->inode || !file->inode->fs)
         return -EINVAL;
 
-    if (file->node->type != FS_DIR)
+    if (!S_ISDIR(file->inode->mode))
         return -ENOTDIR;
 
-    if (!file->node->fs->fops.readdir)
+    if (!file->inode->fs->fops.readdir)
         return -ENOSYS;
 
-    return file->node->fs->fops.readdir(file, dirent);
+    return file->inode->fs->fops.readdir(file, dirent);
 }
 
 ssize_t vfs_file_close(struct file *file)
@@ -624,241 +636,74 @@ ssize_t vfs_file_close(struct file *file)
     if (file && file->flags & FILE_SOCKET)
         return socket_shutdown(file, SHUT_RDWR);
 
-    if (!file || !file->node)
+    if (!file || !file->inode)
         return -EINVAL;
 
-    if (ISDEV(file->node))
-        return kdev_file_close(&_INODE_DEV(file->node), file);
+    if (ISDEV(file->inode))
+        return kdev_file_close(&INODE_DEV(file->inode), file);
 
-    if (!file->node->fs)
+    if (!file->inode->fs)
         return -EINVAL;
 
-    if (!file->node->fs->fops.close)
+    if (!file->inode->fs->fops.close)
         return -ENOSYS;
 
-    return file->node->fs->fops.close(file);
+    return file->inode->fs->fops.close(file);
 }
 
 int vfs_file_can_read(struct file *file, size_t size)
 {
-    if (!file || !file->node)
+    if (!file || !file->inode)
         return -EINVAL;
 
-    if (ISDEV(file->node))
-        return kdev_file_can_read(&_INODE_DEV(file->node), file, size);
+    if (ISDEV(file->inode))
+        return kdev_file_can_read(&INODE_DEV(file->inode), file, size);
 
-    if (!file->node->fs)
+    if (!file->inode->fs)
         return -EINVAL;
 
-    if (!file->node->fs->fops.can_read)
+    if (!file->inode->fs->fops.can_read)
         return -ENOSYS;
 
-    return file->node->fs->fops.can_read(file, size);
+    return file->inode->fs->fops.can_read(file, size);
 }
 
 int vfs_file_can_write(struct file *file, size_t size)
 {
-    if (!file || !file->node)
+    if (!file || !file->inode)
         return -EINVAL;
 
-    if (ISDEV(file->node))
-        return kdev_file_can_write(&_INODE_DEV(file->node), file, size);
+    if (ISDEV(file->inode))
+        return kdev_file_can_write(&INODE_DEV(file->inode), file, size);
 
-    if (!file->node->fs)
+    if (!file->inode->fs)
         return -EINVAL;
 
-    if (!file->node->fs->fops.can_write)
+    if (!file->inode->fs->fops.can_write)
         return -ENOSYS;
 
-    return file->node->fs->fops.can_write(file, size);
+    return file->inode->fs->fops.can_write(file, size);
 }
 
 int vfs_file_eof(struct file *file)
 {
-    if (!file || !file->node)
+    if (!file || !file->inode)
         return -EINVAL;
 
-    if (ISDEV(file->node))
-        return kdev_file_eof(&_INODE_DEV(file->node), file);
+    if (ISDEV(file->inode))
+        return kdev_file_eof(&INODE_DEV(file->inode), file);
 
-    if (!file->node->fs)
+    if (!file->inode->fs)
         return -EINVAL;
 
-    if (!file->node->fs->fops.eof)
+    if (!file->inode->fs->fops.eof)
         return -ENOSYS;
 
-    return file->node->fs->fops.eof(file);
+    return file->inode->fs->fops.eof(file);
 }
 
 
 /* ================== VFS high level mappings ================== */
-
-int vfs_mknod(const char *path, itype_t type, dev_t dev, struct uio *uio, struct inode **ref)
-{
-    int ret = 0;
-    struct vfs_path *p = NULL;
-    char **tokens = NULL;
-
-    /* if path is NULL pointer, or path is empty string, return NULL */
-    if (!path ||  !*path)
-        return -ENOENT;
-
-    char *_path = NULL;
-    if ((ret = vfs_parse_path(path, uio, &_path)))
-        goto error;
-
-    /* Canonicalize Path */
-    tokens = canonicalize_path(_path);
-
-    /* Get mountpoint & path */
-    p = vfs_get_mountpoint(tokens);
-
-    struct vnode cur, next;
-
-    cur.super  = p->mountpoint;
-    cur.id     = p->mountpoint->id;
-    cur.type   = FS_DIR; /* XXX */
-    next.super = p->mountpoint;
-
-    char *name = NULL;
-    char **tok = p->tokens;
-
-    while (tok) {
-        char *token = *tok;
-
-        if (!*(tok + 1)) {
-            name = token;
-            break;
-        }
-
-        if ((ret = vfs_vfind(&cur, token, &next)))
-            goto error;
-
-        memcpy(&cur, &next, sizeof(cur));
-        ++tok;
-    }
-
-    if ((ret = vfs_vmknod(&cur, name, type, dev, uio, ref)))
-        goto error;
-
-    free_tokens(tokens);
-    kfree(p);
-    kfree(_path);
-    return 0;
-
-error:
-    if (tokens)
-        free_tokens(tokens);
-    if (p)
-        kfree(p);
-    if (_path)
-        kfree(_path);
-    return ret;
-}
-
-int vfs_mkdir(const char *path, struct uio *uio, struct inode **ref)
-{
-    return vfs_mknod(path, FS_DIR, 0, uio, ref);
-}
-
-int vfs_creat(const char *path, struct uio *uio, struct inode **ref)
-{
-    return vfs_mknod(path, FS_RGL, 0, uio, ref);
-}
-
-int vfs_stat(struct inode *inode, struct stat *buf)
-{
-    buf->st_dev   = 0;  /* TODO */
-    buf->st_ino   = 0;  /* TODO */
-
-    buf->st_mode = (int []) {
-        [FS_RGL]     = _IFREG,
-        [FS_DIR]     = _IFDIR,
-        [FS_CHRDEV]  = _IFCHR,
-        [FS_BLKDEV]  = _IFBLK,
-        [FS_SYMLINK] = _IFLNK,
-        [FS_PIPE]    = 0,   /* FIXME */
-        [FS_FIFO]    = _IFIFO,
-        [FS_SOCKET]  = _IFSOCK,
-        [FS_SPECIAL] = 0    /* FIXME */
-    }[inode->type];
-
-    buf->st_mode  |= inode->mask;
-
-    buf->st_nlink = inode->nlink;
-    buf->st_uid   = inode->uid;
-    buf->st_gid   = inode->gid;
-    buf->st_rdev  = inode->rdev;
-    buf->st_size  = inode->size;
-    buf->st_mtim  = inode->mtim;
-
-    //memcpy(&buf->st_mtim, &inode->mtim, sizeof(struct timespec));
-
-    return 0;
-}
-
-int vfs_unlink(const char *path, struct uio *uio)
-{
-    int ret = 0;
-    struct vfs_path *p = NULL;
-    char **tokens = NULL;
-
-    /* if path is NULL pointer, or path is empty string, return NULL */
-    if (!path ||  !*path)
-        return -ENOENT;
-
-    char *_path = NULL;
-    if ((ret = vfs_parse_path(path, uio, &_path)))
-        goto error;
-
-    /* Canonicalize Path */
-    tokens = canonicalize_path(_path);
-
-    /* Get mountpoint & path */
-    p = vfs_get_mountpoint(tokens);
-
-    struct vnode cur, next;
-
-    cur.super  = p->mountpoint;
-    cur.id     = p->mountpoint->id;
-    cur.type   = FS_DIR;
-    next.super = p->mountpoint;
-
-    char *name = NULL;
-    char **tok = p->tokens;
-
-    while (tok) {
-        char *token = *tok;
-
-        if (!*(tok + 1)) {
-            name = token;
-            break;
-        }
-
-        if ((ret = vfs_vfind(&cur, token, &next)))
-            goto error;
-
-        memcpy(&cur, &next, sizeof(cur));
-        ++tok;
-    }
-
-    if ((ret = vfs_vunlink(&cur, name, uio)))
-        goto error;
-
-    free_tokens(tokens);
-    kfree(p);
-    kfree(_path);
-    return 0;
-
-error:
-    if (tokens)
-        free_tokens(tokens);
-    if (p)
-        kfree(p);
-    if (_path)
-        kfree(_path);
-    return ret;
-}
 
 int vfs_perms_check(struct file *file, struct uio *uio)
 {
@@ -866,21 +711,21 @@ int vfs_perms_check(struct file *file, struct uio *uio)
         return 0;
     }
 
-    uint32_t mask = file->node->mask;
-    uint32_t uid  = file->node->uid;
-    uint32_t gid  = file->node->gid;
+    mode_t mode = file->inode->mode;
+    uid_t  uid  = file->inode->uid;
+    gid_t  gid  = file->inode->gid;
 
 read_perms:
     /* Read permissions */
     if ((file->flags & O_ACCMODE) == O_RDONLY && (file->flags & O_ACCMODE) != O_WRONLY) {
         if (uid == uio->uid) {
-            if (mask & S_IRUSR)
+            if (mode & S_IRUSR)
                 goto write_perms;
         } else if (gid == uio->gid) {
-            if (mask & S_IRGRP)
+            if (mode & S_IRGRP)
                 goto write_perms;
         } else {
-            if (mask & S_IROTH)
+            if (mode & S_IROTH)
                 goto write_perms;
         }
 
@@ -891,13 +736,13 @@ write_perms:
     /* Write permissions */
     if (file->flags & (O_WRONLY | O_RDWR)) { 
         if (uid == uio->uid) {
-            if (mask & S_IWUSR)
+            if (mode & S_IWUSR)
                 goto exec_perms;
         } else if (gid == uio->gid) {
-            if (mask & S_IWGRP)
+            if (mode & S_IWGRP)
                 goto exec_perms;
         } else {
-            if (mask & S_IWOTH)
+            if (mode & S_IWOTH)
                 goto exec_perms;
         }
 
@@ -908,13 +753,13 @@ exec_perms:
     /* Execute permissions */
     if (file->flags & O_EXEC) { 
         if (uid == uio->uid) {
-            if (mask & S_IXUSR)
+            if (mode & S_IXUSR)
                 goto done;
         } else if (gid == uio->gid) {
-            if (mask & S_IXGRP)
+            if (mode & S_IXGRP)
                 goto done;
         } else {
-            if (mask & S_IXOTH)
+            if (mode & S_IXOTH)
                 goto done;
         }
 

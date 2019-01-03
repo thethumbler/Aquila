@@ -6,12 +6,14 @@
 static struct {
     const char *key;
     const char *value;
-} kargs[MAX_ARGS] = {0};
+} kargs[MAX_ARGS];
 
 static int kargc;
 
 int kargs_parse(const char *_cmdline)
 {
+    printk("kernel: cmdline: %s\n", _cmdline);
+
     /* TODO use hashmap */
 
     if (!_cmdline || !*_cmdline)

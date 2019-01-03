@@ -4,7 +4,7 @@
 #include <fs/vfs.h>
 #include <dev/tty.h>
 
-struct __uart {
+struct uart {
     char *name;
 
     struct ringbuf *in;
@@ -13,13 +13,13 @@ struct __uart {
     struct tty   *tty;
     struct inode *inode;    /* Inode associated with uart device */
 
-    void    (*init)    (struct __uart *u);
-    ssize_t (*transmit)(struct __uart *u, char c);
-    char    (*receive) (struct __uart *u);
+    void    (*init)    (struct uart *u);
+    ssize_t (*transmit)(struct uart *u, char c);
+    char    (*receive) (struct uart *u);
 };
 
-int uart_register(int id, struct __uart *u);
-void uart_recieve_handler(struct __uart *u, size_t size);
-void uart_transmit_handler(struct __uart *u, size_t size);
+int  uart_register(int id, struct uart *u);
+void uart_recieve_handler(struct uart *u, size_t size);
+void uart_transmit_handler(struct uart *u, size_t size);
 
 #endif /* ! _UART_H */

@@ -3,28 +3,28 @@
 
 #include <core/system.h>
 
-// The official VBE Information Block
+/* VBE Information Block */
 struct vbe_info_block {
-   union        {
-       uint8_t      sig_chr[4];
-       uint32_t     sig32;
-   }            vbe_signature;
-   uint16_t     vbe_version;
-   uint32_t     oem_string;
-   uint8_t      capabilities[4];
-   uint16_t     video_mode_ptr_off;
-   uint16_t     video_mode_ptr_seg;
-   uint16_t     total_memory;
-   uint16_t     oem_software_rev;
-   uint32_t     oem_vendor_name;
-   uint32_t     oem_product_name;
-   uint32_t     oem_product_rev;
-   uint16_t     reserved[111]; // used for dynamically generated mode list
-   uint8_t      oemdata[256];
+    union {
+        uint8_t      sig_chr[4];
+        uint32_t     sig32;
+    }            vbe_signature;
+    uint16_t     vbe_version;
+    uint32_t     oem_string;
+    uint8_t      capabilities[4];
+    uint16_t     video_mode_ptr_off;
+    uint16_t     video_mode_ptr_seg;
+    uint16_t     total_memory;
+    uint16_t     oem_software_rev;
+    uint32_t     oem_vendor_name;
+    uint32_t     oem_product_name;
+    uint32_t     oem_product_rev;
+    uint16_t     reserved[111];
+    uint8_t      oemdata[256];
 } __packed;
 
 struct mode_info_block {
-// Mandatory information for all VBE revisions
+/* Mandatory information for all VBE revisions */
    uint16_t mode_attributes;
    uint8_t  win_a_attributes;
    uint8_t  win_b_attributes;
@@ -34,7 +34,7 @@ struct mode_info_block {
    uint16_t win_b_segment;
    uint32_t win_func_ptr;
    uint16_t bytes_per_scanline;
-// Mandatory information for VBE 1.2 and above
+/* Mandatory information for VBE 1.2 and above */
    uint16_t x_resolution;
    uint16_t y_resolution;
    uint8_t  x_char_size;
@@ -46,7 +46,7 @@ struct mode_info_block {
    uint8_t  bank_size;
    uint8_t  number_of_image_pages;
    uint8_t  reserved_page;
-// Direct Color fields (required for direct/6 and YUV/7 memory models)
+/* Direct Color fields (required for direct/6 and YUV/7 memory models) */
    uint8_t  red_mask_size;
    uint8_t  red_field_position;
    uint8_t  green_mask_size;
@@ -56,11 +56,11 @@ struct mode_info_block {
    uint8_t  rsvd_mask_size;
    uint8_t  rsvd_field_position;
    uint8_t  direct_color_mode_info;
-// Mandatory information for VBE 2.0 and above
+/* Mandatory information for VBE 2.0 and above */
    uint32_t phys_base_ptr;
    uint32_t off_screen_mem_offset;
    uint16_t off_screen_mem_size;
-// Mandatory information for VBE 3.0 and above
+/* Mandatory information for VBE 3.0 and above */
    uint16_t lin_bytes_per_scanline;
    uint8_t  bnk_number_of_pages;
    uint8_t  lin_number_of_pages;
@@ -76,25 +76,13 @@ struct mode_info_block {
    uint8_t  reserved[189];
 } __packed;
 
-// VBE Return Status Info
-// AL
-#define VBE_RETURN_STATUS_SUPPORTED                      0x4F
-#define VBE_RETURN_STATUS_UNSUPPORTED                    0x00
-// AH
-#define VBE_RETURN_STATUS_SUCCESSFULL                    0x00
-#define VBE_RETURN_STATUS_FAILED                         0x01
-#define VBE_RETURN_STATUS_NOT_SUPPORTED                  0x02
-#define VBE_RETURN_STATUS_INVALID                        0x03
-
-// VBE Mode Numbers
-
+/* VBE Mode Numbers */
 #define VBE_MODE_VESA_DEFINED                            0x0100
 #define VBE_MODE_REFRESH_RATE_USE_CRTC                   0x0800
 #define VBE_MODE_LINEAR_FRAME_BUFFER                     0x4000
 #define VBE_MODE_PRESERVE_DISPLAY_MEMORY                 0x8000
 
-// VBE GFX Mode Number
-
+/* VBE GFX Mode Number */
 #define VBE_VESA_MODE_640X400X8                          0x100
 #define VBE_VESA_MODE_640X480X8                          0x101
 #define VBE_VESA_MODE_800X600X4                          0x102
@@ -123,7 +111,7 @@ struct mode_info_block {
 #define VBE_VESA_MODE_1600X1200X565                      0x11E
 #define VBE_VESA_MODE_1600X1200X888                      0x11F
 
-// BOCHS/PLEX86 'own' mode numbers
+/* BOCHS/PLEX86 'own' mode numbers */
 #define VBE_OWN_MODE_320X200X8888                        0x140
 #define VBE_OWN_MODE_640X400X8888                        0x141
 #define VBE_OWN_MODE_640X480X8888                        0x142
@@ -140,16 +128,14 @@ struct mode_info_block {
 
 #define VBE_VESA_MODE_END_OF_LIST                        0xFFFF
 
-// Capabilities
-
+/* Capabilities */
 #define VBE_CAPABILITY_8BIT_DAC                          0x0001
 #define VBE_CAPABILITY_NOT_VGA_COMPATIBLE                0x0002
 #define VBE_CAPABILITY_RAMDAC_USE_BLANK_BIT              0x0004
 #define VBE_CAPABILITY_STEREOSCOPIC_SUPPORT              0x0008
 #define VBE_CAPABILITY_STEREO_VIA_VESA_EVC               0x0010
 
-// Mode Attributes
-
+/* Mode Attributes */
 #define VBE_MODE_ATTRIBUTE_SUPPORTED                     0x0001
 #define VBE_MODE_ATTRIBUTE_EXTENDED_INFORMATION_AVAILABLE  0x0002
 #define VBE_MODE_ATTRIBUTE_TTY_BIOS_SUPPORT              0x0004
@@ -166,14 +152,12 @@ struct mode_info_block {
 
 #define VBE_MODE_ATTTRIBUTE_LFB_ONLY                     ( VBE_MODE_ATTRIBUTE_NO_VGA_COMPATIBLE_WINDOW | VBE_MODE_ATTRIBUTE_LINEAR_FRAME_BUFFER_MODE )
 
-// Window attributes
-
+/* Window attributes */
 #define VBE_WINDOW_ATTRIBUTE_RELOCATABLE                 0x01
 #define VBE_WINDOW_ATTRIBUTE_READABLE                    0x02
 #define VBE_WINDOW_ATTRIBUTE_WRITEABLE                   0x04
 
-// Memory model
-
+/* Memory model */
 #define VBE_MEMORYMODEL_TEXT_MODE                        0x00
 #define VBE_MEMORYMODEL_CGA_GRAPHICS                     0x01
 #define VBE_MEMORYMODEL_HERCULES_GRAPHICS                0x02
@@ -183,8 +167,7 @@ struct mode_info_block {
 #define VBE_MEMORYMODEL_DIRECT_COLOR                     0x06
 #define VBE_MEMORYMODEL_YUV                              0x07
 
-// DirectColorModeInfo
-
+/* DirectColorModeInfo */
 #define VBE_DIRECTCOLOR_COLOR_RAMP_PROGRAMMABLE          0x01
 #define VBE_DIRECTCOLOR_RESERVED_BITS_AVAILABLE          0x02
 

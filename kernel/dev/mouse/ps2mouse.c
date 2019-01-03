@@ -10,7 +10,9 @@
 
 
 #include <core/system.h>
+#include <core/module.h>
 #include <core/arch.h>
+
 #include <cpu/cpu.h>
 
 #include <chipset/misc.h>
@@ -47,7 +49,7 @@ struct ioaddr mouse = {
 #define BUF_SIZE    128
 
 static struct ringbuf *mouse_ring = RINGBUF_NEW(BUF_SIZE);   /* Mouse ring Buffer */
-static proc_t *proc = NULL; /* Current process using mouse */
+static struct proc *proc = NULL; /* Current process using mouse */
 static queue_t *mouse_read_queue = QUEUE_NEW(); /* Mouse read queue */
 
 struct mouse_packet {
@@ -153,7 +155,7 @@ static int ps2mouse_file_open(struct file *file)
         return -EACCES;
 
     proc = cur_thread->owner;
-    file->node->read_queue = mouse_read_queue;    
+    file->inode->read_queue = mouse_read_queue;    
 
     return posix_file_open(file);
 }

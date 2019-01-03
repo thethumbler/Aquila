@@ -2,16 +2,16 @@
 #define _DEVICE_H
 
 #include <core/system.h>
+
+struct devid;
+struct dev;
+
+#include <mm/vm.h>
 #include <fs/vfs.h>
 #include <sys/proc.h>
 
-enum {
-    CHRDEV = FS_CHRDEV,
-    BLKDEV = FS_BLKDEV,
-};
-
 struct devid {
-    int     type;
+    mode_t  type;
     devid_t major;
     devid_t minor;
 };
@@ -19,20 +19,20 @@ struct devid {
 struct dev {
     char    *name;
 
-    int     (*probe)();
+    int     (*probe)(void);
     ssize_t (*read) (struct devid *dev, off_t offset, size_t size, void *buf);
     ssize_t (*write)(struct devid *dev, off_t offset, size_t size, void *buf);
     int     (*ioctl)(struct devid *dev, int request, void *argp);
-    int     (*mmap)(struct devid *dev, struct vmr *vmr);
+    int     (*mmap) (struct devid *dev, struct vmr *vmr);
 
     struct fops fops;
 
     struct dev *(*mux)(struct devid *dev);    /* Device Multiplexr */
     size_t  (*getbs)(struct devid *dev);      /* Block size, for blkdev */
-} __packed;
+};
 
 /* Kernel Device Subsystem Handlers */
-void    kdev_init();
+void    kdev_init(void);
 void    kdev_chrdev_register(devid_t major, struct dev *dev);
 void    kdev_blkdev_register(devid_t major, struct dev *dev);
 
@@ -52,10 +52,10 @@ int     kdev_file_can_write(struct devid *dd, struct file * file, size_t size);
 int     kdev_file_eof(struct devid *dd, struct file *file);
 
 /* Useful Macros */
-#define _DEV_T(major, minor) ((dev_t)(((major) & 0xFF) << 8) | ((minor) & 0xFF))
-#define _DEV_MAJOR(dev) ((devid_t)(((dev) >> 8) & 0xFF))
-#define _DEV_MINOR(dev) ((devid_t)(((dev) >> 0) & 0xFF))
-#define _INODE_DEV(inode) ((struct devid){.type = (inode)->type, .major = _DEV_MAJOR((inode)->rdev), .minor = _DEV_MINOR((inode)->rdev)})
+#define DEV(major, minor) ((dev_t)(((major) & 0xFF) << 8) | ((minor) & 0xFF))
+#define DEV_MAJOR(dev)    ((devid_t)(((dev) >> 8) & 0xFF))
+#define DEV_MINOR(dev)    ((devid_t)(((dev) >> 0) & 0xFF))
+#define INODE_DEV(inode)  ((struct devid){.type = (inode)->mode & S_IFMT, .major = DEV_MAJOR((inode)->rdev), .minor = DEV_MINOR((inode)->rdev)})
 
 /* Devices -- XXX */
 extern struct dev i8042dev;

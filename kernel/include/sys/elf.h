@@ -19,7 +19,7 @@
 #define ELF_CLASS_32    1
 #define ELF_CLASS_64    2
 
-typedef struct {
+struct elf32_hdr {
     uint8_t  magic[4];
     uint8_t  class;
     uint8_t  endian;
@@ -40,9 +40,9 @@ typedef struct {
     uint16_t shentsize;
     uint16_t shnum;
     uint16_t shstrndx;
-} elf32_hdr_t;
+} __packed;
 
-typedef struct {
+struct elf32_section_hdr {
     uint32_t name;
     uint32_t type;
     uint32_t flags;
@@ -53,9 +53,9 @@ typedef struct {
     uint32_t info;
     uint32_t addralign;
     uint32_t entsize;
-} elf32_section_hdr_t;
+} __packed;
 
-typedef struct {
+struct elf64_hdr {
     uint8_t  magic[4];
     uint8_t  class;
     uint8_t  endian;
@@ -76,9 +76,9 @@ typedef struct {
     uint16_t shentsize;
     uint16_t shnum;
     uint16_t shstrndx;
-} elf64_hdr_t;
+} __packed;
 
-typedef struct {
+struct elf64_section_hdr {
     uint32_t name;
     uint32_t type;
     uint64_t flags;
@@ -89,10 +89,10 @@ typedef struct {
     uint32_t info;
     uint64_t addralign;
     uint64_t entsize;
-} elf64_section_hdr_t;
+} __packed;
 
 /* sys/binfmt/elf.c */
 int binfmt_elf_check(struct inode *file);
-int binfmt_elf_load(proc_t *proc, struct inode *file);
+int binfmt_elf_load(struct proc *proc, const char *path, struct inode *inode);
 
 #endif

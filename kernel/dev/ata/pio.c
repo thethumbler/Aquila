@@ -11,9 +11,18 @@
 
 #include <ata.h>
 
+#define PIO_MAX_RETRIES 5
+
 static ssize_t pio_read(struct ata_drive *drive, uint64_t lba, size_t count, void *buf)
 {
     //printk("pio_read(drive=%p, lba=%ld, count=%d, buf=%p)\n", drive, lba, count, buf);
+
+    int retry_count = 0;
+
+retry:
+    if (++retry_count == PIO_MAX_RETRIES)
+        return -EIO;
+
     if (drive->capabilities & ATA_CAP_LBA) {
         /* Use LBA mode */
         ata_select_drive(drive, drive->mode);
@@ -44,9 +53,23 @@ static ssize_t pio_read(struct ata_drive *drive, uint64_t lba, size_t count, voi
 
         ata_wait(drive);
 
-        while (count--) {
-            if (ata_poll(drive, 1))
-                return -EINVAL;
+        size_t _count = count;
+
+        while (_count--) {
+            int err;
+            if ((err = ata_poll(drive, 1))) {
+
+                /* retry */
+                if (err == -ATA_ERROR_ABRT) {
+                    printk("ata: retrying...\n");
+
+                    for (int i = 0; i < 5; ++i)
+                        ata_wait(drive);
+                    goto retry;
+                }
+
+                return -EIO;
+            }
 
             /* FIXME */
             //__insw(drive->base.addr + ATA_REG_DATA, 256, buf);

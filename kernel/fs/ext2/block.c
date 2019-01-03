@@ -1,26 +1,26 @@
 #include <ext2.h>
 #include <ds/bitmap.h>
 
-void ext2_bgd_table_rewrite(struct __ext2 *desc)
+void ext2_bgd_table_rewrite(struct ext2 *desc)
 {
     uint32_t bgd_table = (desc->bs == 1024)? 2048 : desc->bs;
     size_t bgds_size = desc->bgds_count * sizeof(struct ext2_block_group_descriptor);
     vfs_write(desc->supernode, bgd_table, bgds_size, desc->bgd_table);
 }
 
-void *ext2_block_read(struct __ext2 *desc, uint32_t number, void *buf)
+void *ext2_block_read(struct ext2 *desc, uint32_t number, void *buf)
 {
     vfs_read(desc->supernode, number * desc->bs, desc->bs, buf);
     return buf;
 }
 
-void *ext2_block_write(struct __ext2 *desc, uint32_t number, void *buf)
+void *ext2_block_write(struct ext2 *desc, uint32_t number, void *buf)
 {
     vfs_write(desc->supernode, number * desc->bs, desc->bs, buf);
     return buf;
 }
 
-uint32_t ext2_block_allocate(struct __ext2 *desc)
+uint32_t ext2_block_allocate(struct ext2 *desc)
 {
     uint32_t *buf = kmalloc(desc->bs);
     uint32_t block = 0, real_block = 0, group = 0;

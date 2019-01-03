@@ -6,5 +6,6 @@
 extern struct dev nulldev;
 //extern struct dev portdev;
 extern struct dev zerodev;
+extern struct dev kmsgdev;
 
 #endif /* ! _MEMDEV_H */

@@ -9,6 +9,7 @@
  */
 
 #include <core/system.h>
+#include <core/module.h>
 #include <core/string.h>
 #include <core/panic.h>
 
@@ -28,7 +29,7 @@ static int tmpfs_vget(struct vnode *vnode, struct inode **inode)
         return -EINVAL;
 
     /* Inode is always present in memory */
-    struct inode *node = (struct inode *) vnode->id;
+    struct inode *node = (struct inode *) vnode->ino;
 
     if (inode)
         *inode = node;
@@ -89,7 +90,7 @@ static int tmpfs_file_open(struct file *file __unused)
 
 static int tmpfs_file_can_read(struct file *file, size_t size)
 {
-    if ((size_t) file->offset + size < file->node->size)
+    if ((size_t) file->offset + size < file->inode->size)
         return 1;
 
     return 0;
@@ -103,7 +104,7 @@ static int tmpfs_file_can_write(struct file *file __unused, size_t size __unused
 
 static int tmpfs_file_eof(struct file *file)
 {
-    return (size_t) file->offset == file->node->size;
+    return (size_t) file->offset == file->inode->size;
 }
 
 static int tmpfs_init()
@@ -143,14 +144,12 @@ static int tmpfs_mount(const char *dir, int flags __unused, void *data __unused)
         }
     }
 
-    tmpfs_root->name = "tmp";
-    tmpfs_root->id   = (vino_t) tmpfs_root;
-    tmpfs_root->type = FS_DIR;
-    tmpfs_root->mask = mode;
-    tmpfs_root->size = 0;
+    tmpfs_root->ino   = (vino_t) tmpfs_root;
+    tmpfs_root->mode  = S_IFDIR | mode;
+    tmpfs_root->size  = 0;
     tmpfs_root->nlink = 2;
-    tmpfs_root->fs   = &tmpfs;
-    tmpfs_root->p    = NULL;
+    tmpfs_root->fs    = &tmpfs;
+    tmpfs_root->p     = NULL;
 
     vfs_bind(dir, tmpfs_root);
 
@@ -159,6 +158,7 @@ static int tmpfs_mount(const char *dir, int flags __unused, void *data __unused)
 
 struct fs tmpfs = {
     .name   = "tmpfs",
+    .nodev  = 1,
     .init   = tmpfs_init,
     .mount  = tmpfs_mount,
 

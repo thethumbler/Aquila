@@ -1,4 +1,5 @@
 #include <core/system.h>
+#include <core/module.h>
 #include <fs/vfs.h>
 #include <fs/devpts.h>
 #include <fs/posix.h>
@@ -18,8 +19,8 @@ struct pty {
     struct ringbuf *in;  /* Master Input, Slave Output */
     struct ringbuf *out; /* Slave Input, Master Output */
 
-    queue_t pts_read_queue;  /* Slave read, Master write wait queue */
-    queue_t pts_write_queue; /* Slave write, Master read wait queue */
+    struct queue pts_read_queue;  /* Slave read, Master write wait queue */
+    struct queue pts_write_queue; /* Slave write, Master read wait queue */
 };
 
 #define PTY_BUF 1024
@@ -58,8 +59,8 @@ static int ptm_new(struct pty *pty, struct inode **ref)
 
     memset(ptm, 0, sizeof(struct inode));
 
-    ptm->rdev        = _DEV_T(2, pty->id);
-    ptm->type        = FS_CHRDEV;
+    ptm->rdev        = DEV(2, pty->id);
+    ptm->mode        = S_IFCHR;
     ptm->read_queue  = &pty->pts_read_queue;
     ptm->write_queue = &pty->pts_write_queue;
     ptm->p           = pty;
@@ -110,13 +111,13 @@ static int pts_new(struct pty *pty, struct inode **ref)
     memset(name, 0, 12);
     snprintf(name, 11, "%d", pty->id);
 
-    dev_t dev = _DEV_T(136 + pty->id / 256, pty->id % 256);
+    dev_t dev = DEV(136 + pty->id / 256, pty->id % 256);
 
     struct uio uio = {0};
 
     struct inode *pts = NULL;
     int err = 0;
-    if ((err = vfs_vmknod(&vdevpts_root, name, FS_CHRDEV, dev, &uio, &pts)))
+    if ((err = vfs_vmknod(&vdevpts_root, name, S_IFCHR, dev, &uio, &pts)))
         return err;
 
     pts->read_queue = &pty->pts_read_queue;
@@ -146,14 +147,14 @@ ssize_t pts_write(struct devid *dd, off_t offset __unused, size_t size, void *bu
  *
  *************************************/
 
-static inline size_t pty_id_get()
+static inline size_t pty_id_get(void)
 {
     /* XXX */
     static size_t id = 0;
     return id++;
 }
 
-int pty_new(proc_t *proc, struct inode **master)
+int pty_new(struct proc *proc, struct inode **master)
 {
     int err = 0;
     struct pty *pty = NULL;
@@ -210,7 +211,7 @@ error:
 
 int ptmx_open(struct file *file)
 {   
-    return pty_new(cur_thread->owner, &(file->node));
+    return pty_new(cur_thread->owner, &(file->inode));
 }
 
 int pty_init()

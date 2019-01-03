@@ -17,7 +17,7 @@ static struct fb_fix_screeninfo vesa_fix_screeninfo = {
 
 static struct fb_var_screeninfo vesa_var_screeninfo;
 
-static ssize_t fbdev_vesa_write(struct devid *dd __unused, off_t offset, size_t size, void *buf)
+static ssize_t fbdev_vesa_write(struct fbdev *fb, off_t offset, size_t size, void *buf)
 {
     /* Maximum possible write size */
     size = MIN(size, len - offset);
@@ -28,7 +28,7 @@ static ssize_t fbdev_vesa_write(struct devid *dd __unused, off_t offset, size_t 
     return size;
 }
 
-static int fbdev_vesa_mmap(struct devid *dd __unused, struct vmr *vmr)
+static int fbdev_vesa_mmap(struct fbdev *fb, struct vmr *vmr)
 {
     /* We do not support private maps */
     if (!(vmr->flags & VM_SHARED))
@@ -44,7 +44,7 @@ static int fbdev_vesa_mmap(struct devid *dd __unused, struct vmr *vmr)
 
 static int fbdev_vesa_prope(int i __unused, struct fbdev *fb)
 {
-    struct __fbdev_vesa *data = (struct __fbdev_vesa *) fb->data;
+    struct fbdev_vesa *data = (struct fbdev_vesa *) fb->data;
 
     struct mode_info_block *info = data->mode_info;
     size_t size = info->y_resolution * info->lin_bytes_per_scanline;
@@ -55,11 +55,14 @@ static int fbdev_vesa_prope(int i __unused, struct fbdev *fb)
 
     vm_map(&vesa_vmr);
 
-    memset(vmem, 0x5A, size);
+    //memset(vmem, 0x5A, size);
 
     len = size;
 
-    fb->dev = &fbdev_vesa;
+
+    fb->probe = fbdev_vesa_prope;
+    fb->write = fbdev_vesa_write;
+    fb->mmap  = fbdev_vesa_mmap;
     fb->fix_screeninfo = &vesa_fix_screeninfo;
     fb->var_screeninfo = &vesa_var_screeninfo;
 
@@ -114,7 +117,7 @@ static int fbdev_vesa_prope(int i __unused, struct fbdev *fb)
     return 0;
 }
 
-struct dev fbdev_vesa = {
+struct fbdev fbdev_vesa = {
     .probe = fbdev_vesa_prope,
     .write = fbdev_vesa_write,
     .mmap  = fbdev_vesa_mmap,

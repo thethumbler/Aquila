@@ -2,19 +2,25 @@
 #define _PIPE_H
 
 #include <core/system.h>
+
+struct pipe;
+
 #include <fs/vfs.h>
 #include <ds/ringbuf.h>
 
-#define PIPE_BUF_LEN    1024
+#define PIPE_BUFLEN 1024
 
 struct pipe {
-    unsigned r_ref;   /* Readers reference count */
-    unsigned w_ref;   /* Writers reference count */
+    /* Readers reference count */
+    unsigned r_ref;
 
-    struct ringbuf *ring; /* Ring buffer */
+    /* Writers reference count */
+    unsigned w_ref;
+
+    struct ringbuf *ring;
 };
 
-struct fs pipefs;
+extern struct fs pipefs;
 int pipefs_pipe(struct file *read, struct file *write);
 
 #endif /* ! _PIPE_H */

@@ -80,7 +80,6 @@ int mm_map(paddr_t paddr, vaddr_t vaddr, size_t size, int flags)
     paddr = LOWER_PAGE_BOUNDARY(paddr);
 
     size_t nr = (endaddr - vaddr) / PAGE_SIZE;
-    //printk("mm_map paddr=%p, vaddr=%p, nr=%d\n", paddr, vaddr, nr);
 
     while (nr--) {
         paddr_t phys = arch_page_get_mapping(vaddr);
@@ -137,7 +136,7 @@ void mm_page_fault(vaddr_t vaddr)
     vaddr_t page_addr = vaddr & ~PAGE_MASK;
     vaddr_t page_end  = page_addr + PAGE_SIZE;
 
-    queue_t *q_vmr = &cur_thread->owner->vmr;
+    struct queue *q_vmr = &cur_thread->owner->vmr;
     int vmr_flag = 0;
 
     forlinked (node, q_vmr->head, node->next) {
@@ -176,6 +175,7 @@ void mm_page_fault(vaddr_t vaddr)
         return;
     }
 
+    printk("mm_page_fault(%p)\n", vaddr);
     signal_proc_send(cur_thread->owner, SIGSEGV);
     return;
 }
@@ -191,7 +191,6 @@ void mm_setup(struct boot *boot)
     extern char *kernel_heap;
     kernel_heap = VMA(lower_kernel_heap);
     buddy_setup(boot->total_mem * 1024);
-    arch_mm_setup();
 
     /* Setup memory regions */
     for (int i = 0; i < boot->mmap_count; ++i) {
@@ -200,4 +199,6 @@ void mm_setup(struct boot *boot)
             buddy_set_unusable(boot->mmap[i].start, size);
         }
     }
+
+    arch_mm_setup();
 }

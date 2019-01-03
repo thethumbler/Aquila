@@ -85,37 +85,16 @@ struct ext2_block_group_descriptor {
     uint8_t     __unused__[14];
 } __packed;
 
-#define EXT2_INODE_TYPE_FIFO    0x1 // FIFO pipe
-#define EXT2_INODE_TYPE_CHR     0x2 // Character device
-#define EXT2_INODE_TYPE_DIR     0x4 // Directory
-#define EXT2_INODE_TYPE_BLK     0x6 // Block device
-#define EXT2_INODE_TYPE_RGL     0x8 // Regular file
-#define EXT2_INODE_TYPE_SLINK   0xA // Symbolic link
-#define EXT2_INODE_TYPE_SCKT    0xC // Unix socket
-
-struct ext2_inode_permissions {
-    uint8_t other_exec  : 1;
-    uint8_t other_write : 1;
-    uint8_t other_read  : 1;
-    uint8_t group_exec  : 1;
-    uint8_t group_write : 1;
-    uint8_t group_read  : 1;
-    uint8_t user_exec   : 1;
-    uint8_t user_write  : 1;
-    uint8_t user_read   : 1;
-} __packed;
-
 struct ext2_inode {
-    uint16_t    permissions : 12;
-    uint16_t    type : 4;
+    uint16_t    mode;
     uint16_t    uid;
     uint32_t    size;
-    uint32_t    last_access_time;
-    uint32_t    creation_time;
-    uint32_t    last_modified_time;
-    uint32_t    deletion_time;  // Wha?!
+    uint32_t    atime;
+    uint32_t    ctime;
+    uint32_t    mtime;
+    uint32_t    dtime;
     uint16_t    gid;
-    uint16_t    hard_links_count;
+    uint16_t    nlinks;
     uint32_t    sectors_count;
     uint32_t    flags;
     uint32_t    os_specific1;
@@ -149,45 +128,45 @@ struct ext2_dentry {
 
 #define EXT2_DIRECT_POINTERS 12
 
-struct __ext2 {
+struct ext2 {
     struct inode *supernode;
     struct ext2_superblock *superblock;
     struct ext2_block_group_descriptor *bgd_table;
     size_t bgds_count;
     size_t bs;
-    struct itbl *itbl;
+    struct icache *icache;
 };
 
 extern struct fs ext2fs;
 
 /* super.c */
-void ext2_superblock_rewrite(struct __ext2 *desc);
+void ext2_superblock_rewrite(struct ext2 *desc);
 
 /* block.c */
-void ext2_bgd_table_rewrite(struct __ext2 *desc);
-void *ext2_block_read(struct __ext2 *desc, uint32_t number, void *buf);
-void *ext2_block_write(struct __ext2 *desc, uint32_t number, void *buf);
-uint32_t ext2_block_allocate(struct __ext2 *desc);
+void ext2_bgd_table_rewrite(struct ext2 *desc);
+void *ext2_block_read(struct ext2 *desc, uint32_t number, void *buf);
+void *ext2_block_write(struct ext2 *desc, uint32_t number, void *buf);
+uint32_t ext2_block_allocate(struct ext2 *desc);
 
 /* inode.c */
-int ext2_inode_read(struct __ext2 *desc, uint32_t inode, struct ext2_inode *ref);
-struct ext2_inode *ext2_inode_write(struct __ext2 *desc, uint32_t inode, struct ext2_inode *i);
-size_t ext2_inode_block_read(struct __ext2 *desc, struct ext2_inode *inode, size_t idx, void *buf);
-size_t ext2_inode_block_write(struct __ext2 *desc, struct ext2_inode *inode, uint32_t inode_nr, size_t idx, void *buf);
-uint32_t ext2_inode_allocate(struct __ext2 *desc);
+int ext2_inode_read(struct ext2 *desc, uint32_t inode, struct ext2_inode *ref);
+struct ext2_inode *ext2_inode_write(struct ext2 *desc, uint32_t inode, struct ext2_inode *i);
+size_t ext2_inode_block_read(struct ext2 *desc, struct ext2_inode *inode, size_t idx, void *buf);
+size_t ext2_inode_block_write(struct ext2 *desc, struct ext2_inode *inode, uint32_t inode_nr, size_t idx, void *buf);
+uint32_t ext2_inode_allocate(struct ext2 *desc);
 
 /* dentry.c */
-uint32_t ext2_dentry_find(struct __ext2 *desc, struct ext2_inode *inode, const char *name);
+uint32_t ext2_dentry_find(struct ext2 *desc, struct ext2_inode *inode, const char *name);
 int ext2_dentry_create(struct vnode *dir, const char *name, uint32_t inode, uint8_t type);
 
 /* iops.c */
 ssize_t ext2_read(struct inode *node, off_t offset, size_t size, void *buf);
 ssize_t ext2_write(struct inode *node, off_t offset, size_t size, void *buf);
 ssize_t ext2_readdir(struct inode *dir, off_t offset, struct dirent *dirent);
-int ext2_vmknod(struct vnode *dir, const char *fn, itype_t type, dev_t dev, struct uio *uio, struct inode **ref);
+int ext2_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, struct uio *uio, struct inode **ref);
 int ext2_vfind(struct vnode *dir, const char *fn, struct vnode *child);
 int ext2_vget(struct vnode *vnode, struct inode **ref);
 
-int ext2_inode_build(struct __ext2 *desc, size_t inode, struct inode **ref_inode);  /* XXX */
+int ext2_inode_build(struct ext2 *desc, size_t inode, struct inode **ref_inode);  /* XXX */
 
 #endif 

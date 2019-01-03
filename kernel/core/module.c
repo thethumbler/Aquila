@@ -2,19 +2,23 @@
 #include <core/module.h>
 
 extern char __minit, __minit_end;
-int modules_init()
+
+typedef void (*__ctor)(void);
+
+int modules_init(void)
 {
     printk("kernel: Loading builtin modules\n");
 
     /* Initalize built-in modules */
-    void **f = (void **) &__minit;
-    void **g = (void **) &__minit_end;
+    __ctor *f = (void *) &__minit;
+    __ctor *g = (void *) &__minit_end;
 
     size_t nr = (g - f);
 
     for (size_t i = 0; i < nr; ++i) {
         if (f[i]) {
-            ((int (*)())f[i])();
+            //((int (*)())f[i])();
+            f[i]();
         }
     }
 

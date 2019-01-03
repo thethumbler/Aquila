@@ -1,7 +1,6 @@
 #include <core/system.h>
+#include <sys/sched.h>
 #include <dev/tty.h>
-
-#include <sys/sched.h>  // XXX
 
 ssize_t tty_master_write(struct tty *tty, size_t size, void *buf)
 {
@@ -15,7 +14,10 @@ ssize_t tty_master_write(struct tty *tty, size_t size, void *buf)
         while (size) {
             if (*c == tty->tios.c_cc[VEOF]) {
             } else if (*c == tty->tios.c_cc[VEOL]) {
-            } else if (*c == tty->tios.c_cc[VERASE] || *c == '\b') {
+            } else if (*c == tty->tios.c_cc[VERASE]) {
+                /* The ERASE character shall delete the last character in
+                 * the current line, if there is one.
+                 */
                 if (tty->pos > 0) {
                     --tty->pos;
                     tty->cook[tty->pos] = '\0';
@@ -31,10 +33,14 @@ ssize_t tty_master_write(struct tty *tty, size_t size, void *buf)
                 tty_slave_write(tty, 3, cc);
                 goto skip_echo;
             } else if (*c == tty->tios.c_cc[VKILL]) {
+                /* The KILL character shall delete all data in the current
+                 * line, if there is any.
+                 */
             } else if (*c == tty->tios.c_cc[VQUIT]) {
             } else if (*c == tty->tios.c_cc[VSTART]) {
             } else if (*c == tty->tios.c_cc[VSUSP]) {
-            } else if (*c == '\n' || (*c == '\r' && (tty->tios.c_iflag & ICRNL))) {
+            } else if (*c == '\n' ||
+                    (*c == '\r' && (tty->tios.c_iflag & ICRNL))) {
                 tty->cook[tty->pos++] = '\n';
 
                 if (echo)
@@ -68,6 +74,54 @@ skip_echo:
     return ret;
 }
 
+ssize_t tty_slave_write(struct tty *tty, size_t size, void *buf)
+{
+    if (tty->tios.c_oflag & OPOST) {
+        size_t written;
+        for (written = 0; written < size; ++written) {
+            char c = ((char *) buf)[written];
+            if (c == '\n' && (tty->tios.c_oflag & ONLCR)) {
+                /* If ONLCR is set, the NL character shall
+                 * be transmitted as the CR-NL character pair. 
+                 */
+                if (tty->master_write(tty, 2, "\r\n") != 2)
+                    /* FIXME should handle special cases */
+                    break;
+            } else if (c == '\r' && (tty->tios.c_oflag & OCRNL)) {
+                /* If OCRNL is set, the CR character shall
+                 * be transmitted as the NL character.
+                 */
+                if (tty->master_write(tty, 1, "\n") != 1)
+                    break;
+            } else if (c == '\r' && (tty->tios.c_oflag & ONOCR)) {
+                /* If ONOCR is set, no CR character shall be
+                 * transmitted when at column 0 (first position)
+                 */
+                if (tty->pos % tty->ws.ws_row)
+                    if (tty->master_write(tty, 1, &c) != 1)
+                        break;
+            } else if (c == '\n' && (tty->tios.c_oflag & ONLRET)) {
+                /* If ONLRET is set, the NL character is assumed
+                 * to do the carriage-return function; the column
+                 * pointer shall be set to 0 and the delays specified
+                 * for CR shall be used. Otherwise, the NL character is
+                 * assumed to do just the line-feed function; the column
+                 * pointer remains unchanged. The column pointer shall also
+                 * be set to 0 if the CR character is actually transmitted.
+                 */
+
+                /* TODO */
+            } else {
+                if (tty->master_write(tty, 1, &c) != 1)
+                    break;
+            }
+        }
+        return written;
+    } else {
+        return tty->master_write(tty, size, buf);
+    }
+}
+
 int tty_ioctl(struct tty *tty, int request, void *argp)
 {
     switch (request) {
@@ -97,39 +151,13 @@ int tty_ioctl(struct tty *tty, int request, void *argp)
     return 0;
 }
 
-ssize_t tty_slave_write(struct tty *tty, size_t size, void *buf)
-{
-    if (tty->tios.c_oflag & OPOST) {
-        size_t written;
-        for (written = 0; written < size; ++written) {
-            char c = ((char *) buf)[written];
-            if (c == '\n' && (tty->tios.c_oflag & ONLCR)) {
-                if (tty->master_write(tty, 2, "\r\n") != 2) /* FIXME should handle special cases */
-                    break;
-            } else if (c == '\r' && (tty->tios.c_oflag & OCRNL)) {
-                if (tty->master_write(tty, 1, "\n") != 1)
-                    break;
-            } else if (c == '\r' && (tty->tios.c_oflag & ONOCR)) {
-                /* TODO */
-            } else if (c == '\n' && (tty->tios.c_oflag & ONLRET)) {
-                /* TODO */
-            } else {
-                if (tty->master_write(tty, 1, &c) != 1)
-                    break;
-            }
-        }
-        return written;
-    } else {
-        return tty->master_write(tty, size, buf);
-    }
-}
-
-int tty_new(proc_t *proc, size_t buf_size, ttyio master, ttyio slave, void *p, struct tty **ref)
+int tty_new(struct proc *proc, size_t buf_size, ttyio master,
+        ttyio slave, void *p, struct tty **ref)
 {
     struct tty *tty = NULL;
     
-    if (!(tty = kmalloc(sizeof(struct tty))))
-        return -ENOMEM;
+    tty = kmalloc(sizeof(struct tty));
+    if (!tty) return -ENOMEM;
 
     memset(tty, 0, sizeof(struct tty));
 
@@ -137,14 +165,20 @@ int tty_new(proc_t *proc, size_t buf_size, ttyio master, ttyio slave, void *p, s
         buf_size = TTY_BUF_SIZE;
 
     tty->cook = kmalloc(buf_size);
+
+    if (!tty->cook) {
+        kfree(tty);
+        return -ENOMEM;
+    }
+
     tty->pos  = 0;
 
     /* Defaults */
     tty->tios.c_iflag = ICRNL | IXON;
     tty->tios.c_oflag = OPOST | ONLCR;
     tty->tios.c_lflag = ISIG | ICANON | ECHO | ECHOE | ECHOK;
-    //pty->tios.c_cc[VEOL]   = ;
-    //pty->tios.c_cc[VERASE] = ;
+    //tty->tios.c_cc[VEOL]   = ;
+    tty->tios.c_cc[VERASE] = 0x08;  /* BS */
     tty->tios.c_cc[VINTR]  = 0x03;  /* ^C */
     tty->tios.c_cc[VKILL]  = 0x15;  /* ^U */
     tty->tios.c_cc[VQUIT]  = 0x1C;  /* ^\ */
@@ -158,7 +192,7 @@ int tty_new(proc_t *proc, size_t buf_size, ttyio master, ttyio slave, void *p, s
 
     /* Interface */
     tty->master_write = master;
-    tty->slave_write = slave;
+    tty->slave_write  = slave;
     tty->p = p;
 
     if (ref)

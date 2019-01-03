@@ -1,11 +1,12 @@
 #include <core/system.h>
 #include <fs/virtfs.h>
 
-int virtfs_vmknod(struct vnode *vdir, const char *fn, itype_t type, dev_t dev, struct uio *uio, struct inode **ref)
+int virtfs_vmknod(struct vnode *vdir, const char *fn, mode_t mode, dev_t dev, struct uio *uio, struct inode **ref)
 {
     int err = 0;
-    struct inode *node = NULL;
-    struct virtfs_dir *dirent = NULL;
+    struct inode *inode = NULL;
+    struct virtfs_dirent *dirent = NULL;
+    struct inode *dir = NULL;
 
     /* Make sure file does not exist */
     if (!virtfs_vfind(vdir, fn, NULL)) {
@@ -13,27 +14,17 @@ int virtfs_vmknod(struct vnode *vdir, const char *fn, itype_t type, dev_t dev, s
         goto error;
     }
 
-    if (!(node = kmalloc(sizeof(struct inode)))) {
-        err = -ENOMEM;
-        goto error;
-    }
+    inode = kmalloc(sizeof(struct inode));
+    if (!inode) goto error_nomem;
 
-    memset(node, 0, sizeof(struct inode));
+    memset(inode, 0, sizeof(struct inode));
     
-    if (!(node->name = strdup(fn))) {
-        err = -ENOMEM;
-        goto error;
-    }
-
-    node->type = type;
-    node->size = 0;
-    node->uid  = uio->uid;
-    node->gid  = uio->gid;
-    node->mask = uio->mask;
-    node->nlink = type == FS_DIR? 2 : 1;
-    node->rdev = dev;
-
-    struct inode *dir = NULL;
+    inode->mode  = mode;
+    inode->size  = 0;
+    inode->uid   = uio->uid;
+    inode->gid   = uio->gid;
+    inode->nlink = S_ISDIR(mode)? 2 : 1;
+    inode->rdev  = dev;
 
     if (vfs_vget(vdir, &dir)) {
         /* That's odd */
@@ -41,63 +32,73 @@ int virtfs_vmknod(struct vnode *vdir, const char *fn, itype_t type, dev_t dev, s
         goto error;
     }
 
-    node->fs  = dir->fs;    /* Copy filesystem from directory */
+    inode->fs = dir->fs;    /* Copy filesystem from directory */
 
-    struct virtfs_dir *_dir = (struct virtfs_dir *) dir->p;
+    struct virtfs_dirent *cur_dir = (struct virtfs_dirent *) dir->p;
 
-    if (!(dirent = kmalloc(sizeof(struct virtfs_dir)))) {
-        err = -ENOMEM;
-        goto error;
-    }
+    dirent = kmalloc(sizeof(struct virtfs_dirent));
+    if (!dirent) goto error_nomem;
 
-    dirent->next = _dir;
-    dirent->node = node;
+    dirent->d_ino  = inode;
+    dirent->d_name = strdup(fn);
 
-    dir->p = dirent;
+    if (!dirent->d_name) goto error_nomem;
+
+    dirent->next  = cur_dir;
+    dir->p        = dirent;
 
     if (ref)
-        *ref = node;
+        *ref = inode;
 
     vfs_close(dir);
 
     return 0;
 
-error:
-    if (node) {
-        if (node->name)
-            kfree(node->name);
-        kfree(node);
-    }
+error_nomem:
+    err = -ENOMEM;
+    goto error;
 
-    if (dirent)
+error:
+    if (inode)
+        kfree(inode);
+
+    if (dirent) {
+        if (dirent->d_name)
+            kfree((void *) dirent->d_name);
+
         kfree(dirent);
+    }
 
     return err;
 }
 
-int virtfs_vunlink(struct vnode *dir, const char *fn, struct uio *uio)
+int virtfs_vunlink(struct vnode *vdir, const char *fn, struct uio *uio)
 {
-    //printk("virtfs_vunlink(dir=%p, fn=%s, uio=%p)\n", dir, fn, uio);
+    int err = 0;
+    struct inode *inode;
+    struct virtfs_dirent *dir;
+    struct inode *next;
+    struct virtfs_dirent *prev, *cur;
 
-    if (dir->type != FS_DIR)
+    if (!S_ISDIR(vdir->mode))
         return -ENOTDIR;
 
-    struct inode *inode = (struct inode *) dir->id;
-    struct virtfs_dir *_dir = (struct virtfs_dir *) inode->p;
-    struct inode *next = NULL;
+    inode = (struct inode *) vdir->ino;
+    dir   = (struct virtfs_dirent *) inode->p;
+    next  = NULL;
 
-    if (!_dir)  /* Directory not initialized */
+    if (!dir)  /* Directory not initialized */
         return -ENOENT;
 
-    struct virtfs_dir *prev = NULL, *cur = NULL;
 
-    forlinked (file, _dir, file->next) {
-        if (!strcmp(file->node->name, fn)) {
-            cur = file;
+    prev = cur = NULL;
+    forlinked (dirent, dir, dirent->next) {
+        if (!strcmp(dirent->d_name, fn)) {
+            cur = dirent;
             goto found;
         }
 
-        prev = file;
+        prev = dirent;
     }
 
     return -ENOENT;    /* File not found */
@@ -106,13 +107,13 @@ found:
     if (prev)
         prev->next = cur->next;
     else
-        inode->p = cur->next;
+        inode->p   = cur->next;
 
-    cur->node->nlink = 0;   /* XXX */
+    cur->d_ino->nlink = 0;   /* XXX */
 
-    if (cur->node->ref == 0) {
-        cur->node->ref = 1; /* vfs_close will decrement ref */
-        vfs_close(cur->node);
+    if (cur->d_ino->ref == 0) {
+        cur->d_ino->ref = 1; /* vfs_close will decrement ref */
+        vfs_close(cur->d_ino);
     }
 
     return 0;
@@ -120,19 +121,19 @@ found:
 
 int virtfs_vfind(struct vnode *dir, const char *fn, struct vnode *child)
 {
-    if (dir->type != FS_DIR)
+    if (!S_ISDIR(dir->mode))
         return -ENOTDIR;
 
-    struct inode *inode = (struct inode *) dir->id;
-    struct virtfs_dir *_dir = (struct virtfs_dir *) inode->p;
+    struct inode *inode = (struct inode *) dir->ino;
+    struct virtfs_dirent *_dir = (struct virtfs_dirent *) inode->p;
     struct inode *next = NULL;
 
     if (!_dir)  /* Directory not initialized */
         return -ENOENT;
 
-    forlinked (file, _dir, file->next) {
-        if (!strcmp(file->node->name, fn)) {
-            next = file->node;
+    forlinked (dirent, _dir, dirent->next) {
+        if (!strcmp(dirent->d_name, fn)) {
+            next = dirent->d_ino;
             goto found;
         }
     }
@@ -142,9 +143,8 @@ int virtfs_vfind(struct vnode *dir, const char *fn, struct vnode *child)
 found:
     if (child) {
         /* child->super should not be touched */
-        child->id   = (vino_t) next;
-        child->type = next->type;
-        child->mask = next->mask;
+        child->ino  = (vino_t) next;
+        child->mode = next->mode;
         child->uid  = next->uid;
         child->gid  = next->gid;
     }
@@ -164,9 +164,9 @@ ssize_t virtfs_readdir(struct inode *dir, off_t offset, struct dirent *dirent)
         return 1;
     }
 
-    struct virtfs_dir *_dir = (struct virtfs_dir *) dir->p;
+    struct virtfs_dirent *_dirent = (struct virtfs_dirent *) dir->p;
 
-    if (!_dir)
+    if (!_dirent)
         return 0;
 
     int found = 0;
@@ -174,10 +174,10 @@ ssize_t virtfs_readdir(struct inode *dir, off_t offset, struct dirent *dirent)
     offset -= 2;
 
     int i = 0;
-    forlinked (e, _dir, e->next) {
+    forlinked (e, _dirent, e->next) {
         if (i == offset) {
             found = 1;
-            strcpy(dirent->d_name, e->node->name);   // FIXME
+            strcpy(dirent->d_name, e->d_name);
             break;
         }
         ++i;
@@ -189,7 +189,7 @@ ssize_t virtfs_readdir(struct inode *dir, off_t offset, struct dirent *dirent)
 int virtfs_close(struct inode *inode)
 {
     /* XXX */
-    kfree(inode->name);
+    //kfree(inode->name);
     kfree(inode);
     return 0;
 }

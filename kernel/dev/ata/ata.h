@@ -145,7 +145,7 @@ static int ata_poll(struct ata_drive *drive, int advanced_check)
             ata_wait(drive);
             uint8_t err = io_in8(&drive->base, ATA_REG_ERROR);
             printk("ata: drive error: %s\n", ata_error_string(err));
-            return -1;
+            return -err;
         }
 
         if (!(s & ATA_STATUS_DRQ)) {

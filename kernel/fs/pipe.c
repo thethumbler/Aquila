@@ -20,61 +20,87 @@ static ssize_t pipefs_write(struct inode *node, off_t offset __unused, size_t si
 
 static int pipefs_can_read(struct file *file, size_t size)
 {
-    struct inode *node = file->node;
+    struct inode *node = file->inode;
     struct pipe *pipe = node->p;
     return size <= ringbuf_available(pipe->ring);
 }
 
 static int pipefs_can_write(struct file *file, size_t size)
 {
-    struct inode *node = file->node;
+    struct inode *node = file->inode;
     struct pipe *pipe = node->p;
     return size >= pipe->ring->size - ringbuf_available(pipe->ring);
 }
 
-static int pipefs_mkpipe(struct pipe **pipe)
+static int pipefs_mkpipe(struct pipe **ref)
 {
-    struct pipe *p = kmalloc(sizeof(struct pipe));
+    struct pipe *pipe;
 
-    if (!p)
-        return -ENOMEM;
+    pipe = kmalloc(sizeof(struct pipe));
+    if (!pipe) return -ENOMEM;
 
-    memset(p, 0, sizeof(struct pipe));
-    p->ring = ringbuf_new(PIPE_BUF_LEN);
+    memset(pipe, 0, sizeof(struct pipe));
+    pipe->ring = ringbuf_new(PIPE_BUFLEN);
     
-    if (!p->ring) {
-        kfree(p);
+    if (!pipe->ring) {
+        kfree(pipe);
         return -ENOMEM;
     }
 
-    if (pipe)
-        *pipe = p;
+    if (ref) *ref = pipe;
 
     return 0;
 }
 
+static void pipefs_pfree(struct pipe *pipe)
+{
+    if (pipe) {
+        if (pipe->ring)
+            ringbuf_free(pipe->ring);
+        kfree(pipe);
+    }
+}
+
 int pipefs_pipe(struct file *read, struct file *write)
 {
-    int ret = 0;
+    int err = 0;
     struct pipe *pipe = NULL;
 
-    ret = pipefs_mkpipe(&pipe);
+    if (!read || !write)
+        return -EINVAL;
 
-    if (ret)
-        return ret;
+    err = pipefs_mkpipe(&pipe);
+    if (err) return err;
 
-    read->node = kmalloc(sizeof(struct inode));
-    write->node = kmalloc(sizeof(struct inode));
+    read->inode  = kmalloc(sizeof(struct inode));
+    if (!read->inode) {
+        pipefs_pfree(pipe);
+        return -ENOMEM;
+    }
 
-    read->node->read_queue = queue_new();
-    write->node->write_queue = read->node->read_queue;
+    write->inode = kmalloc(sizeof(struct inode));
+    if (!write->inode) {
+        kfree(read->inode);
+        pipefs_pfree(pipe);
+        return -ENOMEM;
+    }
 
-    read->node->fs  = &pipefs;
-    write->node->fs = &pipefs;
-    read->node->p  = pipe;
-    write->node->p = pipe;
+    read->inode->read_queue   = queue_new();
+    if (!read->inode->read_queue) {
+        kfree(read->inode);
+        kfree(write->inode);
+        pipefs_pfree(pipe);
+        return -ENOMEM;
+    }
 
-    write->flags = O_WRONLY;
+    write->inode->write_queue = read->inode->read_queue;
+
+    read->inode->fs  = &pipefs;
+    read->inode->p   = pipe;
+
+    write->inode->fs = &pipefs;
+    write->inode->p  = pipe;
+    write->flags     = O_WRONLY;
     return 0;
 }
 

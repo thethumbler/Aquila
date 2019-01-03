@@ -10,12 +10,4 @@ struct dirent {
     char d_name[MAXNAMELEN];
 };
 
-typedef struct {
-    int fd;
-} DIR;
-
-DIR *opendir(const char *fn);
-int closedir(DIR *dir);
-struct dirent *readdir(DIR *dir);
-
 #endif

@@ -23,7 +23,7 @@ typedef struct {
 #define BITMAP_BIT_OFFSET(__bitmap__i__)    ((__bitmap__i__) & (BITMAP_BLOCK_SIZE - 1))
 
 #define BITMAP_SIZE(n) ((n) + BITMAP_BLOCK_MASK) / BITMAP_BLOCK_SIZE * MEMBER_SIZE(bitmap_t, map[0])
-#define BITMAP_NEW(n)  ((bitmap_t){.map = (uint32_t[BITMAP_SIZE(n)]){0}, .max_idx = (n) - 1})
+#define BITMAP_NEW(n)  (&(bitmap_t){.map = (uint32_t[BITMAP_SIZE(n)]){0}, .max_idx = (n) - 1})
 
 static inline size_t bitmap_size(size_t n)
 {

@@ -37,13 +37,13 @@ ssize_t posix_file_read(struct file *file, void *buf, size_t size)
     
     int retval;
     for (;;) {
-        if ((retval = vfs_read(file->node, file->offset, size, buf)) > 0) {
+        if ((retval = vfs_read(file->inode, file->offset, size, buf)) > 0) {
             /* Update file offset */
             file->offset += retval;
             
             /* Wake up all sleeping writers if a `write_queue' is attached */
-            if (file->node->write_queue)
-                thread_queue_wakeup(file->node->write_queue);
+            if (file->inode->write_queue)
+                thread_queue_wakeup(file->inode->write_queue);
 
             /* Return read bytes count */
             return retval;
@@ -58,7 +58,7 @@ ssize_t posix_file_read(struct file *file, void *buf, size_t size)
         } else {
             /* Block until some data is available */
             /* Sleep on the file readers queue */
-            if (thread_queue_sleep(file->node->read_queue))
+            if (thread_queue_sleep(file->inode->read_queue))
                 return -EINTR;
         }
     }

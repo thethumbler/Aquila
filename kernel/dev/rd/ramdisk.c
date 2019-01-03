@@ -1,4 +1,5 @@
 #include <core/system.h>
+#include <core/module.h>
 #include <core/string.h>
 
 #include <boot/boot.h>

@@ -1,4 +1,6 @@
 #include <core/system.h>
+#include <core/module.h>
+
 #include <fs/vfs.h>
 #include <fs/tmpfs.h>
 #include <fs/devpts.h>
@@ -20,15 +22,14 @@ int devpts_init()
 
     memset(devpts_root, 0, sizeof(struct inode));
 
-    devpts_root->name = "pts";
-    devpts_root->id   = (vino_t) devpts_root;
-    devpts_root->type = FS_DIR;
+    devpts_root->ino   = (vino_t) devpts_root;
+    devpts_root->mode  = S_IFDIR;
     devpts_root->nlink = 2;
-    devpts_root->fs   = &devpts;
+    devpts_root->fs    = &devpts;
 
     vdevpts_root.super = devpts_root;
-    vdevpts_root.id    = (vino_t) devpts_root;
-    vdevpts_root.type  = FS_DIR;
+    vdevpts_root.ino   = (vino_t) devpts_root;
+    vdevpts_root.mode  = S_IFDIR;
 
     vfs_install(&devpts);
 
@@ -37,8 +38,6 @@ int devpts_init()
 
 int devpts_mount(const char *dir, int flags, void *data)
 {
-    printk("devpts_mount(dir=%s, flags=%x, data=%p)\n", dir, flags, data);
-
     if (!devpts_root)
         return -EINVAL;
 
@@ -47,8 +46,9 @@ int devpts_mount(const char *dir, int flags, void *data)
 
 struct fs devpts = {
     .name  = "devpts",
+    .nodev = 1,
     .init  = devpts_init,
     .mount = devpts_mount,
 };
 
-MODULE_INIT(devpts, devpts_init, NULL);
+MODULE_INIT(devpts, devpts_init, NULL)

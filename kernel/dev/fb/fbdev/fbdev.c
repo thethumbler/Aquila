@@ -1,4 +1,5 @@
 #include <core/system.h>
+#include <core/module.h>
 
 #include <dev/fbdev.h>
 #include <dev/ramdev.h>
@@ -26,13 +27,13 @@ int fbdev_register(int type, void *data)
 static ssize_t fbdev_read(struct devid *dd, off_t offset, size_t size, void *buf)
 {
     struct fbdev *fb = &registered_fbs[dd->minor];
-    return fb->dev->read(dd, offset, size, buf);
+    return fb->read(fb, offset, size, buf);
 }
 
 static ssize_t fbdev_write(struct devid *dd, off_t offset, size_t size, void *buf)
 {
     struct fbdev *fb = &registered_fbs[dd->minor];
-    return fb->dev->write(dd, offset, size, buf);
+    return fb->write(fb, offset, size, buf);
 }
 
 static int fbdev_ioctl(struct devid *dd, int request, void *argp)
@@ -54,7 +55,7 @@ static int fbdev_ioctl(struct devid *dd, int request, void *argp)
 static int fbdev_mmap(struct devid *dd, struct vmr *vmr)
 {
     struct fbdev *fb = &registered_fbs[dd->minor];
-    return fb->dev->mmap(dd, vmr);
+    return fb->mmap(fb, vmr);
 }
 
 int fbdev_probe()

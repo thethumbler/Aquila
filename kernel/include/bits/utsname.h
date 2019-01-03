@@ -11,6 +11,4 @@ struct utsname {
     char  machine[MAX_LENGTH];
 };
 
-int uname(struct utsname *name);
-
 #endif /* ! _UTSNAME */

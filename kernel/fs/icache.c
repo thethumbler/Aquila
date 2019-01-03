@@ -1,0 +1,45 @@
+#include <core/system.h>
+#include <fs/icache.h>
+
+void icache_init(struct icache *icache)
+{
+    icache->inodes = queue_new();
+}
+
+int icache_insert(struct icache *icache, struct inode *inode)
+{
+    if (!icache)
+        return -EINVAL;
+
+    if (!icache->inodes)
+        icache_init(icache);
+
+    enqueue(icache->inodes, inode);
+
+    return 0;
+}
+
+int icache_remove(struct icache *icache, struct inode *inode)
+{
+    if (!icache || !icache->inodes)
+        return -EINVAL;
+
+    queue_remove(icache->inodes, inode);
+
+    return 0;
+}
+
+struct inode *icache_find(struct icache *icache, ino_t ino)
+{
+    if (!icache || !icache->inodes)
+        return NULL;
+
+    forlinked (node, icache->inodes->head, node->next) {
+        struct inode *inode = (struct inode *) node->value;
+        if (inode->ino == ino) {
+            return inode;
+        }
+    }
+
+    return NULL;
+}

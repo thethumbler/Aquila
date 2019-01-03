@@ -9,6 +9,7 @@
  */
 
 #include <core/system.h>
+#include <core/module.h>
 #include <core/string.h>
 
 #include <fs/vfs.h>
@@ -32,16 +33,14 @@ static int devfs_init()
 
     memset(devfs_root, 0, sizeof(struct inode));
 
-    devfs_root->name = "dev";
-    devfs_root->id   = (vino_t) devfs_root;
-    devfs_root->mask = 0775;
-    devfs_root->type = FS_DIR;
+    devfs_root->ino   = (vino_t) devfs_root;
+    devfs_root->mode  = S_IFDIR | 0775;
     devfs_root->nlink = 2;
-    devfs_root->fs   = &devfs;
+    devfs_root->fs    = &devfs;
 
     vdevfs_root.super = devfs_root;
-    vdevfs_root.id    = (vino_t) devfs_root;
-    vdevfs_root.type  = FS_DIR;
+    vdevfs_root.ino   = (vino_t) devfs_root;
+    vdevfs_root.mode  = S_IFDIR | 0775;
 
     vfs_install(&devfs);
 
@@ -58,6 +57,7 @@ static int devfs_mount(const char *dir, int flags, void *data)
 
 struct fs devfs = {
     .name   = "devfs",
+    .nodev  = 1,
     .init   = devfs_init,
     .mount  = devfs_mount,
 };

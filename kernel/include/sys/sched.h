@@ -5,16 +5,16 @@
 #include <sys/proc.h>
 #include <ds/queue.h>
 
-extern queue_t *ready_queue;
-extern thread_t *cur_thread;
+extern struct queue *ready_queue;
+extern struct thread *cur_thread;
 
 extern int kidle;
-void kernel_idle();
-void scheduler_init();
-void sched_thread_spawn(thread_t *thread);
-void sched_init_spawn(proc_t *init);
-void schedule();
+void kernel_idle(void);
+void scheduler_init(void);
+void sched_thread_spawn(struct thread *thread);
+void sched_init_spawn(struct proc *init);
+void schedule(void);
 
-void sched_thread_ready(thread_t *proc);
+void sched_thread_ready(struct thread *thread);
 
 #endif /* ! _SCHED_H */

@@ -4,13 +4,20 @@
 #include <sys/sched.h>
 #include <ds/queue.h>
 
-#define DEBUG_SLEEP_QUEUE
-
-int thread_new(proc_t *proc, thread_t **ref)
+int thread_new(struct proc *proc, struct thread **ref)
 {
-    thread_t *thread = kmalloc(sizeof(thread_t));
-    memset(thread, 0, sizeof(thread_t));
+    if (!proc)
+        return -EINVAL;
 
+    struct thread *thread;
+    thread = kmalloc(sizeof(struct thread));
+
+    if (!thread)
+        return -ENOMEM;
+
+    memset(thread, 0, sizeof(struct thread));
+
+    /* TODO Use a better tid allocation method */
     thread->owner = proc;
     proc->threads_nr++;
     thread->tid = proc->threads_nr;
@@ -23,21 +30,24 @@ int thread_new(proc_t *proc, thread_t **ref)
     return 0;
 }
 
-int thread_kill(thread_t *thread)
+int thread_kill(struct thread *thread)
 {
+    if (!thread)
+        return -EINVAL;
+
     /* Free resources */
     arch_thread_kill(thread);
     thread->state = ZOMBIE;
     return 0;
 }
 
-int thread_queue_sleep(queue_t *queue)
+int thread_queue_sleep(struct queue *queue)
 {
 #ifdef DEBUG_SLEEP_QUEUE
     printk("[%d:%d] %s: Sleeping on queue %p\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name, queue);
 #endif
 
-    struct queue_node *sleep_node = enqueue(queue, cur_thread);
+    struct qnode *sleep_node = enqueue(queue, cur_thread);
 
     cur_thread->sleep_queue = queue;
     cur_thread->sleep_node  = sleep_node;
@@ -50,28 +60,33 @@ int thread_queue_sleep(queue_t *queue)
 #ifdef DEBUG_SLEEP_QUEUE
         printk("[%d:%d] %s: Sleeping was interrupted by a signal\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name);
 #endif
-        return -1;
+        return -EINTR;
     } else {
         cur_thread->state = RUNNABLE;
         return 0;
     }
 }
 
-void thread_queue_wakeup(queue_t *queue)
+int thread_queue_wakeup(struct queue *queue)
 {
+    if (!queue)
+        return -EINVAL;
+
     while (queue->count) {
-        thread_t *thread = dequeue(queue);
+        struct thread *thread = dequeue(queue);
         thread->sleep_node = NULL;
 #ifdef DEBUG_SLEEP_QUEUE
         printk("[%d:%d] %s: Waking up from queue %p\n", thread->owner->pid, thread->tid, thread->owner->name, queue);
 #endif
         sched_thread_ready(thread);
     }
+
+    return 0;
 }
 
-int thread_create(thread_t *thread, uintptr_t stack, uintptr_t entry, uintptr_t uentry, uintptr_t arg, uintptr_t attr __unused, thread_t **new_thread)
+int thread_create(struct thread *thread, uintptr_t stack, uintptr_t entry, uintptr_t uentry, uintptr_t arg, uintptr_t attr __unused, struct thread **new_thread)
 {
-    thread_t *t = NULL;
+    struct thread *t = NULL;
     thread_new(thread->owner, &t);
 
     arch_thread_create(t, stack, entry, uentry, arg);

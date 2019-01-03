@@ -7,4 +7,4 @@
 extern struct fs procfs;
 extern struct inode *procfs_root;
 
-#endif
+#endif /* ! _PROCFS_H */

@@ -37,11 +37,11 @@ void vm_unmap_full(struct vmr *vmr)
     }
 }
 
-int vm_vmr_insert(queue_t *queue, struct vmr *vmr)
+int vm_vmr_insert(struct queue *queue, struct vmr *vmr)
 {
     uintptr_t end = vmr->base + vmr->size;
 
-    struct queue_node *cur = NULL;
+    struct qnode *cur = NULL;
     uintptr_t prev_end = 0;
 
     forlinked (node, queue->head, node->next) {
@@ -56,7 +56,7 @@ int vm_vmr_insert(queue_t *queue, struct vmr *vmr)
     if (!cur)
         return -ENOMEM;
 
-    struct queue_node *node = kmalloc(sizeof(struct queue_node));
+    struct qnode *node = kmalloc(sizeof(struct qnode));
     node->value = vmr;
     node->next = cur;
     node->prev = cur->prev;

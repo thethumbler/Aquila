@@ -2,7 +2,7 @@
 # Compilation flags
 #
 
-CC := $(PDIR)/../build-tools/sys/bin/x86_64-elf-gcc
+CC := $(PDIR)/../build-tools/sysroot/bin/x86_64-elf-gcc
 CFLAGS := -std=gnu99 -I. -I$(PDIR)/arch/$$(ARCH_DIR)/chipset/$$(CHIPSET_DIR)/include -I$(PDIR)/arch/$$(ARCH_DIR)/include -I $(PDIR) -I $(PDIR)/include/ -nostdlib -ffreestanding \
 		  -O3 -Wall -Wextra -Werror -funsigned-bitfields -fuse-ld=bfd \
 		  -Wno-unused \
@@ -11,7 +11,7 @@ CFLAGS := -std=gnu99 -I. -I$(PDIR)/arch/$$(ARCH_DIR)/chipset/$$(CHIPSET_DIR)/inc
 AS := $(CC)
 ASFLAGS := $(CFLAGS)
 
-LD := $(PDIR)/../build-tools/sys/bin/x86_64-elf-ld.bfd
+LD := $(PDIR)/../build-tools/sysroot/bin/x86_64-elf-ld.bfd
 LDFLAGS := -nostdlib
 #-melf64_x86_64
 
@@ -48,7 +48,7 @@ CHIPSET_X86_MISC_I8042=y
 #
 
 # Generic framebuffer (fbdev) support
-#DEV_FRAMEBUFFER=y
+DEV_FRAMEBUFFER=y
 # Generic console (condev) support
 DEV_CONSOLE=y
 DEV_KEYBOARD=y
