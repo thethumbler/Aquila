@@ -161,4 +161,15 @@ struct termios
 #define TCSADRAIN 1
 #define TCSAFLUSH 2
 
+/* POSIX */
+int tcgetattr(int fd, struct termios *termios_p);
+int tcsetattr(int fd, int optional_actions, const struct termios *termios_p);
+speed_t cfgetispeed(const struct termios *termios_p);
+speed_t cfgetospeed(const struct termios *termios_p);
+int cfsetispeed(struct termios *termios_p, speed_t speed);
+int cfsetospeed(struct termios *termios_p, speed_t speed);
+
+/* BSD */
+void cfmakeraw(struct termios *termios_p);
+
 #endif /* !_TERMIOS_H */

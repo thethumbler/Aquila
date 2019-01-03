@@ -4,6 +4,7 @@
  
 extern void _exit(int code);
 extern int main();
+void _init(void);
  
 asm(
 "\
@@ -28,6 +29,6 @@ void _start_c(int argc, char **argv, char **env)
     if (env)
         for (; *env; ++env) putenv(*env);
 
-    int ex = main(argc, argv);
-    _exit(ex);
+    _init();
+    _exit(main(argc, argv));
 }

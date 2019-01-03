@@ -56,6 +56,10 @@
 #define SYS_SEND    45
 #define SYS_RECV    46
 
+#define SYS_UMASK   47
+#define SYS_CHMOD   48
+#define SYS_SYSCONF 49
+
 #define SYSCALL3(ret, v, arg1, arg2, arg3) \
 	asm volatile("int $0x80;":"=a"(ret):"a"(v), "b"(arg1), "c"(arg2), "d"(arg3));
 #define SYSCALL2(ret, v, arg1, arg2) \
@@ -131,7 +135,7 @@ pid_t getpid(void)
     SYSCALL0(ret, SYS_GETPID);
     return ret;
 }
-
+/*
 int isatty(int fildes)
 {
     int ret;
@@ -144,7 +148,7 @@ int isatty(int fildes)
 
     return ret;
 }
-
+*/
 int kill(pid_t pid, int sig)
 {
     int ret;
@@ -178,8 +182,16 @@ off_t lseek(int fildes, off_t offset, int whence)
 
 int open(const char *path, int oflags, ...)
 {
-	int ret;
-    SYSCALL2(ret, SYS_OPEN, path, oflags);
+	int ret, mode = 0;
+
+    if (oflags & O_CREAT) {
+        va_list ap;
+        va_start(ap, oflags);
+        mode = va_arg(ap, int);
+        va_end(ap);
+    }
+
+    SYSCALL3(ret, SYS_OPEN, path, oflags, mode);
 
     if (ret < 0) {
         errno = -ret;
@@ -414,7 +426,7 @@ int fcntl(int fildes, int cmd, ...)
     va_end(ap);
 
     int ret;
-    SYSCALL3(ret, SYS_PIPE, fildes, cmd, arg);
+    SYSCALL3(ret, SYS_FCNTL, fildes, cmd, arg);
 
     if (ret < 0) {
         errno = -ret;
@@ -655,4 +667,94 @@ ssize_t recv(int fd, void *buf, size_t len, int flags)
     }
 
     return err;
+}
+
+mode_t umask(mode_t mask)
+{
+    SYSCALL1(mask, SYS_UMASK, mask);
+    return mask;
+}
+
+int chmod(const char *path, mode_t mode)
+{
+    return 0;
+}
+
+long sysconf(int name)
+{
+    return 0;
+}
+
+int access(const char *path, int mode)
+{
+    return 0;
+}
+
+int chown(const char *path, uid_t owner, gid_t group)
+{
+    return 0;
+}
+
+int utime(const char *path, const struct utimebuf *times)
+{
+    return 0;
+}
+
+int rmdir(const char *path)
+{
+    return 0;
+}
+
+pid_t vfork(void)
+{
+    return fork();
+}
+
+int sigprocmask(int how, const sigset_t *set, sigset_t *oldset)
+{
+    return 0;
+}
+
+int dup(int oldfd)
+{
+    return fcntl(oldfd, F_DUPFD, 0);
+}
+
+int dup2(int oldfd, int newfd)
+{
+    return fcntl(oldfd, F_DUPFD, newfd);
+}
+
+long pathconf(const char *path, int name)
+{
+    errno = ENOSYS;
+    return -1;
+}
+
+unsigned int alarm(unsigned int seconds)
+{
+    return 0;
+}
+
+unsigned int sleep(unsigned int seconds)
+{
+    return 0;
+}
+
+void sync(void)
+{
+    return;
+}
+
+#include <sys/select.h>
+int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, struct timeval *timeout)
+{
+    errno = ENOSYS;
+    return -1;
+}
+
+long fpathconf(int fd, int name)
+{
+    errno = ENOSYS;
+    return -1;
 }

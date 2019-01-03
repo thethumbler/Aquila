@@ -177,13 +177,14 @@ if [[ ! -d $NEWLIB ]]; then
     cd $top_dir;
 
     # Link binaries
-    ln -f sysroot/bin/$ARCH-elf-ar      sysroot/bin/$ARCH-aquila-ar
-    ln -f sysroot/bin/$ARCH-elf-as      sysroot/bin/$ARCH-aquila-as
-    ln -f sysroot/bin/$ARCH-elf-gcc     sysroot/bin/$ARCH-aquila-gcc
-    ln -f sysroot/bin/$ARCH-elf-gcc     sysroot/bin/$ARCH-aquila-cc
-    ln -f sysroot/bin/$ARCH-elf-ranlib  sysroot/bin/$ARCH-aquila-ranlib
-    ln -f sysroot/bin/$ARCH-elf-readelf sysroot/bin/$ARCH-aquila-readelf
-    export PATH=$top_dir/sysroot/bin:$PATH;
+    #ln -f sysroot/bin/$ARCH-elf-ar      sysroot/bin/$ARCH-aquila-ar
+    #ln -f sysroot/bin/$ARCH-elf-as      sysroot/bin/$ARCH-aquila-as
+    #ln -f sysroot/bin/$ARCH-elf-gcc     sysroot/bin/$ARCH-aquila-gcc
+    #ln -f sysroot/bin/$ARCH-elf-gcc     sysroot/bin/$ARCH-aquila-cc
+    #ln -f sysroot/bin/$ARCH-elf-ranlib  sysroot/bin/$ARCH-aquila-ranlib
+    #ln -f sysroot/bin/$ARCH-elf-readelf sysroot/bin/$ARCH-aquila-readelf
+    #export PATH=$top_dir/sysroot/bin:$PATH;
+    #export PATH=$top_dir/sysroot/bin:$PATH;
     rm -rf build-newlib && mkdir -p build-newlib && cd build-newlib;
     echo "Configuring newlib...";
     ../$NEWLIB/configure --prefix=/usr --target=$ARCH-aquila;
