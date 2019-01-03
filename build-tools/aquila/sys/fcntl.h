@@ -26,6 +26,25 @@ extern "C" {
 #define O_EXEC      0x400000 
 #define O_SEARCH    O_EXEC
 
+/* fcntl(2) requests */
+#define F_DUPFD         0   /* Duplicate fildes */
+#define F_GETFD         1   /* Get fildes flags (close on exec) */
+#define F_SETFD         2   /* Set fildes flags (close on exec) */
+#define F_GETFL         3   /* Get file flags */
+#define F_SETFL         4   /* Set file flags */
+#define F_GETOWN        5   /* Get owner - for ASYNC */
+#define F_SETOWN        6   /* Set owner - for ASYNC */
+#define F_GETLK         7   /* Get record-locking information */
+#define F_SETLK         8   /* Set or Clear a record-lock (Non-Blocking) */
+#define F_SETLKW        9   /* Set or Clear a record-lock (Blocking) */
+#define F_RGETLK        10  /* Test a remote lock to see if it is blocked */
+#define F_RSETLK        11  /* Set or unlock a remote lock */
+#define F_CNVT          12  /* Convert a fhandle to an open fd */
+#define F_RSETLKW       13  /* Set or Clear remote record-lock(Blocking) */
+#define F_DUPFD_CLOEXEC 14  /* As F_DUPFD, but set close-on-exec flag */
+
+#define FD_CLOEXEC      1
+
 #include <sys/types.h>
 #include <sys/stat.h>		/* sigh. for the mode bits for open/creat */
 
