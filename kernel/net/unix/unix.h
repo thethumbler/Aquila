@@ -7,14 +7,13 @@ struct un_conn {
     struct ringbuf *soci;   /* Server Out, Client In */
     struct ringbuf *sico;   /* Server In, Client Out */
 
-    queue_t server_recv_sleep;
-    queue_t server_send_sleep;
-    queue_t client_recv_sleep;
-    queue_t client_send_sleep;
+    struct queue server_recv;
+    struct queue server_send;
+    struct queue client_recv;
+    struct queue client_send;
+    struct queue connect;
 
-    queue_t connect_sleep;
-
-    int connected : 1;
+    int connected;
 };
 
 struct un_socket {
@@ -22,8 +21,8 @@ struct un_socket {
 
     size_t backlog;    /* Number of connections to keep in queue */
 
-    queue_t requests;
-    queue_t accept_sleep;
+    struct queue requests;
+    struct queue accept;
 
     /* Flags */
     int listening : 1;

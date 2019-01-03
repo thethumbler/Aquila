@@ -32,23 +32,25 @@ void kmain(struct boot *boot)
     modules_init();
 
     if (boot->modules_count)
-        load_ramdisk(&boot->modules[0]);
+        //load_ramdisk(&boot->modules[0]);
+        load_ramdisk();
     else
         panic("No modules loaded: unable to load ramdisk");
 
     printk("kernel: Loading init process\n");
 
-    proc_t *init;
+    struct proc *init;
     int err;
 
     if ((err = binfmt_load(NULL, "/init", &init))) {
-        printk("error: %d\n", err);
+        printk("error: %d\n", -err);
         panic("Can not load init process");
     }
 
     char *cmdline = boot->modules[0].cmdline;
     char *argp[] = {cmdline, 0};
     char *envp[] = {0};
+
     arch_init_execve(init, 2, argp, 1, envp);
 
 #if EARLYCON_DISABLE_ON_INIT

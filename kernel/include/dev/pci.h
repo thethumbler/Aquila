@@ -1,12 +1,14 @@
 #ifndef _PCI_H
 #define _PCI_H
 
-#include <stdint.h>
+#include <core/system.h>
+
+union pci_address;
+struct pci_dev;
+
 #include <dev/dev.h>
 #include <cpu/io.h>
 
-//#define PCI_CONFIG_ADDRESS  0xCF8
-//#define PCI_CONFIG_DATA     0xCFC
 #define PCI_CONFIG_ADDRESS  0x00
 #define PCI_CONFIG_DATA     0x04
 
@@ -36,9 +38,7 @@ void pci_ioaddr_set(struct ioaddr *io);
  */
 
 int pci_scan_device(uint8_t class, uint8_t subclass, struct pci_dev *_dev, size_t nr);
-
 int pci_device_scan(uint16_t vendor_id, uint16_t device_id, struct pci_dev *ref);
-
 uint8_t pci_reg8_read(struct pci_dev *dev, uint8_t off);
 uint16_t pci_reg16_read(struct pci_dev *dev, uint8_t off);
 uint32_t pci_reg32_read(struct pci_dev *dev, uint8_t off);

@@ -49,6 +49,26 @@ static inline size_t ringbuf_read(struct ringbuf *ring, size_t n, char *buf)
     return size - n;
 }
 
+static inline size_t ringbuf_read_noconsume(struct ringbuf *ring, off_t off, size_t n, char *buf)
+{
+    size_t size = n;
+    size_t head = ring->head + off;
+
+    if (ring->head < ring->tail && head > ring->tail)
+        return 0;
+
+    while (n) {
+        if (head == ring->size)
+            head = 0;
+        if (head == ring->tail)   /* Ring is empty */
+            break;
+        *buf++ = ring->buf[head++];
+        n--;
+    }
+
+    return size - n;
+}
+
 static inline size_t ringbuf_write(struct ringbuf *ring, size_t n, char *buf)
 {
     size_t size = n;
@@ -56,6 +76,26 @@ static inline size_t ringbuf_write(struct ringbuf *ring, size_t n, char *buf)
     while (n) {
         if (INDEX(ring, ring->head) == INDEX(ring, ring->tail) + 1) /* Ring is full */
             break;
+
+        if (ring->tail == ring->size)
+            ring->tail = 0;
+        
+        ring->buf[ring->tail++] = *buf++;
+        n--;
+    }
+
+    return size - n;
+}
+
+static inline size_t ringbuf_write_overwrite(struct ringbuf *ring, size_t n, char *buf)
+{
+    size_t size = n;
+
+    while (n) {
+        if (INDEX(ring, ring->head) == INDEX(ring, ring->tail) + 1) {
+            /* move head to match */
+            ring->head = INDEX(ring, ring->head) + 1;
+        }
 
         if (ring->tail == ring->size)
             ring->tail = 0;

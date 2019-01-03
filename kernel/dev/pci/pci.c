@@ -1,34 +1,39 @@
+#include <core/system.h>
+#include <core/module.h>
+
 #include <dev/pci.h>
 #include <cpu/io.h>
 
-static struct ioaddr __pci_ioaddr;
+static struct ioaddr pci_ioaddr;
 
 static inline uint32_t pci_read_dword(uint8_t bus, uint8_t dev, uint8_t func, uint8_t reg)
 {
-    union pci_address adr = {0};
+    union pci_address addr;
+    addr.raw = 0;
 
-    adr.structure.enable = 1;
-    adr.structure.bus = bus;
-    adr.structure.device = dev;
-    adr.structure.function = func;
-    adr.structure.reg = reg & 0xfc;
+    addr.structure.enable = 1;
+    addr.structure.bus = bus;
+    addr.structure.device = dev;
+    addr.structure.function = func;
+    addr.structure.reg = reg & 0xfc;
 
-    io_out32(&__pci_ioaddr, PCI_CONFIG_ADDRESS, adr.raw);
-    return io_in32(&__pci_ioaddr, PCI_CONFIG_DATA);
+    io_out32(&pci_ioaddr, PCI_CONFIG_ADDRESS, addr.raw);
+    return io_in32(&pci_ioaddr, PCI_CONFIG_DATA);
 }
 
 static inline void pci_write_dword(uint8_t bus, uint8_t dev, uint8_t func, uint8_t reg, uint32_t val)
 {
-    union pci_address adr = {0};
+    union pci_address addr;
+    addr.raw = 0;
 
-    adr.structure.enable = 1;
-    adr.structure.bus = bus;
-    adr.structure.device = dev;
-    adr.structure.function = func;
-    adr.structure.reg = reg & 0xfc;
+    addr.structure.enable = 1;
+    addr.structure.bus = bus;
+    addr.structure.device = dev;
+    addr.structure.function = func;
+    addr.structure.reg = reg & 0xfc;
 
-    io_out32(&__pci_ioaddr, PCI_CONFIG_ADDRESS, adr.raw);
-    io_out32(&__pci_ioaddr, PCI_CONFIG_DATA, val);
+    io_out32(&pci_ioaddr, PCI_CONFIG_ADDRESS, addr.raw);
+    io_out32(&pci_ioaddr, PCI_CONFIG_DATA, val);
 }
 
 static inline uint16_t get_vendor_id(uint8_t bus, uint8_t dev, uint8_t func)
@@ -160,7 +165,7 @@ struct dev pcidev = {
  */
 void pci_ioaddr_set(struct ioaddr *io)
 {
-    __pci_ioaddr = *io;
+    pci_ioaddr = *io;
 }
 
 

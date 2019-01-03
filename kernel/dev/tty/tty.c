@@ -1,4 +1,5 @@
 #include <core/system.h>
+#include <core/module.h>
 #include <dev/ttydev.h>
 #include <fs/posix.h>
 

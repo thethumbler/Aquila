@@ -1,5 +1,11 @@
 #include <core/system.h>
+
+#include <core/string.h>
 #include <console/earlycon.h>
+#include <ds/ringbuf.h>
+
+#define KMSG_SIZE   8192
+struct ringbuf *kmsg = RINGBUF_NEW(KMSG_SIZE);
 
 static int use_earlycon = 1;
 void earlycon_disable()
@@ -7,9 +13,10 @@ void earlycon_disable()
     use_earlycon = 0;
 }
 
-#ifdef PRINTK_DEBUG
 static int putc(char c)
 {
+    ringbuf_write_overwrite(kmsg, 1, &c);
+
     if (use_earlycon)
         return earlycon_putc(c);
     return 0;
@@ -17,8 +24,14 @@ static int putc(char c)
 
 static int puts(char *s)
 {
+    s = s? s : "(null)";
+
+    int len = strlen(s);
+    ringbuf_write_overwrite(kmsg, len, s);
+
     if (use_earlycon)
-        return earlycon_puts(s? s : "(null)");
+        return earlycon_puts(s);
+
     return 0;
 }
 
@@ -91,7 +104,7 @@ static int putb(uint8_t val)
     return puts(buf);
 }
 
-int vprintk(char *fmt, va_list args)
+int vprintk(const char *fmt, va_list args)
 {
     int ret = 0;
     while (*fmt)
@@ -148,7 +161,7 @@ int vprintk(char *fmt, va_list args)
     return ret;
 }
 
-int printk(char *fmt, ...)
+int printk(const char *fmt, ...)
 {
     va_list args;
     va_start(args, fmt);
@@ -157,4 +170,3 @@ int printk(char *fmt, ...)
 
     return ret;
 }
-#endif

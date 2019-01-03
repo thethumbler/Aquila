@@ -22,4 +22,27 @@
 #define UTSNAME_VERSION  (__DATE__ " " __TIME__)
 #define UTSNAME_MACHINE  "i386"
 
+/* test __GNUC__ last because some compilers report
+ * compatability with gcc using __GNUC__
+ */
+#if defined(__clang__)
+  #define __CONFIG_COMPILER__             "clang"
+  #define __CONFIG_COMPILER_VERSION__     __VERSION__
+#elif defined(__TINYC__)
+  #define __CONFIG_COMPILER__             "tcc"
+  #define __CONFIG_COMPILER_VERSION__     "0.9.27"
+#elif defined(__GNUC__)
+  #define __CONFIG_COMPILER__             "gcc"
+  #define __CONFIG_COMPILER_VERSION__     __VERSION__
+#else
+  #define __CONFIG_COMPILER__             "unkown"
+  #define __CONFIG_COMPILER_VERSION__     "?"
+#endif
+
+//#ifdef __TIMESTAMP__
+//#define __CONFIG_TIMESTAMP__            __TIMESTAMP__
+//#else
+#define __CONFIG_TIMESTAMP__            __DATE__ " " __TIME__
+//#endif
+
 #endif /* ! _CONFIG_H */

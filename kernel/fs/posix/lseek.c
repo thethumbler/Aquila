@@ -1,5 +1,4 @@
 #include <core/system.h>
-
 #include <fs/vfs.h>
 #include <bits/errno.h>
 
@@ -12,7 +11,7 @@
 
 ssize_t posix_file_lseek(struct file *file, off_t offset, int whence)
 {
-    struct inode *inode = file->node;
+    struct inode *inode = file->inode;
 
     switch (whence) {
         case 0: /* SEEK_SET */

@@ -23,32 +23,29 @@
 #include <ds/queue.h>
 #include <boot/boot.h>
 
-struct inode *ramdisk_dev_node = NULL;
-static queue_t *archivers = QUEUE_NEW();
+static struct inode *rd_dev = NULL;
+static struct queue *archivers = QUEUE_NEW();
 
-void initramfs_archiver_register(struct fs *fs)
+int initramfs_archiver_register(struct fs *fs)
 {
-    enqueue(archivers, fs);
+    if (!enqueue(archivers, fs))
+        return -ENOMEM;
+
+    return 0;
 }
 
-void load_ramdisk()
+int load_ramdisk(void)
 {
-    //printk("[0] Kernel: Ramdisk %p [%d]\n", ramdisk, ramdisk_size);
     printk("kernel: Loading ramdisk\n");
 
-    ramdisk_dev_node = kmalloc(sizeof(struct inode));
-    memset(ramdisk_dev_node, 0, sizeof(struct inode));
+    rd_dev = kmalloc(sizeof(struct inode));
+    memset(rd_dev, 0, sizeof(struct inode));
 
     extern size_t rd_size;
 
-    *ramdisk_dev_node = (struct inode) {
-        .name = "ramdisk",
-
-        .type  = FS_BLKDEV,
-        .rdev  = _DEV_T(1, 0),
-
-        .size = rd_size,
-    };
+    rd_dev->mode = S_IFBLK;
+    rd_dev->rdev = DEV(1, 0);
+    rd_dev->size = rd_size;
 
     struct inode *root = NULL;
     int err = -1;
@@ -56,7 +53,7 @@ void load_ramdisk()
     forlinked (node, archivers->head, node->next) {
         struct fs *fs = node->value;
 
-        if (!(err = fs->load(ramdisk_dev_node, &root)))
+        if (!(err = fs->load(rd_dev, &root)))
             break;
     }
 
@@ -66,4 +63,6 @@ void load_ramdisk()
     }
 
     vfs_mount_root(root);
+
+    return 0;
 }

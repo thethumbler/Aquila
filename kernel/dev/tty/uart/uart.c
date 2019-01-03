@@ -8,12 +8,12 @@
 #include <sys/sched.h>
 
 #define UART_BUF 64
-static struct __uart *devices[192] = {0};   /* Registered devices */
+static struct uart *devices[192] = {0};   /* Registered devices */
 
 /* Called when data is received */
-void uart_recieve_handler(struct __uart *u, size_t size)
+void uart_recieve_handler(struct uart *u, size_t size)
 {
-    char buf[size];
+    char buf[UART_BUF];
 
     for (size_t i = 0; i < size; ++i) {
         buf[i] = u->receive(u);
@@ -24,7 +24,7 @@ void uart_recieve_handler(struct __uart *u, size_t size)
 }
 
 /* Called when data is ready to be transmitted */
-void uart_transmit_handler(struct __uart *u, size_t size)
+void uart_transmit_handler(struct uart *u, size_t size)
 {
     size_t len = ringbuf_available(u->out);
     len = MIN(size, len);
@@ -41,7 +41,7 @@ void uart_transmit_handler(struct __uart *u, size_t size)
 /* TTY Interface */
 ssize_t uart_master_write(struct tty *tty, size_t size, void *buf)
 {
-    struct __uart *u = (struct __uart *) tty->p;
+    struct uart *u = (struct uart *) tty->p;
     size_t s = ringbuf_write(u->out, size, buf);
     uart_transmit_handler(u, s); /* XXX */
     return s;
@@ -49,55 +49,55 @@ ssize_t uart_master_write(struct tty *tty, size_t size, void *buf)
 
 ssize_t uart_slave_write(struct tty *tty, size_t size, void *buf)
 {
-    struct __uart *u = (struct __uart *) tty->p;
+    struct uart *u = (struct uart *) tty->p;
     return ringbuf_write(u->in, size, buf);
 }
 
 ssize_t uart_read(struct devid *dd, off_t offset __unused, size_t size, void *buf)
 {
-    struct __uart *u = devices[dd->minor - 64];
+    struct uart *u = devices[dd->minor - 64];
     if (!u) return -EIO;
     return ringbuf_read(u->in, size, buf);
 }
 
 ssize_t uart_write(struct devid *dd, off_t offset __unused, size_t size, void *buf)
 {
-    struct __uart *u = devices[dd->minor - 64];
+    struct uart *u = devices[dd->minor - 64];
     if (!u) return -EIO;
     return tty_slave_write(u->tty, size, buf);
 }
 
 int uart_ioctl(struct devid *dd, int request, void *argp)
 {
-    struct __uart *u = devices[dd->minor - 64];
+    struct uart *u = devices[dd->minor - 64];
     if (!u) return -EIO;
     return tty_ioctl(u->tty, request, argp);  
 }
 
 int uart_file_open(struct file *file)
 {
-    size_t id = (file->node->rdev & 0xFF) - 64;
-    struct __uart *u = devices[id];
+    size_t id = (file->inode->rdev & 0xFF) - 64;
+    struct uart *u = devices[id];
     int err = 0;
 
     if (u->inode) { /* Already open */
         /* XXX */
-        file->node = u->inode;
+        file->inode = u->inode;
     } else {
         u->init(u);
-        u->inode = file->node;
+        u->inode = file->inode;
         /* TODO Error checking */
         u->in = ringbuf_new(UART_BUF);
         u->out = ringbuf_new(UART_BUF);
         tty_new(cur_thread->owner, 0, uart_master_write, uart_slave_write, u, &u->tty);
-        file->node->read_queue  = queue_new();
-        file->node->write_queue = queue_new();
+        file->inode->read_queue  = queue_new();
+        file->inode->write_queue = queue_new();
     }
 
     return 0;
 }
 
-int uart_register(int id, struct __uart *u)
+int uart_register(int id, struct uart *u)
 {
     if (id < 0) {   /* Allocated dynamically */
         for (int i = 0; i < 192; ++i) {

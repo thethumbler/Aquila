@@ -10,10 +10,11 @@
 
 
 #include <core/system.h>
+#include <core/module.h>
 #include <core/arch.h>
 #include <cpu/cpu.h>
 
-#include <chipset/misc.h>
+#include <platform/misc.h>
 
 #include <sys/proc.h>
 #include <sys/sched.h>
@@ -27,13 +28,13 @@
 
 #include <bits/errno.h>
 
-#define BUF_SIZE    128
+#define BUFSIZE    128
 
-static struct ringbuf *kbd_ring = RINGBUF_NEW(BUF_SIZE);   /* Keboard Ring Buffer */
-static proc_t *proc = NULL; /* Current process using Keboard */
-static queue_t *kbd_read_queue = QUEUE_NEW(); /* Keyboard read queue */
+static struct ringbuf *kbd_ring = RINGBUF_NEW(BUFSIZE);   /* Keboard Ring Buffer */
+static struct proc *proc = NULL; /* Current process using Keboard */
+static struct queue *kbd_read_queue = QUEUE_NEW(); /* Keyboard read queue */
 
-void ps2kbd_handler(int scancode)
+static void ps2kbd_handler(int scancode)
 {
     ringbuf_write(kbd_ring, sizeof(scancode), (char *) &scancode);
     
@@ -41,44 +42,27 @@ void ps2kbd_handler(int scancode)
         thread_queue_wakeup(kbd_read_queue);
 }
 
-void ps2kbd_register()
+static void ps2kbd_register(void)
 {
     x86_i8042_handler_register(1, ps2kbd_handler);
 }
 
-static ssize_t ps2kbd_read(struct devid *dd __unused, off_t offset __unused, size_t size, void *buf)
+static ssize_t ps2kbd_read(struct devid *dd, off_t off, size_t sz, void *buf)
 {
-    return ringbuf_read(kbd_ring, size, buf);
+    (void) dd;
+    (void) off;
+
+    return ringbuf_read(kbd_ring, sz, buf);
 }
 
-int ps2kbd_probe()
+static int ps2kbd_probe(void)
 {
     ps2kbd_register();
     kdev_chrdev_register(11, &ps2kbddev);
-
-    /*
-    struct inode *kbd = NULL;
-    struct uio uio = {
-        .uid  = ROOT_UID,
-        .gid  = INPUT_GID,
-        .mask = 0660,
-    };
-
-    int ret = vfs.create(&vdev_root, "kbd", &uio, &kbd);
-
-    if (ret)
-        return ret;
-
-    kbd->type = FS_CHRDEV;
-    kbd->dev = &ps2kbddev;
-    kbd->read_queue = kbd_read_queue;
-    */
-
     return 0;
 }
 
 /* File Operations */
-
 static int ps2kbd_file_open(struct file *file)
 {
     if (proc) /* Only one process can open kbd */
@@ -87,7 +71,7 @@ static int ps2kbd_file_open(struct file *file)
     proc = cur_thread->owner;
 
     /* This is either really smart or really dumb */
-    file->node->read_queue = kbd_read_queue;    
+    file->inode->read_queue = kbd_read_queue;    
 
     return posix_file_open(file);
 }
@@ -108,4 +92,4 @@ struct dev ps2kbddev = {
     },
 };
 
-MODULE_INIT(ps2kbd, ps2kbd_probe, NULL);
+MODULE_INIT(ps2kbd, ps2kbd_probe, NULL)

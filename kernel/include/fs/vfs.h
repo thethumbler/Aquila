@@ -2,53 +2,16 @@
 #define _VFS_H
 
 #include <core/system.h>
-#include <bits/dirent.h>
-#include <bits/errno.h>
-#include <sys/proc.h>
-#include <ds/queue.h>
-#include <fs/stat.h>
-#include <mm/vm.h>
 
-struct fs;  /* File System Structure */
+struct fs;
 struct inode;
 struct vnode;
 struct file;
+struct uio;
+struct iops;
 
-#define FS_RGL      1
-#define FS_DIR      2
-#define FS_CHRDEV   3
-#define FS_BLKDEV   4
-#define FS_SYMLINK  5
-#define FS_PIPE     6
-#define FS_FIFO     7
-#define FS_SOCKET   8
-#define FS_SPECIAL  9
+#include <bits/dirent.h>
 
-struct uio {    /* User I/O operation */
-    char     *root; /* Root Directory */
-    char     *cwd;  /* Current Working Directory */
-    uint32_t uid;
-    uint32_t gid;
-    uint32_t mask;
-    uint32_t flags;
-} __packed;
-
-/* Inode Operations */
-struct iops {
-    ssize_t (*read)    (struct inode *node, off_t offset, size_t size, void *buf);
-    ssize_t (*write)   (struct inode *node, off_t offset, size_t size, void *buf);
-    int     (*ioctl)   (struct inode *node, int request, void *argp);
-    ssize_t (*readdir) (struct inode *node, off_t offset, struct dirent *dirent);
-    int     (*close)   (struct inode *node);
-
-    int     (*vmknod)  (struct vnode *dir, const char *fn, itype_t type, dev_t dev, struct uio *uio, struct inode **ref);
-    int     (*vunlink) (struct vnode *dir, const char *fn, struct uio *uio);
-    int     (*vfind)   (struct vnode *dir, const char *name, struct vnode *child);
-    int     (*vget)    (struct vnode *vnode, struct inode **inode);
-    int     (*mmap)    (struct vmr *vmr);
-} __packed;
-
-/* File Operations */
 struct fops {
     int         (*open)    (struct file *file);
     ssize_t     (*read)    (struct file *file, void *buf, size_t size);    
@@ -59,10 +22,43 @@ struct fops {
     int         (*ioctl)   (struct file *file, int request, void *argp);
 
     /* helpers */
-    int         (*can_read)  (struct file * file, size_t size);
-    int         (*can_write) (struct file * file, size_t size);
+    int         (*can_read)  (struct file *file, size_t size);
+    int         (*can_write) (struct file *file, size_t size);
     int         (*eof)       (struct file *);
-} __packed;
+};
+
+#include <bits/errno.h>
+#include <sys/proc.h>
+#include <ds/queue.h>
+
+#include <fs/stat.h>
+
+#include <mm/vm.h>
+
+/* User I/O operation */
+struct uio {
+    char     *root; /* Root Directory */
+    char     *cwd;  /* Current Working Directory */
+    uid_t    uid;
+    gid_t    gid;
+    mode_t   mask;
+    uint32_t flags;
+};
+
+/* Inode Operations */
+struct iops {
+    ssize_t (*read)    (struct inode *inode, off_t offset, size_t size, void *buf);
+    ssize_t (*write)   (struct inode *inode, off_t offset, size_t size, void *buf);
+    int     (*ioctl)   (struct inode *inode, int request, void *argp);
+    ssize_t (*readdir) (struct inode *inode, off_t offset, struct dirent *dirent);
+    int     (*close)   (struct inode *inode);
+
+    int     (*vmknod)  (struct vnode *dir, const char *fn, uint32_t mode, dev_t dev, struct uio *uio, struct inode **ref);
+    int     (*vunlink) (struct vnode *dir, const char *fn, struct uio *uio);
+    int     (*vfind)   (struct vnode *dir, const char *name, struct vnode *child);
+    int     (*vget)    (struct vnode *vnode, struct inode **inode);
+    int     (*mmap)    (struct vmr *vmr);
+};
 
 struct vfs_path {
     struct inode *mountpoint;
@@ -80,52 +76,54 @@ struct fs {
 
     /* flags */
     int nodev : 1;
-} __packed;
+};
 
-struct inode {    /* Actual inode, only one copy is permitted */
-    vino_t      id;     /* Unique Identifier */
-    char        *name;
+/* in-core inode structure */
+struct inode {
+    /* fields common to all filesystems */
+    ino_t       ino;
     size_t      size;
-    uint32_t    type;
-    struct fs   *fs;
-
     dev_t       dev;
     dev_t       rdev;
+    mode_t      mode;
+    uid_t       uid;
+    gid_t       gid;
+    nlink_t     nlink;
+    _time_t     atime;
+    _time_t     mtime;
+    _time_t     ctime;
+
+
+    //char        *name;
+    struct fs   *fs;
 
     void        *p;     /* Filesystem handler private data */
-
-    uint32_t    uid;    /* User ID */
-    uint32_t    gid;    /* Group ID */
-    uint32_t    mask;   /* File access mask */
-    uint32_t    nlink;  /* Number of links to inode */
-
-    struct timespec atim;
-    struct timespec mtim;
-    struct timespec ctim;
-
     ssize_t     ref;    /* Number of processes referencing this node */
-    queue_t     *read_queue;
-    queue_t     *write_queue;
-} __packed;
 
-struct vnode {  /* Tag node, multiple copies are permitted */
-    struct inode *super;  /* super node containing inode reference */
-    vino_t       id;     /* unique underlying inode identifier */
-    uint32_t     type;   /* inode type */
-    uint32_t     mask;   /* inode access mask */
-    uint32_t     uid;    /* user ID */
-    uint32_t     gid;    /* group ID */
-} __packed;
+    struct queue     *read_queue;
+    struct queue     *write_queue;
+};
+
+struct vnode {
+    vino_t ino;
+    mode_t mode;
+    uid_t  uid;
+    gid_t  gid;
+
+    /* super node containing inode reference */
+    struct inode *super;  
+};
 
 struct file {
     union {
-        struct inode *node;
+        struct inode *inode;
         struct socket *socket;
     };
+
     off_t offset;
     int flags;
     //int ref;
-} __packed;
+};
 
 typedef struct  {
     struct inode *node;
@@ -139,6 +137,11 @@ struct fs_list {
     struct fs_list *next;
 };
 
+/* XXX */
+struct vfs_path *vfs_get_mountpoint(char **tokens);
+char **canonicalize_path(const char * const path);
+int vfs_parse_path(const char *path, struct uio *uio, char **abs_path);
+
 extern struct fs_list *registered_fs;
 extern struct inode *vfs_root;
 
@@ -147,7 +150,7 @@ static inline int __vfs_never (){return 0;}
 static inline int __vfs_nosys (){return -ENOSYS;}
 static inline int __vfs_rofs  (){return -EROFS;}
 
-#define __VMKNOD_T (int (*)(struct vnode *, const char *, itype_t, dev_t, struct uio *, struct inode **))
+#define __VMKNOD_T (int (*)(struct vnode *, const char *, uint32_t, dev_t, struct uio *, struct inode **))
 
 /* Filesystem operations */
 void    vfs_init(void);
@@ -157,7 +160,7 @@ int     vfs_bind(const char *path, struct inode *target);
 int     vfs_mount(const char *type, const char *dir, int flags, void *data, struct uio *uio);
 
 /* inode operations mappings */
-int     vfs_vmknod(struct vnode *dir, const char *fn, itype_t type, dev_t dev, struct uio *uio, struct inode **ref);
+int     vfs_vmknod(struct vnode *dir, const char *fn, uint32_t mode, dev_t dev, struct uio *uio, struct inode **ref);
 int     vfs_vcreat(struct vnode *dir, const char *fn, struct uio *uio, struct inode **ref);
 int     vfs_vmkdir(struct vnode *dir, const char *dname, struct uio *uio, struct inode **ref);
 int     vfs_vunlink(struct vnode *dir, const char *fn, struct uio *uio);
@@ -165,8 +168,8 @@ int     vfs_vfind(struct vnode *vnode, const char *name, struct vnode *child);
 int     vfs_vget(struct vnode *vnode, struct inode **inode);
 int     vfs_mmap(struct vmr *vmr);
 
-ssize_t vfs_read(struct inode *inode, size_t offset, size_t size, void *buf);
-ssize_t vfs_write(struct inode *inode, size_t offset, size_t size, void *buf);
+ssize_t vfs_read(struct inode *inode, off_t offset, size_t size, void *buf);
+ssize_t vfs_write(struct inode *inode, off_t offset, size_t size, void *buf);
 ssize_t vfs_readdir(struct inode *inode, off_t offset, struct dirent *dirent);
 int     vfs_ioctl(struct inode *inode, unsigned long request, void *argp);
 int     vfs_close(struct inode *inode);
@@ -190,9 +193,9 @@ int     vfs_relative(const char * const rel, const char * const path, char **abs
 int     vfs_lookup(const char *path, struct uio *uio, struct vnode *vnode, char **abs_path);
 
 /* Higher level functions */
-int     vfs_creat(const char *path, struct uio *uio, struct inode **ref);
-int     vfs_mkdir(const char *path, struct uio *uio, struct inode **ref);
-int     vfs_mknod(const char *path, itype_t type, dev_t dev, struct uio *uio, struct inode **ref);
+int     vfs_creat(const char *path, mode_t mode, struct uio *uio, struct inode **ref);
+int     vfs_mkdir(const char *path, mode_t mode, struct uio *uio, struct inode **ref);
+int     vfs_mknod(const char *path, uint32_t mode, dev_t dev, struct uio *uio, struct inode **ref);
 int     vfs_unlink(const char *path, struct uio *uio);
 int     vfs_stat(struct inode *inode, struct stat *buf);
 int     vfs_perms_check(struct file *file, struct uio *uio);

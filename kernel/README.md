@@ -1,4 +1,4 @@
-# AquilaOS Kernel (Altair)
+# AquilaOS Kernel
 
 ### Source tree structure
 - arch/     - all arch. dependent code

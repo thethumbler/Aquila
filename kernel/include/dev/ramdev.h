@@ -2,13 +2,13 @@
 #define _RAMDEV_H
 
 #include <core/system.h>
-#include <dev/dev.h>
 
-typedef struct
-{
+struct ramdev_priv {
     void *addr;
-} ramdev_private_t;
+};
+
+#include <dev/dev.h>
 
 extern struct dev ramdev;
 
-#endif /* !_RAMDEV_H */
+#endif /* ! _RAMDEV_H */

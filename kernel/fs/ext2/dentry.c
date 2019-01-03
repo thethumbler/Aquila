@@ -1,9 +1,9 @@
 #include <ext2.h>
 #include <core/panic.h> /* XXX */
 
-uint32_t ext2_dentry_find(struct __ext2 *desc, struct ext2_inode *inode, const char *name)
+uint32_t ext2_dentry_find(struct ext2 *desc, struct ext2_inode *inode, const char *name)
 {
-    if (inode->type != EXT2_INODE_TYPE_DIR)
+    if ((inode->mode & S_IFMT) != S_IFDIR)
         return -ENOTDIR;
 
     size_t bs = desc->bs;
@@ -40,10 +40,10 @@ int ext2_dentry_create(struct vnode *dir, const char *name, uint32_t inode, uint
 {
     int err = 0;
 
-    if (dir->type != FS_DIR)    /* Not a directory */
+    if ((dir->mode & S_IFMT) != S_IFDIR)    /* Not a directory */
         return -ENOTDIR;
 
-    struct __ext2 *desc = dir->super->p;
+    struct ext2 *desc = dir->super->p;
 
     size_t name_length = strlen(name);
     size_t size = name_length + sizeof(struct ext2_dentry);
@@ -54,7 +54,7 @@ int ext2_dentry_create(struct vnode *dir, const char *name, uint32_t inode, uint
     struct ext2_dentry *cur = NULL;
 
     struct ext2_inode dir_inode;
-    if ((err = ext2_inode_read(desc, dir->id, &dir_inode))) {
+    if ((err = ext2_inode_read(desc, dir->ino, &dir_inode))) {
         /* TODO Error checking */
     }
 
@@ -89,7 +89,7 @@ done:
         cur->name_length = name_length;
         cur->type = type;
         /* Update block */
-        ext2_inode_block_write(desc, &dir_inode, dir->id, block, buf);
+        ext2_inode_block_write(desc, &dir_inode, dir->ino, block, buf);
     } else if (flag == 2) { /* Split */
         size_t new_size = (cur->name_length + sizeof(struct ext2_dentry) + 3) & ~3;
         struct ext2_dentry *next = (struct ext2_dentry *) ((char *) cur + new_size);
@@ -103,7 +103,7 @@ done:
         cur->size = new_size;
 
         /* Update block */
-        ext2_inode_block_write(desc, &dir_inode, dir->id, block, buf);
+        ext2_inode_block_write(desc, &dir_inode, dir->ino, block, buf);
     } else {    /* Allocate */
         panic("Not impelemented\n");
     }

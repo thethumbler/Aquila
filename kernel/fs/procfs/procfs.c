@@ -1,4 +1,5 @@
 #include <core/system.h>
+#include <core/module.h>
 #include <core/string.h>
 #include <bits/errno.h>
 #include <boot/boot.h>
@@ -7,7 +8,7 @@
 #include <fs/devfs.h>
 #include <fs/posix.h>
 #include <fs/procfs.h>
-#include <fs/itbl.h>
+#include <fs/icache.h>
 
 #include <sys/proc.h>
 #include <sys/sched.h>
@@ -18,13 +19,13 @@
 
 struct procfs_entry {
     char *name;
-    ssize_t (*read)();
+    ssize_t (*read)(off_t off, size_t size, char *buf);
 };
 
 /* procfs root directory (usually mounted on /proc) */
 struct inode *procfs_root = NULL;
 struct vnode vprocfs_root;
-struct itbl  procfs_itbl = {0};
+struct icache procfs_icache = {0};
 
 /* proc/meminfo */
 static ssize_t procfs_meminfo(off_t off, size_t size, char *buf)
@@ -58,8 +59,11 @@ static ssize_t procfs_version(off_t off, size_t size, char *buf)
     char version_buf[512];
 
     int sz = snprintf(version_buf, 512,
-            "%s version %s (gcc version %s) %s\n",
-            UTSNAME_SYSNAME, UTSNAME_RELEASE, __VERSION__, __TIMESTAMP__
+            "%s version %s (%s version %s) %s\n",
+            UTSNAME_SYSNAME, UTSNAME_RELEASE,
+            __CONFIG_COMPILER__,
+            __CONFIG_COMPILER_VERSION__,
+            __CONFIG_TIMESTAMP__
             );
 
     if (off < sz) {
@@ -82,6 +86,48 @@ static ssize_t procfs_uptime(off_t off, size_t size, char *buf)
     if (off < sz) {
         ssize_t ret = MIN(size, (size_t)(sz - off));
         memcpy(buf, uptime_buf + off, ret);
+        return ret;
+    }
+
+    return 0;
+}
+
+/* proc/filesystems */
+static ssize_t procfs_filesystems(off_t off, size_t size, char *buf)
+{
+    char fs_buf[512];
+
+    extern struct fs_list *registered_fs;
+
+    int sz = 0;
+
+    forlinked (fs, registered_fs, fs->next) {
+        sz += snprintf(fs_buf + sz, sizeof(fs_buf) - sz, "%s\t%s\n", fs->fs->nodev? "nodev" : "", fs->name);
+        if ((size_t) sz >= sizeof(fs_buf))
+            break;
+    }
+
+    if (off < sz) {
+        ssize_t ret = MIN(size, (size_t)(sz - off));
+        memcpy(buf, fs_buf + off, ret);
+        return ret;
+    }
+
+    return 0;
+}
+
+/* proc/cmdline */
+static ssize_t procfs_cmdline(off_t off, size_t size, char *buf)
+{
+    char cmdline_buf[512];
+
+    extern struct boot *__kboot;
+
+    int sz = snprintf(cmdline_buf, 512, "%s\n", __kboot->cmdline);
+
+    if (off < sz) {
+        ssize_t ret = MIN(size, (size_t)(sz - off));
+        memcpy(buf, cmdline_buf + off, ret);
         return ret;
     }
 
@@ -142,10 +188,11 @@ static ssize_t procfs_buddyinfo(off_t off, size_t size, char *buf)
 
 static struct procfs_entry entries[] = {
     {"meminfo", procfs_meminfo},
-    //{"cmdline", procfs_cmdline},
+    {"cmdline", procfs_cmdline},
     {"rdcmdline", procfs_rdcmdline},
     {"version", procfs_version},
     {"uptime",  procfs_uptime},
+    {"filesystems",  procfs_filesystems},
     //{"zoneinfo",  procfs_zoneinfo},
     {"buddyinfo", procfs_buddyinfo},
 };
@@ -154,7 +201,7 @@ static struct procfs_entry entries[] = {
 
 static ssize_t procfs_proc_status(int pid, off_t off, size_t size, void *buf)
 {
-    proc_t *proc = proc_pid_find(pid);
+    struct proc *proc = proc_pid_find(pid);
 
     if (!proc)
         return -ENONET;
@@ -193,7 +240,7 @@ static ssize_t procfs_proc_status(int pid, off_t off, size_t size, void *buf)
 
 static ssize_t procfs_proc_maps(int pid, off_t off, size_t size, void *buf)
 {
-    proc_t *proc = proc_pid_find(pid);
+    struct proc *proc = proc_pid_find(pid);
 
     if (!proc)
         return -ENONET;
@@ -226,7 +273,7 @@ static ssize_t procfs_proc_maps(int pid, off_t off, size_t size, void *buf)
                 perm,   /* Access permissions */
                 vmr->off, /* Offset in file */
                 vmr->inode? vmr->inode->dev : 0, /* Device ID */
-                vmr->inode? vmr->inode->id : 0,  /* Inode ID */
+                vmr->inode? vmr->inode->ino : 0, /* Inode ID */
                 desc); 
     }
     
@@ -239,7 +286,12 @@ static ssize_t procfs_proc_maps(int pid, off_t off, size_t size, void *buf)
     return 0;
 }
 
-static struct procfs_entry proc_entries[] = {
+struct procfs_proc_entry {
+    char *name;
+    ssize_t (*read)(int pid, off_t off, size_t size, void *buf);
+};
+
+static struct procfs_proc_entry proc_entries[] = {
     {"status", procfs_proc_status},
     {"maps",   procfs_proc_maps},
 };
@@ -250,11 +302,11 @@ static ssize_t procfs_read(struct inode *node, off_t offset, size_t size, void *
 {
     size_t id = (size_t) node->p;
 
-    if ((ssize_t) node->id < 0) {
+    if ((ssize_t) node->ino < 0) {
         if (id < PROCFS_ENTRIES)
             return entries[id].read(offset, size, buf);
     } else {
-        size_t pid = node->id / (PROCFS_PROC_ENTRIES + 1);
+        size_t pid = node->ino / (PROCFS_PROC_ENTRIES + 1);
         id -= 1;
         if (id < PROCFS_PROC_ENTRIES)
             return proc_entries[id].read(pid, offset, size, buf);
@@ -296,15 +348,15 @@ static ssize_t procfs_readdir(struct inode *inode, off_t offset, struct dirent *
 
         forlinked (node, procs->head, node->next) {
             if (!offset) {
-                proc_t *proc = node->value;
+                struct proc *proc = node->value;
                 snprintf(dirent->d_name, 10, "%d", proc->pid);
                 return 1;
             }
 
             --offset;
         }
-    } else if (inode->id > 0) {
-        size_t pid = inode->id / (PROCFS_PROC_ENTRIES + 1);
+    } else if (inode->ino > 0) {
+        size_t pid = inode->ino / (PROCFS_PROC_ENTRIES + 1);
 
         if (offset == 0) {
             dirent->d_ino = 0;
@@ -329,43 +381,39 @@ static ssize_t procfs_readdir(struct inode *inode, off_t offset, struct dirent *
 
 static int procfs_vfind(struct vnode *parent, const char *name, struct vnode *child)
 {
-    if (parent->id == (vino_t) procfs_root) {
+    if (parent->ino == (vino_t) procfs_root) {
         for (size_t i = 0; i < PROCFS_ENTRIES; ++i) {
             if (!strcmp(name, entries[i].name)) {
-                child->id   = -(i + 1);
-                child->type = FS_RGL;
-                child->mask = 0444;
+                child->ino  = -(i + 1);
+                child->mode = S_IFREG | 0444;
                 return 0;
             }
         }
 
         if (!strcmp(name, "self")) {
-            child->id   = cur_thread->owner->pid * (PROCFS_PROC_ENTRIES + 1);
-            child->type = FS_DIR;
-            child->mask = 0555;
+            child->ino  = cur_thread->owner->pid * (PROCFS_PROC_ENTRIES + 1);
+            child->mode = S_IFDIR | 0555;
             return 0;
         }
 
         forlinked (node, procs->head, node->next) {
-            proc_t *proc = node->value;
+            struct proc *proc = node->value;
             char buf[10];
             snprintf(buf, 10, "%d", proc->pid);
 
             if (!strcmp(buf, name)) {
-                child->id   = proc->pid * (PROCFS_PROC_ENTRIES + 1);
-                child->type = FS_DIR;
-                child->mask = 0555;
+                child->ino  = proc->pid * (PROCFS_PROC_ENTRIES + 1);
+                child->mode = S_IFDIR | 0555;
                 return 0;
             }
         }
-    } else if (parent->id > 0) {
-        size_t pid = parent->id / (PROCFS_PROC_ENTRIES + 1);
+    } else if (parent->ino > 0) {
+        size_t pid = parent->ino / (PROCFS_PROC_ENTRIES + 1);
 
         for (size_t i = 0; i < PROCFS_PROC_ENTRIES; ++i) {
             if (!strcmp(proc_entries[i].name, name)) {
-                child->id   = pid * (PROCFS_PROC_ENTRIES + 1) + i + 1;
-                child->type = FS_RGL;
-                child->mask = 0444;
+                child->ino  = pid * (PROCFS_PROC_ENTRIES + 1) + i + 1;
+                child->mode = S_IFREG | 0444;
                 return 0;
             }
         }
@@ -376,27 +424,26 @@ static int procfs_vfind(struct vnode *parent, const char *name, struct vnode *ch
 
 static int procfs_vget(struct vnode *vnode, struct inode **inode)
 {
-    if (vnode->id == (vino_t) procfs_root) {
+    if (vnode->ino == (vino_t) procfs_root) {
         if (inode)
             *inode = procfs_root;
         return 0;
-    } else if ((ssize_t) vnode->id < 0) {
-        intptr_t id = -vnode->id - 1;
+    } else if ((ssize_t) vnode->ino < 0) {
+        intptr_t id = -vnode->ino - 1;
 
         if ((size_t) id < PROCFS_ENTRIES) {
             struct inode *node = NULL;
-            if (!(node = itbl_find(&procfs_itbl, id))) { /* Not in open inode table? */
+            if (!(node = icache_find(&procfs_icache, id))) { /* Not in open inode table? */
                 node = kmalloc(sizeof(struct inode));
                 memset(node, 0, sizeof(struct inode));
 
-                node->id   = vnode->id;
-                node->name = entries[id].name;
-                node->mask = 0555;
-                node->type = FS_RGL;
-                node->fs   = &procfs;
-                node->p    = (void *) id;
+                node->ino  = vnode->ino;
+                //node->name = entries[id].name;
+                node->mode = S_IFREG | 0555;
+                node->fs     = &procfs;
+                node->p      = (void *) id;
 
-                itbl_insert(&procfs_itbl, node);
+                icache_insert(&procfs_icache, node);
             }
 
             if (inode)
@@ -407,28 +454,27 @@ static int procfs_vget(struct vnode *vnode, struct inode **inode)
             return -ENONET;
         }
     } else {
-        size_t pid = vnode->id / (PROCFS_PROC_ENTRIES + 1);
-        size_t id  = vnode->id % (PROCFS_PROC_ENTRIES + 1);
+        size_t pid = vnode->ino / (PROCFS_PROC_ENTRIES + 1);
+        size_t id  = vnode->ino % (PROCFS_PROC_ENTRIES + 1);
         struct inode *node = NULL;
 
-        if (!(node = itbl_find(&procfs_itbl, vnode->id))) { /* Not in open inode table? */
+        if (!(node = icache_find(&procfs_icache, vnode->ino))) { /* Not in open inode table? */
             node = kmalloc(sizeof(struct inode));
             memset(node, 0, sizeof(struct inode));
 
-            node->id   = vnode->id;
-            node->mask = 0555;
+            node->ino = vnode->ino;
 
             if (id) {
-                node->name = proc_entries[id].name;
-                node->type = FS_RGL;
+                //node->name = proc_entries[id].name;
+                node->mode = S_IFREG | 0555;
             } else {
-                node->type = FS_DIR;
+                node->mode = S_IFDIR | 0555;
             }
 
             node->fs   = &procfs;
             node->p    = (void *) id;
 
-            itbl_insert(&procfs_itbl, node);
+            icache_insert(&procfs_icache, node);
         }
 
         if (inode)
@@ -437,7 +483,7 @@ static int procfs_vget(struct vnode *vnode, struct inode **inode)
         return 0;
     }
 
-    return -1;
+    //return -1;
 }
 
 static int procfs_init()
@@ -449,17 +495,15 @@ static int procfs_init()
 
     memset(procfs_root, 0, sizeof(struct inode));
 
-    procfs_root->mask = 0555;
-    procfs_root->type = FS_DIR;
-    procfs_root->id   = (vino_t) procfs_root;
-    procfs_root->fs   = &procfs;
+    procfs_root->mode = S_IFDIR | 0555;
+    procfs_root->ino  = (vino_t) procfs_root;
+    procfs_root->fs     = &procfs;
 
-    vprocfs_root.super = procfs_root;
-    vprocfs_root.id    = (vino_t) procfs_root;
-    vprocfs_root.type  = FS_DIR;
-    vprocfs_root.mask  = 0555;
+    vprocfs_root.super  = procfs_root;
+    vprocfs_root.ino  = (vino_t) procfs_root;
+    vprocfs_root.mode = S_IFDIR | 0555;
 
-    itbl_init(&procfs_itbl);
+    icache_init(&procfs_icache);
 
     vfs_install(&procfs);
     return 0;
@@ -473,6 +517,7 @@ static int procfs_mount(const char *dir, int flags, void *data)
 
 struct fs procfs = {
     .name  = "procfs",
+    .nodev = 1,
     .init  = procfs_init,
     .mount = procfs_mount,
 

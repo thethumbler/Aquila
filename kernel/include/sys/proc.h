@@ -2,129 +2,133 @@
 #define _PROC_H
 
 #include <core/system.h>
+
+struct proc;
+struct pgroup;
+struct session;
+
 #include <fs/vfs.h>
 #include <ds/queue.h>
-
-typedef struct proc proc_t;
-typedef struct thread thread_t;
-typedef struct pgroup pgroup_t;
-typedef pid_t tid_t;
-
+#include <sys/thread.h>
 #include <sys/signal.h>
 
-typedef struct thread thread_t;
+struct session {
+    /* Session ID */
+    pid_t sid;
 
-typedef enum {
-    RUNNABLE,
-    ISLEEP, /* Interruptable SLEEP (I/O) */
-    USLEEP, /* Uninterruptable SLEEP (Waiting for event) */
-    ZOMBIE,
-} state_t;
+    /* Process Groups */
+    struct queue *pgps;
 
-struct thread {
-    tid_t       tid;        /* Thread ID */
-    state_t     state;      /* Thread current state */
-    proc_t      *owner;     /* Thread owner process */
-
-    struct queue      *sleep_queue; /* Current sleep queue */
-    struct queue_node *sleep_node;  /* Sleep queue node */
-    struct queue      *sched_queue; /* Scheduler queue */
-    struct queue_node *sched_node;  /* Scheduler queue node */
-
-    void        *arch;      /* Arch specific data */
-
-    /* Thread flags */
-    int         spawned: 1;
-} __packed;
-
-typedef struct session {
-    pid_t       sid;        /* Session ID */
-    queue_t     *pgps;      /* Process Groups */
-    proc_t      *leader;    /* Session Leader */
-} session_t;
+    /* Session Leader */
+    struct proc *leader;
+};
 
 struct pgroup {
     pid_t       pgid;       /* Process Group ID */
-    session_t   *session;   /* Associated Session */
+    struct session   *session;   /* Associated Session */
+    struct qnode *session_node;   /* Session Queue Node */
 
-    struct queue_node *session_node;   /* Session Queue Node */
-
-    queue_t     *procs;     /* Processes */
-    proc_t      *leader;    /* Process Group Leader */
+    struct queue     *procs;     /* Processes */
+    struct proc      *leader;    /* Process Group Leader */
 };
 
 struct proc {
-    pid_t       pid;         /* Process ID */
-    pgroup_t    *pgrp;       /* Associated Process Group */
+    /* Process ID */
+    pid_t pid;
 
-    struct queue_node *pgrp_node;   /* Process Group Queue Node */
+    /* Associated Process Group */
+    struct pgroup *pgrp;
+    struct qnode  *pgrp_node;
 
-    char        *name;       /* Process name */
-    struct file *fds;        /* Open file descriptors */
-    proc_t      *parent;     /* Parent process */
-    char        *cwd;        /* Current Working Directory */
+    /* Process name - XXX */
+    char *name;
 
-    uint32_t    mask;        /* File mode creation mask */
-    uint32_t    uid;         /* User ID */
-    uint32_t    gid;         /* Groupd ID */
+    /* Open file descriptors */
+    struct file *fds;
 
-    uintptr_t   heap_start;  /* Process initial heap pointer */
-    uintptr_t   heap;        /* Process current heap pointer */
-    uintptr_t   entry;       /* Process entry point */  
+    /* Parent process */
+    struct proc *parent;
 
-    queue_t     vmr;         /* Virtual memory regions */
+    /* Current Working Directory */
+    char *cwd;
+
+    /* File mode creation mask */
+    mode_t mask;
+
+    /* User ID */
+    uid_t uid;
+
+    /* Groupd ID */
+    gid_t gid;
+
+    /* Process initial heap pointer */
+    uintptr_t heap_start;
+
+    /* Process current heap pointer */
+    uintptr_t heap;
+
+    /* Process entry point */  
+    uintptr_t entry;
+
+    /* Virtual memory regions */
+    struct queue     vmr;
     struct vmr  *heap_vmr;   /* VMR used as heap */
     struct vmr  *stack_vmr;  /* VMR used as stack */
 
-    queue_t     threads;
-    queue_t     thread_join; /* Threads join wait queue */
-    size_t      threads_nr;  /* Number of threads */
+    /* Process threads */
+    struct queue threads;
 
-    queue_t     *sig_queue;  /* Recieved Signals Queue */
-    struct sigaction sigaction[22];   /* Registered signal handlers */
+    /* Threads join wait queue */
+    struct queue thread_join;
 
-    queue_t     wait_queue;  /* Dummy queue for children wait */
-    int         exit;        /* Exit status of process */
+    /* Number of threads */
+    size_t threads_nr;
 
-    void        *arch;       /* Arch specific data */
+    /* Recieved Signals Queue */
+    struct queue *sig_queue;
 
-    int         running: 1;  /* Process is running? */
-} __packed;
+    /* Registered signal handlers */
+    struct sigaction sigaction[SIG_MAX+1];
+
+    /* Dummy queue for children wait */
+    struct queue wait_queue;
+
+    /* Exit status of process */
+    int exit;
+
+    /* Arch specific data */
+    void *arch; 
+
+    /* Process is running? */
+    int running;
+};
 
 /* sys/fork.c */
-int proc_fork(thread_t *thread, proc_t **fork);
+int proc_fork(struct thread *thread, struct proc **fork);
 
 /* sys/execve.c */
-int proc_execve(thread_t *thread, const char *fn, char * const argv[], char * const env[]);
+int proc_execve(struct thread *thread, const char *fn, char * const argv[], char * const env[]);
 
 /* sys/proc.c */
-int  proc_pid_alloc();
+int  proc_pid_alloc(void);
 void proc_pid_free(int pid);
-int  proc_new(proc_t **ref);
-proc_t *proc_pid_find(pid_t pid);
-int session_new(proc_t *proc);
-int pgrp_new(proc_t *proc, pgroup_t **ref_pgrp);
+int  proc_new(struct proc **ref);
+struct proc *proc_pid_find(pid_t pid);
+int session_new(struct proc *proc);
+int pgrp_new(struct proc *proc, struct pgroup **ref_pgrp);
 
-void proc_kill(proc_t *proc);
-int  proc_reap(proc_t *proc);
-int  proc_ptr_validate(proc_t *proc, void *ptr);
-int  proc_fd_get(proc_t *proc);
-void proc_fd_release(proc_t *proc, int fd);
-void proc_dump(proc_t *proc);
+void proc_kill(struct proc *proc);
+int  proc_reap(struct proc *proc);
+int  proc_ptr_validate(struct proc *proc, void *ptr);
+int  proc_fd_get(struct proc *proc);
+void proc_fd_release(struct proc *proc, int fd);
+void proc_dump(struct proc *proc);
 
-int  proc_init(proc_t *proc);
+int  proc_init(struct proc *proc);
 
-/* sys/thread.c */
-int  thread_queue_sleep(queue_t *queue);
-void thread_queue_wakeup(queue_t *queue);
-int  thread_new(proc_t *proc, thread_t **rthread);
-int  thread_create(thread_t *thread, uintptr_t stack, uintptr_t entry, uintptr_t uentry, uintptr_t arg, uintptr_t attr, thread_t **new_thread);
-int  thread_kill(thread_t *thread);
+#define PROC_EXIT(info, code) ((((info) & 0xff) << 8) | ((code) & 0xff))
+#define PROC_UIO(proc) ((struct uio){.cwd = (proc)->cwd, .uid = (proc)->uid, .gid = (proc)->gid, .mask = (proc)->mask})
 
-#define _PROC_EXIT(info, code) ((((info) & 0xff) << 8) | ((code) & 0xff))
-
-#define _PROC_UIO(proc) ((struct uio){.cwd = (proc)->cwd, .uid = (proc)->uid, .gid = (proc)->gid, .mask = (proc)->mask})
-
-extern queue_t *procs;
+extern struct queue *procs;
 
 #endif /* !_PROC_H */

@@ -2,12 +2,14 @@
 #define _MBR_H
 
 #include <core/system.h>
-#include <fs/vfs.h>
 
-#define MBR_TYPE_UNUSED             0x00
-#define MBR_BOOT_SIGNATURE          0xAA55
+struct mbr_part;
+struct mbr;
 
-typedef struct {
+#define MBR_TYPE_UNUSED     0x00
+#define MBR_BOOT_SIGNATURE  0xAA55
+
+struct mbr_part {
     uint8_t   status;
     struct {
         uint8_t   h;
@@ -20,16 +22,17 @@ typedef struct {
     } __packed end_chs;
     uint32_t  start_lba;
     uint32_t  sectors_count;
-} __packed partition_t;
-
-struct mbr {
-    uint8_t              bootloader[440];   // Actual Bootloader code
-    uint32_t             disk_signiture;
-    uint16_t             copy_protected;
-    partition_t          ptab[4];           // Partition table
-    uint16_t             boot_signature;
 } __packed;
 
-//void readmbr(struct inode *node);
+struct mbr {
+    /* bootloader code */
+    uint8_t bootloader[440];
+    uint32_t disk_signiture;
+    uint16_t copy_protected;
+
+    /* partition table */
+    struct mbr_part ptab[4];
+    uint16_t boot_signature;
+} __packed;
 
 #endif

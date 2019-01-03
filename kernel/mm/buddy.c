@@ -70,8 +70,6 @@ static size_t buddy_recursive_alloc(int zone, size_t order)
 
         return child_idx;
     }
-
-    return -1;
 }
 
 static void buddy_recursive_free(int zone, size_t order, size_t idx)
@@ -230,11 +228,11 @@ int buddy_setup(size_t total_mem)
     size_t kernel_buddies = ((uintptr_t) LMA(kernel_heap) + BUDDY_MAX_BS - 1)/BUDDY_MAX_BS;
     kernel_bound = kernel_buddies * BUDDY_MAX_BS;
 
-    //buddy_set_unusable(0, kernel_bound);
+    buddy_set_unusable(0, kernel_bound);
 
-    for (size_t i = 0; i < kernel_buddies; ++i) {
-        buddy_alloc(BUDDY_ZONE_DMA, BUDDY_MAX_BS);
-    }
+    //for (size_t i = 0; i < kernel_buddies; ++i) {
+    //    buddy_alloc(BUDDY_ZONE_DMA, BUDDY_MAX_BS);
+    //}
 
     return 0;
 }

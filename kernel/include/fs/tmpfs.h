@@ -5,4 +5,4 @@
 
 extern struct fs tmpfs;
 
-#endif /* !_DEVFS_H */
+#endif /* ! _TMPFS_H */

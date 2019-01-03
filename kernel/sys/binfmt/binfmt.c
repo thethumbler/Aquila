@@ -1,19 +1,15 @@
 #include <core/arch.h>
-#include <fs/vfs.h>
 #include <sys/binfmt.h>
 #include <sys/elf.h>
 #include <mm/vm.h>
 
-struct {
-    int (*check)(struct inode *inode);
-    int (*load)(proc_t *proc, struct inode *file);
-} binfmt_list[] = {
+struct binfmt binfmt_list[] = {
     {binfmt_elf_check, binfmt_elf_load},
 };
 
-#define BINFMT_NR ((sizeof(binfmt_list)/sizeof(binfmt_list[0])))
+#define NR_BINFMT   ((sizeof(binfmt_list)/sizeof(binfmt_list[0])))
 
-static int binfmt_fmt_load(proc_t *proc, const char *fn, struct inode *file, int (*load)(proc_t *, struct inode *), proc_t **ref)
+static int binfmt_fmt_load(struct proc *proc, const char *path, struct inode *inode, struct binfmt *binfmt, struct proc **ref)
 {
     int err = 0;
 
@@ -35,10 +31,10 @@ static int binfmt_fmt_load(proc_t *proc, const char *fn, struct inode *file, int
         kfree(proc->name);
     }
 
-    if ((err = load(proc, file)))
+    if ((err = binfmt->load(proc, path, inode)))
         goto error;
 
-    proc->name = strdup(fn);
+    proc->name = strdup(path);
 
     /* Align heap */
     proc->heap_start = UPPER_PAGE_BOUNDARY(proc->heap_start);
@@ -60,16 +56,17 @@ static int binfmt_fmt_load(proc_t *proc, const char *fn, struct inode *file, int
     stack_vmr->size  = USER_STACK_SIZE;
     stack_vmr->flags = VM_URW;
     stack_vmr->qnode = enqueue(&proc->vmr, stack_vmr);
-    //vm_map(stack_vmr);
     proc->stack_vmr  = stack_vmr;
 
+    struct thread *thread = (struct thread *) proc->threads.head->value;
+    thread->stack_base = USER_STACK_BASE;
+    thread->stack_size = USER_STACK_BASE;
+
     if (new_proc) {
-        //pmman.map(USER_STACK_BASE, USER_STACK_SIZE, VM_URW);
         arch_proc_init(arch_specific_data, proc);
         arch_binfmt_end(arch_specific_data);
 
-        if (ref)
-            *ref = proc;
+        if (ref) *ref = proc;
     }
 
     return 0;
@@ -79,33 +76,32 @@ error:
     return err;
 }
 
-int binfmt_load(proc_t *proc, const char *path, proc_t **ref)
+int binfmt_load(struct proc *proc, const char *path, struct proc **ref)
 {
-    struct vnode v;
-    struct inode *file = NULL;
-    int err;
+    struct vnode vnode;
+    struct inode *inode = NULL;
+    int err = 0;
 
     struct uio uio = {0};
 
     if (proc) {
-        uio = _PROC_UIO(proc);
+        uio = PROC_UIO(proc);
     }
 
-    if ((err = vfs_lookup(path, &uio, &v, NULL)))
+    if ((err = vfs_lookup(path, &uio, &vnode, NULL)))
         return err;
 
-    if ((err = vfs_vget(&v, &file)))
+    if ((err = vfs_vget(&vnode, &inode)))
         return err;
 
-    for (size_t i = 0; i < BINFMT_NR; ++i) {
-        if (!binfmt_list[i].check(file)) {
-            binfmt_fmt_load(proc, path, file, binfmt_list[i].load, ref);
-            vfs_close(file);
+    for (size_t i = 0; i < NR_BINFMT; ++i) {
+        if (!binfmt_list[i].check(inode)) {
+            binfmt_fmt_load(proc, path, inode, &binfmt_list[i], ref);
+            vfs_close(inode);
             return 0;
         }
     }
 
-    vfs_close(file);
+    vfs_close(inode);
     return -ENOEXEC;
 }
-

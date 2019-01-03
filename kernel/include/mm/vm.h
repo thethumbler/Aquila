@@ -1,6 +1,10 @@
 #ifndef _VM_H
 #define _VM_H
 
+#include <core/system.h>
+
+struct vmr;
+
 #include <mm/mm.h>
 #include <fs/vfs.h>
 #include <ds/queue.h>
@@ -25,23 +29,27 @@
 #define VM_UWX  (VM_UW|VM_UX) /* User Write/eXecute */
 #define VM_URWX (VM_UR|VM_UW|VM_UX)  /* User Read/Write/eXecute */
 
-struct vmr {    /* Virtual Memory Region */
-    paddr_t   paddr;    /* Physical Address, 0 means anywhere */
+/* Virtual Memory Region */
+struct vmr {
+    /* Physical Address, 0 means anywhere */
+    paddr_t   paddr;
+
     uintptr_t base;
     size_t    size;
     int       flags;
 
-    off_t     off;  /* Offset in file */
+    /* Offset in file */
+    off_t     off;
     struct inode *inode;
 
-    struct queue_node *qnode;
+    struct qnode *qnode;
 };
 
-void kvmem_setup();
+void kvmem_setup(void);
 
 int  vm_map(struct vmr *vmr);
 void vm_unmap(struct vmr *vmr);
 void vm_unmap_full(struct vmr *vmr);
-int  vm_vmr_insert(queue_t *queue, struct vmr *vmr);
+int  vm_vmr_insert(struct queue *queue, struct vmr *vmr);
 
 #endif  /* ! _VM_H */

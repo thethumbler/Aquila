@@ -1,4 +1,6 @@
 #include <core/system.h>
+#include <core/module.h>
+
 #include <cpu/io.h>
 #include <dev/dev.h>
 #include <fs/vfs.h>
@@ -13,7 +15,7 @@
 
 #define BLOCK_SIZE  512UL
 
-static struct ata_drive drives[4] = {0};
+static struct ata_drive drives[4];
 
 void ata_select_drive(struct ata_drive *drive, uint32_t mode)
 {
@@ -60,7 +62,7 @@ static size_t ata_partition_offset(struct ata_drive *drive, size_t part)
 
 static ssize_t ata_read(struct devid *dd, off_t offset, size_t size, void *buf)
 {
-    printk("ata_read(dd=%p, offset=%d, size=%d, buf=%p)\n", dd, offset, size, buf);
+    //printk("ata_read(dd=%p, offset=%d, size=%d, buf=%p)\n", dd, offset, size, buf);
 
     /* Get drive and parition numbers */
     size_t drive_id  = dd->minor / 64;
@@ -185,9 +187,10 @@ int ata_probe()
     struct pci_dev ide;
     int count;
 
-    printk("ata: Scanning PCI bus for IDE controller\n");
+    printk("ata: Scanning PCI bus for IDE controller(s)\n");
 
-    if (!(count = pci_scan_device(0x01, 0x01, &ide, 1))) {
+    count = pci_scan_device(0x01, 0x01, &ide, 1);
+    if (!count) {
         printk("ata: No IDE controller(s) found\n");
         return -1;
     }
@@ -255,7 +258,7 @@ int ata_probe()
         drives[3].slave     = 1;
     }
 
-    for (int i = 0; i < 4*count; ++i) {
+    for (int i = 0; i < 4 * count; ++i) {
         /* disable interrupts */
         io_out8(&drives[i].base, ATA_REG_CONTROL, 0x2);
 

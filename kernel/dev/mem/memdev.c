@@ -1,4 +1,5 @@
 #include <core/system.h>
+#include <core/module.h>
 #include <dev/dev.h>
 
 #include <memdev.h>
@@ -30,7 +31,7 @@ struct dev *memdev_mux(struct devid *dd)
         case 10: /* /dev/aio */
             break;
         case 11: /* /dev/kmsg */
-            break;
+            return &kmsgdev;
     }
 
     return NULL;

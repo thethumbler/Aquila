@@ -2,6 +2,9 @@
 #define _SIGNAL_H
 
 #include <core/system.h>
+
+struct sigaction;
+
 #include <sys/proc.h>
 
 /* Signal numbers */
@@ -35,6 +38,8 @@
 #define SIGUSR1 25  /* user defined signal 1 */
 #define SIGUSR2 26  /* user defined signal 2 */
 
+#define SIG_MAX 26
+
 #define SIGACT_ABORT        1
 #define SIGACT_TERMINATE    2
 #define SIGACT_IGNORE       3
@@ -46,7 +51,6 @@
 #define SIG_IGN ((uintptr_t) 1)  /* Ignore action */
 #define SIG_ERR ((uintptr_t) -1) /* Error return */
 
-typedef unsigned long sigset_t;
 struct sigaction {
     uintptr_t sa_handler;
     sigset_t  sa_mask;
@@ -56,7 +60,7 @@ struct sigaction {
 extern int sig_default_action[];
 
 int signal_send(int pid, int sig);
-int signal_proc_send(proc_t *proc, int signal);
-int signal_pgrp_send(pgroup_t *pg, int signal);
+int signal_proc_send(struct proc *proc, int signal);
+int signal_pgrp_send(struct pgroup *pg, int signal);
 
 #endif /* ! _SIGNAL_H */

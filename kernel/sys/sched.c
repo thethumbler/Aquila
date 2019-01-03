@@ -5,12 +5,12 @@
 #include <sys/sched.h>
 #include <ds/queue.h>
 
-queue_t *ready_queue = QUEUE_NEW();   /* Ready threads queue */
-thread_t *cur_thread = NULL;
+struct queue *ready_queue = QUEUE_NEW();   /* Ready threads queue */
+struct thread *cur_thread = NULL;
 
-void sched_thread_ready(thread_t *thread)
+void sched_thread_ready(struct thread *thread)
 {
-    struct queue_node *sched_node = enqueue(ready_queue, thread);
+    struct qnode *sched_node = enqueue(ready_queue, thread);
     thread->sched_queue = ready_queue;
     thread->sched_node = sched_node;
 }
@@ -22,13 +22,13 @@ void kernel_idle()
     arch_idle();
 }
 
-void sched_thread_spawn(thread_t *thread)   /* Starts thread execution */
+void sched_thread_spawn(struct thread *thread)   /* Starts thread execution */
 {
     thread->spawned = 1;
     arch_thread_spawn(thread);
 }
 
-void sched_init_spawn(proc_t *init)
+void sched_init_spawn(struct proc *init)
 {
     proc_init(init);
 
@@ -40,7 +40,7 @@ void sched_init_spawn(proc_t *init)
 
     session_new(init);
 
-    cur_thread = (thread_t *) init->threads.head->value;
+    cur_thread = (struct thread *) init->threads.head->value;
     cur_thread->state = RUNNABLE;
     sched_thread_spawn(cur_thread);
 }

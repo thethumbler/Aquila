@@ -8,7 +8,7 @@
 #define SOCKBUF 8192
 
 struct sock_ops socket_unix_ops;
-static queue_t *sockets = QUEUE_NEW();  /* Open sockets */
+static struct queue *sockets = QUEUE_NEW();  /* Open sockets */
 
 int socket_unix_create(struct file *file, int domain, int type, int protocol)
 {
@@ -38,7 +38,7 @@ static int socket_unix_accept(struct file *file, struct file *conn, const struct
 
     if (!socket->requests.count) {
         /* Sleep until a connection request is present */
-        if (thread_queue_sleep(&socket->accept_sleep))
+        if (thread_queue_sleep(&socket->accept))
             return -EINTR;
     }
 
@@ -60,7 +60,7 @@ static int socket_unix_accept(struct file *file, struct file *conn, const struct
     request->connected = 1;
 
     /* Wakeup client if waiting for connection */
-    thread_queue_wakeup(&request->connect_sleep);
+    thread_queue_wakeup(&request->connect);
 
     return 0;
 }
@@ -73,7 +73,7 @@ static int socket_unix_bind(struct file *file, const struct sockaddr *addr, sock
     /* Get path vnode */
     int err = 0;
     struct vnode vnode = {0};
-    struct uio uio = _PROC_UIO(cur_thread->owner);
+    struct uio uio = PROC_UIO(cur_thread->owner);
 
     err = vfs_lookup(addr_un->sun_path, &uio, &vnode, NULL);
 
@@ -81,7 +81,7 @@ static int socket_unix_bind(struct file *file, const struct sockaddr *addr, sock
         return -EINVAL;
 
     /* Create socket */
-    if ((err = vfs_mknod(addr_un->sun_path, FS_SOCKET, 0, &uio, NULL)))
+    if ((err = vfs_mknod(addr_un->sun_path, S_IFSOCK, 0, &uio, NULL)))
         return err;
 
     /* Get vnode -- FIXME */
@@ -113,7 +113,7 @@ static int socket_unix_connect(struct file *file, const struct sockaddr *addr, s
     /* Get path vnode */
     int err = 0;
     struct vnode vnode = {0};
-    struct uio uio = _PROC_UIO(cur_thread->owner);
+    struct uio uio = PROC_UIO(cur_thread->owner);
 
     /* Open socket */
     if ((err = vfs_lookup(addr_un->sun_path, &uio, &vnode, NULL))) {
@@ -124,7 +124,7 @@ static int socket_unix_connect(struct file *file, const struct sockaddr *addr, s
 
     forlinked(node, sockets->head, node->next) {
         struct un_socket *_socket = (struct un_socket *) node->value;
-        if (_socket->vnode.super == vnode.super && _socket->vnode.id == vnode.id) {
+        if (_socket->vnode.super == vnode.super && _socket->vnode.ino == vnode.ino) {
             socket = _socket;
             break;
         }
@@ -143,10 +143,10 @@ static int socket_unix_connect(struct file *file, const struct sockaddr *addr, s
     enqueue(&socket->requests, request);
 
     /* Wake up server if waiting for connections */
-    thread_queue_wakeup(&socket->accept_sleep);
+    thread_queue_wakeup(&socket->accept);
 
     /* Sleep until the connection is established */
-    if (!request->connected && thread_queue_sleep(&request->connect_sleep))
+    if (!request->connected && thread_queue_sleep(&request->connect))
         return -EINTR;
 
     /* Initialize connection */
@@ -180,17 +180,17 @@ static ssize_t socket_unix_send(struct file *file, void *buf, size_t len, int fl
 
     struct ringbuf *ring = NULL;
 
-    queue_t *recv_queue = NULL;
-    queue_t *send_queue = NULL;
+    struct queue *recv_queue = NULL;
+    struct queue *send_queue = NULL;
 
     if (file->offset == 0) {  /* Server */
         ring       = conn->soci;
-        recv_queue = &conn->client_recv_sleep;
-        send_queue = &conn->server_send_sleep;
+        recv_queue = &conn->client_recv;
+        send_queue = &conn->server_send;
     } else {    /* Client */
         ring       = conn->sico;
-        recv_queue = &conn->server_recv_sleep;
-        send_queue = &conn->client_send_sleep;
+        recv_queue = &conn->server_recv;
+        send_queue = &conn->client_send;
     }
 
     ssize_t retval = 0;
@@ -218,8 +218,6 @@ static ssize_t socket_unix_send(struct file *file, void *buf, size_t len, int fl
         if (thread_queue_sleep(send_queue))
             return -EINTR;
     }
-
-    return 0;
 }
 
 static ssize_t socket_unix_recv(struct file *file, void *buf, size_t len, int flags)
@@ -233,17 +231,17 @@ static ssize_t socket_unix_recv(struct file *file, void *buf, size_t len, int fl
 
     struct ringbuf *ring = NULL;
 
-    queue_t *recv_queue = NULL;
-    queue_t *send_queue = NULL;
+    struct queue *recv_queue = NULL;
+    struct queue *send_queue = NULL;
 
     if (file->offset == 0) {  /* Server */
         ring       = conn->sico;
-        recv_queue = &conn->server_recv_sleep;
-        send_queue = &conn->client_send_sleep;
+        recv_queue = &conn->server_recv;
+        send_queue = &conn->client_send;
     } else {    /* Client */
         ring       = conn->soci;
-        recv_queue = &conn->client_recv_sleep;
-        send_queue = &conn->server_send_sleep;
+        recv_queue = &conn->client_recv;
+        send_queue = &conn->server_send;
     }
 
     ssize_t retval = 0;
@@ -269,8 +267,6 @@ static ssize_t socket_unix_recv(struct file *file, void *buf, size_t len, int fl
         if (thread_queue_sleep(recv_queue))
             return -EINTR;
     }
-
-    return 0;
 }
 
 static int socket_unix_shutdown(struct file *file, int how)

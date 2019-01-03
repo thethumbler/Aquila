@@ -2,7 +2,7 @@
 #include <ds/bitmap.h>
 #include <core/panic.h> /* XXX */
 
-int ext2_inode_read(struct __ext2 *desc, uint32_t inode, struct ext2_inode *ref)
+int ext2_inode_read(struct ext2 *desc, uint32_t inode, struct ext2_inode *ref)
 {
     if (inode >= desc->superblock->inodes_count)    /* Invalid inode */
         return -EINVAL;
@@ -29,7 +29,7 @@ int ext2_inode_read(struct __ext2 *desc, uint32_t inode, struct ext2_inode *ref)
     return 0;
 }
 
-struct ext2_inode *ext2_inode_write(struct __ext2 *desc, uint32_t inode, struct ext2_inode *i)
+struct ext2_inode *ext2_inode_write(struct ext2 *desc, uint32_t inode, struct ext2_inode *i)
 {
     if (inode >= desc->superblock->inodes_count)    /* Invalid inode */
         return NULL;
@@ -44,7 +44,7 @@ struct ext2_inode *ext2_inode_write(struct __ext2 *desc, uint32_t inode, struct 
     return i;
 }
 
-size_t ext2_inode_block_read(struct __ext2 *desc, struct ext2_inode *inode, size_t idx, void *buf)
+size_t ext2_inode_block_read(struct ext2 *desc, struct ext2_inode *inode, size_t idx, void *buf)
 {
     size_t bs = desc->bs;
     size_t blocks_nr = (inode->size + bs - 1) / bs;
@@ -69,7 +69,7 @@ size_t ext2_inode_block_read(struct __ext2 *desc, struct ext2_inode *inode, size
     return 0;
 }
 
-size_t ext2_inode_block_write(struct __ext2 *desc, struct ext2_inode *inode, uint32_t inode_nr, size_t idx, void *buf)
+size_t ext2_inode_block_write(struct ext2 *desc, struct ext2_inode *inode, uint32_t inode_nr, size_t idx, void *buf)
 {
     size_t p = desc->bs / 4;    /* Pointers per block */
 
@@ -103,7 +103,7 @@ size_t ext2_inode_block_write(struct __ext2 *desc, struct ext2_inode *inode, uin
     return 0;
 }
 
-uint32_t ext2_inode_allocate(struct __ext2 *desc)
+uint32_t ext2_inode_allocate(struct ext2 *desc)
 {
     uint32_t *buf = kmalloc(desc->bs);
     uint32_t inode = 0, real_inode = 0, group = 0;

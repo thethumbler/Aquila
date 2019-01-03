@@ -7,4 +7,4 @@ extern struct fs devfs;
 extern struct inode *devfs_root;
 extern struct vnode vdevfs_root;
 
-#endif /* !_DEVFS_H */
+#endif /* ! _DEVFS_H */

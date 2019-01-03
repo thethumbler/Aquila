@@ -10,10 +10,10 @@ static inline struct dev *kdev_get(struct devid *dd)
     struct dev *dev = NULL;
 
     switch (dd->type) {
-        case CHRDEV:
+        case S_IFCHR:
             dev = chrdev[dd->major];
             break;
-        case BLKDEV:
+        case S_IFBLK:
             dev = blkdev[dd->major];
             break;
     }
@@ -32,9 +32,12 @@ int kdev_close(struct devid *dev __unused)
 
 ssize_t kdev_bread(struct devid *dd, off_t offset, size_t size, void *buf)
 {
+    //printk("kdev_bread(dd=%p, offset=%d, size=%d, buf=%p)\n", dd, offset, size, buf);
+
     struct dev *dev = kdev_get(dd);
     size_t bs = dev->getbs(dd);
 
+    int err = 0;
     ssize_t ret = 0;
 
     char *cbuf = buf;
@@ -48,7 +51,9 @@ ssize_t kdev_bread(struct devid *dd, off_t offset, size_t size, void *buf)
         size_t start = MIN(bs - offset % bs, size);
 
         if (start) {
-            dev->read(dd, offset/bs, 1, bbuf);
+            if ((err = dev->read(dd, offset/bs, 1, bbuf)) < 0)
+                goto error;
+
             memcpy(cbuf, bbuf + (offset % bs), start);
 
             ret    += start;
@@ -65,7 +70,8 @@ ssize_t kdev_bread(struct devid *dd, off_t offset, size_t size, void *buf)
     size_t count = size/bs;
 
     if (count) {
-        dev->read(dd, offset/bs, count, cbuf);
+        if ((err = dev->read(dd, offset/bs, count, cbuf)) < 0)
+            goto error;
 
         ret    += count * bs;
         size   -= count * bs;
@@ -82,7 +88,9 @@ ssize_t kdev_bread(struct devid *dd, off_t offset, size_t size, void *buf)
         if (!bbuf && !(bbuf = kmalloc(bs)))
             return -ENOMEM;
 
-        dev->read(dd, offset/bs, 1, bbuf);
+        if ((err = dev->read(dd, offset/bs, 1, bbuf)) < 0)
+            goto error;
+
         memcpy(cbuf, bbuf, end);
         ret += end;
     }
@@ -92,6 +100,12 @@ done:
         kfree(bbuf);
 
     return ret;
+
+error:
+    if (bbuf)
+        kfree(bbuf);
+
+    return err;
 }
 
 ssize_t kdev_bwrite(struct devid *dd, off_t offset, size_t size, void *buf)
@@ -162,6 +176,8 @@ done:
 
 ssize_t kdev_read(struct devid *dd, off_t offset, size_t size, void *buf)
 {
+    //printk("kdev_read(dd=%p, offset=%d, size=%d, buf=%p)\n", dd, offset, size, buf);
+
     struct dev *dev = NULL;
     
     if (!(dev = kdev_get(dd)))
@@ -170,7 +186,7 @@ ssize_t kdev_read(struct devid *dd, off_t offset, size_t size, void *buf)
     if (!dev->read)
         return -ENXIO;
 
-    if (dd->type == CHRDEV)
+    if (S_ISCHR(dd->type))
         return dev->read(dd, offset, size, buf);
     else
         return kdev_bread(dd, offset, size, buf);
@@ -186,7 +202,7 @@ ssize_t kdev_write(struct devid *dd, off_t offset, size_t size, void *buf)
     if (!dev->write)
         return -ENXIO;
 
-    if (dd->type == CHRDEV)
+    if (S_ISCHR(dd->type))
         return dev->write(dd, offset, size, buf);
     else
         return kdev_bwrite(dd, offset, size, buf);

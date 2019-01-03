@@ -1,16 +1,7 @@
 #ifndef _BOOT_H
 #define _BOOT_H
 
-#include <config.h>
 #include <core/system.h>
-#include <boot/multiboot.h>
-#include <mm/mm.h>
-
-#ifdef MULTIBOOT_GFX
-#include <dev/fbdev.h>
-#include <video/vbe.h>
-#include <video/vesa.h>
-#endif
 
 typedef struct {
     void *addr;
@@ -29,7 +20,6 @@ typedef struct {
     uintptr_t end;
 } mmap_t;
 
-
 struct boot {
     char *cmdline;
     uintptr_t total_mem;
@@ -39,6 +29,14 @@ struct boot {
     module_t *modules;
     mmap_t *mmap;
 };
+
+#include <boot/multiboot.h>
+
+#ifdef MULTIBOOT_GFX
+#include <dev/fbdev.h>
+#include <video/vbe.h>
+#include <video/vesa.h>
+#endif
 
 static inline int get_multiboot_mmap_count(multiboot_info_t *info)
 {
@@ -103,7 +101,7 @@ static inline struct boot *process_multiboot_info(multiboot_info_t *info)
     boot.total_mem = info->mem_lower + info->mem_upper;
 
     boot.mmap_count = get_multiboot_mmap_count(info);
-    static mmap_t mmap[32] = {0};
+    static mmap_t mmap[32];
     boot.mmap = mmap;
     build_multiboot_mmap(info, boot.mmap);
 
@@ -119,16 +117,26 @@ static inline struct boot *process_multiboot_info(multiboot_info_t *info)
 
     boot.mmap_count++;
 
-    static struct __fbdev_vesa data;
-    data.vbe_info  = VMA(vinfo);
-    data.mode_info = VMA(minfo);
+    extern void earlycon_fb_register(uintptr_t, uint32_t, uint32_t, uint32_t, uint32_t);
+
+    uintptr_t vaddr    = minfo->phys_base_ptr;
+    uint32_t  scanline = minfo->lin_bytes_per_scanline;
+    uint32_t  yres     = minfo->y_resolution;
+    uint32_t  xres     = minfo->x_resolution;
+    uint32_t  depth    = minfo->bits_per_pixel;
+
+    earlycon_fb_register(vaddr, scanline, yres, xres, depth);
+
+    static struct fbdev_vesa data;
+    data.vbe_info  = (struct vbe_info_block *) VMA(vinfo);
+    data.mode_info = (struct mode_info_block *) VMA(minfo);
 
     /* And register fbdev of type `vesa' */
     fbdev_register(FBDEV_TYPE_VESA, &data);
 #endif
 
     boot.modules_count = info->mods_count;
-    static module_t modules[32] = {0};
+    static module_t modules[32];
     boot.modules = modules;
     build_multiboot_modules(info, boot.modules);
 

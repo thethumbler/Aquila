@@ -107,7 +107,7 @@ static int snputb(char *s, size_t n, uint8_t val)
     return snputs(s, 8, buf);
 }
 
-int vsnprintf(char *s, size_t n, char *fmt, va_list args)
+int vsnprintf(char *s, size_t n, const char *fmt, va_list args)
 {
     int ret = 0;
 
@@ -160,7 +160,7 @@ int vsnprintf(char *s, size_t n, char *fmt, va_list args)
     return ret;
 }
 
-int snprintf(char *s, size_t n, char *fmt, ...)
+int snprintf(char *s, size_t n, const char *fmt, ...)
 {
     va_list args;
     va_start(args, fmt);

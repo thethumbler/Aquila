@@ -9,7 +9,9 @@
 
 
 #include <core/system.h>
+#include <core/module.h>
 #include <core/string.h>
+
 #include <cpu/io.h>
 
 #include <mm/mm.h>

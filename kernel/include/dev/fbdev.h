@@ -1,14 +1,10 @@
 #ifndef _FB_H
 #define _FB_H
 
-#include <dev/dev.h>
-
-
-extern int fbdev_register(int, void*);
+int fbdev_register(int, void*);
 
 #define FBDEV_TYPE_VESA 1
-extern struct dev fbdev_vesa;
-
+extern struct fbdev fbdev_vesa;
 
 /* Linux framebuffer API */
 #define FBIOGET_VSCREENINFO 0x4600
@@ -83,12 +79,18 @@ struct fb_var_screeninfo {
 
 /* Aquila driver API */
 
+#include <mm/vm.h>
 struct fbdev {
     int type;
     void *data;
-    struct dev *dev; /* Actuall device */
     struct fb_fix_screeninfo *fix_screeninfo;
     struct fb_var_screeninfo *var_screeninfo;
+
+    int     (*probe)(int id, struct fbdev *fb);
+    ssize_t (*read) (struct fbdev *fb, off_t offset, size_t size, void *buf);
+    ssize_t (*write)(struct fbdev *fb, off_t offset, size_t size, void *buf);
+    int     (*ioctl)(struct fbdev *fb, int request, void *argp);
+    int     (*mmap) (struct fbdev *fb, struct vmr *vmr);
 };
 
 #endif /* !_FB_H */

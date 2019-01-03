@@ -2,10 +2,10 @@
  *                            Signals
  *
  *
- *  This file is part of Aquila OS and is released under the terms of
+ *  This file is part of AquilaOS and is released under the terms of
  *  GNU GPLv3 - See LICENSE.
  *
- *  Copyright (C) 2016 Mohamed Anwar <mohamed_anwar@opmbx.org>
+ *  Copyright (C) Mohamed Anwar
  */
 
 #include <core/system.h>
@@ -50,7 +50,7 @@ int sig_default_action[] = {
     //[SIGXFSZ] = SIGACT_ABORT,
 };
 
-int signal_proc_send(proc_t *proc, int signal)
+int signal_proc_send(struct proc *proc, int signal)
 {
     if (proc == cur_thread->owner) {
         arch_handle_signal(signal);
@@ -61,10 +61,10 @@ int signal_proc_send(proc_t *proc, int signal)
     return 0;
 }
 
-int signal_pgrp_send(pgroup_t *pg, int signal)
+int signal_pgrp_send(struct pgroup *pg, int signal)
 {
     forlinked (node, pg->procs->head, node->next) {
-        proc_t *proc = node->value;
+        struct proc *proc = node->value;
         signal_proc_send(proc, signal);
     }
 
@@ -77,13 +77,11 @@ int signal_send(pid_t pid, int signal)
         arch_handle_signal(signal);
         return 0;
     } else {
-        proc_t *proc = proc_pid_find(pid);
+        struct proc *proc = proc_pid_find(pid);
 
         if (!proc)
             return -ESRCH;
         else
             return signal_proc_send(proc, signal);
     }
-    
-    return 0;
 }

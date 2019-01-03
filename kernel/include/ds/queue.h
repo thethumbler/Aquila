@@ -2,34 +2,61 @@
 #define _QUEUE_H
 
 #include <core/system.h>
-#include <core/string.h>
-#include <mm/mm.h>
 
-typedef struct queue queue_t;
-struct queue_node {
+struct qnode;
+struct queue;
+
+#include <core/string.h>
+
+struct qnode {
     void *value;
-    struct queue_node *prev;
-    struct queue_node *next;
-} __packed;
+    struct qnode *prev;
+    struct qnode *next;
+};
+
+#define QUEUE_TRACE 1
 
 struct queue {
     size_t count;
-    struct queue_node *head;
-    struct queue_node *tail;
-} __packed;
+    struct qnode *head;
+    struct qnode *tail;
+    int flags;
+};
 
-static inline struct queue_node *enqueue(queue_t *queue, void *value) 
+#define QUEUE_NEW() &(struct queue){0}
+static inline void *queue_new(void)
 {
-    struct queue_node *node = kmalloc(sizeof(struct queue_node));
+    struct queue *queue;
 
-    if (!node)
+    queue = kmalloc(sizeof(struct queue));
+    if (!queue) return NULL;
+
+    memset(queue, 0, sizeof(struct queue));
+    return queue;
+}
+
+static inline struct qnode *enqueue(struct queue *queue, void *value) 
+{
+    if (!queue)
         return NULL;
 
-    node->value = value;
-    node->next = NULL;
-    node->prev = NULL;
+    int trace = queue->flags & QUEUE_TRACE;
 
-    if (!queue->count) {    /* Queue is not initalized */
+    if (trace) printk("qtrace: enqueue(%p, %p)\n", queue, value);
+
+    struct qnode *node;
+    
+    node = kmalloc(sizeof(struct qnode));
+    if (!node) return NULL;
+
+    if (trace) printk("qtrace: allocated node %p\n", node);
+
+    node->value = value;
+    node->next  = NULL;
+    node->prev  = NULL;
+
+    if (!queue->count) {
+        /* Queue is not initalized */
         queue->head = queue->tail = node;
     } else {
         node->prev = queue->tail;
@@ -41,19 +68,16 @@ static inline struct queue_node *enqueue(queue_t *queue, void *value)
     return node;
 }
 
-static inline void *dequeue(queue_t *queue)
+static inline void *dequeue(struct queue *queue)
 {
-    if (!queue)
+    if (!queue || !queue->count)
         return NULL;
-
-    if (!queue->count) {  /* Queue is empty! */
-        return NULL;
-    }
 
     --queue->count;
-    struct queue_node *head = queue->head;
+    struct qnode *head = queue->head;
 
     queue->head = head->next;
+
     if (queue->head)
         queue->head->prev = NULL;
     void *value = head->value;
@@ -62,14 +86,10 @@ static inline void *dequeue(queue_t *queue)
     return value;
 }
 
-static inline void queue_remove(queue_t *queue, void *value)
+static inline void queue_remove(struct queue *queue, void *value)
 {
-    if (!queue)
+    if (!queue || !queue->count)
         return;
-
-    if (!queue->count) {
-        return;
-    }
 
     forlinked (node, queue->head, node->next) {
         if (node->value == value) {
@@ -92,14 +112,10 @@ static inline void queue_remove(queue_t *queue, void *value)
     }
 }
 
-static inline void queue_node_remove(queue_t *queue, struct queue_node *node)
+static inline void queue_node_remove(struct queue *queue, struct qnode *node)
 {
-    if (!queue || !node)
+    if (!queue || !queue->count || !node)
         return;
-
-    if (!queue->count) {
-        return;
-    }
 
     if (node->prev)
         node->prev->next = node->next;
@@ -114,35 +130,5 @@ static inline void queue_node_remove(queue_t *queue, struct queue_node *node)
     kfree(node);
     return;
 }
-
-static inline void *queue_new()
-{
-    queue_t *q = kmalloc(sizeof(queue_t));
-
-    if (!q)
-        return NULL;
-
-    memset(q, 0, sizeof(queue_t));
-    return q;
-}
-
-#define QUEUE_NEW() &(struct queue){0}
-
-#if 0
-static inline void *queue_find(queue_t *queue, int (*check) (void *))
-{
-    forlinked(node, queue->head, node->next)
-        if(check(node->value))
-            return node->value;
-
-    return NULL;
-}
-
-static inline void queue_traverse(queue_t *queue, void (*func) (void *))
-{
-    forlinked(node, queue->head, node->next)
-        func(node->value);
-}
-#endif
 
 #endif /* _QUEUE_H */

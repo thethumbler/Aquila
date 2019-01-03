@@ -3,15 +3,14 @@
 #include <mm/mm.h>
 #include <mm/vm.h>
 
-
 int debug_kmalloc = 0;
 
-typedef struct {
+struct kvmem_node {
     uint32_t addr : 28; /* Offseting (1GiB), 4-bytes aligned objects */
     uint32_t free : 1;  /* Free or not flag */
     uint32_t size : 26; /* Size of one object can be up to 256MiB */
     uint32_t next : 25; /* Index of the next node */
-} __packed vmm_node_t;
+} __packed;
 
 size_t kvmem_used;
 size_t kvmem_obj_cnt;
@@ -20,8 +19,8 @@ size_t kvmem_obj_cnt;
 #define KVMEM_NODES_SIZE ARCH_KVMEM_NODES_SIZE
 #define KVMEM_NODES      (KVMEM_BASE - KVMEM_NODES_SIZE)
 
-#define NODE_ADDR(node) (KVMEM_BASE + ((node).addr) * 4)
-#define NODE_SIZE(node) (((node).size) * 4)
+#define NODE_ADDR(node) (KVMEM_BASE + ((node).addr) * 4U)
+#define NODE_SIZE(node) (((node).size) * 4U)
 #define LAST_NODE_INDEX (100000)
 #define MAX_NODE_SIZE   ((1UL << 26) - 1)
 
@@ -31,9 +30,11 @@ struct vmr kvmem_nodes = {
     .flags = VM_KRW,
 };
 
-vmm_node_t *nodes = (vmm_node_t *) KVMEM_NODES;
+struct kvmem_node *nodes = (struct kvmem_node *) KVMEM_NODES;
 void kvmem_setup()
 {
+    assert_sizeof(struct kvmem_node, 10);
+
     /* We start by mapping the space used for nodes into physical memory */
     vm_map(&kvmem_nodes);
 
@@ -41,11 +42,14 @@ void kvmem_setup()
     memset((void *) KVMEM_NODES, 0, KVMEM_NODES_SIZE);
 
     /* Setting up initial node */
-    nodes[0] = (vmm_node_t){0, 1, -1, LAST_NODE_INDEX};
+    nodes[0].addr = 0;
+    nodes[0].free = 1;
+    nodes[0].size = -1;
+    nodes[0].next = LAST_NODE_INDEX;
 }
 
 uint32_t first_free_node = 0;
-uint32_t get_node()
+static uint32_t get_node(void)
 {
     for (unsigned i = first_free_node; i < LAST_NODE_INDEX; ++i) {
         if (!nodes[i].size) {
@@ -54,12 +58,12 @@ uint32_t get_node()
     }
 
     panic("Can't find an unused node");
-    return -1;
+    //return -1;
 }
 
 void release_node(uint32_t i)
 {
-    nodes[i] = (vmm_node_t){0};
+    nodes[i] = (struct kvmem_node){0};
 }
 
 uint32_t get_first_fit_free_node(uint32_t size)
@@ -99,12 +103,11 @@ void *(kmalloc)(size_t size)
     /* Split the node if necessary */
     if (nodes[i].size > size) {
         unsigned n = get_node();
-        nodes[n] = (vmm_node_t) {
-            .addr = nodes[i].addr + size,
-            .free = 1,
-            .size = nodes[i].size - size,
-            .next = nodes[i].next
-        };
+
+        nodes[n].addr = nodes[i].addr + size;
+        nodes[n].free = 1;
+        nodes[n].size = nodes[i].size - size;
+        nodes[n].next = nodes[i].next;
 
         nodes[i].next = n;
         nodes[i].size = size;
@@ -118,12 +121,12 @@ void *(kmalloc)(size_t size)
     size_t  map_size = (map_end - map_base)/PAGE_SIZE;
 
     if (map_size) {
-        struct vmr vmr = {
-            .paddr = 0,
-            .base  = map_base,
-            .size  = map_size * PAGE_SIZE,
-            .flags = VM_KRW,
-        };
+        struct vmr vmr;
+
+        vmr.paddr = 0,
+        vmr.base  = map_base,
+        vmr.size  = map_size * PAGE_SIZE,
+        vmr.flags = VM_KRW,
 
         vm_map(&vmr);
     }
@@ -194,12 +197,12 @@ void (kfree)(void *_ptr)
     cur_node = 0;
     while (nodes[cur_node].next < LAST_NODE_INDEX) {
         if (nodes[cur_node].free) {
-            struct vmr vmr = {
-                .paddr = 0,
-                .base  = NODE_ADDR(nodes[cur_node]),
-                .size  = NODE_SIZE(nodes[cur_node]),
-                .flags = VM_KRW,
-            };
+            struct vmr vmr;
+
+            vmr.paddr = 0;
+            vmr.base  = NODE_ADDR(nodes[cur_node]);
+            vmr.size  = NODE_SIZE(nodes[cur_node]);
+            vmr.flags = VM_KRW;
 
             vm_unmap(&vmr);
         }
@@ -217,7 +220,7 @@ void dump_nodes()
     unsigned i = 0;
     while (i < LAST_NODE_INDEX) {
         print_node(i);
-        if(nodes[i].next == LAST_NODE_INDEX) break;
+        if (nodes[i].next == LAST_NODE_INDEX) break;
         i = nodes[i].next;
     }
 }

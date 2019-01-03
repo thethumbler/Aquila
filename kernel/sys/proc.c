@@ -10,31 +10,28 @@
 
 
 #include <core/system.h>
+#include <core/panic.h>
+
 #include <core/string.h>
 #include <core/arch.h>
-
 #include <mm/mm.h>
 #include <mm/vm.h>
-
 #include <sys/proc.h>
-#include <sys/elf.h>
 #include <sys/sched.h>
-
 #include <fs/vfs.h>
-
 #include <ds/queue.h>
 #include <ds/bitmap.h>
 
-queue_t *procs = QUEUE_NEW(); /* All processes queue */
+struct queue *procs = QUEUE_NEW(); /* All processes queue */
 
-bitmap_t pid_bitmap = BITMAP_NEW(4096);
+bitmap_t *pid_bitmap = BITMAP_NEW(4096);
 static int ff_pid = 1;
 
 int proc_pid_alloc()
 {
-    for (int i = ff_pid; (size_t) i < pid_bitmap.max_idx; ++i) {
-        if (!bitmap_check(&pid_bitmap, i)) {
-            bitmap_set(&pid_bitmap, i);
+    for (int i = ff_pid; (size_t) i < pid_bitmap->max_idx; ++i) {
+        if (!bitmap_check(pid_bitmap, i)) {
+            bitmap_set(pid_bitmap, i);
             ff_pid = i;
             return i;
         }
@@ -45,23 +42,25 @@ int proc_pid_alloc()
 
 void proc_pid_free(int pid)
 {
-    bitmap_clear(&pid_bitmap, pid);
+    bitmap_clear(pid_bitmap, pid);
     if (pid < ff_pid)
         ff_pid = pid;
 }
 
-int proc_new(proc_t **ref)
+int proc_new(struct proc **ref)
 {
     int err = 0;
-    proc_t *proc = NULL;
-    thread_t *thread = NULL;
-    
-    if (!(proc = kmalloc(sizeof(proc_t)))) {
+    struct proc *proc = NULL;
+    struct thread *thread = NULL;
+
+    proc = kmalloc(sizeof(struct proc));
+
+    if (!proc) {
         err = -ENOMEM;
         goto error;
     }
 
-    memset(proc, 0, sizeof(proc_t));
+    memset(proc, 0, sizeof(struct proc));
 
     if ((err = thread_new(proc, &thread)))
         goto error;
@@ -82,10 +81,10 @@ error:
     return err;
 }
 
-proc_t *proc_pid_find(pid_t pid)
+struct proc *proc_pid_find(pid_t pid)
 {
     forlinked (node, procs->head, node->next) {
-        proc_t *proc = node->value;
+        struct proc *proc = node->value;
         if (proc->pid == pid)
             return proc;
     }
@@ -93,7 +92,7 @@ proc_t *proc_pid_find(pid_t pid)
     return NULL;
 }
 
-int proc_init(proc_t *proc)
+int proc_init(struct proc *proc)
 {
     int err = 0;
 
@@ -128,10 +127,14 @@ free_resources:
     return err;
 }
 
-void proc_kill(proc_t *proc)
+void proc_kill(struct proc *proc)
 {
-    if (proc->pid == 1)
-        panic("init killed\n");
+    if (proc->pid == 1) {
+        if (proc->exit)
+            panic("init killed");
+
+        panic("reboot not implemented\n");
+    }
 
     proc->running = 0;
 
@@ -156,7 +159,7 @@ void proc_kill(proc_t *proc)
 
     /* Mark all children as orphans */
     forlinked (node, procs->head, node->next) {
-        proc_t *_proc = node->value;
+        struct proc *_proc = node->value;
 
         if (_proc->parent == proc)
             _proc->parent = NULL;
@@ -168,7 +171,7 @@ void proc_kill(proc_t *proc)
 
     /* Kill all threads */
     while (proc->threads.count) {
-        thread_t *thread = dequeue(&proc->threads);
+        struct thread *thread = dequeue(&proc->threads);
 
         if (thread->sleep_node) /* Thread is sleeping on some queue */
             queue_node_remove(thread->sleep_queue, thread->sleep_node);
@@ -203,7 +206,7 @@ void proc_kill(proc_t *proc)
     }
 }
 
-int proc_reap(proc_t *proc)
+int proc_reap(struct proc *proc)
 {
     proc_pid_free(proc->pid);
 
@@ -213,11 +216,11 @@ int proc_reap(proc_t *proc)
     return 0;
 }
 
-int proc_fd_get(proc_t *proc)
+int proc_fd_get(struct proc *proc)
 {
     for (int i = 0; i < FDS_COUNT; ++i) {
-        if (!proc->fds[i].node) {
-            proc->fds[i].node = (void *) -1;    
+        if (!proc->fds[i].inode) {
+            proc->fds[i].inode = (void *) -1;    
             return i;
         }
     }
@@ -225,14 +228,14 @@ int proc_fd_get(proc_t *proc)
     return -1;
 }
 
-void proc_fd_release(proc_t *proc, int fd)
+void proc_fd_release(struct proc *proc, int fd)
 {
     if (fd < FDS_COUNT) {
-        proc->fds[fd].node = NULL;
+        proc->fds[fd].inode = NULL;
     }
 }
 
-int proc_ptr_validate(proc_t *proc, void *ptr)
+int proc_ptr_validate(struct proc *proc, void *ptr)
 {
     uintptr_t uptr = (uintptr_t) ptr;
     if (!(uptr >= proc->entry && uptr <= proc->heap))
@@ -240,10 +243,10 @@ int proc_ptr_validate(proc_t *proc, void *ptr)
     return 1;
 }
 
-int session_new(proc_t *proc)
+int session_new(struct proc *proc)
 {
-    session_t *session = kmalloc(sizeof(session_t));
-    pgroup_t  *pgrp = kmalloc(sizeof(pgroup_t));
+    struct session *session = kmalloc(sizeof(struct session));
+    struct pgroup  *pgrp = kmalloc(sizeof(struct pgroup));
 
     session->pgps = queue_new();
     pgrp->procs = queue_new();
@@ -263,10 +266,10 @@ int session_new(proc_t *proc)
     return 0;
 }
 
-int pgrp_new(proc_t *proc, pgroup_t **ref)
+int pgrp_new(struct proc *proc, struct pgroup **ref)
 {
-    pgroup_t *pgrp = kmalloc(sizeof(pgroup_t));
-    memset(pgrp, 0, sizeof(pgroup_t));
+    struct pgroup *pgrp = kmalloc(sizeof(struct pgroup));
+    memset(pgrp, 0, sizeof(struct pgroup));
     pgrp->pgid = proc->pid;
 
     queue_node_remove(proc->pgrp->procs, proc->pgrp_node);

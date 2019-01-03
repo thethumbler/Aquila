@@ -5,20 +5,11 @@
 #include <fs/vfs.h>
 
 #define CPIO_BIN_MAGIC    0070707
-#define CPIO_TYPE_MASK    0170000
-#define CPIO_TYPE_SOCKET  0140000
-#define CPIO_TYPE_SLINK   0120000
-#define CPIO_TYPE_RGL     0100000
-#define CPIO_TYPE_BLKDEV  0060000
-#define CPIO_TYPE_DIR     0040000
-#define CPIO_TYPE_CHRDEV  0020000
-#define CPIO_TYPE_FIFO    0010000
-#define CPIO_FLAG_SUID    0004000
-#define CPIO_FLAG_SGID    0002000
-#define CPIO_FLAG_STICKY  0001000
-#define CPIO_PERM_MASK    0000777
 
-struct __cpio_hdr {
+#if defined(__TINYC__)
+#pragma pack(1)
+#endif
+struct cpio_hdr {
     uint16_t magic;
     uint16_t dev;
     uint16_t ino;
@@ -27,22 +18,25 @@ struct __cpio_hdr {
     uint16_t gid;
     uint16_t nlink;
     uint16_t rdev;
-    //uint32_t mtime;
     uint16_t mtime[2];
     uint16_t namesize;
     uint16_t filesize[2];
 } __packed;
+#if defined(__TINYC__)
+#pragma pack()
+#endif
 
-struct __cpio_priv {
+struct cpio {
     struct inode *super;
     struct inode *parent;
     struct inode *dir;
     size_t count;
     size_t data; /* offset of data in the archive */
 
+    const char *name;
     struct inode *next;  /* For directories */
 };
 
-extern struct fs __cpio;
+extern struct fs cpio;
 
 #endif /* !_CPIO_H */

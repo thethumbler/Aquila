@@ -3,13 +3,13 @@
 
 #include <core/system.h>
 #include <core/printk.h>
+#include <core/arch.h>
 
-/* FIXME: make halting the system CPU transparent */
 #define panic(s) \
 {\
     printk("KERNEL PANIC:\n%s [%d] %s: %s\n" __PANIC_MSG, \
         __FILE__, __LINE__, __func__, s);\
-    asm("cli"); \
+    arch_disable_interrupts(); \
     for(;;); \
 }\
 

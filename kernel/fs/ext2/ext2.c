@@ -1,13 +1,14 @@
 #include <core/panic.h>
+#include <core/module.h>
 #include <fs/vfs.h>
 #include <fs/posix.h>
-#include <fs/itbl.h>
+#include <fs/icache.h>
 #include <bits/errno.h>
 #include <ds/bitmap.h>
 
 #include <ext2.h>
 
-int ext2_inode_build(struct __ext2 *desc, size_t inode, struct inode **ref_inode)
+int ext2_inode_build(struct ext2 *desc, size_t inode, struct inode **ref_inode)
 {
     //printk("ext2_inode_build(desc=%p, inode=%d, ref_inode=%p)\n", desc, inode, ref_inode);
     
@@ -15,7 +16,7 @@ int ext2_inode_build(struct __ext2 *desc, size_t inode, struct inode **ref_inode
     struct inode *node = NULL;
 
     /* In open inode table? */
-    if ((node = itbl_find(desc->itbl, inode)))
+    if ((node = icache_find(desc->icache, inode)))
         goto found;
 
     node = kmalloc(sizeof(struct inode));
@@ -27,33 +28,24 @@ int ext2_inode_build(struct __ext2 *desc, size_t inode, struct inode **ref_inode
 
     }
 
-    switch (i.type) {
-        case EXT2_INODE_TYPE_FIFO:  node->type = FS_FIFO; break;
-        case EXT2_INODE_TYPE_CHR:   node->type = FS_CHRDEV; break;
-        case EXT2_INODE_TYPE_DIR:   node->type = FS_DIR; break;
-        case EXT2_INODE_TYPE_BLK:   node->type = FS_BLKDEV; break;
-        case EXT2_INODE_TYPE_RGL:   node->type = FS_RGL; break;
-        case EXT2_INODE_TYPE_SLINK: node->type = FS_SYMLINK; break;
-        case EXT2_INODE_TYPE_SCKT:  node->type = FS_SOCKET; break;
-    }
+    node->ino   = inode;
+    node->size  = i.size;
+    node->mode  = i.mode;
+    node->uid   = i.uid;
+    node->gid   = i.gid;
+    node->nlink = i.nlinks;
 
-    node->id   = inode;
-    node->size = i.size;
-    node->mask = i.permissions;
-    node->uid  = i.uid;
-    node->gid  = i.gid;
-
-    node->atim.tv_sec  = i.last_access_time;
-    node->atim.tv_nsec = 0;
-    node->mtim.tv_sec  = i.last_modified_time;
-    node->mtim.tv_nsec = 0;
-    node->ctim.tv_sec  = i.creation_time;
-    node->ctim.tv_nsec = 0;
+    node->atime.tv_sec  = i.atime;
+    node->atime.tv_nsec = 0;
+    node->mtime.tv_sec  = i.mtime;
+    node->mtime.tv_nsec = 0;
+    node->ctime.tv_sec  = i.ctime;
+    node->ctime.tv_nsec = 0;
 
     node->fs   = &ext2fs;
     node->p = desc;
 
-    itbl_insert(desc->itbl, node);
+    icache_insert(desc->icache, node);
 
 found:
     if (ref_inode)
@@ -86,10 +78,8 @@ int ext2_load(struct inode *dev, struct inode **super)
         return -EINVAL;
     }
 
-    printk("Valid EXT2\n");
-
     /* Build descriptor structure */
-    struct __ext2 *desc = kmalloc(sizeof(struct __ext2));
+    struct ext2 *desc = kmalloc(sizeof(struct ext2));
     desc->supernode = dev;
     desc->superblock = sb;
     desc->bs = 1024UL << sb->block_size;
@@ -108,12 +98,12 @@ int ext2_load(struct inode *dev, struct inode **super)
     if ((err = vfs_read(desc->supernode, bgd_table, bgds_size, desc->bgd_table)) < 0)
         return err;
 
-    desc->itbl = kmalloc(sizeof(struct itbl));
+    desc->icache = kmalloc(sizeof(struct icache));
     
-    if (!desc->itbl)
+    if (!desc->icache)
         return -ENOMEM;
 
-    itbl_init(desc->itbl);
+    icache_init(desc->icache);
 
     if (super)
         ext2_inode_build(desc, 2, super);
