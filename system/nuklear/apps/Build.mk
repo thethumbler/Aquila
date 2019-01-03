@@ -1,1 +1,0 @@
-dirs-y += nk-about/

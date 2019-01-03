@@ -17,8 +17,10 @@ int cmd_readmbr(int, char**);
 int cmd_screenfetch(int, char**);
 int cmd_sh(int, char**);
 int cmd_stat(int, char**);
+int cmd_touch(int, char**);
 int cmd_uname(int, char**);
 int cmd_unlink(int, char**);
+int cmd_kill(int, char**);
 
 #define APPLET(name) {#name, cmd_##name}
 
@@ -31,6 +33,7 @@ struct applet {
     APPLET(echo),
     APPLET(env),
     APPLET(getty),
+    APPLET(kill),
     APPLET(login),
     APPLET(ls),
     APPLET(mkdir),
@@ -42,6 +45,7 @@ struct applet {
     APPLET(screenfetch),
     APPLET(sh),
     APPLET(stat),
+    APPLET(touch),
     APPLET(uname),
     APPLET(unlink),
 };

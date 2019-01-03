@@ -3,8 +3,8 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <stdint.h>
+#include <string.h>
 
-#define __packed __attribute__((packed))
 #define MBR_TYPE_UNUSED             0x00
 #define MBR_BOOT_SIGNATURE          0xAA55
 
@@ -59,7 +59,7 @@ const char *part_type[] = {
     [0x70] = "DiskSecure Mult",
     [0x75] = "PC/IX ",
     [0x80] = "Old Minix",
-    [0x81] = "Minix / old Lin",
+    [0x81] = "Minix",
     [0x82] = "Linux swap / So",
     [0x83] = "Linux",
     [0x84] = "OS/2 hidden C: ",

@@ -1,4 +1,3 @@
-#define __aquila__
 #include <aqbox.h>
 #include <stdio.h>
 #include <sys/stat.h>

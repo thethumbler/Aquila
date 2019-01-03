@@ -7,6 +7,7 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <fb.h>
+#include <config.h>
 
 #define _NJ_INCLUDE_HEADER_ONLY
 #include "nanojpeg.c"
@@ -19,9 +20,9 @@ static void *fb_addr = NULL;
 static unsigned xres = 0, yres = 0, line_length = 0, bpp = 0;
 
 #define COLORMERGE(f, b, c)	((b) + (((f) - (b)) * (c) >> 8u))
-#define _R(c)   (((c) >> 3*8) & 0xFF)
+#define _R(c)   (((c) >> 1*8) & 0xFF)
 #define _G(c)   (((c) >> 2*8) & 0xFF)
-#define _B(c)   (((c) >> 1*8) & 0xFF)
+#define _B(c)   (((c) >> 3*8) & 0xFF)
 #define _A(c)   (((c) >> 0*8) & 0xFF)
 
 void fb_put_pixel(struct fbterm_ctx *ctx, int x, int y, uint32_t fg, uint32_t bg)
@@ -103,7 +104,7 @@ void fb_render(struct fbterm_ctx *ctx)
 
 void fb_term_init(struct fbterm_ctx *ctx)
 {
-    ctx->op   = 200;
+    ctx->op   = 230;
     ctx->rows = yres/ctx->font->rows;
     ctx->cols = xres/ctx->font->cols;
     ctx->textbuf = calloc(1, yres * line_length);
@@ -113,6 +114,10 @@ void fb_term_init(struct fbterm_ctx *ctx)
 int fb_cook_wallpaper(struct fbterm_ctx *ctx, char *path)
 {
     int img = open(path, O_RDONLY);
+
+    if (img < 0)
+        return -1;
+
     size_t size = lseek(img, 0, SEEK_END);
     lseek(img, 0, SEEK_SET);
 
@@ -125,7 +130,7 @@ int fb_cook_wallpaper(struct fbterm_ctx *ctx, char *path)
 
     if (err = njDecode(buf, size)) {
         free(buf);
-        fprintf(stderr, "Error decoding input file: %d\n", err);
+        debug(1, "Error decoding input file: %d\n", err);
         return -1;
     }
 
@@ -192,26 +197,32 @@ void fb_debug(char r, char g, char b)
     write(fb, dbuf, line_length * yres);
 }
 
-int fb_init(char *path)
+int fb_init(const char *path)
 {
+    debug(INFO, "initializing framebuffer %s\n", path);
+
     if ((fb = open(path, O_RDWR)) < 0) {
-        return errno;
+        debug(ERROR, "%s: open: %s\n", path, strerror(errno));
+        return -1;
     }
 
     if (ioctl(fb, FBIOGET_FSCREENINFO, &fix_screeninfo) < 0) {
-        return errno;
+        debug(ERROR, "%s: ioctl: %s\n", path, strerror(errno));
+        return -1;
     }
 
     line_length = fix_screeninfo.line_length;
 
     if (ioctl(fb, FBIOGET_VSCREENINFO, &var_screeninfo) < 0) {
-        return errno;
+        debug(ERROR, "%s: ioctl: %s\n", path, strerror(errno));
+        return -1;
     }
 
     xres = var_screeninfo.xres;
     yres = var_screeninfo.yres;
-
     bpp  = var_screeninfo.bits_per_pixel/8;
+
+    debug(INFO, "%s: xres = %u, yres = %u, depth = %u\n", path, xres, yres, var_screeninfo.bits_per_pixel);
 
     fb_addr = 0xB0000000;
     if (mmap(fb_addr, line_length * yres, PROT_WRITE, MAP_SHARED|MAP_FIXED, fb, 0)) {

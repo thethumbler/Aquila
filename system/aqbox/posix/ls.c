@@ -1,4 +1,3 @@
-#define __aquila__
 #include <aqbox.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -141,8 +140,7 @@ int do_ls(char *path, uint32_t flags)
     DIR *dir = NULL;
 
     if (!(dir = opendir(path))) {
-        fprintf(stderr, "ls: cannot access '%s': ", path);
-        perror("");
+        fprintf(stderr, "ls: cannot access '%s': %s\n", path, strerror(errno));
         return -1;
     }
 
@@ -174,12 +172,13 @@ int do_ls(char *path, uint32_t flags)
     /* print entries */
     if (flags & FLAG_l) {   /* long mode */
         for (int i = 0; i < entries_idx + 1; ++i) {
-            print_long_entry(path, entries[i].d_name);
+            if ((flags & FLAG_a) || (entries[i].d_name[0] != '.'))
+                print_long_entry(path, entries[i].d_name);
         }
     } else {
         int j = 0;
         for (int i = 0; i < entries_idx + 1; ++i) {
-            if (entries[i].d_name[0] != '.') {
+            if ((flags & FLAG_a) || (entries[i].d_name[0] != '.')) {
                 printf("%-*s  ", maxlen, entries[i].d_name);
                 fflush(stdout);
                 ++j;
@@ -201,14 +200,8 @@ int do_ls(char *path, uint32_t flags)
     closedir(dir);
 }
 
-void parse_arg(char *arg, uint32_t *flags)
+int ls_usage()
 {
-    size_t len = strlen(arg);
-    for (int l = 0; l < len; ++l) {
-        switch (arg[l]) {
-            case 'l': *flags |= FLAG_l; break;
-        }
-    }
 }
 
 AQBOX_APPLET(ls)(int argc, char **argv)
@@ -219,14 +212,18 @@ AQBOX_APPLET(ls)(int argc, char **argv)
     int pathc = 0;
     char *pathv[argc];
 
-    /* parse arguments */
-    for (int i = 1; i < argc; ++i) {
-        if (argv[i][0] == '-') {    /* argument */
-            parse_arg(&argv[i][1], &flags);
-        } else {    /* path */
-            pathv[pathc++] = argv[i];
+    int opt;
+
+    while ((opt = getopt(argc, argv, "al")) != -1) {
+        switch (opt) {
+            case 'a': flags |= FLAG_a; break;
+            case 'l': flags |= FLAG_l; break;
+            default: ls_usage(); exit(-1);
         }
     }
+
+    while (optind < argc)
+        pathv[pathc++] = argv[optind++];
 
     if (pathc == 0) {
         do_ls(".", flags);
