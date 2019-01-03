@@ -4,7 +4,7 @@ all: builtin.o
 
 builtin.o: $(obj-y) $(dirs-y)
 	@echo -e "  LD      " builtin.o;
-	@$(LD) $(LDFLAGS) -r $(obj-y) $(patsubst %/,%/builtin.o, $(dirs-y)) -o builtin.o; 
+	$(LD) $(LDFLAGS) -r $(obj-y) $(patsubst %/,%/builtin.o, $(dirs-y)) -o builtin.o; 
 
 .PHONY: $(dirs-y)
 $(dirs-y): $(patsubst %/,%/Makefile, $(dirs-y))
@@ -13,7 +13,7 @@ $(dirs-y): $(patsubst %/,%/Makefile, $(dirs-y))
 
 %.o:%.c
 	@echo -e "  CC      " $@;
-	@ $(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -c $< -o $@
 
 .PHONY: clean
 clean: param = clean

@@ -6,6 +6,10 @@
 #include <vterm.h>
 
 struct fbterm_ctx {
+    int         ptm;    /* terminal master */
+    const char *pts;    /* terminal slave  */
+
+
     unsigned rows;      /* Number of rows */
     unsigned cols;      /* Number of cols */
 

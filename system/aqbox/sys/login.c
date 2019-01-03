@@ -10,6 +10,7 @@
 #include <sys/ioctl.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <fcntl.h>
 
 AQBOX_APPLET(login)(int argc, char **argv)
 {
@@ -21,7 +22,7 @@ AQBOX_APPLET(login)(int argc, char **argv)
     char username[1024], pass[1024];
     size_t len = 0;
 
-    printf("Username: ");
+    printf("login: ");
     fgets(username, 1024, stdin);
     len = strlen(username);
     if (username[len-1] == '\n')
@@ -34,7 +35,7 @@ AQBOX_APPLET(login)(int argc, char **argv)
     tcsetattr(0, TCSAFLUSH, &new);
 
     fflush(stdin);
-    printf("Password: ");
+    printf("password: ");
     fgets(pass, 1024, stdin);
     len = strlen(pass);
     if (pass[len-1] == '\n')
@@ -65,6 +66,15 @@ AQBOX_APPLET(login)(int argc, char **argv)
     setenv("PATH", "/bin:/sbin:/usr/bin", 1);
 
     chdir(passwd->pw_dir);
+
+    int motd = open("/etc/motd", O_RDONLY);
+    if (motd > 0) {
+        char buf[512]; int r;
+        while ((r = read(motd, buf, sizeof(buf))) > 0)
+            write(1, buf, r);
+        write(1, "\n", 1);
+        close(motd);
+    }
 
     extern char **environ;
     char *args[] = {passwd->pw_shell, NULL}; /* XXX */

@@ -2,48 +2,76 @@
 #include <stdio.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <string.h>
+#include <errno.h>
 
-static void usage(char *name)
+#ifndef CAT_BUFSIZE
+#define CAT_BUFSIZE 512
+#endif
+
+static void usage()
 {
-    printf("Usage: %s [-u] [file...]\n\
-            Concatenate and print files\n");
+    fprintf(stderr, 
+            "Usage: cat [-u] [file...]\n"
+            "Concatenate and print files\n");
 }
 
-char buf[1024];
-
-AQBOX_APPLET(cat)
-(int argc, char **argv)
+char buf[CAT_BUFSIZE];
+static int do_cat(const char *path)
 {
-    for (int i = 1; i < argc; ++i) {
-        int fd = 0; /* Use stdin by default */
+    int err = 0;
+    int fd = 0; /* Use stdin by default */
 
-        if (argv[i][0] == '-') {
-            switch (argv[i][1]) {
-                case 'u':
-                    /* ignore */
-                    goto next;
-                case '\0':
-                    break;
-                default:
-                    usage(argv[0]);
-                    return -1;
-            }
-        } else {
-            fd = open(argv[i], O_RDONLY);
+    if (path) {
+        fd = open(path, O_RDONLY);
 
-            if (fd < 0) {
-                fprintf(stderr, "Error opening file %s: ", argv[i]);
-                perror("");
-            }
+        if (fd < 0) {
+            fprintf(stderr, "cat: %s: %s\n", path, strerror(errno));
+            return -1;
         }
+    }
 
 
-        int r;
-        while ((r = read(fd, buf, 1024)) > 0) {
-            write(1, buf, r);
+    int r;
+    while ((r = read(fd, buf, CAT_BUFSIZE)) > 0) {
+        if ((err = write(1, buf, r)) < 0) {
+            fprintf(stderr, "cat: write: %s\n", strerror(errno));
+            goto error;
         }
+    }
 
-        close(fd);
-next:;
+    if (r < 0) {
+        fprintf(stderr, "cat: read: %s\n", strerror(errno));
+        err = r;
+        goto error;
+    }
+
+error:
+    close(fd);
+    return err;
+}
+
+AQBOX_APPLET(cat)(int argc, char **argv)
+{
+    int opt;
+    while ((opt = getopt(argc, argv, "uh")) != -1) {
+        switch (opt) {
+            case 'u':
+                /* ignore */
+                break;
+            case 'h':
+                usage();
+                return 0;
+            default:
+                usage();
+                return -1;
+        }
+    }
+
+    for (int i = optind; i < argc; ++i) {
+        if (!strcmp(argv[i], "-"))
+            do_cat(NULL);
+        else
+            do_cat(argv[i]);
     }
 }

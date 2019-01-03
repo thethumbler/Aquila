@@ -4,13 +4,14 @@ MAKEFLAGS += --no-print-directory
 
 PDIR := $(SRC_DIR)/system/fbterm
 CFLAGS += -I$(PDIR)/include
+LDLIBS += -lpthread
 
 include Build.mk
 
 all: builtin.o fbterm
 
 fbterm: builtin.o
-	$(LD) $(LDFLAGS) $< $(LDLIBS) -o $@;
+	$(CC) $< $(LDLIBS) -o $@;
 
 builtin.o: $(obj-y) $(dirs-y)
 	@echo -e "  LD      " builtin.o;

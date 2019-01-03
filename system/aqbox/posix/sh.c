@@ -1,4 +1,3 @@
-#define __aquila__ 
 #include <aqbox.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -152,18 +151,9 @@ int run_prog(char *name, char **argv)
 
     } else {
         int x = execve(name, argv, environ);
+        fprintf(stderr, "sh: execve: %s\n", strerror(errno));
         exit(x);
     }
-}
-
-int tcgetattr(int fd, struct termios *tios)
-{
-    return ioctl(fd, TCGETS, tios);
-}
-
-int tcsetattr(int fd, int req, struct termios *tios)
-{
-    return ioctl(fd, TCSETS, tios);
 }
 
 enum KEY_ACTION {
@@ -365,6 +355,7 @@ done:
 
 int eval(char *buf)
 {
+    //fprintf(stderr, "eval(\"%s\")\n", buf);
     if (!strlen(buf))
         return 0;
 
@@ -463,8 +454,12 @@ void shell_batch(const char *path)
     }
 
     char buf[1024];
+    memset(buf, 0, sizeof(buf));
 
     while (fgets(buf, sizeof(buf), file)) {
+        //printf("aqsh: buf: %s\n", buf);
+        //write(2, ">> ", 3);
+        //write(2, buf, sizeof(buf));
         eval(buf);
     }
 }

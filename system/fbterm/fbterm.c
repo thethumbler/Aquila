@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <string.h>
@@ -17,6 +18,29 @@
 #include <vterm.h>
 
 #include <aqkb.h>
+
+int debug_fd = -1;
+int debug_init()
+{
+    debug_fd = open("/dev/kmsg", O_WRONLY);
+}
+
+int debug(int level, const char *fmt, ...)
+{
+    static char buf[512];
+
+    if (debug_fd >= 0) {
+        va_list ap;
+        va_start(ap, fmt);
+        int mlen = 0; //vsnprintf(buf, sizeof(buf), "%s: ", "fbterm");
+        memcpy(buf, "fbterm: ", 8);
+        int len = vsnprintf(buf + 8, sizeof(buf) - 8, fmt, ap);
+        va_end(ap);
+        write(debug_fd, buf, mlen + len);
+    }
+
+    return 0;
+}
 
 /* Terminals */
 struct fbterm_ctx term[10];
@@ -281,11 +305,14 @@ relaunch:
         /* Uh..Oh shell died */
         goto relaunch;
     } else {
-        close(pty);
+        for (int i = 0; i < 10; ++i)
+            close(i);
+
         int stdin_fd  = open(pts_fn, O_RDONLY);
         int stdout_fd = open(pts_fn, O_WRONLY);
         int stderr_fd = open(pts_fn, O_WRONLY);
 
+        /* run login shell */
         char *argp[] = {DEFAULT_SHELL, "login", NULL};
         char *envp[] = {"PWD=/", "TERM=VT100", NULL};
         execve(DEFAULT_SHELL, argp, envp);
@@ -295,21 +322,28 @@ relaunch:
 
 int main(int argc, char **argv)
 {
+    debug_init();
+    debug(INFO, "starting...\n");
+
     int shell_pid = 0;
     pts_fn = fbterm_openpty(&pty);
 
     if (shell_pid = fork()) {
         if (fb_init("/dev/fb0")) {
-            //fprintf(stderr, "Error opening framebuffer");
             exit(-1);
         }
 
         if (fbterm_init(&term[0]) < 0) {
-            //fprintf(stderr, "Error initalizing fbterm\n");
+            debug(1, "Error initalizing fbterm\n");
             exit(-1);
         }
 
         kbd_fd = open(KBD_PATH, O_RDONLY);
+
+        if (kbd_fd < 0) {
+            debug(1, "Error initalizing keyboard\n");
+            exit(-1);
+        }
 
         pthread_t aqkb;
         pthread_create(&aqkb, NULL, aqkb_thread, NULL);

@@ -4,10 +4,10 @@
 #include <sys/utsname.h>
 
 /* Flags */
-#define PRINT_MACHINE   0x1
-#define PRINT_NODENAME  0x2
-#define PRINT_RELEASE   0x4
-#define PRINT_SYSNAME   0x8
+#define PRINT_MACHINE   0x01
+#define PRINT_NODENAME  0x02
+#define PRINT_RELEASE   0x04
+#define PRINT_SYSNAME   0x08
 #define PRINT_VERSION   0x10
 
 AQBOX_APPLET(uname)(int argc, char **argv)
@@ -27,6 +27,7 @@ AQBOX_APPLET(uname)(int argc, char **argv)
                 case 'r': flags |= PRINT_RELEASE; break;
                 case 's': flags |= PRINT_SYSNAME; break;
                 case 'v': flags |= PRINT_VERSION; break;
+                default: exit(-1);
             }
         }
 

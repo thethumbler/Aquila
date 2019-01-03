@@ -1,32 +1,23 @@
 #include <aqbox.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
-AQBOX_APPLET(echo)(int argc, char *argv[])
+#define FLAG_n  0x0001
+#define FLAG_e  0x0002
+
+static void usage()
 {
-    int newline = 1, escape = 0, argv_i = 0;
+    fprintf(stderr, 
+            "Usage: echo [-ne] [string...]\n"
+            "Write arguments to standard output.\n");
+}
 
-    /* Parse arguments */
-    for (int i = 1; i < argc; ++i) {
-        if (argv[i][0] == '-') {
-            /* XXX Sanity checking */
-            switch (argv[i][1]) {
-                case 'n':
-                    newline = 0;
-                    break;
-                case 'e':
-                    escape = 1;
-                    break;
-            }
-        } else {
-            argv_i = i;
-            break;
-        }
-    }
-
-    for (int i = argv_i; i < argc; ++i) {
-        if (escape) {
-            char *s = argv[i];
+static int do_echo(int argc, const char *argv[], int flags)
+{
+    for (int i = 0; i < argc; ++i) {
+        if (flags & FLAG_e) {
+            const char *s = argv[i];
             int len = strlen(s);
             for (int j = 0; j < len; ++j) {
                 if (s[j] == '\\') {
@@ -48,8 +39,28 @@ AQBOX_APPLET(echo)(int argc, char *argv[])
         }
     }
 
-    if (newline)
+    if (!(flags & FLAG_n))
         printf("\n");
+}
+
+AQBOX_APPLET(echo)(int argc, char *argv[])
+{
+    int newline = 1, escape = 0, flags = 0, opt;
+
+    while ((opt = getopt(argc, argv, "ne")) != -1) {
+        switch (opt) {
+            case 'n':
+                newline = 0;
+                flags  |= FLAG_n;
+                break;
+            case 'e':
+                escape = 1;
+                flags  |= FLAG_e;
+                break;
+        }
+    }
+
+    do_echo(argc - optind, (const char **) &argv[optind], flags);
 
     return 0;
 }

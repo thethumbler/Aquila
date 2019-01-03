@@ -8,3 +8,5 @@ obj-y += ps.o
 obj-y += pwd.o
 obj-y += uname.o
 obj-y += unlink.o
+obj-y += touch.o
+obj-y += kill.o
