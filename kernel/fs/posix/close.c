@@ -1,7 +1,8 @@
+#include <core/system.h>
+#include <fs/vfs.h>
 #include <fs/posix.h>
 
-int posix_file_close(struct file *file __unused)
+int posix_file_close(struct file *file)
 {
-    vfs_close(file->inode);
-    return 0;
+    return vfs_close(file->inode);
 }

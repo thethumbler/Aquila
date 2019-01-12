@@ -1,6 +1,14 @@
+obj-y  += close.o
+obj-y  += fops.o
+obj-y  += ioctl.o
 obj-y  += mknod.o
+obj-y  += mount.o
+obj-y  += readdir.o
+obj-y  += read.o
 obj-y  += stat.o
 obj-y  += unlink.o
+obj-y  += write.o
+obj-y  += trunc.o
 obj-y  += vfs.o
 
 # Mandatory targets

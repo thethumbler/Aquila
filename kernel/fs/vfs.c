@@ -215,15 +215,22 @@ void vfs_init(void)
     vfs_log(LOG_INFO, "Initializing\n");
 }
 
-void vfs_install(struct fs *fs)
+int vfs_install(struct fs *fs)
 {
     struct fs_list *node = kmalloc(sizeof(struct fs_list));
+
+    if (!node)
+        return -ENOMEM;
+
     node->name = fs->name;
-    node->fs = fs;
+    node->fs   = fs;
     node->next = registered_fs;
+
     registered_fs = node;
 
     vfs_log(LOG_INFO, "Registered filesystem %s\n", fs->name);
+
+    return 0;
 }
 
 int vfs_lookup(const char *path, struct uio *uio, struct vnode *vnode, char **abs_path)
@@ -297,138 +304,6 @@ error:
 }
 
 /* ================== VFS inode ops mappings ================== */
-
-#define ISDEV(inode) (S_ISCHR((inode)->mode) || S_ISBLK((inode)->mode))
-
-ssize_t vfs_read(struct inode *inode, off_t offset, size_t size, void *buf)
-{
-    vfs_log(LOG_DEBUG, "vfs_read(inode=%p, offset=%d, size=%d, buf=%p)\n", inode, offset, size, buf);
-
-    /* Invalid request */
-    if (!inode)
-        return -EINVAL;
-
-    /* Device node */
-    if (ISDEV(inode))
-        return kdev_read(&INODE_DEV(inode), offset, size, buf);
-
-    /* Invalid request */
-    if (!inode->fs)
-        return -EINVAL;
-
-    /* Operation not supported */
-    if (!inode->fs->iops.read)
-        return -ENOSYS;
-
-    return inode->fs->iops.read(inode, offset, size, buf);
-}
-
-ssize_t vfs_write(struct inode *inode, off_t offset, size_t size, void *buf)
-{
-    vfs_log(LOG_DEBUG, "vfs_write(inode=%p, offset=%d, size=%d, buf=%p)\n", inode, offset, size, buf);
-
-    /* Invalid request */
-    if (!inode)
-        return -EINVAL;
-
-    /* Device node */
-    if (ISDEV(inode))
-        return kdev_write(&INODE_DEV(inode), offset, size, buf);
-
-    /* Invalid request */
-    if (!inode->fs)
-        return -EINVAL;
-
-    /* Operation not supported */
-    if (!inode->fs->iops.write)
-        return -ENOSYS;
-
-    return inode->fs->iops.write(inode, offset, size, buf);
-}
-
-
-int vfs_ioctl(struct inode *inode, unsigned long request, void *argp)
-{
-    vfs_log(LOG_DEBUG, "vfs_ioctl(inode=%p, request=%ld, argp=%p)\n", inode, request, argp);
-
-    /* TODO Basic ioctl handling */
-    /* Invalid request */
-    if (!inode)
-        return -EINVAL;
-
-    /* Device node */
-    if (ISDEV(inode))
-        return kdev_ioctl(&INODE_DEV(inode), request, argp);
-
-    /* Invalid request */
-    if (!inode->fs)
-        return -EINVAL;
-
-    /* Operation not supported */
-    if (!inode->fs->iops.ioctl)
-        return -ENOSYS;
-
-    return inode->fs->iops.ioctl(inode, request, argp);
-}
-
-ssize_t vfs_readdir(struct inode *inode, off_t offset, struct dirent *dirent)
-{
-    /* Invalid request */
-    if (!inode || !inode->fs)
-        return -EINVAL;
-
-    /* Operation not supported */
-    if (!inode->fs->iops.readdir)
-        return -ENOSYS;
-
-    return inode->fs->iops.readdir(inode, offset, dirent);
-}
-
-int vfs_close(struct inode *inode)
-{
-    /* Invalid request */
-    if (!inode || !inode->fs)
-        return -EINVAL;
-
-    /* Operation not supported */
-    if (!inode->fs->iops.close)
-        return -ENOSYS;
-
-    --inode->ref;
-
-    if (inode->ref <= 0) {   /* Why < ? */
-        return inode->fs->iops.close(inode);
-    }
-
-    return 0;
-}
-
-int vfs_mount(const char *type, const char *dir, int flags, void *data, struct uio *uio)
-{
-    struct fs *fs = NULL;
-
-    /* Look up filesystem */
-    forlinked (entry, registered_fs, entry->next) {
-        if (!strcmp(entry->name, type)) {
-            fs = entry->fs;
-            break;
-        }
-    }
-
-    if (!fs)
-        return -EINVAL;
-
-    /* Directory path must be absolute */
-    int ret = 0;
-    char *_dir = NULL;
-    if ((ret = vfs_parse_path(dir, uio, &_dir))) {
-        if (_dir)
-            kfree(_dir);
-        return ret;
-    }
-
-    return fs->mount(_dir, flags, data);
-}
 
 int vfs_vfind(struct vnode *parent, const char *name, struct vnode *child)
 {
@@ -523,185 +398,6 @@ int vfs_mmap(struct vmr *vmr)
 
     return inode->fs->iops.mmap(vmr);
 }
-
-/* ================== VFS file ops mappings ================== */
-
-int vfs_file_open(struct file *file)
-{
-    if (!file || !file->inode || !file->inode->fs)
-        return -EINVAL;
-
-    if (S_ISDIR(file->inode->mode) && !(file->flags & O_SEARCH))
-        return -EISDIR;
-
-    if (ISDEV(file->inode))
-        return kdev_file_open(&INODE_DEV(file->inode), file);
-
-    if (!file->inode->fs->fops.open)
-        return -ENOSYS;
-
-    return file->inode->fs->fops.open(file);
-}
-
-ssize_t vfs_file_read(struct file *file, void *buf, size_t nbytes)
-{
-    if (file && file->flags & FILE_SOCKET)
-        return socket_recv(file, buf, nbytes, 0);
-
-    if (!file || !file->inode)
-        return -EINVAL;
-
-    if (ISDEV(file->inode))
-        return kdev_file_read(&INODE_DEV(file->inode), file, buf, nbytes);
-
-    if (!file->inode->fs)
-        return -EINVAL;
-
-    if (!file->inode->fs->fops.read)
-        return -ENOSYS;
-
-    return file->inode->fs->fops.read(file, buf, nbytes);
-}
-
-ssize_t vfs_file_write(struct file *file, void *buf, size_t nbytes)
-{
-    if (file && file->flags & FILE_SOCKET)
-        return socket_send(file, buf, nbytes, 0);
-
-    if (!file || !file->inode)
-        return -EINVAL;
-
-    if (ISDEV(file->inode))
-        return kdev_file_write(&INODE_DEV(file->inode), file, buf, nbytes);
-
-    if (!file->inode->fs)
-        return -EINVAL;
-
-    if (!file->inode->fs->fops.write)
-        return -ENOSYS;
-
-    return file->inode->fs->fops.write(file, buf, nbytes);
-}
-
-int vfs_file_ioctl(struct file *file, int request, void *argp)
-{
-    if (!file || !file->inode)
-        return -EINVAL;
-
-    if (ISDEV(file->inode))
-        return kdev_file_ioctl(&INODE_DEV(file->inode), file, request, argp);
-
-    if (!file->inode->fs)
-        return -EINVAL;
-
-    if (!file->inode->fs->fops.ioctl)
-        return -ENOSYS;
-
-    return file->inode->fs->fops.ioctl(file, request, argp);
-}
-
-off_t vfs_file_lseek(struct file *file, off_t offset, int whence)
-{
-    if (!file || !file->inode)
-        return -EINVAL;
-
-    if (ISDEV(file->inode))
-        return kdev_file_lseek(&INODE_DEV(file->inode), file, offset, whence);
-
-    if (!file->inode->fs)
-        return -EINVAL;
-
-    if (!file->inode->fs->fops.lseek)
-        return -ENOSYS;
-
-    return file->inode->fs->fops.lseek(file, offset, whence);
-}
-
-ssize_t vfs_file_readdir(struct file *file, struct dirent *dirent)
-{
-    if (!file || !file->inode || !file->inode->fs)
-        return -EINVAL;
-
-    if (!S_ISDIR(file->inode->mode))
-        return -ENOTDIR;
-
-    if (!file->inode->fs->fops.readdir)
-        return -ENOSYS;
-
-    return file->inode->fs->fops.readdir(file, dirent);
-}
-
-ssize_t vfs_file_close(struct file *file)
-{
-    if (file && file->flags & FILE_SOCKET)
-        return socket_shutdown(file, SHUT_RDWR);
-
-    if (!file || !file->inode)
-        return -EINVAL;
-
-    if (ISDEV(file->inode))
-        return kdev_file_close(&INODE_DEV(file->inode), file);
-
-    if (!file->inode->fs)
-        return -EINVAL;
-
-    if (!file->inode->fs->fops.close)
-        return -ENOSYS;
-
-    return file->inode->fs->fops.close(file);
-}
-
-int vfs_file_can_read(struct file *file, size_t size)
-{
-    if (!file || !file->inode)
-        return -EINVAL;
-
-    if (ISDEV(file->inode))
-        return kdev_file_can_read(&INODE_DEV(file->inode), file, size);
-
-    if (!file->inode->fs)
-        return -EINVAL;
-
-    if (!file->inode->fs->fops.can_read)
-        return -ENOSYS;
-
-    return file->inode->fs->fops.can_read(file, size);
-}
-
-int vfs_file_can_write(struct file *file, size_t size)
-{
-    if (!file || !file->inode)
-        return -EINVAL;
-
-    if (ISDEV(file->inode))
-        return kdev_file_can_write(&INODE_DEV(file->inode), file, size);
-
-    if (!file->inode->fs)
-        return -EINVAL;
-
-    if (!file->inode->fs->fops.can_write)
-        return -ENOSYS;
-
-    return file->inode->fs->fops.can_write(file, size);
-}
-
-int vfs_file_eof(struct file *file)
-{
-    if (!file || !file->inode)
-        return -EINVAL;
-
-    if (ISDEV(file->inode))
-        return kdev_file_eof(&INODE_DEV(file->inode), file);
-
-    if (!file->inode->fs)
-        return -EINVAL;
-
-    if (!file->inode->fs->fops.eof)
-        return -ENOSYS;
-
-    return file->inode->fs->fops.eof(file);
-}
-
 
 /* ================== VFS high level mappings ================== */
 

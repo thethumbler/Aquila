@@ -11,13 +11,15 @@ struct vnode vdevpts_root;
 
 int devpts_init()
 {
+    int err = 0;
+
     /* devpts is really just tmpfs */
     devpts.iops = tmpfs.iops;
     devpts.fops = tmpfs.fops;
 
-    devpts_root = NULL;
-    
-    if (!(devpts_root = kmalloc(sizeof(struct inode))))
+    devpts_root = kmalloc(sizeof(struct inode));
+
+    if (!devpts_root)
         return -ENOMEM;
 
     memset(devpts_root, 0, sizeof(struct inode));
@@ -31,7 +33,13 @@ int devpts_init()
     vdevpts_root.ino   = (vino_t) devpts_root;
     vdevpts_root.mode  = S_IFDIR;
 
-    vfs_install(&devpts);
+    err = vfs_install(&devpts);
+
+    if (err) {
+        kfree(devpts_root);
+        devpts_root = NULL;
+        return err;
+    }
 
     return 0;
 }
