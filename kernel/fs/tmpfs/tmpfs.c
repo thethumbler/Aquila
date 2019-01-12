@@ -81,12 +81,38 @@ static ssize_t tmpfs_write(struct inode *node, off_t offset, size_t size, void *
     return size;
 }
 
-/* ================ File Operations ================ */
-
-static int tmpfs_file_open(struct file *file __unused)
+static int tmpfs_trunc(struct inode *inode, off_t len)
 {
+    if (!inode)
+        return -EINVAL;
+
+    if ((size_t) len == inode->size)
+        return 0;
+
+    if (len == 0) {
+        kfree(inode->p);
+        inode->size = 0;
+        return 0;
+    }
+
+    size_t sz = MIN((size_t) len, inode->size);
+    char *buf = kmalloc(len);
+
+    if (!buf)
+        panic("failed to allocate buffer");
+
+    memcpy(buf, inode->p, sz);
+
+    if ((size_t) len > inode->size)
+        memset(buf + inode->size, 0, len - inode->size);
+
+    kfree(inode->p);
+    inode->p    = buf;
+    inode->size = len;
     return 0;
 }
+
+/* ================ File Operations ================ */
 
 static int tmpfs_file_can_read(struct file *file, size_t size)
 {
@@ -168,6 +194,7 @@ struct fs tmpfs = {
         .ioctl   = __vfs_nosys,
         .readdir = virtfs_readdir,
         .close   = tmpfs_close,
+        .trunc   = tmpfs_trunc,
 
         .vmknod  = virtfs_vmknod,
         .vunlink = virtfs_vunlink,
@@ -176,13 +203,14 @@ struct fs tmpfs = {
     },
     
     .fops = {
-        .open    = tmpfs_file_open,
+        .open    = posix_file_open,
         .close   = posix_file_close,
         .read    = posix_file_read,
         .write   = posix_file_write, 
         .ioctl   = posix_file_ioctl,
         .lseek   = posix_file_lseek,
         .readdir = posix_file_readdir,
+        .trunc   = posix_file_trunc,
 
         .can_read  = tmpfs_file_can_read,
         .can_write = tmpfs_file_can_write,
