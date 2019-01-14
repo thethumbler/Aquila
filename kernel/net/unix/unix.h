@@ -25,7 +25,7 @@ struct un_socket {
     struct queue accept;
 
     /* Flags */
-    int listening : 1;
+    int listening;
 };
 
 struct sockaddr_un {

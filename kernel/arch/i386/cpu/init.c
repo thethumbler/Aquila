@@ -31,11 +31,11 @@ void cpu_init()
     earlycon_init();
     printk("x86: Welcome to AquilaOS!\n");
 
-    assert_sizeof(struct x86_regs, 12*4);
+    //assert_sizeof(struct x86_regs, 12*4);
 
     printk("x86: Installing GDT\n");
     x86_gdt_setup();
-    x86_tss_sp_set(VMA(0x100000ULL));
+    x86_tss_setup(VMA(0x100000ULL));
 
     printk("x86: Installing IDT\n");
     x86_idt_setup();

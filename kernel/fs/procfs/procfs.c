@@ -533,7 +533,7 @@ struct fs procfs = {
         .read    = posix_file_read,
         .readdir = posix_file_readdir,
 
-        .eof     = __vfs_always,
+        .eof     = __vfs_eof_always, /* XXX */
     },
 };
 

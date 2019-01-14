@@ -21,8 +21,8 @@
 #define PIC_CMD   0x00
 #define PIC_DATA  0x01
 
-static struct ioaddr __master;
-static struct ioaddr __slave;
+static struct ioaddr master;
+static struct ioaddr slave;
 
 /*
  * ICW1 (Sent on COMMAND port of each PIC)
@@ -85,10 +85,10 @@ void x86_irq_mask(int irq)
 {
     if (irq < 8) {  /* Master */
         pic_mask |= 1 << irq;
-        io_out8(&__master,  PIC_DATA, (pic_mask >> 8) & 0xFF);
+        io_out8(&master,  PIC_DATA, (pic_mask >> 8) & 0xFF);
     } else if (irq < 16) {  /* Slave */
         pic_mask |= 1 << irq;
-        io_out8(&__slave,  PIC_DATA, (pic_mask >> 8) & 0xFF);
+        io_out8(&slave,  PIC_DATA, (pic_mask >> 8) & 0xFF);
     } else {
         panic("Invalid IRQ number\n");
     }
@@ -98,11 +98,11 @@ void x86_irq_unmask(int irq)
 {
     if (irq < 8) {  /* Master */
         pic_mask &= ~(1 << irq);
-        io_out8(&__master,  PIC_DATA, pic_mask & 0xFF);
+        io_out8(&master,  PIC_DATA, pic_mask & 0xFF);
     } else if (irq < 16) {  /* Slave */
         pic_mask &= ~(1 << irq);
         pic_mask &= ~(1 << 2);  /* Unmask slave */
-        io_out8(&__slave,  PIC_DATA, (pic_mask >> 8) & 0xFF);
+        io_out8(&slave,  PIC_DATA, (pic_mask >> 8) & 0xFF);
     } else {
         panic("Invalid IRQ number\n");
     }
@@ -115,14 +115,14 @@ static void x86_irq_remap(void)
      * numbers so as not to conflict with CPU exceptions
      */
 
-    io_out8(&__master, PIC_CMD,  ICW1);
-    io_out8(&__slave,  PIC_CMD,  ICW1);
-    io_out8(&__master, PIC_DATA, MASTER_ICW2);
-    io_out8(&__slave,  PIC_DATA, SLAVE_ICW2);
-    io_out8(&__master, PIC_DATA, MASTER_ICW3);
-    io_out8(&__slave,  PIC_DATA, SLAVE_ICW3);
-    io_out8(&__master, PIC_DATA, ICW4);
-    io_out8(&__slave,  PIC_DATA, ICW4);
+    io_out8(&master, PIC_CMD,  ICW1);
+    io_out8(&slave,  PIC_CMD,  ICW1);
+    io_out8(&master, PIC_DATA, MASTER_ICW2);
+    io_out8(&slave,  PIC_DATA, SLAVE_ICW2);
+    io_out8(&master, PIC_DATA, MASTER_ICW3);
+    io_out8(&slave,  PIC_DATA, SLAVE_ICW3);
+    io_out8(&master, PIC_DATA, ICW4);
+    io_out8(&slave,  PIC_DATA, ICW4);
 }
 
 extern void __x86_irq0 (void);
@@ -142,7 +142,7 @@ extern void __x86_irq13(void);
 extern void __x86_irq14(void);
 extern void __x86_irq15(void);
 
-static x86_irq_handler_t irq_handlers[16] = {0};
+static x86_irq_handler_t irq_handlers[16];
 
 void x86_irq_handler_install(unsigned irq, x86_irq_handler_t handler)
 {
@@ -164,9 +164,9 @@ void x86_irq_handler_uninstall(unsigned irq)
 static void x86_irq_ack(uint32_t irq_no)
 {
     if (irq_no > 7) /* IRQ fired from the Slave PIC */
-        io_out8(&__slave, PIC_CMD, IRQ_ACK);
+        io_out8(&slave, PIC_CMD, IRQ_ACK);
 
-    io_out8(&__master, PIC_CMD, IRQ_ACK);
+    io_out8(&master, PIC_CMD, IRQ_ACK);
 }
 
 void __x86_irq_handler(struct x86_regs *r)
@@ -206,32 +206,32 @@ static void x86_irq_gates_setup(void)
     x86_idt_gate_set(47, (uintptr_t) __x86_irq15);
 }
 
-int x86_pic_probe(void)
+static int x86_pic_probe(void)
 {
     /* Mask all slave IRQs */
-    io_out8(&__slave, PIC_DATA, 0xFF);
+    io_out8(&slave, PIC_DATA, 0xFF);
 
     /* Mask all master IRQs -- except slave cascade */
-    io_out8(&__master, PIC_DATA, 0xDF);
+    io_out8(&master, PIC_DATA, 0xDF);
 
     /* Check if there is a devices listening to port */
-    if (io_in8(&__master, PIC_DATA) != 0xDF)
+    if (io_in8(&master, PIC_DATA) != 0xDF)
         return -1;
 
     return 0;
 }
 
-void x86_pic_disable()
+void x86_pic_disable(void)
 {
     /* Done by masking all IRQs */
-    io_out8(&__slave,  PIC_DATA, 0xFF);
-    io_out8(&__master, PIC_DATA, 0xFF);
+    io_out8(&slave,  PIC_DATA, 0xFF);
+    io_out8(&master, PIC_DATA, 0xFF);
 }
 
-int x86_pic_setup(struct ioaddr *master, struct ioaddr *slave)
+int x86_pic_setup(struct ioaddr *_master, struct ioaddr *_slave)
 {
-    __master = *master;
-    __slave  = *slave;
+    master = *_master;
+    slave  = *_slave;
 
     if (x86_pic_probe()) {
         printk("8259 PIC: Controller not found\n");
@@ -239,8 +239,8 @@ int x86_pic_setup(struct ioaddr *master, struct ioaddr *slave)
     }
 
     printk("8259 PIC: Initializing [Master: %p (%s), Salve: %p (%s)]\n",
-            master->addr, ioaddr_type_str(master),
-            slave->addr, ioaddr_type_str(slave));
+            master.addr, ioaddr_type_str(&master),
+            slave.addr, ioaddr_type_str(&slave));
 
     /* Initialize */
     x86_irq_remap();

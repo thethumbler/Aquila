@@ -16,7 +16,7 @@
 #include <mm/buddy.h>
 #include <sys/sched.h>
 
-struct page pages[768*1024] = {0};
+struct page pages[768*1024];
 #define PAGE(addr)    (pages[(addr)/PAGE_SIZE])
 
 paddr_t mm_page_alloc(void)

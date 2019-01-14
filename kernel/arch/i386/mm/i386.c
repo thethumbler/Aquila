@@ -23,7 +23,7 @@
 #include <mm/buddy.h>
 #include <mm/vm.h>
 
-#include "32_bit.h"
+#include "i386.h"
 
 static volatile uint32_t *bootstrap_processor_table = NULL;
 static volatile uint32_t last_page_table[1024] __aligned(PAGE_SIZE) = {0};
@@ -267,7 +267,7 @@ void arch_mm_fork(paddr_t base, paddr_t fork)
     arch_switch_mapping(base);
 }
 
-void setup_32_bit_paging()
+void setup_i386_paging()
 {
     printk("x86: Setting up 32-Bit paging\n");
     uintptr_t __cur_pd = read_cr3() & ~PAGE_MASK;

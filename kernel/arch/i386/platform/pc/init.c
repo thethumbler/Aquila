@@ -7,7 +7,7 @@
 #define PIC_MASTER  0x20
 #define PIC_SLAVE   0xA0
 
-int x86_pc_pic_init(void)
+static int x86_pc_pic_init(void)
 {
     struct ioaddr pic_master;
     struct ioaddr pic_slave;
@@ -20,7 +20,7 @@ int x86_pc_pic_init(void)
     return x86_pic_setup(&pic_master, &pic_slave);
 }
 
-void x86_pc_pci_init(void)
+static void x86_pc_pci_init(void)
 {
     printk("x86: Initializing PCI\n");
     struct ioaddr pci;
@@ -30,7 +30,7 @@ void x86_pc_pci_init(void)
 }
 
 #define I8042_PORT  0x60
-int x86_pc_i8042_init(void)
+static int x86_pc_i8042_init(void)
 {
     struct ioaddr i8042;
 
@@ -41,7 +41,7 @@ int x86_pc_i8042_init(void)
 }
 
 #define PIT_CHANNEL0    0x40
-int x86_pc_pit_init(void)
+static int x86_pc_pit_init(void)
 {
     struct ioaddr pit;
 

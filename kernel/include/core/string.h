@@ -10,10 +10,10 @@ static inline void *memmove(void *dest, const void *src, size_t n)
     void *_dest = dest;
 
     if ((uintptr_t) dest < (uintptr_t) src) {
-        while (n--)
+        while (n-- != 0)
             *(char *) dest++ = *(char *) src++;
     } else if ((uintptr_t) dest > (uintptr_t) src) {
-        while (n) {
+        while (n != 0) {
             --n;
             *((char *) dest + n) = *((char *) src + n);
         }
@@ -25,7 +25,7 @@ static inline void *memmove(void *dest, const void *src, size_t n)
 static inline void *memcpy(void *dest, const void *src, size_t n)
 {
     void *_dest = dest;
-    while (n--)
+    while (n-- != 0)
         *(char *) dest++ = *(char *) src++;
 
     return _dest;
@@ -35,8 +35,8 @@ static inline void *memset(void *s, int c, size_t n)
 {
     void *_s = s;
 
-    while (n--) {
-        *(char *) s++ = c;
+    while (n-- != 0) {
+        *(char *) s++ = (char) c;
     }
 
     return _s;
@@ -44,14 +44,22 @@ static inline void *memset(void *s, int c, size_t n)
 
 static inline int strcmp(const char *s1, const char *s2)
 {
-    while (*s1 && *s2 && *s1 == *s2) {s1++; s2++;}
-    return *s1 - *s2;
+    if (s1 == NULL || s2 == NULL)
+        return 0;   // FIXME
+
+    while (*s1 != '\0' && *s2 != '\0' && *s1 == *s2) {s1++; s2++;}
+
+    return (int)(*s1 - *s2);
 }
 
 static inline int strncmp(const char *s1, const char *s2, size_t n)
 {
-    while (n-- && *s1 && *s2 && *s1 == *s2) {s1++; s2++;}
-    return *s1 - *s2;
+    while (n-- != 0
+            && *s1 != '\0'
+            && *s2 != '\0'
+            && *s1 == *s2) {s1++; s2++;}
+
+    return (int)(*s1 - *s2);
 }
 
 static inline int strlen(const char *s)
@@ -65,7 +73,7 @@ static inline char *strdup(const char *s)
 {
     int len = strlen(s);
     char *ret = kmalloc(len + 1);
-    memcpy(ret, s, len + 1);
+    (void) memcpy(ret, s, len + 1);
     return ret;
 }
 
@@ -73,7 +81,7 @@ static inline char *strcpy(char *dst, const char *src)
 {
     char *retval = dst;
     
-    while (*src)
+    while (*src != '\0')
         *dst++ = *src++;
 
     *dst = *src;    /* NULL terminator */
@@ -83,12 +91,17 @@ static inline char *strcpy(char *dst, const char *src)
 
 static inline char **tokenize(const char *s, char c)
 {
-    if (!s || !*s) return NULL;
+    if (s == NULL || *s == '\0')
+        return NULL;
 
     while (*s == c)
         ++s;
 
     char *tokens = strdup(s);
+
+    if (tokens == NULL)
+        return NULL;
+
     int len = strlen(s);
 
     if (!len) {

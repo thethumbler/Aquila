@@ -10,10 +10,10 @@
 
 #include <core/system.h>
 #include <core/panic.h>
-#include <ds/buddy.h>
 #include <ds/bitmap.h>
-#include <mm/heap.h>
+#include <ds/buddy.h>
 #include <mm/buddy.h>
+#include <mm/heap.h>
 
 size_t k_total_mem, k_used_mem;
 
@@ -146,20 +146,6 @@ void buddy_free(int zone, paddr_t addr, size_t size)
     size_t idx = (addr / (BUDDY_MIN_BS << order));  // & (sz - 1);
     buddy_recursive_free(zone, order, idx);
 }
-
-#if 0
-void buddy_dump()
-{
-    for (size_t i = 0; i <= BUDDY_MAX_ORDER; ++i) {
-        size_t blocks = bitmap_size(buddies[i].bitmap.max_idx + 1)/MEMBER_SIZE(bitmap_t, map[0]);
-        printk("Order %d: [%d blocks][%d free bit(s)]\n", i, blocks, buddies[i].usable);
-        for (size_t j = 0; j < blocks; ++j) {
-            printk("map[%d] = %x\n", j, buddies[i].bitmap.map[j]);
-        }
-        printk("\n");
-    }
-}
-#endif
 
 void buddy_set_unusable(paddr_t addr, size_t size)
 {

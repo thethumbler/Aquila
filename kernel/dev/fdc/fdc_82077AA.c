@@ -244,7 +244,7 @@ static size_t fdc_getbs(struct devid *dd __unused)
 
 static ssize_t fdc_read(struct devid *dd, off_t offset, size_t size, void *buf)
 {
-    printk("fdc_read(dd=%p, offset=%d, size=%d, buf=%p)\n", dd, offset, size, buf);
+    //printk("fdc_read(dd=%p, offset=%d, size=%d, buf=%p)\n", dd, offset, size, buf);
     fdc_sect_rw(0, offset, buf);
     return 512;
 }

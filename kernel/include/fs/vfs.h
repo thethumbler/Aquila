@@ -20,6 +20,7 @@ struct fops {
     off_t       (*lseek)   (struct file *file, off_t offset, int whence);
     int         (*close)   (struct file *file);
     int         (*ioctl)   (struct file *file, int request, void *argp);
+    int         (*trunc)   (struct file *file, off_t len);
 
     /* helpers */
     int         (*can_read)  (struct file *file, size_t size);
@@ -52,6 +53,7 @@ struct iops {
     int     (*ioctl)   (struct inode *inode, int request, void *argp);
     ssize_t (*readdir) (struct inode *inode, off_t offset, struct dirent *dirent);
     int     (*close)   (struct inode *inode);
+    int     (*trunc)   (struct inode *inode, off_t len);
 
     int     (*vmknod)  (struct vnode *dir, const char *fn, uint32_t mode, dev_t dev, struct uio *uio, struct inode **ref);
     int     (*vunlink) (struct vnode *dir, const char *fn, struct uio *uio);
@@ -75,7 +77,7 @@ struct fs {
     struct fops fops;
 
     /* flags */
-    int nodev : 1;
+    int nodev;
 };
 
 /* in-core inode structure */
@@ -145,16 +147,28 @@ int vfs_parse_path(const char *path, struct uio *uio, char **abs_path);
 extern struct fs_list *registered_fs;
 extern struct inode *vfs_root;
 
-static inline int __vfs_always(){return 1;}
-static inline int __vfs_never (){return 0;}
-static inline int __vfs_nosys (){return -ENOSYS;}
-static inline int __vfs_rofs  (){return -EROFS;}
+static inline int __vfs_can_always(struct file *f, size_t s){return 1;}
+static inline int __vfs_can_never (struct file *f, size_t s){return 0;}
+static inline int __vfs_eof_always(struct file *f){return 1;}
+static inline int __vfs_eof_never (struct file *f){return 0;}
 
-#define __VMKNOD_T (int (*)(struct vnode *, const char *, uint32_t, dev_t, struct uio *, struct inode **))
+static inline int __vfs_vmknod_rofs(struct vnode *dir, const char *fn,
+        uint32_t mode, dev_t dev, struct uio *uio, struct inode **ref)
+{
+    return -EROFS;
+}
+
+static inline int __vfs_vunlink_rofs(struct vnode *dir, const char *fn,
+        struct uio *uio)
+{
+    return -EROFS;
+}
+
+#define ISDEV(inode) (S_ISCHR((inode)->mode) || S_ISBLK((inode)->mode))
 
 /* Filesystem operations */
 void    vfs_init(void);
-void    vfs_install(struct fs *fs);
+int     vfs_install(struct fs *fs);
 void    vfs_mount_root(struct inode *inode);
 int     vfs_bind(const char *path, struct inode *target);
 int     vfs_mount(const char *type, const char *dir, int flags, void *data, struct uio *uio);
@@ -173,6 +187,7 @@ ssize_t vfs_write(struct inode *inode, off_t offset, size_t size, void *buf);
 ssize_t vfs_readdir(struct inode *inode, off_t offset, struct dirent *dirent);
 int     vfs_ioctl(struct inode *inode, unsigned long request, void *argp);
 int     vfs_close(struct inode *inode);
+int     vfs_trunc(struct inode *inode, off_t len);
 
 /* file operations mappings */
 int     vfs_file_open(struct file *file);
@@ -182,6 +197,7 @@ ssize_t vfs_file_readdir(struct file *file, struct dirent *dirent);
 off_t   vfs_file_lseek(struct file *file, off_t offset, int whence);
 ssize_t vfs_file_close(struct file *file);
 int     vfs_file_ioctl(struct file *file, int request, void *argp);
+int     vfs_file_trunc(struct file *file, off_t len);
 
 /* helpers */
 int     vfs_file_can_read(struct file * file, size_t size);
@@ -199,5 +215,6 @@ int     vfs_mknod(const char *path, uint32_t mode, dev_t dev, struct uio *uio, s
 int     vfs_unlink(const char *path, struct uio *uio);
 int     vfs_stat(struct inode *inode, struct stat *buf);
 int     vfs_perms_check(struct file *file, struct uio *uio);
+
 
 #endif /* !_VFS_H */

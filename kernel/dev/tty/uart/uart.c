@@ -131,7 +131,7 @@ struct dev uart = {
         .write = posix_file_write,
         .ioctl = posix_file_ioctl,
 
-        .can_write = __vfs_always,  /* XXX */
-        .eof   = __never,
+        .can_write = __vfs_can_always,  /* XXX */
+        .eof       = __vfs_eof_never,
     },
 };

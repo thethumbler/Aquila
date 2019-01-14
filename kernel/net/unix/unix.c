@@ -7,7 +7,8 @@
 
 #define SOCKBUF 8192
 
-struct sock_ops socket_unix_ops;
+static struct sock_ops socket_unix_ops;
+
 static struct queue *sockets = QUEUE_NEW();  /* Open sockets */
 
 int socket_unix_create(struct file *file, int domain, int type, int protocol)
@@ -304,7 +305,7 @@ static int socket_unix_shutdown(struct file *file, int how)
     return -ENOTCONN;
 }
 
-struct sock_ops socket_unix_ops = {
+static struct sock_ops socket_unix_ops = {
     .accept   = socket_unix_accept,
     .bind     = socket_unix_bind,
     .connect  = socket_unix_connect,

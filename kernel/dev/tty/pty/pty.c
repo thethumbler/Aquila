@@ -236,9 +236,9 @@ struct dev ptsdev = {
         .write = posix_file_write,
         .ioctl = posix_file_ioctl,
 
-        .can_read  = __always,
-        .can_write = __always,
-        .eof       = __never,
+        .can_read  = __vfs_can_always,
+        .can_write = __vfs_can_always,
+        .eof       = __vfs_eof_never,
     }
 };
 
@@ -254,9 +254,9 @@ struct dev ptmdev = {
         .write = posix_file_write,
         .ioctl = posix_file_ioctl,
 
-        .can_read  = __always,
-        .can_write = __always,
-        .eof       = __never,
+        .can_read  = __vfs_can_always,
+        .can_write = __vfs_can_always,
+        .eof       = __vfs_eof_never,
     },
 };
 

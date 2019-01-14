@@ -94,21 +94,10 @@ static const char *int_msg[32] = {
 
 void __x86_isr(struct x86_regs *regs)
 {
-    //printk("isr\n");
-    //x86_dump_registers(regs);
-    //for (;;);
-
     extern uint32_t __x86_isr_int_num;
     extern uint32_t __x86_isr_err_num;
 
     if (__x86_isr_int_num == 0xE && cur_thread) { /* Page Fault */
-#if 0
-        if (regs->eip > 0xC0000000) {
-            printk("kernel: warning: page fault generated inside kernel code\n");
-            x86_dump_registers(regs);
-        }
-#endif
-
         struct x86_thread *arch = cur_thread->arch;
         //arch->regs = regs;
 
@@ -161,7 +150,7 @@ void __x86_isr(struct x86_regs *regs)
     }
 }
 
-void x86_isr_setup()
+void x86_isr_setup(void)
 {   
     x86_idt_gate_set(0x00, (uintptr_t) __x86_isr0);
     x86_idt_gate_set(0x01, (uintptr_t) __x86_isr1);

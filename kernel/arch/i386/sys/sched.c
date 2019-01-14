@@ -45,12 +45,12 @@ static void x86_sched_handler(struct x86_regs *r)
     schedule();
 }
 
-void arch_sched_init()
+void arch_sched_init(void)
 {
     platform_timer_setup(1, x86_sched_handler);
 }
 
-void __arch_idle()
+static void __arch_idle(void)
 {
     for (;;) {
         asm volatile("sti; hlt; cli;");
@@ -59,7 +59,7 @@ void __arch_idle()
 
 static char __idle_stack[8192] __aligned(16);
 
-void arch_idle()
+void arch_idle(void)
 {
     cur_thread = NULL;
 
@@ -86,7 +86,7 @@ void arch_cur_thread_kill(void)
     x86_goto((uintptr_t) __arch_cur_thread_kill, stack, stack);
 }
 
-void arch_sleep()
+void arch_sleep(void)
 {
     extern void x86_sleep(void);
     x86_sleep();

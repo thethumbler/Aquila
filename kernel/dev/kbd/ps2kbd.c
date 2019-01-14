@@ -86,9 +86,9 @@ struct dev ps2kbddev = {
         .open  = ps2kbd_file_open,
         .read  = posix_file_read,
 
-        .can_read  = __always,
-        .can_write = __never,
-        .eof       = __never,
+        .can_read  = __vfs_can_always,
+        .can_write = __vfs_can_never,
+        .eof       = __vfs_eof_never,
     },
 };
 

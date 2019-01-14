@@ -117,6 +117,6 @@ struct fs pipefs = {
         .write     = posix_file_write,
         .can_read  = pipefs_can_read,
         .can_write = pipefs_can_write,
-        .eof       = __vfs_never
+        .eof       = __vfs_eof_never
     },
 };

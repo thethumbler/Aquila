@@ -101,26 +101,28 @@ int proc_init(struct proc *proc)
 
     proc->pid = proc_pid_alloc();
 
-    proc->fds  = kmalloc(FDS_COUNT * sizeof(struct file));
+    proc->fds = kmalloc(FDS_COUNT * sizeof(struct file));
 
     if (!proc->fds) {
         err = -ENOMEM;
-        goto free_resources;
+        goto error;
     }
 
     memset(proc->fds, 0, FDS_COUNT * sizeof(struct file));
 
     proc->sig_queue = queue_new();  /* Initalize signals queue */
+
     if (!proc->sig_queue) {
         err = -ENOMEM;
-        goto free_resources;
+        goto error;
     }
 
     return 0;
 
-free_resources:
+error:
     if (proc->fds)
         kfree(proc->fds);
+
     if (proc->sig_queue)
         kfree(proc->sig_queue);
 
@@ -133,6 +135,8 @@ void proc_kill(struct proc *proc)
         if (proc->exit)
             panic("init killed");
 
+        printk("kernel: reached target reboot\n");
+        arch_reboot();
         panic("reboot not implemented\n");
     }
 

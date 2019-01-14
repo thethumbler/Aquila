@@ -60,7 +60,7 @@ static inline void x86_dump_registers(struct x86_regs *regs)
 struct x86_cpu {
     int id;
     union  x86_cpuid_vendor   vendor;
-    struct x86_cpuid_features features;
+    //struct x86_cpuid_features features;
 };
 
 /* CR0 */
@@ -175,7 +175,7 @@ static inline void write_cr4(uintptr_t val)
 
 /* cpu/gdt.c */
 void x86_gdt_setup(void);
-void x86_tss_sp_set(uintptr_t sp);
+void x86_tss_setup(uintptr_t sp);
 void x86_kernel_stack_set(uintptr_t sp);
 
 /* cpu/idt.c */

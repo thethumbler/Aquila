@@ -7,12 +7,12 @@
 #define SERIAL_MMIO 0
 
 #if SERIAL_MMIO
-struct ioaddr earlycon_uart_ioaddr = {
+static struct ioaddr earlycon_uart_ioaddr = {
     .addr = 0xCF00B000,
     .type = IOADDR_MMIO32,
 };
 #else
-struct ioaddr earlycon_uart_ioaddr = {
+static struct ioaddr earlycon_uart_ioaddr = {
     .addr = 0x3F8,
     .type = IOADDR_PORT,
 };

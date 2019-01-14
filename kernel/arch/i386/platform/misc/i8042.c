@@ -10,14 +10,20 @@ static struct ioaddr i8042_ioaddr;
 static void (*channel1_handler)(int) = NULL;
 static void (*channel2_handler)(int) = NULL;
 
-#define FIRST_IRQ   1
-#define SECOND_IRQ  12
+#define FIRST_IRQ        1
+#define SECOND_IRQ       12
 
-#define DATA_PORT       0x00
-#define STATUS_PORT     0x04
-#define COMMAND_PORT    0x04
+#define DATA_PORT        0x00
+#define STATUS_PORT      0x04
+#define COMMAND_PORT     0x04
 
-#define __BUF_FULL  0x02
+
+#define STATUS_OBUF_FULL 0x01
+#define STATUS_IBUF_FULL 0x02
+#define STATUS_SYSTEM    0x04
+#define STATUS_COMMAND   0x08
+#define STATUS_TOUT      0x40
+#define STATUS_PARITY    0x80
 
 static uint8_t read_status(void)
 {
@@ -27,7 +33,15 @@ static uint8_t read_status(void)
 static void x86_i8042_read_wait(void)
 {
     /* TODO -- timeout */
-    while (read_status() & __BUF_FULL);
+    while (read_status() & STATUS_IBUF_FULL);
+}
+
+static int x86_i8042_check(void)
+{
+    io_out8(&i8042_ioaddr, COMMAND_PORT, 0xAA);
+    while (!(read_status() & STATUS_OBUF_FULL));
+    uint8_t r = io_in8(&i8042_ioaddr, DATA_PORT);
+    return r == 0x55;
 }
 
 static void x86_i8042_first_handler(struct x86_regs *r)
@@ -76,7 +90,10 @@ void x86_i8042_handler_register(int channel, void (*fun)(int))
     }
 }
 
-#define I8042_SYSTEM_FLAG   0x4
+void x86_i8042_reboot(void)
+{
+    io_out8(&i8042_ioaddr, COMMAND_PORT, 0xFE);
+}
 
 int x86_i8042_setup(struct ioaddr *io)
 {
@@ -84,12 +101,14 @@ int x86_i8042_setup(struct ioaddr *io)
 
     int check = kargs_get("i8042.nocheck", NULL);
 
-    if (check && !(read_status() & I8042_SYSTEM_FLAG)) {
+    if (check && !(read_status() & STATUS_SYSTEM)) {
         printk("i8042: Controller not found\n");
         return -1;
     } else {
         printk("i8042: Skipping check\n");
     }
+
+    //x86_i8042_check();
 
     printk("i8042: Initializing controller [%p (%s)]\n", io->addr, ioaddr_type_str(io));
     x86_i8042_handler_install();

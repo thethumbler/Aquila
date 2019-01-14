@@ -185,7 +185,7 @@ static void sys_fstat(int fildes, struct stat *buf)
     arch_syscall_return(cur_thread, ret);
 }
 
-static void sys_getpid()
+static void sys_getpid(void)
 {
     syscall_log(LOG_DEBUG, "getpid()\n");
     arch_syscall_return(cur_thread, cur_thread->owner->pid);
@@ -218,9 +218,14 @@ static void sys_kill(pid_t pid, int sig)
     arch_syscall_return(cur_thread, ret);
 }
 
-static void sys_link()
+static void sys_link(const char *oldpath, const char *newpath)
 {
+    syscall_log(LOG_DEBUG, "link(oldpath=%s, newpath=%s)\n",
+            oldpath, newpath);
 
+    /* TODO */
+
+    arch_syscall_return(cur_thread, -ENOSYS);
 }
 
 static void sys_lseek(int fildes, off_t offset, int whence)
@@ -250,7 +255,7 @@ static void sys_open(const char *path, int oflags, mode_t mode)
     
     int fd = proc_fd_get(cur_thread->owner);  /* Find a free file descriptor */
 
-    if (fd == -1) {     /* No free file descriptor */
+    if (fd == -1) {
         /* Reached maximum number of open file descriptors */
         arch_syscall_return(cur_thread, -EMFILE);
         return;
@@ -1130,6 +1135,8 @@ void (*syscall_table[])() =  {
     /* 45 */    sys_send,
     /* 46 */    sys_recv,
     /* 47 */    sys_umask,
+    /* 48 */    sys_chmod,
+    /* 49 */    sys_sysconf,
 };
 
 const size_t syscall_cnt = sizeof(syscall_table)/sizeof(syscall_table[0]);
