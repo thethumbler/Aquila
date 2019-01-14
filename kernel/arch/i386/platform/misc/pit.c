@@ -33,7 +33,7 @@ void x86_pit_setup(struct ioaddr *io)
 
 #define FBASE   1193182ULL  /* PIT Oscillator operates at 1.193182 MHz */
 
-uint32_t atou32(const char *s)
+static uint32_t atou32(const char *s)
 {
     uint32_t ret = 0;
 

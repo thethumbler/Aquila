@@ -20,6 +20,7 @@ void x86_fpu_disable(void)
 
 void x86_fpu_init(void)
 {
+    assert_alignof(fpu_context, 16);
     asm volatile("fninit");
 }
 

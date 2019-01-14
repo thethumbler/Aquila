@@ -8,6 +8,7 @@ union x86_cpuid_vendor {
     uint32_t array[3];
 } __packed;
 
+#if 0
 struct x86_cpuid_features {
     int fpu   : 1;  /* onboard x87 FPU */
     int vme   : 1;  /* Virtual 8086 Mode Extensions */
@@ -58,7 +59,7 @@ static inline int x86_cpuid_features(struct x86_cpuid_features *features)
 
     return 0;
 }
-
+#endif
 
 static inline int x86_cpuid_vendor(union x86_cpuid_vendor *vendor)
 {

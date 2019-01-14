@@ -9,7 +9,7 @@
  */
 
 #include <core/system.h>
-#include "sys.h"
+#include "cpu.h"
 
 #if __pragma_pack
 #pragma pack(1)

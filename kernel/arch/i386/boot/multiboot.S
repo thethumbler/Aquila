@@ -41,7 +41,7 @@
 .long 0                         /* heentry_addr */
 
 .long 0                         /* mode_type */
-.long 640                      /* mowidth */
+.long 640                       /* mowidth */
 .long 480                       /* moheight */
 .long 32                        /* modepth */
 

@@ -12,11 +12,11 @@ void sched_thread_ready(struct thread *thread)
 {
     struct qnode *sched_node = enqueue(ready_queue, thread);
     thread->sched_queue = ready_queue;
-    thread->sched_node = sched_node;
+    thread->sched_node  = sched_node;
 }
 
 int kidle = 0;
-void kernel_idle()
+void kernel_idle(void)
 {
     kidle = 1;
     arch_idle();

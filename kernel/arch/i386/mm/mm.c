@@ -16,7 +16,7 @@
 #include <boot/boot.h>
 #include <mm/mm.h>
 
-void arch_mm_setup()
+void arch_mm_setup(void)
 {
     /* Fix kernel heap pointer */
     extern char *lower_kernel_heap;
@@ -24,28 +24,10 @@ void arch_mm_setup()
     kernel_heap = VMA(lower_kernel_heap);
 
 #if ARCH_BITS==64
-    /* FIXME */
     extern void setup_64_bit_paging();
-    setup_64_bit_paging();
-    return;
-#endif
-
-    //struct cpu_features features;
-    //get_cpu_features(&features);
-
-#if !defined(X86_PAE) || !X86_PAE
-    extern void setup_32_bit_paging(void);
-    setup_32_bit_paging();
-    //if (features.pse) {
-    //    //write_cr4(read_cr4() | CR4_PSE);
-    //    printk("[0] Kernel: PMM -> Found PSE support\n");
-    //}
-#else   /* PAE */
-    panic("PAE Not supported");
-    if (features.pae) {
-        printk("[0] Kernel: PMM -> Found PAE support\n");
-    } else if(features.pse) {
-        printk("[0] Kernel: PMM -> Found PSE support\n");
-    }
+    setup_x86_64_paging();
+#else
+    extern void setup_i386_paging(void);
+    setup_i386_paging();
 #endif
 }

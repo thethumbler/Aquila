@@ -347,8 +347,8 @@ struct fs cpio = {
         .readdir = cpio_readdir,
         .vfind   = cpio_vfind,
         .vget    = cpio_vget,
-        .vmknod  = __VMKNOD_T __vfs_rofs,
-        .vunlink = __vfs_rofs,
+        .vmknod  = __vfs_vmknod_rofs,
+        .vunlink = __vfs_vunlink_rofs,
         .close   = cpio_close,
     },
     

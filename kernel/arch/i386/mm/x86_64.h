@@ -1,5 +1,5 @@
-#ifndef _PAGING_64_BIT_H
-#define _PAGING_64_BIT_H
+#ifndef _PAGING_X86_64_H
+#define _PAGING_X86_64_H
 
 #include <core/system.h>
 
@@ -123,4 +123,4 @@ typedef union {
     uint64_t raw;
 } __packed __virtaddr_t;
 
-#endif /* !_PAGING_64_BIT_H */
+#endif /* ! _PAGING_X86_64_H */

@@ -1,5 +1,5 @@
-#ifndef _PAGING_32_BIT_H
-#define _PAGING_32_BIT_H
+#ifndef _PAGING_I386_H
+#define _PAGING_I386_H
 
 #include <core/system.h>
 
@@ -12,4 +12,4 @@
 
 #define GET_PHYS_ADDR(s) ((s) & ~0xfff)
 
-#endif /* ! _PAGING_32_BIT_H */
+#endif /* ! _PAGING_I386_H */

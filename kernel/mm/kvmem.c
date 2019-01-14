@@ -31,7 +31,8 @@ struct vmr kvmem_nodes = {
 };
 
 struct kvmem_node *nodes = (struct kvmem_node *) KVMEM_NODES;
-void kvmem_setup()
+
+void kvmem_setup(void)
 {
     assert_sizeof(struct kvmem_node, 10);
 
@@ -214,7 +215,7 @@ done:
     return;
 }
 
-void dump_nodes()
+void dump_nodes(void)
 {
     printk("Nodes dump\n");
     unsigned i = 0;

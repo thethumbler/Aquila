@@ -1,14 +1,24 @@
 OUTPUT_FORMAT(elf64-x86-64)
 ENTRY(_start)
-INPUT(boot/builtin.o cpu/builtin.o earlycon/builtin.o mm/builtin.o sys/builtin.o chipset/builtin.o ../../core/builtin.o
+INPUT(boot/builtin.o cpu/builtin.o earlycon/builtin.o mm/builtin.o sys/builtin.o platform/builtin.o ../../core/builtin.o
 ../../fs/builtin.o ../../dev/builtin.o ../../sys/builtin.o ../../mm/builtin.o ../../net/builtin.o)
 OUTPUT(kernel.elf)
 
 SECTIONS {
+
     LMA = 0x100000;
     . = LMA;
 
-    .boot : AT(LMA) {
+    .boot.text : ALIGN(0x1000) {
+        *boot*.o(.text*)
+        *boot*.o(.rodata*)
+    }
+
+    .boot.data : ALIGN(0x1000) {
+        *boot*.o(.data)
+    }
+
+    .boot.bss (NOLOAD) : ALIGN(0x1000) {
         *boot*.o(*)
     }
 
@@ -42,4 +52,3 @@ SECTIONS {
     
     kernel_end = . - _VMA;
 }
-

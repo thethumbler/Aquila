@@ -41,8 +41,8 @@ struct dev kmsgdev = {
         .write = posix_file_write,
         .close = posix_file_close,
 
-        .can_read  = __always,
-        .can_write = __always,
-        .eof       = __never,
+        .can_read  = __vfs_can_always,
+        .can_write = __vfs_can_always,
+        .eof       = __vfs_eof_never,
     },
 };

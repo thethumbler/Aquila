@@ -89,9 +89,9 @@ struct dev fbdev = {
         .ioctl = posix_file_ioctl,
         .lseek = posix_file_lseek,
 
-        .can_write = __vfs_always,
-        .can_read  = __vfs_never,
-        .eof       = __vfs_never,
+        .can_write = __vfs_can_always,
+        .can_read  = __vfs_can_never,
+        .eof       = __vfs_eof_never,
     },
 };
 

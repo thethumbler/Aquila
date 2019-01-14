@@ -2,8 +2,8 @@
 #include <dev/dev.h>
 #include <fs/vfs.h>
 
-static struct dev *chrdev[256] = {0};
-static struct dev *blkdev[256] = {0};
+static struct dev *chrdev[256];
+static struct dev *blkdev[256];
 
 static inline struct dev *kdev_get(struct devid *dd)
 {

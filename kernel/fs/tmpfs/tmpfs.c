@@ -191,7 +191,6 @@ struct fs tmpfs = {
     .iops = {
         .read    = tmpfs_read,
         .write   = tmpfs_write,
-        .ioctl   = __vfs_nosys,
         .readdir = virtfs_readdir,
         .close   = tmpfs_close,
         .trunc   = tmpfs_trunc,

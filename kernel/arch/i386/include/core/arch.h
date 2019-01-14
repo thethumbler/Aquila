@@ -33,8 +33,8 @@ struct x86_thread {
     void        *fpu_context;
 
     /* Flags */
-    int fpu_enabled : 1;
-    int isr : 1;
+    int fpu_enabled;
+    int isr;
 };
 
 void arch_syscall(struct x86_regs *r);

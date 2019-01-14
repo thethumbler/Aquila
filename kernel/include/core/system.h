@@ -29,6 +29,7 @@
 
 
 #define __packed     __attribute__((packed))
+//#define __packed     
 #define __aligned(n) __attribute__((aligned(n)))
 #define __section(s) __attribute__((section(s)))
 
@@ -49,9 +50,6 @@
 #include <stdarg.h>
 #include <config.h>
 #include <core/types.h>
-
-static inline int __always(){return 1;}
-static inline int __never (){return 0;}
 
 //#define __PANIC_MSG "Man the Lifeboats! Women and children first!\n"
 

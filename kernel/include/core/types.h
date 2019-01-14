@@ -17,7 +17,6 @@ typedef uint8_t   mask_t;
 typedef uint8_t   devid_t;
 typedef uint16_t  dev_t;
 
-typedef uint32_t  mode_t;
 typedef uint32_t  uid_t;
 typedef uint32_t  gid_t;
 typedef uint32_t  nlink_t;

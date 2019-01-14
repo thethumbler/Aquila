@@ -1,17 +1,13 @@
-#include <core/system.h>
+#include <core/arch.h>
 #include <core/panic.h>
 #include <core/printk.h>
-#include <core/arch.h>
+#include <core/system.h>
 #include <cpu/cpu.h>
 #include <ds/queue.h>
 #include <mm/buddy.h>
 #include <mm/vm.h>
-#include <arch/x86/include/proc.h> /* XXX */
-#include <sys/proc.h>
-#include <sys/sched.h>
-#include <sys/signal.h>
 
-#include "64_bit.h"
+#include "x86_64.h"
 
 static volatile __dirtbl_t    *bsp_lvl4 = NULL;
 static volatile __directory_t *bsp_lvl3 = NULL;

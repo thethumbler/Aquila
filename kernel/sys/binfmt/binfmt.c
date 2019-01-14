@@ -3,7 +3,7 @@
 #include <sys/elf.h>
 #include <mm/vm.h>
 
-struct binfmt binfmt_list[] = {
+static struct binfmt binfmt_list[] = {
     {binfmt_elf_check, binfmt_elf_load},
 };
 
@@ -82,7 +82,8 @@ int binfmt_load(struct proc *proc, const char *path, struct proc **ref)
     struct inode *inode = NULL;
     int err = 0;
 
-    struct uio uio = {0};
+    struct uio uio;
+    memset(&uio, 0, sizeof(struct uio));
 
     if (proc) {
         uio = PROC_UIO(proc);

@@ -2,6 +2,7 @@
 
 .global x86_cpuid_check
 x86_cpuid_check:
+#if ARCH_BITS==32
     pushf
     pushf
     xorl $1 << 21, (%esp)
@@ -12,6 +13,9 @@ x86_cpuid_check:
     andl $1 << 21, %eax
     popf
     ret
+#else
+    /* TODO */
+#endif
 
 /*
  * ISRs -- Interrupt Service Routines
@@ -167,10 +171,9 @@ isr_handler:
     iretq
 #endif
 
-//
-// IRQs -- external interrupt requists (from PIC)
-//
-
+/*
+ * IRQs -- external interrupt requists (from PIC)
+ */
 .macro IRQ n, i
 .global __x86_irq\n
 __x86_irq\n:
@@ -302,11 +305,29 @@ return_from_signal:
     pop_context
     iret
 
+.align 8
+gdt_pointer:
+    .word 0
+#if ARCH_BITS==32
+    .long 0
+#else
+    .quad 0
+#endif
+
 .global x86_lgdt
 x86_lgdt:
-    movl 4(%esp), %eax
-    lgdtl (%eax)
+#if ARCH_BITS==32
+    movw 4(%esp), %ax
+    movl 8(%esp), %ebx
+    movw %ax, (gdt_pointer)
+    movl %ebx, (gdt_pointer + 2)
+    lgdt (gdt_pointer)
     ljmp $0x8, $1f
+#else
+    movw %di, gdt_pointer(%rip)
+    movq %rsi, (gdt_pointer + 2)(%rip)
+    lgdt gdt_pointer(%rip)
+#endif
 1:
     movl $0x10, %eax
     movl %eax, %ds
@@ -318,14 +339,23 @@ x86_lgdt:
 
 .global x86_lidt
 x86_lidt:
+#if ARCH_BITS==32
     movl 4(%esp), %eax
-    lidtl (%eax)
+    lidt (%eax)
+#else
+    lidt (%rdi)
+#endif
     ret
 
 .global x86_ltr
 x86_ltr:
+#if ARCH_BITS==32
     movl 4(%esp), %eax
     ltr %ax
+#else
+    ltr %di
+#endif
     ret
 
-// vim: ft=gas:
+/* vim: ft=gas:
+ */

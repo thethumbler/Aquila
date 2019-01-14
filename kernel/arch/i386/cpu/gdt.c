@@ -12,7 +12,7 @@
 #include <core/system.h>
 #include <core/string.h>
 
-#include "sys.h"
+#include "cpu.h"
 
 #if ARCH_BITS==32
 static struct {
@@ -50,24 +50,23 @@ static struct {
 #define D   0
 #endif
 
-#if __pragma_pack
-#pragma pack(1)
-#endif
 static struct gdt_entry {
     uint32_t limit_lo : 16; /* Segment Limit 15:00 */
     uint32_t base_lo  : 16; /* Base Address 15:00 */
+
     uint32_t base_mid : 8;  /* Base Address 23:16 */
     uint32_t type     : 4;  /* Segment Type */
     uint32_t s        : 1;  /* Descriptor type (0=system, 1=code) */
     uint32_t dpl      : 2;  /* Descriptor Privellage Level */
     uint32_t p        : 1;  /* Segment present */
+
     uint32_t limit_hi : 4;  /* Segment Limit 19:16 */
     uint32_t avl      : 1;  /* Avilable for use by system software */
     uint32_t l        : 1;  /* Long mode segment (64-bit only) */
     uint32_t db       : 1;  /* Default operation size / upper Bound */
     uint32_t g        : 1;  /* Granularity */
     uint32_t base_hi  : 8;  /* Base Address 31:24 */
-} __packed __aligned(8) gdt[256] = {
+} __aligned(8) gdt[256] = {
     /* Null Segment */
     {0},
 
@@ -83,48 +82,15 @@ static struct gdt_entry {
     /* Data Segment - User */
     {LIMIT, BASE, BASE, RW_DATA, 1, DPL3, 1, LIMIT, 0, L, D, 1, BASE},
 };
-#if __pragma_pack
-#pragma pack()
-#endif
 
-#if __pragma_pack
-#pragma pack(1)
-#endif
-static struct {
-    uint16_t size;
-    uintptr_t offset;
-} __packed __aligned(8) gdt_pointer;
-#if __pragma_pack
-#pragma pack()
-#endif
-
-void x86_gdt_setup()
+void x86_gdt_setup(void)
 {
     assert_sizeof(gdt, 8*256);
     assert_alignof(&gdt, 8);
-
-    //assert_sizeof(gdt_pointer, 6); /* XXX */
-    assert_alignof(&gdt_pointer, 8);
-
-    gdt_pointer.size   = sizeof(gdt) - 1;
-    gdt_pointer.offset = (uintptr_t) &gdt;
-
-#if ARCH_BITS==32
-    x86_lgdt(&gdt_pointer);
-#else
-    asm volatile("lgdt (%0)"::"g"(&gdt_pointer));
-    /* CS is already correct */
-    asm volatile("\
-    movl %%eax, %%ds \n\
-    movl %%eax, %%es \n\
-    movl %%eax, %%fs \n\
-    movl %%eax, %%gs \n\
-    movl %%eax, %%ss \n\
-    "::"a"(0x10));
-#endif
+    x86_lgdt(sizeof(gdt) - 1, (uintptr_t) &gdt);
 }
 
-void x86_tss_sp_set(uintptr_t sp)
+void x86_tss_setup(uintptr_t sp)
 {
     assert_sizeof(tss_entry, 104);
     assert_alignof(&tss_entry, 8);
