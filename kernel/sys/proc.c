@@ -22,7 +22,14 @@
 #include <ds/queue.h>
 #include <ds/bitmap.h>
 
-struct queue *procs = QUEUE_NEW(); /* All processes queue */
+/* all processes */
+struct queue *procs = QUEUE_NEW();
+
+/* all sessions */
+struct queue *sessions = QUEUE_NEW();
+
+/* all process groups */
+struct queue *pgroups = QUEUE_NEW();
 
 bitmap_t *pid_bitmap = BITMAP_NEW(4096);
 static int ff_pid = 1;
@@ -249,14 +256,33 @@ int proc_ptr_validate(struct proc *proc, void *ptr)
 
 int session_new(struct proc *proc)
 {
-    struct session *session = kmalloc(sizeof(struct session));
-    struct pgroup  *pgrp = kmalloc(sizeof(struct pgroup));
+    int err = 0;
+    struct session *session = NULL;
+    struct pgroup  *pgrp    = NULL;
+
+    /* allocate a new session structure */
+    session = kmalloc(sizeof(struct session));
+    if (!session) goto e_nomem;
+
+    memset(session, 0, sizeof(struct session));
+
+    /* allocate a new process group structure for the session */
+    pgrp = kmalloc(sizeof(struct pgroup));
+    if (!pgrp) goto e_nomem;
+
+    memset(pgrp, 0, sizeof(struct pgroup));
 
     session->pgps = queue_new();
+    if (!session->pgps) goto e_nomem;
+
     pgrp->procs = queue_new();
+    if (!pgrp->procs) goto e_nomem;
 
     pgrp->session_node = enqueue(session->pgps, pgrp);
+    if (!pgrp->session_node) goto e_nomem;
+
     proc->pgrp_node = enqueue(pgrp->procs, proc);
+    if (!proc->pgrp_node) goto e_nomem;
 
     session->sid = proc->pid;
     pgrp->pgid = proc->pid;
@@ -268,19 +294,47 @@ int session_new(struct proc *proc)
     proc->pgrp = pgrp;
 
     return 0;
+
+e_nomem:
+    err = -ENOMEM;
+error:
+    if (session) {
+        kfree(session->pgps);
+        kfree(session);
+    }
+
+    if (pgrp) {
+        kfree(pgrp->procs);
+        kfree(pgrp);
+    }
+
+    return err;
 }
 
 int pgrp_new(struct proc *proc, struct pgroup **ref)
 {
-    struct pgroup *pgrp = kmalloc(sizeof(struct pgroup));
-    memset(pgrp, 0, sizeof(struct pgroup));
-    pgrp->pgid = proc->pid;
+    int err = 0;
+    struct pgroup *pgrp = NULL;
+    
+    pgrp = kmalloc(sizeof(struct pgroup));
+    if (!pgrp) goto e_nomem;
 
+    memset(pgrp, 0, sizeof(struct pgroup));
+
+    pgrp->pgid = proc->pid;
+    pgrp->session = proc->pgrp->session;
+
+    /* remove the process from the old process group */
     queue_node_remove(proc->pgrp->procs, proc->pgrp_node);
 
     pgrp->procs = queue_new();
+    if (!pgrp->procs) goto e_nomem;
+
     proc->pgrp_node = enqueue(pgrp->procs, proc);
+    if (!proc->pgrp_node) goto e_nomem;
+
     pgrp->session_node = enqueue(proc->pgrp->session->pgps, pgrp);
+    if (!pgrp->session_node) goto e_nomem;
 
     if (!proc->pgrp->procs->count) {
         /* TODO */
@@ -288,8 +342,17 @@ int pgrp_new(struct proc *proc, struct pgroup **ref)
 
     proc->pgrp = pgrp;
 
-    if (ref)
-        *ref = pgrp;
+    if (ref) *ref = pgrp;
 
     return 0;
+
+e_nomem:
+    err = -ENOMEM;
+
+error:
+    if (pgrp) {
+        kfree(pgrp);
+    }
+
+    return err;
 }
