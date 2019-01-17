@@ -59,7 +59,7 @@ struct iops {
     int     (*vunlink) (struct vnode *dir, const char *fn, struct uio *uio);
     int     (*vfind)   (struct vnode *dir, const char *name, struct vnode *child);
     int     (*vget)    (struct vnode *vnode, struct inode **inode);
-    int     (*mmap)    (struct vmr *vmr);
+    int     (*map)     (struct vmr *vmr);
 };
 
 struct vfs_path {
@@ -82,7 +82,6 @@ struct fs {
 
 /* in-core inode structure */
 struct inode {
-    /* fields common to all filesystems */
     ino_t       ino;
     size_t      size;
     dev_t       dev;
@@ -95,12 +94,13 @@ struct inode {
     _time_t     mtime;
     _time_t     ctime;
 
-
-    //char        *name;
     struct fs   *fs;
 
-    void        *p;     /* Filesystem handler private data */
-    ssize_t     ref;    /* Number of processes referencing this node */
+    /* Filesystem handler private data */
+    void        *p;
+
+    /* Number of processes referencing this node */
+    ssize_t     ref;
 
     struct queue     *read_queue;
     struct queue     *write_queue;
@@ -180,7 +180,7 @@ int     vfs_vmkdir(struct vnode *dir, const char *dname, struct uio *uio, struct
 int     vfs_vunlink(struct vnode *dir, const char *fn, struct uio *uio);
 int     vfs_vfind(struct vnode *vnode, const char *name, struct vnode *child);
 int     vfs_vget(struct vnode *vnode, struct inode **inode);
-int     vfs_mmap(struct vmr *vmr);
+int     vfs_map(struct vmr *vmr);
 
 ssize_t vfs_read(struct inode *inode, off_t offset, size_t size, void *buf);
 ssize_t vfs_write(struct inode *inode, off_t offset, size_t size, void *buf);

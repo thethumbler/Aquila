@@ -52,10 +52,10 @@ static int fbdev_ioctl(struct devid *dd, int request, void *argp)
     return -1;
 }
 
-static int fbdev_mmap(struct devid *dd, struct vmr *vmr)
+static int fbdev_map(struct devid *dd, struct vmr *vmr)
 {
     struct fbdev *fb = &registered_fbs[dd->minor];
-    return fb->mmap(fb, vmr);
+    return fb->map(fb, vmr);
 }
 
 int fbdev_probe()
@@ -81,7 +81,7 @@ struct dev fbdev = {
     .read   = fbdev_read,
     .write  = fbdev_write,
     .ioctl  = fbdev_ioctl,
-    .mmap   = fbdev_mmap,
+    .map    = fbdev_map,
 
     .fops = {
         .open  = posix_file_open,

@@ -221,17 +221,17 @@ int kdev_ioctl(struct devid *dd, int request, void *argp)
     return dev->ioctl(dd, request, argp);
 }
 
-int kdev_mmap(struct devid *dd, struct vmr *vmr)
+int kdev_map(struct devid *dd, struct vmr *vmr)
 {
     struct dev *dev = NULL;
 
     if (!(dev = kdev_get(dd)))
         return -ENXIO;
 
-    if (!dev->mmap)
+    if (!dev->map)
         return -ENXIO;
 
-    return dev->mmap(dd, vmr);
+    return dev->map(dd, vmr);
 }
 
 int kdev_file_open(struct devid *dd, struct file *file)

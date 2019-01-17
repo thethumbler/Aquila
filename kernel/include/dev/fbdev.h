@@ -90,7 +90,7 @@ struct fbdev {
     ssize_t (*read) (struct fbdev *fb, off_t offset, size_t size, void *buf);
     ssize_t (*write)(struct fbdev *fb, off_t offset, size_t size, void *buf);
     int     (*ioctl)(struct fbdev *fb, int request, void *argp);
-    int     (*mmap) (struct fbdev *fb, struct vmr *vmr);
+    int     (*map)  (struct fbdev *fb, struct vmr *vmr);
 };
 
 #endif /* !_FB_H */
