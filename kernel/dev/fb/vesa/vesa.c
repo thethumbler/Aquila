@@ -28,7 +28,7 @@ static ssize_t fbdev_vesa_write(struct fbdev *fb, off_t offset, size_t size, voi
     return size;
 }
 
-static int fbdev_vesa_mmap(struct fbdev *fb, struct vmr *vmr)
+static int fbdev_vesa_map(struct fbdev *fb, struct vmr *vmr)
 {
     /* We do not support private maps */
     if (!(vmr->flags & VM_SHARED))
@@ -62,7 +62,7 @@ static int fbdev_vesa_prope(int i __unused, struct fbdev *fb)
 
     fb->probe = fbdev_vesa_prope;
     fb->write = fbdev_vesa_write;
-    fb->mmap  = fbdev_vesa_mmap;
+    fb->map   = fbdev_vesa_map;
     fb->fix_screeninfo = &vesa_fix_screeninfo;
     fb->var_screeninfo = &vesa_var_screeninfo;
 
@@ -120,5 +120,5 @@ static int fbdev_vesa_prope(int i __unused, struct fbdev *fb)
 struct fbdev fbdev_vesa = {
     .probe = fbdev_vesa_prope,
     .write = fbdev_vesa_write,
-    .mmap  = fbdev_vesa_mmap,
+    .map   = fbdev_vesa_map,
 };

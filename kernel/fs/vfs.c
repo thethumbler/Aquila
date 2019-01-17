@@ -383,7 +383,7 @@ int vfs_vget(struct vnode *vnode, struct inode **inode)
     return ret;
 }
 
-int vfs_mmap(struct vmr *vmr)
+int vfs_map(struct vmr *vmr)
 {
     struct inode *inode = vmr->inode;
 
@@ -391,12 +391,12 @@ int vfs_mmap(struct vmr *vmr)
         return -EINVAL;
 
     if (ISDEV(inode))
-        return kdev_mmap(&INODE_DEV(inode), vmr);
+        return kdev_map(&INODE_DEV(inode), vmr);
 
-    if (!inode->fs->iops.mmap)
+    if (!inode->fs->iops.map)
         return -ENOSYS;
 
-    return inode->fs->iops.mmap(vmr);
+    return inode->fs->iops.map(vmr);
 }
 
 /* ================== VFS high level mappings ================== */
