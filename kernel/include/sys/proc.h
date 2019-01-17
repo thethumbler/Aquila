@@ -12,6 +12,7 @@ struct session;
 #include <sys/thread.h>
 #include <sys/signal.h>
 
+extern struct queue *sessions;
 struct session {
     /* Session ID */
     pid_t sid;
@@ -21,15 +22,30 @@ struct session {
 
     /* Session Leader */
     struct proc *leader;
+
+    /* Session node on sessions queue */
+    struct qnode *qnode;
 };
 
+extern struct queue *pgroups;
 struct pgroup {
-    pid_t       pgid;       /* Process Group ID */
-    struct session   *session;   /* Associated Session */
-    struct qnode *session_node;   /* Session Queue Node */
+    /* Process Group ID */
+    pid_t pgid;
 
-    struct queue     *procs;     /* Processes */
-    struct proc      *leader;    /* Process Group Leader */
+    /* Associated Session */
+    struct session *session;
+
+    /* Session Queue Node */
+    struct qnode *session_node;
+
+    /* Processes */
+    struct queue *procs;
+
+    /* Process Group Leader */
+    struct proc *leader;
+
+    /* Group node on pgroups queue */
+    struct qnode *qnode;
 };
 
 struct proc {

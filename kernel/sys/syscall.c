@@ -809,7 +809,7 @@ static void sys_mmap(struct mmap_args *args, void **ret)
     if ((err = vm_vmr_insert(&cur_thread->owner->vmr, vmr)))
         goto error;
 
-    if (!(args->flags & MAP_PRIVATE) && (err = vfs_mmap(vmr)))
+    if (!(args->flags & MAP_PRIVATE) && (err = vfs_map(vmr)))
         goto error;
 
     *ret = (void *) vmr->base;
