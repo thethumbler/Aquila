@@ -1,6 +1,9 @@
 #ifndef _PANIC_H
 #define _PANIC_H
 
+#include <core/printk.h>
+#define __PANIC_MSG "Bailing out. You are on your own. Good luck.\n"
+
 #define panic(s) \
 {\
     printk("KERNEL PANIC:\n%s [%d] %s: %s\n" __PANIC_MSG, \

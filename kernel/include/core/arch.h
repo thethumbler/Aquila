@@ -3,12 +3,8 @@
 
 #include <sys/proc.h>
 
-/* arch/ARCH/sys/binfmt.c */
-void *arch_binfmt_load(void);
-void arch_binfmt_end(void *arch);
-
 /* arch/ARCH/sys/proc.c */
-void arch_proc_init(void *arch, struct proc *proc);
+void arch_proc_init(struct proc *proc);
 void arch_proc_spawn(struct proc *init);
 void arch_proc_switch(struct proc *proc) __attribute__((noreturn));
 void arch_proc_kill(struct proc *proc);
@@ -42,10 +38,10 @@ void arch_handle_signal(int sig);
 /* arch/ARCH/mm/mm.c */
 void arch_mm_setup(void);
 //void arch_switch_mapping();
-int  arch_page_map(paddr_t paddr, vaddr_t vaddr, int flags);
-int  arch_page_unmap(vaddr_t vaddr);
+//int  arch_page_map(paddr_t paddr, vaddr_t vaddr, int flags);
+//int  arch_page_unmap(vaddr_t vaddr);
+
 paddr_t arch_page_get_mapping(vaddr_t vaddr);
-void arch_mm_page_fault(vaddr_t vaddr);
 
 void arch_disable_interrupts(void);
 

@@ -1,5 +1,4 @@
 obj-y += fork.o
-obj-y += binfmt.o
 obj-y += proc.o
 obj-y += thread.o
 obj-y += syscall.o

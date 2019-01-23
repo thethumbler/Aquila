@@ -10,6 +10,8 @@
 
 
 #include <core/system.h>
+#include <core/panic.h>
+#include <core/assert.h>
 #include <core/string.h>
 
 #include "cpu.h"

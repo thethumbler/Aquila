@@ -249,31 +249,31 @@ static ssize_t procfs_proc_maps(int pid, off_t off, size_t size, void *buf)
 
     int sz = 0;
 
-    forlinked (node, proc->vmr.head, node->next) {
-        struct vmr *vmr = node->value;
+    forlinked (node, proc->vm_space.vm_entries.head, node->next) {
+        struct vm_entry *vm_entry = node->value;
 
         char perm[5] = {0};
-        perm[0] = vmr->flags & VM_UR? 'r' : '-';
-        perm[1] = vmr->flags & VM_UW? 'w' : '-';
-        perm[2] = vmr->flags & VM_UX? 'x' : '-';
-        perm[3] = vmr->flags & VM_SHARED? 's' : 'p';
+        perm[0] = vm_entry->flags & VM_UR? 'r' : '-';
+        perm[1] = vm_entry->flags & VM_UW? 'w' : '-';
+        perm[2] = vm_entry->flags & VM_UX? 'x' : '-';
+        perm[3] = vm_entry->flags & VM_SHARED? 's' : 'p';
 
         char *desc = "";
 
-        if (vmr == proc->stack_vmr)
+        if (vm_entry == proc->stack_vm)
             desc = "[stack]";
 
-        if (vmr == proc->heap_vmr)
+        if (vm_entry == proc->heap_vm)
             desc = "[heap]";
 
         sz += snprintf(maps_buf + sz, sizeof(maps_buf) - sz,
                 "%x-%x %s %x %x %x %s\n",
-                vmr->base,  /* Start address */
-                vmr->base + vmr->size,  /* End address */
+                vm_entry->base,  /* Start address */
+                vm_entry->base + vm_entry->size,  /* End address */
                 perm,   /* Access permissions */
-                vmr->off, /* Offset in file */
-                vmr->inode? vmr->inode->dev : 0, /* Device ID */
-                vmr->inode? vmr->inode->ino : 0, /* Inode ID */
+                vm_entry->off, /* Offset in file */
+                vm_entry->inode? vm_entry->inode->dev : 0, /* Device ID */
+                vm_entry->inode? vm_entry->inode->ino : 0, /* Inode ID */
                 desc); 
     }
     

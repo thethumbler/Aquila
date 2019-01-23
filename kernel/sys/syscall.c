@@ -332,7 +332,7 @@ static void sys_sbrk(ptrdiff_t incr)
 
     uintptr_t ret = cur_thread->owner->heap;
     cur_thread->owner->heap += incr;
-    cur_thread->owner->heap_vmr->size += incr;
+    cur_thread->owner->heap_vm->size += incr;
 
     arch_syscall_return(cur_thread, ret);
 
@@ -786,43 +786,43 @@ static void sys_mmap(struct mmap_args *args, void **ret)
     }
 
     /* Allocate VMR */
-    struct vmr *vmr = NULL;
-    if (!(vmr = kmalloc(sizeof(struct vmr)))) {
+    struct vm_entry *vm_entry = NULL;
+    if (!(vm_entry = kmalloc(sizeof(struct vm_entry)))) {
         err = -ENOMEM;
         goto error;
     }
 
     /* Initialize VMR */
-    vmr->base   = (uintptr_t) args->addr;
-    vmr->size   = args->len;
-    vmr->flags  = args->prot & PROT_READ  ? VM_UR : 0;
-    vmr->flags |= args->prot & PROT_WRITE ? VM_UW : 0;
-    vmr->flags |= args->prot & PROT_EXEC  ? VM_UX : 0;
-    vmr->flags |= args->flags & MAP_SHARED ? VM_SHARED : 0;
-    vmr->flags |= VM_FILE;  /* TODO Support anonymous maps */
-    vmr->inode  = file->inode;
-    vmr->off    = args->off;
+    vm_entry->base   = (uintptr_t) args->addr;
+    vm_entry->size   = args->len;
+    vm_entry->flags  = args->prot & PROT_READ  ? VM_UR : 0;
+    vm_entry->flags |= args->prot & PROT_WRITE ? VM_UW : 0;
+    vm_entry->flags |= args->prot & PROT_EXEC  ? VM_UX : 0;
+    vm_entry->flags |= args->flags & MAP_SHARED ? VM_SHARED : 0;
+    vm_entry->flags |= VM_FILE;  /* TODO Support anonymous maps */
+    vm_entry->inode  = file->inode;
+    vm_entry->off    = args->off;
 
     if (!(args->flags & MAP_FIXED))
-        vmr->base = 0;  /* Allocate memory region */
+        vm_entry->base = 0;  /* Allocate memory region */
 
-    if ((err = vm_vmr_insert(&cur_thread->owner->vmr, vmr)))
+    if ((err = vm_entry_insert(&cur_thread->owner->vm_space, vm_entry)))
         goto error;
 
-    if (!(args->flags & MAP_PRIVATE) && (err = vfs_map(vmr)))
+    if (!(args->flags & MAP_PRIVATE) && (err = vfs_map(vm_entry)))
         goto error;
 
-    *ret = (void *) vmr->base;
+    *ret = (void *) vm_entry->base;
 
     arch_syscall_return(cur_thread, err);
     return;
 
 error:
-    if (vmr) {
-        if (vmr->qnode)
-            queue_node_remove(&cur_thread->owner->vmr, vmr->qnode);
+    if (vm_entry) {
+        if (vm_entry->qnode)
+            queue_node_remove(&cur_thread->owner->vm_space.vm_entries, vm_entry->qnode);
 
-        kfree(vmr);
+        kfree(vm_entry);
     }
 
     arch_syscall_return(cur_thread, err);
@@ -833,13 +833,15 @@ static void sys_munmap(void *addr, size_t len)
 {
     syscall_log(LOG_DEBUG, "munmap(addr=%p, len=%d)\n", addr, len);
 
-    /* Find VMR */
-    forlinked (node, cur_thread->owner->vmr.head, node->next) {
-        struct vmr *vmr = node->value;
-        if (vmr->base == (uintptr_t) addr && vmr->size == len) {
-            queue_node_remove(&cur_thread->owner->vmr, vmr->qnode);
-            vm_unmap_full(vmr);
-            kfree(vmr);
+    struct vm_space *vm_space = &cur_thread->owner->vm_space;
+
+    forlinked (node, vm_space->vm_entries.head, node->next) {
+        struct vm_entry *vm_entry = node->value;
+
+        if (vm_entry->base == (uintptr_t) addr && vm_entry->size == len) {
+            queue_node_remove(&vm_space->vm_entries, vm_entry->qnode);
+            vm_unmap_full(vm_space, vm_entry);
+            kfree(vm_entry);
             arch_syscall_return(cur_thread, 0);
             return;
         }

@@ -1,9 +1,11 @@
-#ifndef _PANIC_H
-#define _PANIC_H
+#ifndef _CORE_PANIC_H
+#define _CORE_PANIC_H
 
 #include <core/system.h>
 #include <core/printk.h>
 #include <core/arch.h>
+
+#define __PANIC_MSG "Bailing out. You are on your own. Good luck.\n"
 
 #define panic(s) \
 {\
@@ -13,4 +15,4 @@
     for(;;); \
 }\
 
-#endif /* !_PANIC_H */
+#endif /* ! _CORE_PANIC_H */

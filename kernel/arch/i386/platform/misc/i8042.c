@@ -17,7 +17,6 @@ static void (*channel2_handler)(int) = NULL;
 #define STATUS_PORT      0x04
 #define COMMAND_PORT     0x04
 
-
 #define STATUS_OBUF_FULL 0x01
 #define STATUS_IBUF_FULL 0x02
 #define STATUS_SYSTEM    0x04

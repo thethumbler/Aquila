@@ -6,5 +6,5 @@ dirs-y += tty/
 dirs-$(DEV_MEMDEV) += mem/
 dirs-y += rd/
 #dirs-$(DEV_ATA) += ata/
-#dirs-$(DEV_FDC) += fdc/
+dirs-$(DEV_FDC) += fdc/
 obj-y  += kdev.o

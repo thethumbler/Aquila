@@ -11,7 +11,7 @@ static uint32_t fb_xres, fb_yres, fb_depth,
                 fb_scanline, fb_row = 0, fb_col = 0,
                 fb_rows = 25, fb_cols = 80, fb_size;
 
-static struct vmr fb_vmr = {
+static struct vm_entry fb_vmr = {
     .base = 0xE8000000,
 };
 
@@ -112,7 +112,7 @@ static void earlycon_fb_init()
     fb_vmr.size  = fb_size;
     fb_vmr.flags = VM_KRW | VM_NOCACHE;
 
-    vm_map(&fb_vmr);
+    vm_map(&kvm_space, &fb_vmr);
     fb_init = 1;
 
     fb_cols = fb_xres / 8;

@@ -336,9 +336,7 @@ int minix_vget(struct vnode *vnode, struct inode **ref)
 {
     struct minix *desc = vnode->super->p;
 
-    if (ref) {
-        minix_inode_build(desc, vnode->ino, ref);
-    }
+    if (ref) return minix_inode_build(desc, vnode->ino, ref);
 
     return 0;
 }

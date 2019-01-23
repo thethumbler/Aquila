@@ -19,4 +19,3 @@ int vfs_close(struct inode *inode)
 
     return 0;
 }
-

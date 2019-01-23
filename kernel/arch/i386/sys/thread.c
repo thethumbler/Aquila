@@ -15,9 +15,11 @@ do {\
 void arch_thread_spawn(struct thread *thread)
 {
     struct x86_thread *arch  = thread->arch;
-    struct x86_proc   *parch = thread->owner->arch;
+    struct pmap *pmap = thread->owner->vm_space.pmap;
 
-    arch_switch_mapping(parch->map);
+    //arch_switch_mapping(pmap->map);
+    arch_pmap_switch(pmap);
+
     x86_kernel_stack_set(arch->kstack);
 
 #if ARCH_BITS==32
@@ -32,9 +34,11 @@ void arch_thread_switch(struct thread *thread)
     //printk("arch_thread_switch(thread=%p)\n", thread);
 
     struct x86_thread *arch  = thread->arch;
-    struct x86_proc   *parch = thread->owner->arch;
+    struct pmap *pmap = thread->owner->vm_space.pmap;
 
-    arch_switch_mapping(parch->map);
+    //arch_switch_mapping(pmap->map);
+    arch_pmap_switch(pmap);
+
     x86_kernel_stack_set(arch->kstack);
     x86_fpu_disable();
 

@@ -1,4 +1,6 @@
 #include <core/system.h>
+#include <core/panic.h>
+#include <core/assert.h>
 #include <core/arch.h>
 #include <cpu/cpu.h>
 #include <sys/proc.h>

@@ -5,7 +5,8 @@
 #include <mm/vm.h>
 
 static char *vmem = (char *) 0xE0000000;
-static struct vmr vesa_vmr = {
+
+static struct vm_entry vesa_vm = {
     .base = 0xE0000000,
 };
 
@@ -28,18 +29,18 @@ static ssize_t fbdev_vesa_write(struct fbdev *fb, off_t offset, size_t size, voi
     return size;
 }
 
-static int fbdev_vesa_map(struct fbdev *fb, struct vmr *vmr)
+static int fbdev_vesa_map(struct fbdev *fb, struct vm_entry *vm_entry)
 {
     /* We do not support private maps */
-    if (!(vmr->flags & VM_SHARED))
+    if (!(vm_entry->flags & VM_SHARED))
         return -ENOTSUP;
 
     /* Mapping framebuffer must start at 0 */
-    if (vmr->off != 0 || vmr->size > vesa_vmr.size)
+    if (vm_entry->off != 0 || vm_entry->size > vesa_vm.size)
         return -ENXIO;
 
-    vmr->paddr = vesa_vmr.paddr;
-    return vm_map(vmr);
+    vm_entry->paddr = vesa_vm.paddr;
+    return vm_map(&kvm_space, vm_entry); /* XXX */
 }
 
 static int fbdev_vesa_prope(int i __unused, struct fbdev *fb)
@@ -49,11 +50,11 @@ static int fbdev_vesa_prope(int i __unused, struct fbdev *fb)
     struct mode_info_block *info = data->mode_info;
     size_t size = info->y_resolution * info->lin_bytes_per_scanline;
 
-    vesa_vmr.paddr = info->phys_base_ptr;
-    vesa_vmr.size  = size;
-    vesa_vmr.flags = VM_KRW | VM_NOCACHE;
+    vesa_vm.paddr = info->phys_base_ptr;
+    vesa_vm.size  = size;
+    vesa_vm.flags = VM_KRW | VM_NOCACHE;
 
-    vm_map(&vesa_vmr);
+    vm_map(&kvm_space, &vesa_vm);
 
     //memset(vmem, 0x5A, size);
 

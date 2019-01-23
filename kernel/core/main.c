@@ -5,24 +5,13 @@
 #include <core/arch.h>
 #include <mm/mm.h>
 #include <mm/vm.h>
-
 #include <dev/dev.h>
-#include <dev/ramdev.h>
-#include <dev/console.h>
-
+#include <fs/vfs.h>
 #include <fs/initramfs.h>
-#include <fs/devfs.h>
-#include <fs/devpts.h>
-#include <fs/procfs.h>
-
 #include <sys/proc.h>
 #include <sys/sched.h>
 #include <sys/binfmt.h>
-
-#include <ds/queue.h>
-
 #include <boot/boot.h>
-
 #include <console/earlycon.h>
 
 void kmain(struct boot *boot)
@@ -32,7 +21,6 @@ void kmain(struct boot *boot)
     modules_init();
 
     if (boot->modules_count)
-        //load_ramdisk(&boot->modules[0]);
         load_ramdisk();
     else
         panic("No modules loaded: unable to load ramdisk");
@@ -42,10 +30,16 @@ void kmain(struct boot *boot)
     struct proc *init;
     int err;
 
-    if ((err = binfmt_load(NULL, "/init", &init))) {
-        printk("error: %d\n", -err);
-        panic("Can not load init process");
+    if ((err = proc_new(&init))) {
+        panic("failed to allocate process structure for init");
     }
+
+    if ((err = binfmt_load(init, "/init", &init))) {
+        printk("error: %d\n", -err);
+        panic("could not load init process");
+    }
+
+    arch_proc_init(init);
 
     char *cmdline = boot->modules[0].cmdline;
     char *argp[] = {cmdline, 0};

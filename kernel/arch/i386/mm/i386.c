@@ -22,6 +22,7 @@
 #include <ds/queue.h>
 #include <mm/buddy.h>
 #include <mm/vm.h>
+#include <sys/sched.h>
 
 #include "i386.h"
 
@@ -134,7 +135,7 @@ static inline void table_unmap(size_t pdidx)
 
 /* ================== Page Helpers ================== */
 
-static inline int __page_map(paddr_t paddr, size_t pdidx, size_t ptidx, int flags)
+static inline int page_map(paddr_t paddr, size_t pdidx, size_t ptidx, int flags)
 {
     /* Sanity checking */
     if (pdidx > 1023 || ptidx > 1023) {
@@ -157,12 +158,12 @@ static inline int __page_map(paddr_t paddr, size_t pdidx, size_t ptidx, int flag
 
     /* Increment references to table */
     paddr_t table = GET_PHYS_ADDR(PAGE_DIR[pdidx]);
-    pages[table/PAGE_SIZE].refs++;
+    mm_page_incref(table);
 
     return 0;
 }
 
-static inline void __page_unmap(vaddr_t vaddr)
+static inline void page_unmap(vaddr_t vaddr)
 {
     if (vaddr & PAGE_MASK)
         return;
@@ -176,9 +177,9 @@ static inline void __page_unmap(vaddr_t vaddr)
 
         /* Decrement references to table */
         paddr_t table = GET_PHYS_ADDR(PAGE_DIR[pdidx]);
-        pages[table/PAGE_SIZE].refs--;
+        mm_page_decref(table);
 
-        if (!pages[table/PAGE_SIZE].refs)
+        if (mm_page_refcnt(table) == 0)
             table_unmap(pdidx);
 
         tlb_invalidate_page(vaddr);
@@ -210,64 +211,29 @@ paddr_t arch_page_get_mapping(vaddr_t vaddr)
 
 #include "page_utils.h"
 
-int __i = 0;
-static paddr_t cur_pd = 0;
-void arch_switch_mapping(paddr_t new_dir)
+static struct pmap *cur_pmap = NULL;
+struct pmap *arch_pmap_switch(struct pmap *pmap)
 {
-    //printk("switch_directory(%p)\n", new_dir);
-    if (cur_pd == new_dir) return;
+    struct pmap *ret = cur_pmap;
 
-    if (cur_pd) { /* Store current directory mapping in old_dir */
-        copy_virtual_to_physical((void *) cur_pd, (void *) bootstrap_processor_table, 768 * 4);
+    if (cur_pmap && cur_pmap->map == pmap->map) {
+        cur_pmap == pmap;
+        return ret;
     }
 
-    copy_physical_to_virtual((void *) bootstrap_processor_table, (void *) new_dir, 768 * 4);
-    cur_pd = new_dir;
-    tlb_flush();
-}
-
-void arch_mm_fork(paddr_t base, paddr_t fork)
-{
-    //printk("arch_mm_fork(%p, %p)\n", base, fork);
-
-    arch_switch_mapping(fork);
-
-    uintptr_t old_mount = frame_mount(base);
-    uint32_t *tbl = (uint32_t *) MOUNT_ADDR;
-
-    for (int i = 0; i < 768; ++i) {
-        if (tbl[i] & PG_PRESENT) {
-            /* Allocate new table for mapping */
-            paddr_t table = table_alloc();
-            table_map(table, i, VM_URWX);
-
-            uintptr_t _mnt = frame_mount(GET_PHYS_ADDR(tbl[i]));
-            uint32_t  *pg  = MOUNT_ADDR;
-
-            
-            for (int j = 0; j < 1024; ++j) {
-                if (pg[j] & PG_PRESENT) {
-                    if (pg[j] & PG_WRITE)
-                        pg[j] &= ~PG_WRITE;
-
-                    PAGE_TBL(i)[j] = pg[j];
-                    pages[table/PAGE_SIZE].refs++;
-
-                    pages[GET_PHYS_ADDR(pg[j])/PAGE_SIZE].refs++;
-                }
-            }
-
-            frame_mount(_mnt);
-        }
+    if (cur_pmap) { /* Store current directory mapping in old_dir */
+        copy_virtual_to_physical((void *) cur_pmap->map, (void *) bootstrap_processor_table, 768 * 4);
     }
 
+    copy_physical_to_virtual((void *) bootstrap_processor_table, (void *) pmap->map, 768 * 4);
+    cur_pmap = pmap;
     tlb_flush();
 
-    frame_mount(old_mount);
-    arch_switch_mapping(base);
+    return ret;
 }
 
-void setup_i386_paging()
+static struct pmap k_pmap;
+static void setup_i386_paging()
 {
     printk("x86: Setting up 32-Bit paging\n");
     uintptr_t __cur_pd = read_cr3() & ~PAGE_MASK;
@@ -282,6 +248,9 @@ void setup_i386_paging()
         bootstrap_processor_table[i] = 0;
 
     tlb_flush();
+
+    k_pmap.map = __cur_pd;
+    kvm_space.pmap = &k_pmap;
 }
 
 /*
@@ -303,51 +272,219 @@ void arch_release_frame(paddr_t p)
     frame_release(p);
 }
 
-int arch_page_map(paddr_t paddr, vaddr_t vaddr, int flags)
-{
-    if (vaddr & PAGE_MASK)
-        return -EINVAL;
-
-    size_t pdidx = VDIR(vaddr);
-    size_t ptidx = VTBL(vaddr);
-
-    __page_map(paddr, pdidx, ptidx, flags);
-
-    tlb_invalidate_page(vaddr);
-
-    return 0;
-}
-
 int arch_page_unmap(vaddr_t vaddr)
 {
     if (vaddr & PAGE_MASK)
         return -EINVAL;
 
-    __page_unmap(vaddr);
+    page_unmap(vaddr);
     return 0;
 }
 
-void arch_mm_page_fault(vaddr_t vaddr)
+void arch_mm_page_fault(vaddr_t vaddr, int err)
 {
     vaddr_t page_addr = vaddr & ~PAGE_MASK;
+
     uint32_t page = __page_get_mapping(page_addr);
+
+    struct pmap *pmap = cur_thread->owner->vm_space.pmap;
 
     if (page) { /* Page is mapped */
         paddr_t paddr = GET_PHYS_ADDR(page);
-        size_t page_idx = paddr/PAGE_SIZE;
 
-        if (pages[page_idx].refs == 1) {
+        if (mm_page_refcnt(paddr) == 1) {
             PAGE_TBL(VDIR(page_addr))[VTBL(page_addr)] |= PG_WRITE;
             tlb_invalidate_page(vaddr);
         } else {
-            pages[page_idx].refs--;
+            mm_page_decref(paddr);
             PAGE_TBL(VDIR(page_addr))[VTBL(page_addr)] &= ~PG_PRESENT;
-            mm_map(0, page_addr, PAGE_SIZE, VM_URWX);   /* FIXME */ 
+            mm_map(pmap, 0, page_addr, PAGE_SIZE, VM_URWX);   /* FIXME */ 
             copy_physical_to_virtual((void *) page_addr, (void *) paddr, PAGE_SIZE);
         }
 
         return;
     }
 
-    mm_page_fault(vaddr);
+    int flags = 0;
+
+    flags |= err & 0x01? PF_PRESENT : 0;
+    flags |= err & 0x02? PF_WRITE   : PF_READ;
+    flags |= err & 0x04? PF_USER    : 0;
+    flags |= err & 0x10? PF_EXEC    : 0;
+
+    mm_page_fault(vaddr, flags);
+}
+
+
+struct pmap kernel_pmap;
+
+static struct pmap *pmap_alloc(void)
+{
+    return kmalloc(sizeof(struct pmap));
+}
+
+static void pmap_release(struct pmap *pmap)
+{
+    if (pmap == cur_pmap) {
+        arch_pmap_switch(&kernel_pmap);
+        cur_pmap = NULL;
+    }
+
+    if (pmap->map)
+        arch_release_frame(pmap->map);
+
+    kfree(pmap);
+}
+
+void arch_pmap_init(void)
+{
+    setup_i386_paging();
+}
+
+struct pmap *arch_pmap_create(void)
+{
+    struct pmap *pmap = pmap_alloc();
+
+    if (pmap == NULL)
+        return NULL;
+
+    memset(pmap, 0, sizeof(struct pmap));
+
+    pmap->map = arch_get_frame();
+    pmap->refcnt = 1;
+
+    return pmap;
+}
+
+#if 0
+void arch_pmap_incref(struct pmap *pmap)
+{
+    /* XXX Handle overflow */
+    pmap->refcnt++;
+}
+#endif
+
+void arch_pmap_decref(struct pmap *pmap)
+{
+    pmap->refcnt--;
+
+    if (pmap->refcnt == 0)
+        pmap_release(pmap);
+}
+
+void arch_pmap_fork(struct pmap *src_map, struct pmap *dst_map)
+{
+    paddr_t base = src_map->map;
+    paddr_t fork = dst_map->map;
+
+    arch_pmap_switch(dst_map);
+
+    uintptr_t old_mount = frame_mount(base);
+    uint32_t *tbl = (uint32_t *) MOUNT_ADDR;
+
+    for (int i = 0; i < 768; ++i) {
+        if (tbl[i] & PG_PRESENT) {
+            /* Allocate new table for mapping */
+            paddr_t table = table_alloc();
+            table_map(table, i, VM_URWX);
+
+            uintptr_t _mnt = frame_mount(GET_PHYS_ADDR(tbl[i]));
+            uint32_t  *pg  = MOUNT_ADDR;
+            
+            for (int j = 0; j < 1024; ++j) {
+                if (pg[j] & PG_PRESENT) {
+                    if (pg[j] & PG_WRITE)
+                        pg[j] &= ~PG_WRITE;
+
+                    PAGE_TBL(i)[j] = pg[j];
+
+                    mm_page_incref(table);
+                    mm_page_incref(GET_PHYS_ADDR(pg[j]));
+                }
+            }
+
+            frame_mount(_mnt);
+        }
+    }
+
+    tlb_flush();
+
+    frame_mount(old_mount);
+    arch_pmap_switch(src_map);
+}
+
+int arch_pmap_add(struct pmap *pmap, vaddr_t va, paddr_t pa, uint32_t flags)
+{
+    if (va & PAGE_MASK)
+        return -EINVAL;
+
+    size_t pdidx = VDIR(va);
+    size_t ptidx = VTBL(va);
+
+    page_map(pa, pdidx, ptidx, flags);
+    tlb_invalidate_page(va);
+
+    return 0;
+}
+
+void arch_pmap_remove(struct pmap *pmap, vaddr_t sva, vaddr_t eva)
+{
+    if (sva & PAGE_MASK || eva & PAGE_MASK)
+        return;
+
+    while (sva < eva) {
+        page_unmap(sva);
+        sva += PAGE_SIZE;
+    }
+}
+
+void arch_pmap_remove_all(struct pmap *pmap)
+{
+    return;
+}
+
+void arch_pmap_protect(struct pmap *pmap, vaddr_t sva, vaddr_t eva, uint32_t prot)
+{
+    return;
+}
+
+void arch_pmap_copy(struct pmap *dst_map, struct pmap *src_map, vaddr_t dst_addr, size_t len,
+ vaddr_t src_addr)
+{
+    return;
+}
+
+void arch_pmap_update(struct pmap *pmap)
+{
+    return;
+}
+
+void arch_pmap_copy_page(paddr_t src, paddr_t dst)
+{
+    return;
+}
+
+void arch_pmap_page_protect(struct vm_page *pg, uint32_t flags)
+{
+    return;
+}
+
+int arch_pmap_clear_modify(struct vm_page *pg)
+{
+    return -1;
+}
+
+int arch_pmap_clear_reference(struct vm_page *pg)
+{
+    return -1;
+}
+
+int arch_pmap_is_modified(struct vm_page *pg)
+{
+    return -1;
+}
+
+int arch_pmap_is_referenced(struct vm_page *pg)
+{
+    return -1;
 }
