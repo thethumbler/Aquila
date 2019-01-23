@@ -1,5 +1,5 @@
-#ifndef _SYSTEM_H
-#define _SYSTEM_H
+#ifndef _CORE_SYSTEM_H
+#define _CORE_SYSTEM_H
 
 #define _BV(b) (1 << (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
@@ -14,9 +14,6 @@
 #endif
 
 #define MEMBER_SIZE(type, member) (sizeof(((type *)0)->member))
-
-
-#define __PANIC_MSG "Bailing out. You are on your own. Good luck.\n"
 
 #if defined(__TINYC__) || defined(__clang__) || defined(__PCC__)
   #undef __unused
@@ -44,18 +41,11 @@
 #include_next <stdint.h>
 #endif
 
-//#include <mm/mm.h>
 #include <core/printk.h>
 #include <mm/kvmem.h>
+
 #include <stdarg.h>
 #include <config.h>
 #include <core/types.h>
 
-//#define __PANIC_MSG "Man the Lifeboats! Women and children first!\n"
-
-#include <core/panic.h>
-#define assert(x) if(!(x)) panic("Assertion " #x " failed");
-#define assert_sizeof(o, sz) if (sizeof(o) != sz) panic("Assertion sizeof(" #o ") == " #sz " failed");
-#define assert_alignof(o, al) if (((uintptr_t) o) & (al - 1)) panic("Assertion alignof(" #o ") == " #al " failed");
-
-#endif /* !_SYSTEM_H */
+#endif /* ! _CORE_SYSTEM_H */

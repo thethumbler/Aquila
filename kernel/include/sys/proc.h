@@ -7,12 +7,12 @@ struct proc;
 struct pgroup;
 struct session;
 
+#include <mm/vm.h>
 #include <fs/vfs.h>
 #include <ds/queue.h>
 #include <sys/thread.h>
 #include <sys/signal.h>
 
-extern struct queue *sessions;
 struct session {
     /* Session ID */
     pid_t sid;
@@ -27,7 +27,6 @@ struct session {
     struct qnode *qnode;
 };
 
-extern struct queue *pgroups;
 struct pgroup {
     /* Process Group ID */
     pid_t pgid;
@@ -87,18 +86,23 @@ struct proc {
     uintptr_t entry;
 
     /* Virtual memory regions */
-    struct queue     vmr;
-    struct vmr  *heap_vmr;   /* VMR used as heap */
-    struct vmr  *stack_vmr;  /* VMR used as stack */
+    struct vm_space vm_space;
+
+    struct vm_entry *heap_vm;
+    struct vm_entry *stack_vm;
+
+    //struct queue     vmr;
+    //struct vmr  *heap_vmr;   /* VMR used as heap */
+    //struct vmr  *stack_vmr;  /* VMR used as stack */
 
     /* Process threads */
     struct queue threads;
 
-    /* Threads join wait queue */
-    struct queue thread_join;
-
     /* Number of threads */
     size_t threads_nr;
+
+    /* Threads join wait queue */
+    struct queue thread_join;
 
     /* Recieved Signals Queue */
     struct queue *sig_queue;
@@ -112,30 +116,27 @@ struct proc {
     /* Exit status of process */
     int exit;
 
-    /* Arch specific data */
-    void *arch; 
-
     /* Process is running? */
     int running;
 };
 
 /* sys/fork.c */
-int proc_fork(struct thread *thread, struct proc **fork);
+int proc_fork(struct thread *thread, struct proc **ref);
 
 /* sys/execve.c */
 int proc_execve(struct thread *thread, const char *fn, char * const argv[], char * const env[]);
 
 /* sys/proc.c */
-int  proc_pid_alloc(void);
-void proc_pid_free(int pid);
-int  proc_new(struct proc **ref);
+pid_t proc_pid_alloc(void);
+void  proc_pid_free(int pid);
 struct proc *proc_pid_find(pid_t pid);
+
+int  proc_new(struct proc **ref);
 int session_new(struct proc *proc);
 int pgrp_new(struct proc *proc, struct pgroup **ref_pgrp);
 
 void proc_kill(struct proc *proc);
 int  proc_reap(struct proc *proc);
-int  proc_ptr_validate(struct proc *proc, void *ptr);
 int  proc_fd_get(struct proc *proc);
 void proc_fd_release(struct proc *proc, int fd);
 void proc_dump(struct proc *proc);
@@ -146,5 +147,7 @@ int  proc_init(struct proc *proc);
 #define PROC_UIO(proc) ((struct uio){.cwd = (proc)->cwd, .uid = (proc)->uid, .gid = (proc)->gid, .mask = (proc)->mask})
 
 extern struct queue *procs;
+extern struct queue *pgroups;
+extern struct queue *sessions;
 
-#endif /* !_PROC_H */
+#endif /* ! _PROC_H */

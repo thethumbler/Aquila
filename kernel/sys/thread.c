@@ -6,10 +6,11 @@
 
 int thread_new(struct proc *proc, struct thread **ref)
 {
+    struct thread *thread = NULL;
+
     if (!proc)
         return -EINVAL;
 
-    struct thread *thread;
     thread = kmalloc(sizeof(struct thread));
 
     if (!thread)

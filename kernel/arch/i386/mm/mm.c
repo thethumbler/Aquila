@@ -23,11 +23,5 @@ void arch_mm_setup(void)
     extern char *kernel_heap;
     kernel_heap = VMA(lower_kernel_heap);
 
-#if ARCH_BITS==64
-    extern void setup_64_bit_paging();
-    setup_x86_64_paging();
-#else
-    extern void setup_i386_paging(void);
-    setup_i386_paging();
-#endif
+    arch_pmap_init();
 }

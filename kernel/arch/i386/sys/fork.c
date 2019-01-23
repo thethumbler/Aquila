@@ -10,12 +10,16 @@
 int arch_proc_fork(struct thread *thread, struct proc *fork)
 {
     int err = 0;
-    struct x86_proc   *pparch = thread->owner->arch;
+
+    struct pmap *parent_pmap = thread->owner->vm_space.pmap;
+    struct pmap *fork_pmap   = NULL;
+
     struct x86_thread *ptarch = thread->arch;
-    struct x86_proc   *fparch = NULL;
     struct x86_thread *ftarch = NULL;
 
-    if (!(fparch = kmalloc(sizeof(struct x86_proc)))) {
+    fork_pmap = arch_pmap_create();
+
+    if (fork_pmap == NULL) {
         /* Failed to allocate fork process arch structure */
         err = -ENOMEM;
         goto free_resources;
@@ -27,16 +31,7 @@ int arch_proc_fork(struct thread *thread, struct proc *fork)
         goto free_resources;
     }
 
-    uintptr_t cur_proc_map = pparch->map;
-    uintptr_t new_proc_map = arch_get_frame();
-    
-    if (!new_proc_map) {
-        /* Failed to allocate paging structure */
-        err = -ENOMEM;
-        goto free_resources;
-    }
-
-    arch_mm_fork(cur_proc_map, new_proc_map);
+    arch_pmap_fork(parent_pmap, fork_pmap);
 
     /* Setup kstack */
     uintptr_t fkstack_base = (uintptr_t) kmalloc(KERN_STACK_SIZE);
@@ -58,8 +53,7 @@ int arch_proc_fork(struct thread *thread, struct proc *fork)
     ftarch->rsp = (uintptr_t) fork_regs;
 #endif
 
-    fparch->map = new_proc_map;
-    fork->arch  = fparch;
+    fork->vm_space.pmap = fork_pmap;
 
     struct thread *fthread = (struct thread *) fork->threads.head->value;
     fthread->arch = ftarch;
@@ -70,8 +64,9 @@ int arch_proc_fork(struct thread *thread, struct proc *fork)
     return 0;
 
 free_resources:
-    if (fparch)
-        kfree(fparch);
+    if (fork_pmap)
+        kfree(fork_pmap);
+
     if (ftarch)
         kfree(ftarch);
     return err;

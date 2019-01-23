@@ -383,7 +383,7 @@ int vfs_vget(struct vnode *vnode, struct inode **inode)
     return ret;
 }
 
-int vfs_map(struct vmr *vmr)
+int vfs_map(struct vm_entry *vmr)
 {
     struct inode *inode = vmr->inode;
 

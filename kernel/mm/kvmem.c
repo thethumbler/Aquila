@@ -1,5 +1,6 @@
 #include <core/system.h>
 #include <core/panic.h>
+#include <core/assert.h>
 #include <mm/mm.h>
 #include <mm/vm.h>
 
@@ -24,7 +25,7 @@ size_t kvmem_obj_cnt;
 #define LAST_NODE_INDEX (100000)
 #define MAX_NODE_SIZE   ((1UL << 26) - 1)
 
-struct vmr kvmem_nodes = {
+struct vm_entry kvmem_nodes = {
     .base  = KVMEM_NODES,
     .size  = KVMEM_NODES_SIZE,
     .flags = VM_KRW,
@@ -37,7 +38,7 @@ void kvmem_setup(void)
     assert_sizeof(struct kvmem_node, 10);
 
     /* We start by mapping the space used for nodes into physical memory */
-    vm_map(&kvmem_nodes);
+    vm_map(&kvm_space, &kvmem_nodes);
 
     /* Now we have to clear it */
     memset((void *) KVMEM_NODES, 0, KVMEM_NODES_SIZE);
@@ -122,14 +123,14 @@ void *(kmalloc)(size_t size)
     size_t  map_size = (map_end - map_base)/PAGE_SIZE;
 
     if (map_size) {
-        struct vmr vmr;
+        struct vm_entry vm_entry;
 
-        vmr.paddr = 0,
-        vmr.base  = map_base,
-        vmr.size  = map_size * PAGE_SIZE,
-        vmr.flags = VM_KRW,
+        vm_entry.paddr = 0,
+        vm_entry.base  = map_base,
+        vm_entry.size  = map_size * PAGE_SIZE,
+        vm_entry.flags = VM_KRW,
 
-        vm_map(&vmr);
+        vm_map(&kvm_space, &vm_entry);
     }
 
     return (void *) NODE_ADDR(nodes[i]);
@@ -198,14 +199,14 @@ void (kfree)(void *_ptr)
     cur_node = 0;
     while (nodes[cur_node].next < LAST_NODE_INDEX) {
         if (nodes[cur_node].free) {
-            struct vmr vmr;
+            struct vm_entry vm_entry;
 
-            vmr.paddr = 0;
-            vmr.base  = NODE_ADDR(nodes[cur_node]);
-            vmr.size  = NODE_SIZE(nodes[cur_node]);
-            vmr.flags = VM_KRW;
+            vm_entry.paddr = 0;
+            vm_entry.base  = NODE_ADDR(nodes[cur_node]);
+            vm_entry.size  = NODE_SIZE(nodes[cur_node]);
+            vm_entry.flags = VM_KRW;
 
-            vm_unmap(&vmr);
+            vm_unmap(&kvm_space, &vm_entry);
         }
 
         cur_node = nodes[cur_node].next;

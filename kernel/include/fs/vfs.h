@@ -59,7 +59,7 @@ struct iops {
     int     (*vunlink) (struct vnode *dir, const char *fn, struct uio *uio);
     int     (*vfind)   (struct vnode *dir, const char *name, struct vnode *child);
     int     (*vget)    (struct vnode *vnode, struct inode **inode);
-    int     (*map)     (struct vmr *vmr);
+    int     (*map)     (struct vm_entry *vm_entry);
 };
 
 struct vfs_path {
@@ -180,7 +180,7 @@ int     vfs_vmkdir(struct vnode *dir, const char *dname, struct uio *uio, struct
 int     vfs_vunlink(struct vnode *dir, const char *fn, struct uio *uio);
 int     vfs_vfind(struct vnode *vnode, const char *name, struct vnode *child);
 int     vfs_vget(struct vnode *vnode, struct inode **inode);
-int     vfs_map(struct vmr *vmr);
+int     vfs_map(struct vm_entry *vm_entry);
 
 ssize_t vfs_read(struct inode *inode, off_t offset, size_t size, void *buf);
 ssize_t vfs_write(struct inode *inode, off_t offset, size_t size, void *buf);

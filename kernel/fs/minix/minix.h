@@ -26,7 +26,7 @@ struct minix_superblock {
     uint32_t    max_size;
     uint16_t    magic;
     uint16_t    state;
-} __packed;
+};
 
 /* v3 super block */
 struct minix3_superblock {
@@ -53,12 +53,12 @@ struct minix_inode {
     uint8_t     gid;
     uint8_t     nlinks;
     uint16_t    zones[9];
-} __packed;
+};
 
 struct minix_dentry {
     uint16_t    inode;
     uint8_t     name[0];    // Name will be here
-} __packed;
+};
 
 struct minix {
     struct inode *supernode;

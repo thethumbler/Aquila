@@ -59,6 +59,7 @@ int proc_new(struct proc **ref)
     int err = 0;
     struct proc *proc = NULL;
     struct thread *thread = NULL;
+    struct pmap *pmap = NULL;
 
     proc = kmalloc(sizeof(struct proc));
 
@@ -69,11 +70,25 @@ int proc_new(struct proc **ref)
 
     memset(proc, 0, sizeof(struct proc));
 
-    if ((err = thread_new(proc, &thread)))
+    err = thread_new(proc, &thread);
+
+    if (err != 0)
         goto error;
 
-    proc->running = 1;
+    pmap = arch_pmap_create();
 
+    if (pmap == NULL) {
+        err = -ENOMEM;
+        goto error;
+    }
+
+    proc->vm_space.pmap = pmap;
+
+    /* Set all signal handlers to default */
+    for (int i = 0; i < SIG_MAX; ++i)
+        proc->sigaction[i].sa_handler = SIG_DFL;
+
+    proc->running = 1;
     enqueue(procs, proc);   /* Add process to all processes queue */
 
     if (ref)
@@ -144,20 +159,15 @@ void proc_kill(struct proc *proc)
 
         printk("kernel: reached target reboot\n");
         arch_reboot();
+
         panic("reboot not implemented\n");
     }
 
     proc->running = 0;
 
-    /* Free resources */
-    arch_proc_kill(proc);
-
-    /* Unmap VMRs */
-    struct vmr *vmr = NULL;
-    while ((vmr = dequeue(&proc->vmr))) {
-        vm_unmap_full(vmr);
-        kfree(vmr);
-    }
+    struct vm_space *vm_space = &proc->vm_space;
+    vm_space_destroy(vm_space);
+    arch_pmap_decref(vm_space->pmap);
 
     /* Free kernel-space resources */
     kfree(proc->fds);
@@ -213,7 +223,7 @@ void proc_kill(struct proc *proc)
 
     if (kill_cur_thread) {
         arch_cur_thread_kill();
-        /* We shouldn't get here */
+        panic("How did we get here?");
     }
 }
 
@@ -244,14 +254,6 @@ void proc_fd_release(struct proc *proc, int fd)
     if (fd < FDS_COUNT) {
         proc->fds[fd].inode = NULL;
     }
-}
-
-int proc_ptr_validate(struct proc *proc, void *ptr)
-{
-    uintptr_t uptr = (uintptr_t) ptr;
-    if (!(uptr >= proc->entry && uptr <= proc->heap))
-        return 0;
-    return 1;
 }
 
 int session_new(struct proc *proc)

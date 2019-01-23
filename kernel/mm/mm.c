@@ -16,8 +16,23 @@
 #include <mm/buddy.h>
 #include <sys/sched.h>
 
-struct page pages[768*1024];
+struct vm_page pages[768*1024];
 #define PAGE(addr)    (pages[(addr)/PAGE_SIZE])
+
+void mm_page_incref(paddr_t paddr)
+{
+    PAGE(paddr).refcnt++;
+}
+
+void mm_page_decref(paddr_t paddr)
+{
+    PAGE(paddr).refcnt--;
+}
+
+size_t mm_page_refcnt(paddr_t paddr)
+{
+    return PAGE(paddr).refcnt;
+}
 
 paddr_t mm_page_alloc(void)
 {
@@ -30,22 +45,21 @@ void mm_page_dealloc(paddr_t paddr)
     /* TODO: Check out of bounds */
 
     /* Release frame if it is no longer referenced */
-    if (!PAGE(paddr).refs)
+    if (mm_page_refcnt(paddr) == 0)
         buddy_free(BUDDY_ZONE_NORMAL, paddr, PAGE_SIZE);
 }
 
-int mm_page_map(paddr_t paddr, vaddr_t vaddr, int flags)
+int mm_page_map(struct pmap *pmap, vaddr_t vaddr, paddr_t paddr, int flags)
 {
     /* TODO: Check out of bounds */
 
     /* Increment references count to physical page */
-    PAGE(paddr).refs++;
+    mm_page_incref(paddr);
 
-    /* Call arch specific page mapper */
-    return arch_page_map(paddr, vaddr, flags);
+    return arch_pmap_add(pmap, vaddr, paddr, flags);
 }
 
-int mm_page_unmap(vaddr_t vaddr)
+int mm_page_unmap(struct pmap *pmap, vaddr_t vaddr)
 {
     /* TODO: Check out of bounds */
 
@@ -54,10 +68,10 @@ int mm_page_unmap(vaddr_t vaddr)
 
     if (paddr) {
         /* Decrement references count to physical page */
-        PAGE(paddr).refs--;
+        mm_page_decref(paddr);
 
         /* Call arch specific page unmapper */
-        arch_page_unmap(vaddr);
+        arch_pmap_remove(pmap, vaddr, vaddr + PAGE_SIZE);
 
         /* Release page -- checks ref count */
         mm_page_dealloc(paddr);
@@ -67,10 +81,10 @@ int mm_page_unmap(vaddr_t vaddr)
     return -EINVAL;
 }
 
-
-
-int mm_map(paddr_t paddr, vaddr_t vaddr, size_t size, int flags)
+int mm_map(struct pmap *pmap, paddr_t paddr, vaddr_t vaddr, size_t size, int flags)
 {
+    //printk("mm_map(pmap=%p, pa=%p, va=%p, size=%d, flags=%x)\n", pmap, paddr, vaddr, size, flags);
+
     /* TODO: Check out of bounds */
 
     int alloc = !paddr;
@@ -87,7 +101,7 @@ int mm_map(paddr_t paddr, vaddr_t vaddr, size_t size, int flags)
         if (!phys) {
             if (alloc)
                 paddr = mm_page_alloc();
-            mm_page_map(paddr, vaddr, flags);
+            mm_page_map(pmap, vaddr, paddr, flags);
         }
 
         vaddr += PAGE_SIZE;
@@ -97,24 +111,28 @@ int mm_map(paddr_t paddr, vaddr_t vaddr, size_t size, int flags)
     return 0;
 }
 
-void mm_unmap(vaddr_t vaddr, size_t size)
+void mm_unmap(struct pmap *pmap, vaddr_t vaddr, size_t size)
 {
     /* TODO: Check out of bounds */
 
     if (size < PAGE_SIZE) return;
 
-    vaddr_t start = UPPER_PAGE_BOUNDARY(vaddr);
-    vaddr_t end   = LOWER_PAGE_BOUNDARY(vaddr + size);
+    vaddr_t sva = UPPER_PAGE_BOUNDARY(vaddr);
+    vaddr_t eva = LOWER_PAGE_BOUNDARY(vaddr + size);
 
-    size_t nr = (end - start)/PAGE_SIZE;
+    //arch_pmap_remove(pmap, sva, eva);
+
+#if 1
+    size_t nr = (eva - sva)/PAGE_SIZE;
 
     while (nr--) {
-        mm_page_unmap(start);
-        start += PAGE_SIZE;
+        mm_page_unmap(pmap, sva);
+        sva += PAGE_SIZE;
     }
+#endif
 }
 
-void mm_unmap_full(vaddr_t vaddr, size_t size)
+void mm_unmap_full(struct pmap *pmap, vaddr_t vaddr, size_t size)
 {
     /* TODO: Check out of bounds */
 
@@ -124,58 +142,61 @@ void mm_unmap_full(vaddr_t vaddr, size_t size)
     size_t nr = (end - start)/PAGE_SIZE;
 
     while (nr--) {
-        mm_page_unmap(start);
+        mm_page_unmap(pmap, start);
         start += PAGE_SIZE;
     }
 }
 
-void mm_page_fault(vaddr_t vaddr)
+void mm_page_fault(vaddr_t vaddr, int flags)
 {
     /* TODO: Check out of bounds */
 
     vaddr_t page_addr = vaddr & ~PAGE_MASK;
     vaddr_t page_end  = page_addr + PAGE_SIZE;
 
-    struct queue *q_vmr = &cur_thread->owner->vmr;
-    int vmr_flag = 0;
+    struct queue *qvm_entries = &cur_thread->owner->vm_space.vm_entries;
+    int vm_flag = 0;
 
-    forlinked (node, q_vmr->head, node->next) {
-        struct vmr *vmr = node->value;
-        uintptr_t vmr_end = vmr->base + vmr->size;
+    forlinked (node, qvm_entries->head, node->next) {
+        struct vm_entry *vm_entry = node->value;
+        uintptr_t vmr_end = vm_entry->base + vm_entry->size;
 
         /* exclude non overlapping VMRs */
-        if (page_end <= vmr->base || page_addr >= vmr_end)
+        if (page_end <= vm_entry->base || page_addr >= vmr_end)
             continue;
 
-        /* page overlaps vmr in at least one byte */
-        vmr_flag = 1;
-        mm_map(0, page_addr, PAGE_SIZE, VM_URWX);  /* FIXME */
+        /* page overlaps vm_entry in at least one byte */
+        vm_flag = 1;
+        struct pmap *pmap = cur_thread->owner->vm_space.pmap;
+        mm_map(pmap, 0, page_addr, PAGE_SIZE, VM_URWX);  /* FIXME */
 
         uintptr_t addr_start = page_addr;
-        if (vmr->base > page_addr)
-            addr_start = vmr->base;
+        if (vm_entry->base > page_addr)
+            addr_start = vm_entry->base;
 
         uintptr_t addr_end = page_end;
         if (vmr_end < page_end)
             addr_end = vmr_end;
 
         size_t size = addr_end - addr_start;
-        size_t file_off = addr_start - vmr->base;
+        size_t file_off = addr_start - vm_entry->base;
 
         /* File backed */
-        if (vmr->flags & VM_FILE)
-            vfs_read(vmr->inode, vmr->off + file_off, size, (void *) addr_start);
+        if (vm_entry->flags & VM_FILE)
+            vfs_read(vm_entry->inode, vm_entry->off + file_off, size, (void *) addr_start);
 
         /* Zero fill */
-        if (vmr->flags & VM_ZERO)
+        if (vm_entry->flags & VM_ZERO)
             memset((void *) addr_start, 0, size);
     }
 
-    if (vmr_flag) {
+    if (vm_flag) {
         return;
     }
 
-    printk("mm_page_fault(%p)\n", vaddr);
+    printk("mm_page_fault(vaddr=%p, flags=%x)\n", vaddr, flags);
+    for (;;);
+
     signal_proc_send(cur_thread->owner, SIGSEGV);
     return;
 }

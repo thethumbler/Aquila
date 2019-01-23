@@ -7,9 +7,9 @@
 #define X86_EFLAGS  (0x200)
 #define X86_CS      (0x18 | 3)
 
-struct x86_proc {
-    uintptr_t   map; /* Process paging structure */
-};
+//struct x86_proc {
+//    uintptr_t   map; /* Process paging structure */
+//};
 
 struct x86_thread {
     uintptr_t   kstack; /* Kernel stack */
@@ -29,8 +29,7 @@ struct x86_thread {
 #endif
 
     struct x86_regs *regs;  /* Pointer to registers on the stack */
-
-    void        *fpu_context;
+    void *fpu_context;
 
     /* Flags */
     int fpu_enabled;

@@ -12,7 +12,7 @@ static struct dev fdcdev;
 static struct ioaddr fdcio;
 
 #define SECTOR_SIZE  512UL
-#define FDC_COMMAND_TIMEOUT 50
+#define FDC_COMMAND_TIMEOUT 500000
 
 static struct fdc_drive {
     uint8_t dor;
@@ -218,6 +218,8 @@ static int fdc_probe()
 {
     fdcio.addr = FDC_BASE;
     fdcio.type = IOADDR_PORT;
+
+    fdc_reset();
 
     if (fdc_cmd_version() != 0x90) {
         printk("fdc: Controller not found\n");
