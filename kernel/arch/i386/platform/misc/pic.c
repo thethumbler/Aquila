@@ -85,7 +85,7 @@ void x86_irq_mask(int irq)
 {
     if (irq < 8) {  /* Master */
         pic_mask |= 1 << irq;
-        io_out8(&master,  PIC_DATA, (pic_mask >> 8) & 0xFF);
+        io_out8(&master,  PIC_DATA, pic_mask & 0xFF);
     } else if (irq < 16) {  /* Slave */
         pic_mask |= 1 << irq;
         io_out8(&slave,  PIC_DATA, (pic_mask >> 8) & 0xFF);
