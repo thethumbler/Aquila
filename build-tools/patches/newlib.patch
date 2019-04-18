@@ -21,7 +21,7 @@ diff -ruN ../newlib-3.0.0/newlib/configure.host ./newlib/configure.host
 +    posix_dir=posix
 +    unix_dir=unix
 +    sys_dir=aquila
-+    newlib_cflags="${newlib_cflags} -D__aquila__ -D_NO_GETLOGIN -D_NO_GETUT -D_NO_GETCWD -D_NO_GETPASS -D_NO_TTYNAME -DSIGNAL_PROVIDED -DHAVE_OPENDIR -DHAVE_MMAP=0 -DHAVE_MREMAP=0 -D_I386MACH_ALLOW_HW_INTERRUPTS"
++    newlib_cflags="${newlib_cflags} -D__aquila__ -D_NO_GETLOGIN -D_NO_GETUT -D_NO_GETCWD -D_NO_GETPASS -D_NO_TTYNAME -DSIGNAL_PROVIDED -DHAVE_OPENDIR -DHAVE_MMAP=0 -DHAVE_MREMAP=0 -D_I386MACH_ALLOW_HW_INTERRUPTS -march=i386"
 +	;;
  esac
  

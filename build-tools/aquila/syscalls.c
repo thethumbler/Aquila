@@ -59,6 +59,7 @@
 #define SYS_UMASK   47
 #define SYS_CHMOD   48
 #define SYS_SYSCONF 49
+#define SYS_GETTIMEOFDAY 50
 
 #define SYSCALL3(ret, v, arg1, arg2, arg3) \
 	asm volatile("int $0x80;":"=a"(ret):"a"(v), "b"(arg1), "c"(arg2), "d"(arg3));
@@ -275,11 +276,6 @@ ssize_t write(int fildes, const void *buf, size_t nbytes)
     }
 
     return ret;
-}
-
-int gettimeofday(struct timeval *p, void *z)
-{
-    return 0;
 }
 
 int sigaction(int sig, const struct sigaction *act, struct sigaction *oact)
@@ -677,32 +673,97 @@ mode_t umask(mode_t mask)
 
 int chmod(const char *path, mode_t mode)
 {
+    int ret;
+    SYSCALL2(ret, SYS_CHMOD, path, mode);
+
+    if (ret < 0) {
+        errno = -ret;
+        return -1;
+    }
+
     return 0;
 }
 
 long sysconf(int name)
 {
-    return 0;
+    long ret;
+    SYSCALL1(ret, SYS_SYSCONF, name);
+
+    if (ret < 0) {
+        errno = -ret;
+        return -1;
+    }
+
+    return ret;
 }
 
 int access(const char *path, int mode)
 {
+    /*
+    int ret;
+    SYSCALL2(ret, SYS_ACCESS, path, mode);
+
+    if (ret < 0) {
+        errno = -ret;
+        return -1;
+    }
+
     return 0;
+    */
+
+    errno = ENOSYS;
+    return -1;
 }
 
 int chown(const char *path, uid_t owner, gid_t group)
 {
+    /*
+    int ret;
+    SYSCALL3(ret, SYS_CHOWN, path, owner, group);
+
+    if (ret < 0) {
+        errno = -ret;
+        return -1;
+    }
+
     return 0;
+    */
+    errno = ENOSYS;
+    return -1;
 }
 
 int utime(const char *path, const struct utimebuf *times)
 {
+    /*
+    int ret;
+    SYSCALL2(ret, SYS_UTIME, path, times);
+
+    if (ret < 0) {
+        errno = -ret;
+        return -1;
+    }
+
     return 0;
+    */
+    errno = ENOSYS;
+    return -1;
 }
 
 int rmdir(const char *path)
 {
+    /*
+    int ret;
+    SYSCALL1(ret, SYS_RMDIR, path);
+
+    if (ret < 0) {
+        errno = -ret;
+        return -1;
+    }
+
     return 0;
+    */
+    errno = ENOSYS;
+    return -1;
 }
 
 pid_t vfork(void)
@@ -712,7 +773,19 @@ pid_t vfork(void)
 
 int sigprocmask(int how, const sigset_t *set, sigset_t *oldset)
 {
+    /*
+    int ret;
+    SYSCALL3(ret, SYS_SIGMASK, how, set, oldset);
+
+    if (ret < 0) {
+        errno = -ret;
+        return -1;
+    }
+
     return 0;
+    */
+    errno = ENOSYS;
+    return -1;
 }
 
 int dup(int oldfd)
@@ -733,12 +806,14 @@ long pathconf(const char *path, int name)
 
 unsigned int alarm(unsigned int seconds)
 {
-    return 0;
+    errno = ENOSYS;
+    return -1;
 }
 
 unsigned int sleep(unsigned int seconds)
 {
-    return 0;
+    errno = ENOSYS;
+    return -1;
 }
 
 void sync(void)
@@ -757,4 +832,29 @@ long fpathconf(int fd, int name)
 {
     errno = ENOSYS;
     return -1;
+}
+
+int truncate(const char *path, off_t len)
+{
+    errno = ENOSYS;
+    return -1;
+}
+
+int ftruncate(int fd, off_t len)
+{
+    errno = ENOSYS;
+    return -1;
+}
+
+int gettimeofday (struct timeval *__restrict tv, void *__restrict tz)
+{
+    int ret;
+    SYSCALL2(ret, SYS_GETTIMEOFDAY, tv, tz);
+
+    if (ret < 0) {
+        errno = -ret;
+        return -1;
+    }
+
+    return 0;
 }

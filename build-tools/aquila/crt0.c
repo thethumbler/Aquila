@@ -29,6 +29,6 @@ void _start_c(int argc, char **argv, char **env)
     if (env)
         for (; *env; ++env) putenv(*env);
 
-    _init();
+    //_init();
     _exit(main(argc, argv));
 }
