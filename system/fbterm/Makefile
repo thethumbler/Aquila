@@ -11,7 +11,8 @@ include Build.mk
 all: builtin.o fbterm
 
 fbterm: builtin.o
-	$(CC) $< $(LDLIBS) -o $@;
+	@echo -e "  ELF     " $@;
+	@$(CC) $(LDFLAGS) $< $(LDLIBS) -o $@;
 
 builtin.o: $(obj-y) $(dirs-y)
 	@echo -e "  LD      " builtin.o;
@@ -24,7 +25,7 @@ $(dirs-y): $(patsubst %/,%/Makefile, $(dirs-y))
 
 %.o:%.c
 	@echo -e "  CC      " $@;
-	@ $(CC) $(CFLAGS) -c $< -o $@
+	@$(CC) $(CFLAGS) -c $< -o $@
 
 .PHONY: clean
 clean: param = clean

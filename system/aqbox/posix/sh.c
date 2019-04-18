@@ -18,6 +18,10 @@
 #include <sys/ioctl.h>
 #include <termios.h>
 
+int flags = 0;
+
+#define F_DEBUG 1
+
 /*
  * Built-in commands
  */
@@ -63,6 +67,21 @@ int builtin_exit(int argc, char **argv)
     exit(0);
 }
 
+int builtin_true(int argc, char **argv)
+{
+    return 0;
+}
+
+int builtin_set(int argc, char **argv)
+{
+    for (int i = 0; i < argc; ++i) {
+        if (!strcmp(argv[i], "-x"))
+            flags |= F_DEBUG;
+    }
+
+    return 0;
+}
+
 #if 0
 int builtin_glob(int argc, char **argv)
 {
@@ -89,6 +108,8 @@ struct aqsh_command {
     {"cd", builtin_cd},
     {"exit", builtin_exit},
     {"export", builtin_export},
+    {"set", builtin_set},
+    {"true", builtin_true},
     //{"glob", builtin_glob},
 };
 
@@ -379,6 +400,14 @@ int eval(char *buf)
         return 0;
 
     argv[args_i] = NULL;
+
+    if (flags & F_DEBUG) {
+        fprintf(stderr, "+ ");
+        for (int i = 0; i < args_i; ++i) {
+            fprintf(stderr, "%s ", argv[i]);
+        }
+        fprintf(stderr, "\n");
+    }
 
     /* path? */
     if (args_i && (argv[0][0] == '/' || argv[0][0] == '.')) {

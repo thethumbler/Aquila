@@ -21,6 +21,12 @@ int cmd_touch(int, char**);
 int cmd_uname(int, char**);
 int cmd_unlink(int, char**);
 int cmd_kill(int, char**);
+int cmd_reboot(int, char**);
+int cmd_bim(int, char**);
+int cmd_truncate(int, char**);
+int cmd_mktemp(int, char**);
+int cmd_vmstat(int, char**);
+int cmd_date(int, char**);
 
 #define APPLET(name) {#name, cmd_##name}
 
@@ -28,8 +34,10 @@ struct applet {
     char *name;
     int (*f)(int, char **);
 } applets[] = {
+    APPLET(bim),
     APPLET(cat),
     APPLET(clear),
+    APPLET(date),
     APPLET(echo),
     APPLET(env),
     APPLET(getty),
@@ -38,16 +46,20 @@ struct applet {
     APPLET(ls),
     APPLET(mkdir),
     APPLET(mknod),
+    APPLET(mktemp),
     APPLET(mount),
     APPLET(ps),
     APPLET(pwd),
     APPLET(readmbr),
+    APPLET(reboot),
     APPLET(screenfetch),
     APPLET(sh),
     APPLET(stat),
     APPLET(touch),
+    APPLET(truncate),
     APPLET(uname),
     APPLET(unlink),
+    APPLET(vmstat),
 };
 
 #define APPLETS_NR (sizeof(applets)/sizeof(*applets))

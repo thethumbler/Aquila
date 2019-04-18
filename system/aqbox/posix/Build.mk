@@ -10,3 +10,4 @@ obj-y += uname.o
 obj-y += unlink.o
 obj-y += touch.o
 obj-y += kill.o
+obj-y += date.o

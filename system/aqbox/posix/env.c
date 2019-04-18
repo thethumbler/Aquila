@@ -6,7 +6,7 @@
 
 extern char **environ;
 
-static void env_usage(void)
+static void usage(void)
 {
     fprintf(stderr,
             "Usage: env [-i] [name=value]... [utility [argument...]]\n"
