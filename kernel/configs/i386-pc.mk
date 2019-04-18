@@ -11,8 +11,6 @@ INCLUDES := \
 	-I/opt/aquila/lib/gcc/i686-aquila/7.3.0/include/
 
 CC := $(PDIR)/../build-tools/sysroot/bin/i686-elf-gcc
-#CC := /opt/aquila/tcc/bin/i386-tcc
-#CC := /opt/aquila/pcc/bin/i686-aquila-pcc
 
 CFLAGS := $(INCLUDES) \
 		-nostdlib -ffreestanding -m32 \
@@ -21,12 +19,9 @@ CFLAGS := $(INCLUDES) \
 		-funsigned-bitfields -fuse-ld=bfd
 
 AS := $(CC)
-#AS := gcc
 ASFLAGS := $(CFLAGS)
 LD := $(PDIR)/../build-tools/sysroot/bin/i686-elf-ld.bfd
-#LD := ld.bfd
 LDFLAGS := -nostdlib -melf_i386
-#LDFLAGS := -nostdlib -melf_i386 --static
 
 #
 # Configurations
