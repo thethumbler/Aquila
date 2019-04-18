@@ -36,6 +36,8 @@ struct fops {
 
 #include <mm/vm.h>
 
+MALLOC_DECLARE(M_INODE);
+
 /* User I/O operation */
 struct uio {
     char     *root; /* Root Directory */
@@ -216,5 +218,13 @@ int     vfs_unlink(const char *path, struct uio *uio);
 int     vfs_stat(struct inode *inode, struct stat *buf);
 int     vfs_perms_check(struct file *file, struct uio *uio);
 
+/* XXX */
+
+struct mountpoint {
+    const char *dev;
+    const char *path;
+    const char *type;
+    const char *options;
+};
 
 #endif /* !_VFS_H */

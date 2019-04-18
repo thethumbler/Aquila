@@ -4,6 +4,8 @@
 #include <sys/sched.h>
 #include <ds/queue.h>
 
+MALLOC_DEFINE(M_THREAD, "thread", "thread structure");
+
 int thread_new(struct proc *proc, struct thread **ref)
 {
     struct thread *thread = NULL;
@@ -11,7 +13,7 @@ int thread_new(struct proc *proc, struct thread **ref)
     if (!proc)
         return -EINVAL;
 
-    thread = kmalloc(sizeof(struct thread));
+    thread = kmalloc(sizeof(struct thread), &M_THREAD, 0);
 
     if (!thread)
         return -ENOMEM;

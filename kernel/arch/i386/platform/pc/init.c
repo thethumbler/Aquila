@@ -48,9 +48,16 @@ static int x86_pc_pit_init(void)
     pit.addr = PIT_CHANNEL0;
     pit.type = IOADDR_PORT;
 
-    x86_pit_setup(&pit);
+    return x86_pit_setup(&pit);
+}
 
-    return 0;
+static int x86_pc_cmos_init(void)
+{
+    struct ioaddr cmos;
+    cmos.addr = 0x70;
+    cmos.type = IOADDR_PORT;
+
+    return x86_cmos_setup(&cmos);
 }
 
 #define PIT_IRQ 0
@@ -68,6 +75,7 @@ int platform_init(void)
     x86_pc_pic_init();
     x86_pc_i8042_init();
     x86_pc_pit_init();
+    x86_pc_cmos_init();
     
     return 0;
 }

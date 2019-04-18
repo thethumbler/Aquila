@@ -22,6 +22,11 @@
 #include <ds/queue.h>
 #include <ds/bitmap.h>
 
+MALLOC_DEFINE(M_PROC, "proc", "process structure");
+MALLOC_DEFINE(M_SESSION, "session", "session structure");
+MALLOC_DEFINE(M_PGROUP, "pgroup", "process group structure");
+MALLOC_DEFINE(M_FDS, "fds", "file descriptor array"); /* FIXME */
+
 /* all processes */
 struct queue *procs = QUEUE_NEW();
 
@@ -61,7 +66,7 @@ int proc_new(struct proc **ref)
     struct thread *thread = NULL;
     struct pmap *pmap = NULL;
 
-    proc = kmalloc(sizeof(struct proc));
+    proc = kmalloc(sizeof(struct proc), &M_PROC, 0);
 
     if (!proc) {
         err = -ENOMEM;
@@ -123,7 +128,7 @@ int proc_init(struct proc *proc)
 
     proc->pid = proc_pid_alloc();
 
-    proc->fds = kmalloc(FDS_COUNT * sizeof(struct file));
+    proc->fds = kmalloc(FDS_COUNT * sizeof(struct file), &M_FDS, 0);
 
     if (!proc->fds) {
         err = -ENOMEM;
@@ -263,13 +268,13 @@ int session_new(struct proc *proc)
     struct pgroup  *pgrp    = NULL;
 
     /* allocate a new session structure */
-    session = kmalloc(sizeof(struct session));
+    session = kmalloc(sizeof(struct session), &M_SESSION, 0);
     if (!session) goto e_nomem;
 
     memset(session, 0, sizeof(struct session));
 
     /* allocate a new process group structure for the session */
-    pgrp = kmalloc(sizeof(struct pgroup));
+    pgrp = kmalloc(sizeof(struct pgroup), &M_PGROUP, 0);
     if (!pgrp) goto e_nomem;
 
     memset(pgrp, 0, sizeof(struct pgroup));
@@ -318,7 +323,7 @@ int pgrp_new(struct proc *proc, struct pgroup **ref)
     int err = 0;
     struct pgroup *pgrp = NULL;
     
-    pgrp = kmalloc(sizeof(struct pgroup));
+    pgrp = kmalloc(sizeof(struct pgroup), &M_PGROUP, 0);
     if (!pgrp) goto e_nomem;
 
     memset(pgrp, 0, sizeof(struct pgroup));

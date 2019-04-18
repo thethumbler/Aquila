@@ -6,6 +6,8 @@
 #include <sys/proc.h>
 #include <sys/sched.h>
 
+MALLOC_DEFINE(M_X86_FPU, "x86-fpu", "x86 FPU context");
+
 static char fpu_context[512] __aligned(16);
 struct thread *last_fpu_thread = NULL;
 
@@ -49,7 +51,7 @@ void x86_fpu_trap(void)
         struct x86_thread *_arch = last_fpu_thread->arch;
 
         if (!_arch->fpu_context)    /* Lazy allocate */
-            _arch->fpu_context = kmalloc(512);
+            _arch->fpu_context = kmalloc(512, &M_X86_FPU, 0);
 
         fpu_save();
         memcpy(_arch->fpu_context, fpu_context, 512);

@@ -45,7 +45,7 @@ static int binfmt_elf32_load(struct proc *proc, struct inode *inode)
         vfs_read(inode, offset, sizeof(shdr), &shdr);
         
         if (shdr.flags & SHF_ALLOC) {
-            struct vm_entry *vm_entry = kmalloc(sizeof(struct vm_entry));
+            struct vm_entry *vm_entry = kmalloc(sizeof(struct vm_entry), &M_VM_ENTRY, 0);
 
             if (!vm_entry)
                 goto error;

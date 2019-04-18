@@ -21,7 +21,7 @@ void kmain(struct boot *boot)
     modules_init();
 
     if (boot->modules_count)
-        load_ramdisk();
+        load_ramdisk(&boot->modules[0]);
     else
         panic("No modules loaded: unable to load ramdisk");
 

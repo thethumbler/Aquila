@@ -26,7 +26,6 @@
 
 
 #define __packed     __attribute__((packed))
-//#define __packed     
 #define __aligned(n) __attribute__((aligned(n)))
 #define __section(s) __attribute__((section(s)))
 
@@ -44,7 +43,6 @@
 #include <core/printk.h>
 #include <mm/kvmem.h>
 
-#include <stdarg.h>
 #include <config.h>
 #include <core/types.h>
 

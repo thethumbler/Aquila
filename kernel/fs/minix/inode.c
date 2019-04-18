@@ -65,7 +65,7 @@ ssize_t minix_inode_block_read(struct minix *desc, struct minix_inode *m_inode, 
     if (idx < MINIX_DIRECT_ZONES) {
         return minix_block_read(desc, m_inode->zones[idx], buf);
     } else if (idx < MINIX_DIRECT_ZONES + p) {
-        uint16_t *tmp = kmalloc(desc->bs);
+        uint16_t *tmp = kmalloc(desc->bs, &M_BUFFER, 0);
 
         if ((err = minix_block_read(desc, m_inode->zones[MINIX_DIRECT_ZONES+1], tmp)) < 0)
             goto error;
@@ -98,7 +98,7 @@ ssize_t minix_inode_block_write(struct minix *desc, struct minix_inode *inode, u
             minix_inode_write(desc, inode_id, inode);
         }
 
-        uint16_t *tmp = kmalloc(desc->bs);
+        uint16_t *tmp = kmalloc(desc->bs, &M_BUFFER, 0);
         minix_block_read(desc, inode->zones[MINIX_DIRECT_ZONES+1], tmp);
 
         uint16_t block = tmp[idx - MINIX_DIRECT_ZONES];

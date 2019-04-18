@@ -53,6 +53,34 @@ static ssize_t procfs_meminfo(off_t off, size_t size, char *buf)
     return 0;
 }
 
+/* proc/kvmem */
+static ssize_t procfs_kvmem(off_t off, size_t size, char *buf)
+{
+    printk("procfs_kvmem(off=%d, size=%d, buf=%p)\n", off, size, buf);
+
+    extern struct queue *malloc_types;
+
+    char kvmem_buf[1024];
+    int sz = 0;
+
+    forlinked (node, malloc_types->head, node->next) {
+        struct malloc_type *type = (struct malloc_type *) node->value;
+        sz += snprintf(kvmem_buf + sz, sizeof(kvmem_buf) - sz,
+                "%s %d %d\n", type->name, type->nr, type->total);
+
+        if ((size_t) sz >= sizeof(kvmem_buf))
+            break;
+    }
+
+    if (off < sz) {
+        ssize_t ret = MIN(size, (size_t)(sz - off));
+        memcpy(buf, kvmem_buf + off, ret);
+        return ret;
+    }
+
+    return 0;
+}
+
 /* proc/version */
 static ssize_t procfs_version(off_t off, size_t size, char *buf)
 {
@@ -153,6 +181,33 @@ static ssize_t procfs_rdcmdline(off_t off, size_t size, char *buf)
     return 0;
 }
 
+/* proc/mounts */
+static ssize_t procfs_mounts(off_t off, size_t size, char *buf)
+{
+    char mounts_buf[4096];
+
+    extern struct queue *mounts;
+    int sz = 0;
+
+    forlinked(node, mounts->head, node->next) {
+        struct mountpoint *mp = node->value;
+        //printk("%s %s %s %s\n", mp->dev, mp->path, mp->type, mp->options);
+        sz += snprintf(mounts_buf + sz, sizeof(mounts_buf) - sz,
+                "%s %s %s %s\n", mp->dev, mp->path, mp->type, mp->options);
+        if ((size_t) sz >= sizeof(mounts_buf))
+            break;
+    }
+
+
+    if (off < sz) {
+        ssize_t ret = MIN(size, (size_t)(sz - off));
+        memcpy(buf, mounts_buf + off, ret);
+        return ret;
+    }
+
+    return 0;
+}
+
 /* proc/buddyinfo */
 static ssize_t procfs_buddyinfo(off_t off, size_t size, char *buf)
 {
@@ -195,6 +250,8 @@ static struct procfs_entry entries[] = {
     {"filesystems",  procfs_filesystems},
     //{"zoneinfo",  procfs_zoneinfo},
     {"buddyinfo", procfs_buddyinfo},
+    {"kvmem", procfs_kvmem},
+    {"mounts", procfs_mounts},
 };
 
 #define PROCFS_ENTRIES  (sizeof(entries)/sizeof(entries[0]))
@@ -300,6 +357,8 @@ static struct procfs_proc_entry proc_entries[] = {
 
 static ssize_t procfs_read(struct inode *node, off_t offset, size_t size, void *buf)
 {
+    //printk("procfs_read(inode=%p, offset=%d, size=%d, buf=%p)\n", node, offset, size, buf);
+
     size_t id = (size_t) node->p;
 
     if ((ssize_t) node->ino < 0) {
@@ -434,7 +493,7 @@ static int procfs_vget(struct vnode *vnode, struct inode **inode)
         if ((size_t) id < PROCFS_ENTRIES) {
             struct inode *node = NULL;
             if (!(node = icache_find(&procfs_icache, id))) { /* Not in open inode table? */
-                node = kmalloc(sizeof(struct inode));
+                node = kmalloc(sizeof(struct inode), &M_INODE, 0);
                 memset(node, 0, sizeof(struct inode));
 
                 node->ino  = vnode->ino;
@@ -459,7 +518,7 @@ static int procfs_vget(struct vnode *vnode, struct inode **inode)
         struct inode *node = NULL;
 
         if (!(node = icache_find(&procfs_icache, vnode->ino))) { /* Not in open inode table? */
-            node = kmalloc(sizeof(struct inode));
+            node = kmalloc(sizeof(struct inode), &M_INODE, 0);
             memset(node, 0, sizeof(struct inode));
 
             node->ino = vnode->ino;
@@ -486,9 +545,19 @@ static int procfs_vget(struct vnode *vnode, struct inode **inode)
     //return -1;
 }
 
+static int procfs_close(struct inode *inode)
+{
+    if (icache_find(&procfs_icache, inode->ino))
+        icache_remove(&procfs_icache, inode);
+
+    kfree(inode);
+
+    return 0;
+}
+
 static int procfs_init()
 {
-    procfs_root = kmalloc(sizeof(struct inode));
+    procfs_root = kmalloc(sizeof(struct inode), &M_INODE, 0);
 
     if (!procfs_root)
         return -ENOMEM;
@@ -526,12 +595,14 @@ struct fs procfs = {
         .readdir = procfs_readdir,
         .vfind   = procfs_vfind,
         .vget    = procfs_vget,
+        .close   = procfs_close,
     },
 
     .fops = {
         .open    = posix_file_open,
         .read    = posix_file_read,
         .readdir = posix_file_readdir,
+        .close   = posix_file_close,
 
         .eof     = __vfs_eof_always, /* XXX */
     },

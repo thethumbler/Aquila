@@ -6,6 +6,8 @@
 #include <fs/pipe.h>
 #include <fs/posix.h>
 
+MALLOC_DEFINE(M_PIPE, "pipe", "pipe structure");
+
 static ssize_t pipefs_read(struct inode *node, off_t offset __unused, size_t size, void *buf)
 {
     struct pipe *pipe = node->p;
@@ -36,7 +38,7 @@ static int pipefs_mkpipe(struct pipe **ref)
 {
     struct pipe *pipe;
 
-    pipe = kmalloc(sizeof(struct pipe));
+    pipe = kmalloc(sizeof(struct pipe), &M_PIPE, 0);
     if (!pipe) return -ENOMEM;
 
     memset(pipe, 0, sizeof(struct pipe));
@@ -72,13 +74,13 @@ int pipefs_pipe(struct file *read, struct file *write)
     err = pipefs_mkpipe(&pipe);
     if (err) return err;
 
-    read->inode  = kmalloc(sizeof(struct inode));
+    read->inode  = kmalloc(sizeof(struct inode), &M_INODE, 0);
     if (!read->inode) {
         pipefs_pfree(pipe);
         return -ENOMEM;
     }
 
-    write->inode = kmalloc(sizeof(struct inode));
+    write->inode = kmalloc(sizeof(struct inode), &M_INODE, 0);
     if (!write->inode) {
         kfree(read->inode);
         pipefs_pfree(pipe);

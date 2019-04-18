@@ -17,9 +17,9 @@ struct ringbuf {
 
 static inline struct ringbuf *ringbuf_new(size_t size)
 {
-    struct ringbuf *ring = kmalloc(sizeof(struct ringbuf));
+    struct ringbuf *ring = kmalloc(sizeof(struct ringbuf), &M_BUFFER, 0);
     *ring = (struct ringbuf) {
-        .buf = kmalloc(size),
+        .buf = kmalloc(size, &M_BUFFER, 0),
         .size = size,
         .head = 0,
         .tail = 0

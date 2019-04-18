@@ -9,13 +9,13 @@
 void arch_proc_init(struct proc *proc)
 {
     //struct pmap *pmap = arch_pmap_create();
-    struct x86_thread *arch = kmalloc(sizeof(struct x86_thread));
+    struct x86_thread *arch = kmalloc(sizeof(struct x86_thread), &M_X86_THREAD, 0);
     memset(arch, 0, sizeof(struct x86_thread));
 
     //struct arch_binfmt *s = d;
     //pmap->map = s->new_map;
 
-    uintptr_t kstack_base = (uintptr_t) kmalloc(KERN_STACK_SIZE);
+    uintptr_t kstack_base = (uintptr_t) kmalloc(KERN_STACK_SIZE, &M_KERN_STACK, 0);
 
     arch->kstack = kstack_base + KERN_STACK_SIZE;   /* Kernel stack */
 #if ARCH_BITS==32

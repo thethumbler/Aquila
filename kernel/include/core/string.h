@@ -72,7 +72,7 @@ static inline int strlen(const char *s)
 static inline char *strdup(const char *s)
 {
     int len = strlen(s);
-    char *ret = kmalloc(len + 1);
+    char *ret = kmalloc(len + 1, &M_BUFFER, 0);
     (void) memcpy(ret, s, len + 1);
     return ret;
 }
@@ -105,7 +105,7 @@ static inline char **tokenize(const char *s, char c)
     int len = strlen(s);
 
     if (!len) {
-        char **ret = kmalloc(sizeof(char *));
+        char **ret = kmalloc(sizeof(char *), &M_BUFFER, 0);
         *ret = NULL;
         return ret;
     }
@@ -121,7 +121,7 @@ static inline char **tokenize(const char *s, char c)
     if (s[len-1] != c)
         ++count;
     
-    char **ret = kmalloc(sizeof(char *) * (count + 1));
+    char **ret = kmalloc(sizeof(char *) * (count + 1), &M_BUFFER, 0);
 
     int j = 0;
     ret[j++] = tokens;

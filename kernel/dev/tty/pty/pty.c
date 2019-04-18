@@ -9,6 +9,8 @@
 #include <bits/errno.h>
 #include <ds/ringbuf.h>
 
+MALLOC_DEFINE(M_PTY, "pseudo-terminal", "pseudo-terminal structure");
+
 struct pty {
     size_t id;
     struct tty *tty;
@@ -54,8 +56,8 @@ static int ptm_new(struct pty *pty, struct inode **ref)
     /* Anonymous file, not populated */
     struct inode *ptm = NULL;
     
-    if (!(ptm = kmalloc(sizeof(struct inode))))
-        return -ENOMEM;
+    ptm = kmalloc(sizeof(struct inode), &M_INODE, 0);
+    if (ptm == NULL) return -ENOMEM;
 
     memset(ptm, 0, sizeof(struct inode));
 
@@ -159,7 +161,8 @@ int pty_new(struct proc *proc, struct inode **master)
     int err = 0;
     struct pty *pty = NULL;
 
-    if (!(pty = kmalloc(sizeof(struct pty)))) {
+    pty = kmalloc(sizeof(struct pty), &M_PTY, 0);
+    if (pty == NULL) {
         err = -ENOMEM;
         goto error;
     }

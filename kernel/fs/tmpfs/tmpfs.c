@@ -12,6 +12,7 @@
 #include <core/module.h>
 #include <core/string.h>
 #include <core/panic.h>
+#include <core/time.h>
 
 #include <mm/mm.h>
 
@@ -64,13 +65,13 @@ static ssize_t tmpfs_write(struct inode *node, off_t offset, size_t size, void *
 {
     if (!node->size) {
         size_t sz = (size_t) offset + size;
-        node->p = kmalloc(sz);
+        node->p = kmalloc(sz, &M_BUFFER, 0);
         node->size = sz;
     }
 
     if (((size_t) offset + size) > node->size) {    /* Reallocate */
         size_t sz = (size_t) offset + size;
-        void *new = kmalloc(sz);
+        void *new = kmalloc(sz, &M_BUFFER, 0);
         memcpy(new, node->p, node->size);
         kfree(node->p);
         node->p = new;
@@ -96,7 +97,7 @@ static int tmpfs_trunc(struct inode *inode, off_t len)
     }
 
     size_t sz = MIN((size_t) len, inode->size);
-    char *buf = kmalloc(len);
+    char *buf = kmalloc(len, &M_BUFFER, 0);
 
     if (!buf)
         panic("failed to allocate buffer");
@@ -142,7 +143,7 @@ static int tmpfs_init()
 static int tmpfs_mount(const char *dir, int flags __unused, void *data __unused)
 {
     /* Initalize new */
-    struct inode *tmpfs_root = kmalloc(sizeof(struct inode));
+    struct inode *tmpfs_root = kmalloc(sizeof(struct inode), &M_INODE, 0);
 
     if (!tmpfs_root)
         return -ENOMEM;
@@ -176,6 +177,13 @@ static int tmpfs_mount(const char *dir, int flags __unused, void *data __unused)
     tmpfs_root->nlink = 2;
     tmpfs_root->fs    = &tmpfs;
     tmpfs_root->p     = NULL;
+
+    struct timespec ts;
+    gettime(&ts);
+
+    tmpfs_root->ctime = ts;
+    tmpfs_root->atime = ts;
+    tmpfs_root->mtime = ts;
 
     vfs_bind(dir, tmpfs_root);
 

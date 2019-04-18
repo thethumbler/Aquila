@@ -18,10 +18,12 @@
 #include <ds/queue.h>
 #include <bits/errno.h>
 
+MALLOC_DECLARE(M_FDS);
+
 static int copy_fds(struct proc *parent, struct proc *fork)
 {
     /* Copy open files descriptors */
-    fork->fds = kmalloc(FDS_COUNT * sizeof(struct file));
+    fork->fds = kmalloc(FDS_COUNT * sizeof(struct file), &M_FDS, 0);
 
     if (!fork->fds)
         return -ENOMEM;
@@ -36,7 +38,7 @@ static int copy_vm_entries(struct proc *parent, struct proc *fork)
     /* Copy vm entries */
     forlinked (node, parent->vm_space.vm_entries.head, node->next) {
         struct vm_entry *pvm_entry = node->value;
-        struct vm_entry *vm_entry = kmalloc(sizeof(struct vm_entry));
+        struct vm_entry *vm_entry = kmalloc(sizeof(struct vm_entry), &M_VM_ENTRY, 0);
         memcpy(vm_entry, pvm_entry, sizeof(struct vm_entry));
 
         vm_entry->qnode = enqueue(&fork->vm_space.vm_entries, vm_entry);

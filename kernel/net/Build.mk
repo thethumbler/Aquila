@@ -1,2 +1,2 @@
-dirs-y += unix/
-obj-y += socket.o
+dirs-$(NET_UNIX) += unix/
+obj-y  += socket.o

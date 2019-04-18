@@ -1,6 +1,7 @@
 #ifndef _ARCH_H
 #define _ARCH_H
 
+#include <core/types.h>
 #include <sys/proc.h>
 
 /* arch/ARCH/sys/proc.c */
@@ -46,5 +47,8 @@ paddr_t arch_page_get_mapping(vaddr_t vaddr);
 void arch_disable_interrupts(void);
 
 void arch_reboot(void);
+
+int arch_time_get(struct timespec *ts);
+//int arch_localtime(struct tm *tm);
 
 #endif /* ! _ARCH_H */

@@ -1,12 +1,10 @@
-OUTPUT_FORMAT(elf32-i386)
 ENTRY(_start)
-INPUT(boot/builtin.o cpu/builtin.o earlycon/builtin.o mm/builtin.o sys/builtin.o platform/builtin.o ../../core/builtin.o
-../../fs/builtin.o ../../dev/builtin.o ../../sys/builtin.o ../../mm/builtin.o ../../net/builtin.o)
+INPUT(builtin.o ../../core/builtin.o ../../fs/builtin.o ../../dev/builtin.o ../../sys/builtin.o ../../mm/builtin.o ../../net/builtin.o)
 OUTPUT(kernel.elf)
 
 SECTIONS {
 
-    LMA = 0x100000;
+    LMA = 0x80010000;
     . = LMA;
 
     .boot.text : ALIGN(0x1000) {
@@ -24,8 +22,7 @@ SECTIONS {
 
     boot_end = .;
 
-    _VMA = 0xC0000000;
-    . += _VMA;
+    _VMA = .;
 
     .text : AT(ADDR(.text) - _VMA) ALIGN(0x1000) {
         *(.text*)
@@ -44,14 +41,6 @@ SECTIONS {
     
     .bss : AT(ADDR(.bss) - _VMA) ALIGN(0x1000) {
         *(.bss)
-    }
-
-    .rel.plt : AT(ADDR(.rel.plt) - _VMA) ALIGN(0x1000) {
-        *(.rel.plt)
-    }
-
-    .shstrtab : AT(ADDR(.shstrtab) - _VMA) ALIGN(0x1000) {
-        *(.shstrtab)
     }
     
     /DISCARD/ : {

@@ -7,17 +7,26 @@ INCLUDES := \
 	-I$(PDIR)/arch/$$(ARCH_DIR)/platform/$$(PLATFORM_DIR)/include \
 	-I$(PDIR)/arch/$$(ARCH_DIR)/include \
 	-I$(PDIR)/include \
-	-I$(PDIR)
+	-I$(PDIR) \
+	-I/opt/aquila/lib/gcc/i686-aquila/7.3.0/include/
 
 CC := $(PDIR)/../build-tools/sysroot/bin/i686-elf-gcc
+#CC := /opt/aquila/tcc/bin/i386-tcc
+#CC := /opt/aquila/pcc/bin/i686-aquila-pcc
+
 CFLAGS := $(INCLUDES) \
 		-nostdlib -ffreestanding -m32 \
-		-O3 -Wall -Wextra -Werror -funsigned-bitfields -fuse-ld=bfd \
-		-Wno-unused -march=i386
+		-O3 -Wall -Wextra -Werror \
+		-Wno-unused -Wno-unused-parameter -march=i386 \
+		-funsigned-bitfields -fuse-ld=bfd
+
 AS := $(CC)
+#AS := gcc
 ASFLAGS := $(CFLAGS)
 LD := $(PDIR)/../build-tools/sysroot/bin/i686-elf-ld.bfd
+#LD := ld.bfd
 LDFLAGS := -nostdlib -melf_i386
+#LDFLAGS := -nostdlib -melf_i386 --static
 
 #
 # Configurations
@@ -50,6 +59,8 @@ PLATFORM_X86_MISC_I8042=y
 PLATFORM_X86_MISC_HPET=n
 # Support ACPI
 PLATFORM_X86_MISC_ACPI=y
+# Support CMOS
+PLATFORM_X86_MISC_CMOS=y
 
 #
 # Devices
@@ -84,3 +95,5 @@ FS_MINIX=y
 
 # Initramfs
 INITRAMFS_CPIO=y
+
+#NET_UNIX=y

@@ -12,20 +12,14 @@ int arch_proc_fork(struct thread *thread, struct proc *fork)
     int err = 0;
 
     struct pmap *parent_pmap = thread->owner->vm_space.pmap;
-    struct pmap *fork_pmap   = NULL;
+    struct pmap *fork_pmap   = fork->vm_space.pmap; //NULL;
 
     struct x86_thread *ptarch = thread->arch;
     struct x86_thread *ftarch = NULL;
 
-    fork_pmap = arch_pmap_create();
+    ftarch = kmalloc(sizeof(struct x86_thread), &M_X86_THREAD, 0);
 
-    if (fork_pmap == NULL) {
-        /* Failed to allocate fork process arch structure */
-        err = -ENOMEM;
-        goto free_resources;
-    }
-
-    if (!(ftarch = kmalloc(sizeof(struct x86_thread)))) {
+    if (ftarch == NULL) {
         /* Failed to allocate fork thread arch structure */
         err = -ENOMEM;
         goto free_resources;
@@ -34,7 +28,7 @@ int arch_proc_fork(struct thread *thread, struct proc *fork)
     arch_pmap_fork(parent_pmap, fork_pmap);
 
     /* Setup kstack */
-    uintptr_t fkstack_base = (uintptr_t) kmalloc(KERN_STACK_SIZE);
+    uintptr_t fkstack_base = (uintptr_t) kmalloc(KERN_STACK_SIZE, &M_KERN_STACK, 0);
     ftarch->kstack = fkstack_base + KERN_STACK_SIZE;
 
     /* Copy registers */

@@ -80,4 +80,6 @@ void vm_unmap_full(struct vm_space *vm_space, struct vm_entry *vm_entry);
 int  vm_entry_insert(struct vm_space *vm_space, struct vm_entry *vm_entry);
 void vm_space_destroy(struct vm_space *vm_space);
 
+MALLOC_DECLARE(M_VM_ENTRY);
+
 #endif  /* ! _VM_H */

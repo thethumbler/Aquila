@@ -26,6 +26,8 @@
 
 #include "i386.h"
 
+MALLOC_DEFINE(M_PMAP, "pmap", "physical memory map structure");
+
 static volatile uint32_t *bootstrap_processor_table = NULL;
 static volatile uint32_t last_page_table[1024] __aligned(PAGE_SIZE) = {0};
 
@@ -233,14 +235,14 @@ struct pmap *arch_pmap_switch(struct pmap *pmap)
 }
 
 static struct pmap k_pmap;
-static void setup_i386_paging()
+
+static void setup_i386_paging(void)
 {
     printk("x86: Setting up 32-Bit paging\n");
     uintptr_t __cur_pd = read_cr3() & ~PAGE_MASK;
+
     bootstrap_processor_table = (uint32_t *) VMA(__cur_pd);
-
     bootstrap_processor_table[1023] = LMA((uint32_t) bootstrap_processor_table) | PG_WRITE | PG_PRESENT;
-
     bootstrap_processor_table[1022] = LMA((uint32_t) last_page_table) | PG_PRESENT | PG_WRITE;
 
     /* Unmap lower half */
@@ -320,7 +322,7 @@ struct pmap kernel_pmap;
 
 static struct pmap *pmap_alloc(void)
 {
-    return kmalloc(sizeof(struct pmap));
+    return kmalloc(sizeof(struct pmap), &M_PMAP, 0);
 }
 
 static void pmap_release(struct pmap *pmap)

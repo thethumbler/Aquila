@@ -2,6 +2,8 @@
 #include <dev/dev.h>
 #include <fs/vfs.h>
 
+MALLOC_DEFINE(M_KDEV_BLK, "kdev-blk", "kdev block buffer");
+
 static struct dev *chrdev[256];
 static struct dev *blkdev[256];
 
@@ -45,7 +47,7 @@ ssize_t kdev_bread(struct devid *dd, off_t offset, size_t size, void *buf)
 
     /* Read up to block boundary */
     if (offset % bs) {
-        if (!bbuf && !(bbuf = kmalloc(bs)))
+        if (!bbuf && !(bbuf = kmalloc(bs, &M_KDEV_BLK, 0)))
             return -ENOMEM;
 
         size_t start = MIN(bs - offset % bs, size);
@@ -85,7 +87,7 @@ ssize_t kdev_bread(struct devid *dd, off_t offset, size_t size, void *buf)
     size_t end = size % bs;
 
     if (end) {
-        if (!bbuf && !(bbuf = kmalloc(bs)))
+        if (!bbuf && !(bbuf = kmalloc(bs, &M_KDEV_BLK, 0)))
             return -ENOMEM;
 
         if ((err = dev->read(dd, offset/bs, 1, bbuf)) < 0)
@@ -118,7 +120,7 @@ ssize_t kdev_bwrite(struct devid *dd, off_t offset, size_t size, void *buf)
     char *bbuf = NULL;
 
     if (offset % bs) {
-        if (!bbuf && !(bbuf = kmalloc(bs)))
+        if (!bbuf && !(bbuf = kmalloc(bs, &M_KDEV_BLK, 0)))
             return -ENOMEM;
 
         /* Write up to block boundary */
@@ -158,7 +160,7 @@ ssize_t kdev_bwrite(struct devid *dd, off_t offset, size_t size, void *buf)
     size_t end = size % bs;
 
     if (end) {
-        if (!bbuf && !(bbuf = kmalloc(bs)))
+        if (!bbuf && !(bbuf = kmalloc(bs, &M_KDEV_BLK, 0)))
             return -ENOMEM;
 
         dev->read(dd, offset/bs, 1, bbuf);

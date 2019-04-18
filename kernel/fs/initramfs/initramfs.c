@@ -34,11 +34,11 @@ int initramfs_archiver_register(struct fs *fs)
     return 0;
 }
 
-int load_ramdisk(void)
+int load_ramdisk(module_t *module)
 {
     printk("kernel: Loading ramdisk\n");
 
-    rd_dev = kmalloc(sizeof(struct inode));
+    rd_dev = kmalloc(sizeof(struct inode), &M_INODE, 0);
     memset(rd_dev, 0, sizeof(struct inode));
 
     extern size_t rd_size;

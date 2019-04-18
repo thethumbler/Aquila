@@ -7,10 +7,6 @@
 #define X86_EFLAGS  (0x200)
 #define X86_CS      (0x18 | 3)
 
-//struct x86_proc {
-//    uintptr_t   map; /* Process paging structure */
-//};
-
 struct x86_thread {
     uintptr_t   kstack; /* Kernel stack */
 
@@ -35,6 +31,9 @@ struct x86_thread {
     int fpu_enabled;
     int isr;
 };
+
+MALLOC_DECLARE(M_X86_THREAD);
+MALLOC_DECLARE(M_KERN_STACK);
 
 void arch_syscall(struct x86_regs *r);
 

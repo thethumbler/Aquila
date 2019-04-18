@@ -11,6 +11,7 @@
 #include <core/system.h>
 #include <core/module.h>
 #include <core/string.h>
+#include <core/time.h>
 
 #include <fs/vfs.h>
 #include <fs/devfs.h>
@@ -28,7 +29,8 @@ static int devfs_init()
     devfs.iops = tmpfs.iops;
     devfs.fops = tmpfs.fops;
 
-    if (!(devfs_root = kmalloc(sizeof(struct inode))))
+    devfs_root = kmalloc(sizeof(struct inode), &M_INODE, 0);
+    if (devfs_root == NULL)
         return -ENOMEM;
 
     memset(devfs_root, 0, sizeof(struct inode));
@@ -37,6 +39,13 @@ static int devfs_init()
     devfs_root->mode  = S_IFDIR | 0775;
     devfs_root->nlink = 2;
     devfs_root->fs    = &devfs;
+
+    struct timespec ts;
+    gettime(&ts);
+
+    devfs_root->ctime = ts;
+    devfs_root->atime = ts;
+    devfs_root->mtime = ts;
 
     vdevfs_root.super = devfs_root;
     vdevfs_root.ino   = (vino_t) devfs_root;

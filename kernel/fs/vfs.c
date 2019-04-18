@@ -9,6 +9,11 @@
 #include <dev/dev.h>
 #include <net/socket.h>
 
+MALLOC_DEFINE(M_INODE, "inode", "inode structure");
+MALLOC_DEFINE(M_VFS_PATH, "vfs-path", "vfs path structure");
+MALLOC_DEFINE(M_VFS_NODE, "vfs-node", "vfs node structure");
+MALLOC_DEFINE(M_FS_LIST, "fs-list", "filesystems list");
+
 static int vfs_log_level = LOG_NONE;
 static inline DEF_LOGGER(vfs, vfs_log, vfs_log_level)
 
@@ -57,7 +62,7 @@ int vfs_parse_path(const char *path, struct uio *uio, char **abs_path)
     }
 
     size_t cwd_len = strlen(cwd), path_len = strlen(path);
-    char *buf = kmalloc(cwd_len + path_len + 2);
+    char *buf = kmalloc(cwd_len + path_len + 2, &M_BUFFER, 0);
 
     memcpy(buf, cwd, cwd_len);
 
@@ -67,7 +72,7 @@ int vfs_parse_path(const char *path, struct uio *uio, char **abs_path)
 
     /* Tokenize slash seperated words in path into tokens */
     char **tokens = tokenize(buf, '/');
-    char *out = kmalloc(cwd_len + path_len + 1);
+    char *out = kmalloc(cwd_len + path_len + 1, &M_BUFFER, 0);
 
     char *valid_tokens[512];
     size_t i = 0;
@@ -111,7 +116,7 @@ int vfs_parse_path(const char *path, struct uio *uio, char **abs_path)
 
 struct vfs_path *vfs_get_mountpoint(char **tokens)
 {
-    struct vfs_path *path = kmalloc(sizeof(struct vfs_path));
+    struct vfs_path *path = kmalloc(sizeof(struct vfs_path), &M_VFS_PATH, 0);
     path->tokens = tokens;
 
     struct vfs_node *cur_node = &vfs_graph;
@@ -191,13 +196,13 @@ int vfs_bind(const char *path, struct inode *target)
             }
 
             /* Not found, create it */
-            struct vfs_node *new_node = kmalloc(sizeof(struct vfs_node));
+            struct vfs_node *new_node = kmalloc(sizeof(struct vfs_node), &M_VFS_NODE, 0);
             memset(new_node, 0, sizeof(struct vfs_node));
             new_node->name = strdup(token);
             last_node->next = new_node;
             cur_node = new_node;
         } else {
-            struct vfs_node *new_node = kmalloc(sizeof(struct vfs_node));
+            struct vfs_node *new_node = kmalloc(sizeof(struct vfs_node), &M_VFS_NODE, 0);
             memset(new_node, 0, sizeof(struct vfs_node));
             new_node->name = strdup(token);
             cur_node->children = new_node;
@@ -217,7 +222,7 @@ void vfs_init(void)
 
 int vfs_install(struct fs *fs)
 {
-    struct fs_list *node = kmalloc(sizeof(struct fs_list));
+    struct fs_list *node = kmalloc(sizeof(struct fs_list), &M_FS_LIST, 0);
 
     if (!node)
         return -ENOMEM;
@@ -235,6 +240,8 @@ int vfs_install(struct fs *fs)
 
 int vfs_lookup(const char *path, struct uio *uio, struct vnode *vnode, char **abs_path)
 {
+    vfs_log(LOG_DEBUG, "vfs_lookup(%s, uio=%p, vnode=%p, abs_path=%p)\n", path, uio, vnode, abs_path);
+
     int ret = 0;
     struct vfs_path *p = NULL;
     char **tokens = NULL;
@@ -279,7 +286,7 @@ int vfs_lookup(const char *path, struct uio *uio, struct vnode *vnode, char **ab
     if (S_ISLNK(cur.mode) && !(uio->flags & O_NOFOLLOW)) {
         /* TODO enforce limit */
         //char sym[64];
-        char *sym = kmalloc(1024);
+        char *sym = kmalloc(1024, &M_BUFFER, 0);
         memset(sym, 0, 1024);
         struct inode *inode;
         vfs_vget(&cur, &inode);

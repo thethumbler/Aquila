@@ -1,6 +1,8 @@
 #include <core/system.h>
 #include <fs/icache.h>
 
+MALLOC_DEFINE(M_ICACHE, "icache", "inode cache structure");
+
 void icache_init(struct icache *icache)
 {
     icache->inodes = queue_new();

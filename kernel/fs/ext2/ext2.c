@@ -8,6 +8,10 @@
 
 #include <ext2.h>
 
+MALLOC_DEFINE(M_EXT2, "ext2", "ext2 filesystem structure");
+MALLOC_DEFINE(M_EXT2_SB, "ext2-sb", "ext2 filesystem superblock structure");
+MALLOC_DEFINE(M_EXT2_BGD, "ext2-bgd", "ext2 block group descriptor");
+
 int ext2_inode_build(struct ext2 *desc, size_t inode, struct inode **ref_inode)
 {
     //printk("ext2_inode_build(desc=%p, inode=%d, ref_inode=%p)\n", desc, inode, ref_inode);
@@ -19,7 +23,7 @@ int ext2_inode_build(struct ext2 *desc, size_t inode, struct inode **ref_inode)
     if ((node = icache_find(desc->icache, inode)))
         goto found;
 
-    node = kmalloc(sizeof(struct inode));
+    node = kmalloc(sizeof(struct inode), &M_INODE, 0);
     memset(node, 0, sizeof(*node));
 
     struct ext2_inode i;
@@ -67,9 +71,10 @@ int ext2_load(struct inode *dev, struct inode **super)
     int err = 0;
 
     /* Read Superblock */
-    struct ext2_superblock *sb = kmalloc(sizeof(*sb));
+    struct ext2_superblock *sb;
+    sb = kmalloc(sizeof(struct ext2_superblock), &M_EXT2_SB, 0);
 
-    if ((err = vfs_read(dev, 1024, sizeof(*sb), sb)) < 0)
+    if ((err = vfs_read(dev, 1024, sizeof(struct ext2_superblock), sb)) < 0)
         return err;
 
     /* Valid Ext2? */
@@ -79,7 +84,7 @@ int ext2_load(struct inode *dev, struct inode **super)
     }
 
     /* Build descriptor structure */
-    struct ext2 *desc = kmalloc(sizeof(struct ext2));
+    struct ext2 *desc = kmalloc(sizeof(struct ext2), &M_EXT2, 0);
     desc->supernode = dev;
     desc->superblock = sb;
     desc->bs = 1024UL << sb->block_size;
@@ -90,7 +95,7 @@ int ext2_load(struct inode *dev, struct inode **super)
     size_t bgds_size   = bgds_count * sizeof(struct ext2_block_group_descriptor);
     desc->bgds_count   = bgds_count;
 
-    desc->bgd_table = kmalloc(bgds_size);
+    desc->bgd_table = kmalloc(bgds_size, &M_EXT2_BGD, 0);
 
     if (!desc->bgd_table)
         return -ENOMEM;
@@ -98,7 +103,7 @@ int ext2_load(struct inode *dev, struct inode **super)
     if ((err = vfs_read(desc->supernode, bgd_table, bgds_size, desc->bgd_table)) < 0)
         return err;
 
-    desc->icache = kmalloc(sizeof(struct icache));
+    desc->icache = kmalloc(sizeof(struct icache), &M_ICACHE, 0);
     
     if (!desc->icache)
         return -ENOMEM;
