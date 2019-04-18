@@ -1,10 +1,14 @@
 #!/bin/sh
-export PATH=/bin:/sbin
+
+set -x
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/libexec:/usr/local/bin:/usr/local/sbin
 
 # Mount devfs on /dev
+echo mounting devfs on /dev
 mount -t devfs /dev
 
 # Populate static devices
+echo populating static devices in /dev
 mknod /dev/console c 5 1 
 mknod /dev/ptmx c 5 2 
 mknod /dev/kbd c 11 0 
@@ -13,7 +17,12 @@ mknod /dev/hda b 3 0
 mknod /dev/hda1 b 3 1 
 mknod /dev/ttyS0 c 4 64 
 mknod /dev/mouse c 10 1 
+mknod /dev/kmsg c 1 11
+mknod /dev/fd0 b 2 0
 
 # Mount devpts on /dev/pts
+echo mounting devpts on /dev/pts
 mkdir /dev/pts
 mount -t devpts /dev/pts
+
+#mount -t minix /dev/hda1 /mnt
