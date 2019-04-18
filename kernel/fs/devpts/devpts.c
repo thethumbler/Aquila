@@ -1,5 +1,6 @@
 #include <core/system.h>
 #include <core/module.h>
+#include <core/time.h>
 
 #include <fs/vfs.h>
 #include <fs/tmpfs.h>
@@ -17,7 +18,7 @@ int devpts_init()
     devpts.iops = tmpfs.iops;
     devpts.fops = tmpfs.fops;
 
-    devpts_root = kmalloc(sizeof(struct inode));
+    devpts_root = kmalloc(sizeof(struct inode), &M_INODE, 0);
 
     if (!devpts_root)
         return -ENOMEM;
@@ -25,9 +26,16 @@ int devpts_init()
     memset(devpts_root, 0, sizeof(struct inode));
 
     devpts_root->ino   = (vino_t) devpts_root;
-    devpts_root->mode  = S_IFDIR;
+    devpts_root->mode  = S_IFDIR | 0775;
     devpts_root->nlink = 2;
     devpts_root->fs    = &devpts;
+
+    struct timespec ts;
+    gettime(&ts);
+
+    devpts_root->ctime = ts;
+    devpts_root->atime = ts;
+    devpts_root->mtime = ts;
 
     vdevpts_root.super = devpts_root;
     vdevpts_root.ino   = (vino_t) devpts_root;

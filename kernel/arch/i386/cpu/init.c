@@ -31,8 +31,6 @@ void cpu_init()
     earlycon_init();
     printk("x86: Welcome to AquilaOS!\n");
 
-    //assert_sizeof(struct x86_regs, 12*4);
-
     printk("x86: Installing GDT\n");
     x86_gdt_setup();
     x86_tss_setup(VMA(0x100000ULL));

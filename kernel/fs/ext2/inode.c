@@ -56,16 +56,38 @@ size_t ext2_inode_block_read(struct ext2 *desc, struct ext2_inode *inode, size_t
 
     if (idx < EXT2_DIRECT_POINTERS) {
         ext2_block_read(desc, inode->direct_pointer[idx], buf);
-    } else if (idx < EXT2_DIRECT_POINTERS + p) {
-        uint32_t *tmp = kmalloc(desc->bs);
-        ext2_block_read(desc, inode->singly_indirect_pointer, tmp);
-        uint32_t block = tmp[idx - EXT2_DIRECT_POINTERS];
-        kfree(tmp);
-        ext2_block_read(desc, block, buf);
-    } else {
-        panic("Not impelemented\n");
+        return 0;
     }
 
+    idx -= EXT2_DIRECT_POINTERS;
+    
+    if (idx < p) {
+        /* singly indirect */
+        uint32_t *tmp = kmalloc(desc->bs, &M_BUFFER, 0);
+        ext2_block_read(desc, inode->singly_indirect_pointer, tmp);
+        uint32_t block = tmp[idx];
+        kfree(tmp);
+        ext2_block_read(desc, block, buf);
+        return 0;
+    }
+
+    idx -= p;
+    
+    if (idx < p * p) {
+        /* doubly indirect */
+        uint32_t *tmp = kmalloc(desc->bs, &M_BUFFER, 0);
+        ext2_block_read(desc, inode->doubly_indirect_pointer, tmp);
+        uint32_t block = tmp[idx / p];
+
+        ext2_block_read(desc, block, tmp);
+        block = tmp[idx % p];
+        kfree(tmp);
+
+        ext2_block_read(desc, block, buf);
+        return 0;
+    }
+
+    panic("Not impelemented");
     return 0;
 }
 
@@ -85,7 +107,7 @@ size_t ext2_inode_block_write(struct ext2 *desc, struct ext2_inode *inode, uint3
             ext2_inode_write(desc, inode_nr, inode);
         }
 
-        uint32_t *tmp = kmalloc(desc->bs);
+        uint32_t *tmp = kmalloc(desc->bs, &M_BUFFER, 0);
         ext2_block_read(desc, inode->singly_indirect_pointer, tmp);
         uint32_t block = tmp[idx - EXT2_DIRECT_POINTERS];
 
@@ -105,7 +127,7 @@ size_t ext2_inode_block_write(struct ext2 *desc, struct ext2_inode *inode, uint3
 
 uint32_t ext2_inode_allocate(struct ext2 *desc)
 {
-    uint32_t *buf = kmalloc(desc->bs);
+    uint32_t *buf = kmalloc(desc->bs, &M_BUFFER, 0);
     uint32_t inode = 0, real_inode = 0, group = 0;
     bitmap_t bm = {0};
 

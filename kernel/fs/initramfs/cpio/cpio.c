@@ -8,18 +8,22 @@
 
 #include <cpio.h>
 
+MALLOC_DEFINE(M_CPIO, "cpio", "CPIO structure");
+
 static int cpio_root_inode(struct inode *super, struct inode **ref)
 {
     int err = 0;
     struct inode *inode = NULL;
     struct cpio *p = NULL;
 
-    if (!(inode = kmalloc(sizeof(struct inode)))) {
+    inode = kmalloc(sizeof(struct inode), &M_INODE, 0);
+    if (inode == NULL) {
         err = -ENOMEM;
         goto error;
     }
 
-    if (!(p = kmalloc(sizeof(struct cpio)))) {
+    p = kmalloc(sizeof(struct cpio), &M_CPIO, 0);
+    if (p == NULL) {
         err = -ENOMEM;
         goto error;
     }
@@ -63,14 +67,17 @@ static int cpio_new_inode(const char *name, struct cpio_hdr *hdr, size_t sz, siz
     struct inode *inode = NULL;
     struct cpio *p = NULL;
 
-    if (!(inode = kmalloc(sizeof(struct inode)))) {
+    inode = kmalloc(sizeof(struct inode), &M_INODE, 0);
+
+    if (inode == NULL) {
         err = -ENOMEM;
         goto error;
     }
 
     memset(inode, 0, sizeof(struct inode));
 
-    if (!(p = kmalloc(sizeof(struct cpio)))) {
+    p = kmalloc(sizeof(struct cpio), &M_CPIO, 0);
+    if (p == NULL) {
         err = -ENOMEM;
         goto error;
     }

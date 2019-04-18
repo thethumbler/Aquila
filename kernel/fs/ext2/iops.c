@@ -28,7 +28,7 @@ ssize_t ext2_read(struct inode *node, off_t offset, size_t size, void *buf)
         size_t start = MIN(bs - offset % bs, size);
 
         if (start) {
-            read_buf = kmalloc(bs);
+            read_buf = kmalloc(bs, &M_BUFFER, 0);
             ext2_inode_block_read(desc, &inode, offset/bs, read_buf);
             memcpy(_buf, read_buf + (offset % bs), start);
 
@@ -62,7 +62,7 @@ ssize_t ext2_read(struct inode *node, off_t offset, size_t size, void *buf)
 
     if (end) {
         if (!read_buf)
-            read_buf = kmalloc(bs);
+            read_buf = kmalloc(bs, &M_BUFFER, 0);
 
         ext2_inode_block_read(desc, &inode, offset/bs, read_buf);
         memcpy(_buf, read_buf, end);
@@ -104,7 +104,7 @@ ssize_t ext2_write(struct inode *node, off_t offset, size_t size, void *buf)
         size_t start = MIN(bs - offset % bs, size);
 
         if (start) {
-            write_buf = kmalloc(bs);
+            write_buf = kmalloc(bs, &M_BUFFER, 0);
             ext2_inode_block_read(desc, &inode, offset/bs, write_buf);
             memcpy(write_buf + (offset % bs), _buf, start);
             ext2_inode_block_write(desc, &inode, node->ino, offset/bs, write_buf);
@@ -139,7 +139,7 @@ ssize_t ext2_write(struct inode *node, off_t offset, size_t size, void *buf)
 
     if (end) {
         if (!write_buf)
-            write_buf = kmalloc(bs);
+            write_buf = kmalloc(bs, &M_BUFFER, 0);
 
         ext2_inode_block_read(desc, &inode, offset/bs, write_buf);
         memcpy(write_buf, _buf, end);
@@ -236,7 +236,7 @@ int ext2_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, struc
         inode.nlinks = 2;
         inode.size = desc->bs;
         
-        char *buf = kmalloc(desc->bs);
+        char *buf = kmalloc(desc->bs, &M_BUFFER, 0);
         struct ext2_dentry *d = (struct ext2_dentry *) buf;
         d->inode = inode_nr;
         d->size = 12;

@@ -1,7 +1,23 @@
 #ifndef _MM_KVMEM_H
 #define _MM_KVMEM_H
 
-void *kmalloc(size_t);
+struct malloc_type {
+    const char *name;
+    const char *desc;
+    size_t nr;
+    size_t total;
+    struct qnode *qnode;
+};
+
+#define MALLOC_DECLARE(type) extern struct malloc_type (type)
+#define MALLOC_DEFINE(type, name, desc) struct malloc_type (type) = {(name), (desc), 0, 0, NULL}
+
+MALLOC_DECLARE(M_BUFFER);
+MALLOC_DECLARE(M_RINGBUF);
+MALLOC_DECLARE(M_QUEUE);
+MALLOC_DECLARE(M_QNODE);
+
+void *kmalloc(size_t, struct malloc_type *type, int flags);
 void kfree(void *);
 extern int debug_kmalloc;
 

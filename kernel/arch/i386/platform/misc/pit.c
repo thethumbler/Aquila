@@ -25,10 +25,11 @@ struct pit_cmd_register {
 #define PIT_MODE_SQUARE_WAVE    0x3
 #define PIT_ACCESS_LOHIBYTE     0x3
 
-void x86_pit_setup(struct ioaddr *io)
+int x86_pit_setup(struct ioaddr *io)
 {
     printk("8254 PIT: Initializing [%p (%s)]\n", io->addr, ioaddr_type_str(io));
     pit_ioaddr = *io;
+    return 0;
 }
 
 #define FBASE   1193182ULL  /* PIT Oscillator operates at 1.193182 MHz */

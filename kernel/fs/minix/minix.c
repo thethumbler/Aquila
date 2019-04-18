@@ -9,6 +9,9 @@
 
 #include <minix.h>
 
+MALLOC_DEFINE(M_MINIX, "minix", "minix filesystem structure");
+MALLOC_DEFINE(M_MINIX_SB, "minix-sb", "minix filesystem superblock structure");
+
 int minix_inode_build(struct minix *desc, ino_t ino, struct inode **ref)
 {
     int err = 0;
@@ -18,7 +21,7 @@ int minix_inode_build(struct minix *desc, ino_t ino, struct inode **ref)
     if ((inode = icache_find(desc->icache, ino)))
         goto found;
 
-    inode = kmalloc(sizeof(struct inode));
+    inode = kmalloc(sizeof(struct inode), &M_INODE, 0);
 
     if (!inode)
         return -ENOMEM;
@@ -77,7 +80,8 @@ static int minix_load(struct inode *dev, struct inode **super)
     struct minix_superblock *sb = NULL;
     struct minix *desc = NULL;
    
-    if (!(sb = kmalloc(sizeof(struct minix_superblock))))
+    sb = kmalloc(sizeof(struct minix_superblock), &M_MINIX_SB, 0);
+    if (sb == NULL)
         return -ENOMEM;
 
     if ((err = vfs_read(dev, 1024, sizeof(*sb), sb)) < 0)
@@ -103,7 +107,8 @@ static int minix_load(struct inode *dev, struct inode **super)
     }
 
     /* Build descriptor structure */
-    if (!(desc = kmalloc(sizeof(struct minix)))) {
+    desc = kmalloc(sizeof(struct minix), &M_MINIX, 0);
+    if (desc == NULL) {
         err = -ENOMEM;
         goto error;
     }
@@ -124,7 +129,7 @@ static int minix_load(struct inode *dev, struct inode **super)
         return -ENOTSUP;
     }
 
-    desc->icache = kmalloc(sizeof(struct icache));
+    desc->icache = kmalloc(sizeof(struct icache), &M_ICACHE, 0);
     
     if (!desc->icache)
         return -ENOMEM;

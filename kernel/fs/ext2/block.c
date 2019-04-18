@@ -22,7 +22,7 @@ void *ext2_block_write(struct ext2 *desc, uint32_t number, void *buf)
 
 uint32_t ext2_block_allocate(struct ext2 *desc)
 {
-    uint32_t *buf = kmalloc(desc->bs);
+    uint32_t *buf = kmalloc(desc->bs, &M_BUFFER, 0);
     uint32_t block = 0, real_block = 0, group = 0;
     bitmap_t bm = {0};
 

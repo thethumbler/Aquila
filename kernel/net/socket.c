@@ -7,8 +7,10 @@
 int socket_create(struct file *file, int domain, int type, int protocol)
 {
     switch (domain) {
+#if 0 /* FIXME */
         case AF_UNIX:
             return socket_unix_create(file, domain, type, protocol);
+#endif
     }
 
     return -EAFNOSUPPORT;

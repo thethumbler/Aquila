@@ -28,6 +28,9 @@
 #if defined(__clang__)
   #define __CONFIG_COMPILER__             "clang"
   #define __CONFIG_COMPILER_VERSION__     __VERSION__
+#elif defined(__PCC__)
+  #define __CONFIG_COMPILER__             "pcc"
+  #define __CONFIG_COMPILER_VERSION__     __VERSION__
 #elif defined(__TINYC__)
   #define __CONFIG_COMPILER__             "tcc"
   #define __CONFIG_COMPILER_VERSION__     "0.9.27"

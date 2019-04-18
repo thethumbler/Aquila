@@ -28,7 +28,7 @@ static inline void *queue_new(void)
 {
     struct queue *queue;
 
-    queue = kmalloc(sizeof(struct queue));
+    queue = kmalloc(sizeof(struct queue), &M_QUEUE, 0);
     if (!queue) return NULL;
 
     memset(queue, 0, sizeof(struct queue));
@@ -46,7 +46,7 @@ static inline struct qnode *enqueue(struct queue *queue, void *value)
 
     struct qnode *node;
     
-    node = kmalloc(sizeof(struct qnode));
+    node = kmalloc(sizeof(struct qnode), &M_QNODE, 0);
     if (!node) return NULL;
 
     if (trace) printk("qtrace: allocated node %p\n", node);

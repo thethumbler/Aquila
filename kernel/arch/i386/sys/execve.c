@@ -17,10 +17,10 @@ void arch_sys_execve(struct proc *proc, int argc, char * const _argp[], int envc
 #endif
 
     char **argp = (char **) _argp;
-    char **u_argp = kmalloc(argc * sizeof(char *));
+    char **u_argp = kmalloc(argc * sizeof(char *), &M_BUFFER, 0);
 
     char **envp = (char **) _envp;
-    char **u_envp = kmalloc(envc * sizeof(char *));
+    char **u_envp = kmalloc(envc * sizeof(char *), &M_BUFFER, 0);
 
     /* Start at the top of user stack */
     volatile char *stack = (volatile char *) USER_STACK;

@@ -13,6 +13,7 @@
 #include <core/panic.h>
 #include <core/string.h>
 #include <core/arch.h>
+#include <core/time.h>
 
 #include <sys/proc.h>
 #include <sys/sched.h>
@@ -157,7 +158,7 @@ static void sys_fork(void)
     proc_fork(cur_thread, &fork);
 
     /* Returns are handled inside proc_fork */
-    if (fork) {
+    if (fork != NULL) {
         struct thread *thread = (struct thread *) fork->threads.head->value;
         sched_thread_ready(thread);
     }
@@ -328,7 +329,7 @@ static void sys_read(int fildes, void *buf, size_t nbytes)
 
 static void sys_sbrk(ptrdiff_t incr)
 {
-    syscall_log(LOG_DEBUG, "sbrk(incr=%d=0x%x)\n", incr, incr);
+    syscall_log(LOG_DEBUG, "sbrk(incr=0x%x)\n", incr);
 
     uintptr_t ret = cur_thread->owner->heap;
     cur_thread->owner->heap += incr;
@@ -378,13 +379,12 @@ static void sys_unlink(const char *path)
 
 static void sys_waitpid(int pid, int *stat_loc, int options)
 {
-    syscall_log(LOG_DEBUG, "waitpid(pid=%d, stat_loc=%p, options=0x%x)\n",
-            pid, stat_loc, options);
+    syscall_log(LOG_DEBUG, "waitpid(pid=%d, stat_loc=%p, options=0x%x)\n", pid, stat_loc, options);
 
     struct proc *child = proc_pid_find(pid);
 
     /* If pid is invalid or current process is not parent of child */
-    if (!child || child->parent != cur_thread->owner) {
+    if (child == NULL || child->parent != cur_thread->owner) {
         arch_syscall_return(cur_thread, -ECHILD);
         return;
     }
@@ -417,7 +417,7 @@ static void sys_waitpid(int pid, int *stat_loc, int options)
 
 static void sys_write(int fd, void *buf, size_t nbytes)
 {
-    syscall_log(LOG_DEBUG, "write(fd=%d, buf=%p, nbytes=%d)\n", fd, buf, nbytes);
+    //syscall_log(LOG_DEBUG, "write(fd=%d, buf=%p, nbytes=%d)\n", fd, buf, nbytes);
     
     if (fd < 0 || fd >= FDS_COUNT) {   /* Out of bounds */
         arch_syscall_return(cur_thread, -EBADFD);
@@ -786,8 +786,10 @@ static void sys_mmap(struct mmap_args *args, void **ret)
     }
 
     /* Allocate VMR */
-    struct vm_entry *vm_entry = NULL;
-    if (!(vm_entry = kmalloc(sizeof(struct vm_entry)))) {
+    struct vm_entry *vm_entry;
+    vm_entry = kmalloc(sizeof(struct vm_entry), &M_VM_ENTRY, 0);
+
+    if (vm_entry == NULL) {
         err = -ENOMEM;
         goto error;
     }
@@ -1088,6 +1090,13 @@ static void sys_access(const char *path, int mode)
     for (;;);
 }
 
+static void sys_gettimeofday(struct timeval *tv, struct timezone *tz)
+{
+    syscall_log(LOG_DEBUG, "gettimeofday(tv=%p, tz=%p)\n", tv, tz);
+    arch_syscall_return(cur_thread, gettimeofday(tv, tz));
+    return;
+}
+
 void (*syscall_table[])() =  {
     /* 00 */    NULL,
     /* 01 */    sys_exit,
@@ -1139,6 +1148,7 @@ void (*syscall_table[])() =  {
     /* 47 */    sys_umask,
     /* 48 */    sys_chmod,
     /* 49 */    sys_sysconf,
+    /* 50 */    sys_gettimeofday,
 };
 
 const size_t syscall_cnt = sizeof(syscall_table)/sizeof(syscall_table[0]);

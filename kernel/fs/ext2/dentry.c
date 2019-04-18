@@ -9,7 +9,7 @@ uint32_t ext2_dentry_find(struct ext2 *desc, struct ext2_inode *inode, const cha
     size_t bs = desc->bs;
     size_t blocks_nr = inode->size / bs;
 
-    char *buf = kmalloc(bs);
+    char *buf = kmalloc(bs, &M_BUFFER, 0);
     struct ext2_dentry *d;
     uint32_t inode_nr;
 
@@ -50,7 +50,7 @@ int ext2_dentry_create(struct vnode *dir, const char *name, uint32_t inode, uint
     size = (size + 3) & ~3; /* Align to 4 bytes */
 
     /* Look for a candidate entry */
-    char *buf = kmalloc(desc->bs);
+    char *buf = kmalloc(desc->bs, &M_BUFFER, 0);
     struct ext2_dentry *cur = NULL;
 
     struct ext2_inode dir_inode;

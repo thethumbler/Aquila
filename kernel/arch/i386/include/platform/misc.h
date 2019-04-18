@@ -15,7 +15,9 @@ int x86_i8042_setup(struct ioaddr *io);
 void x86_i8042_handler_register(int channel, void (*fun)(int));
 void x86_i8042_reboot(void);
 
-void x86_pit_setup(struct ioaddr *io);
+int x86_pit_setup(struct ioaddr *io);
 uint32_t x86_pit_period_set(uint32_t period_ns);
+
+int x86_cmos_setup(struct ioaddr *ioaddr);
 
 #endif /* ! _PLATFORM_MISC_H */

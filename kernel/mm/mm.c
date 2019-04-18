@@ -16,6 +16,7 @@
 #include <mm/buddy.h>
 #include <sys/sched.h>
 
+/* FIXME use boot time allocation scheme */
 struct vm_page pages[768*1024];
 #define PAGE(addr)    (pages[(addr)/PAGE_SIZE])
 
@@ -195,7 +196,7 @@ void mm_page_fault(vaddr_t vaddr, int flags)
     }
 
     printk("mm_page_fault(vaddr=%p, flags=%x)\n", vaddr, flags);
-    for (;;);
+    //for (;;);
 
     signal_proc_send(cur_thread->owner, SIGSEGV);
     return;

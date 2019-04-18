@@ -1,5 +1,8 @@
 #include <core/system.h>
+#include <core/time.h>
 #include <fs/virtfs.h>
+
+MALLOC_DEFINE(M_VIRTFS_DENT, "virtfs-dirent", "virtfs directory entry");
 
 int virtfs_vmknod(struct vnode *vdir, const char *fn, mode_t mode, dev_t dev, struct uio *uio, struct inode **ref)
 {
@@ -14,7 +17,7 @@ int virtfs_vmknod(struct vnode *vdir, const char *fn, mode_t mode, dev_t dev, st
         goto error;
     }
 
-    inode = kmalloc(sizeof(struct inode));
+    inode = kmalloc(sizeof(struct inode), &M_INODE, 0);
     if (!inode) goto error_nomem;
 
     memset(inode, 0, sizeof(struct inode));
@@ -26,6 +29,13 @@ int virtfs_vmknod(struct vnode *vdir, const char *fn, mode_t mode, dev_t dev, st
     inode->nlink = S_ISDIR(mode)? 2 : 1;
     inode->rdev  = dev;
 
+    struct timespec ts;
+    gettime(&ts);
+
+    inode->ctime = ts;
+    inode->atime = ts;
+    inode->mtime = ts;
+
     if (vfs_vget(vdir, &dir)) {
         /* That's odd */
         err = -EINVAL;
@@ -36,7 +46,7 @@ int virtfs_vmknod(struct vnode *vdir, const char *fn, mode_t mode, dev_t dev, st
 
     struct virtfs_dirent *cur_dir = (struct virtfs_dirent *) dir->p;
 
-    dirent = kmalloc(sizeof(struct virtfs_dirent));
+    dirent = kmalloc(sizeof(struct virtfs_dirent), &M_VIRTFS_DENT, 0);
     if (!dirent) goto error_nomem;
 
     dirent->d_ino  = inode;

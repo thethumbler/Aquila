@@ -45,6 +45,14 @@ SECTIONS {
     .bss : AT(ADDR(.bss) - _VMA) ALIGN(0x1000) {
         *(.bss)
     }
+
+    .rel.plt : AT(ADDR(.rel.plt) - _VMA) ALIGN(0x1000) {
+        *(.rel.plt)
+    }
+
+    .shstrtab : AT(ADDR(.shstrtab) - _VMA) ALIGN(0x1000) {
+        *(.shstrtab)
+    }
     
     /DISCARD/ : {
         *(.*)

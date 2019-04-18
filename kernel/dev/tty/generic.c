@@ -2,6 +2,9 @@
 #include <sys/sched.h>
 #include <dev/tty.h>
 
+MALLOC_DEFINE(M_TTY, "tty", "tty structure");
+MALLOC_DEFINE(M_TTY_COOK, "tty-cook", "tty cooking buffer");
+
 ssize_t tty_master_write(struct tty *tty, size_t size, void *buf)
 {
     ssize_t ret = size;
@@ -156,7 +159,7 @@ int tty_new(struct proc *proc, size_t buf_size, ttyio master,
 {
     struct tty *tty = NULL;
     
-    tty = kmalloc(sizeof(struct tty));
+    tty = kmalloc(sizeof(struct tty), &M_TTY, 0);
     if (!tty) return -ENOMEM;
 
     memset(tty, 0, sizeof(struct tty));
@@ -164,7 +167,7 @@ int tty_new(struct proc *proc, size_t buf_size, ttyio master,
     if (!buf_size)
         buf_size = TTY_BUF_SIZE;
 
-    tty->cook = kmalloc(buf_size);
+    tty->cook = kmalloc(buf_size, &M_TTY_COOK, 0);
 
     if (!tty->cook) {
         kfree(tty);

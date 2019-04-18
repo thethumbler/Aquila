@@ -26,7 +26,7 @@ static int binfmt_fmt_load(struct proc *proc, const char *path, struct inode *in
     proc->heap = proc->heap_start;
 
     /* Create heap vm_entry */
-    struct vm_entry *heap_vm = kmalloc(sizeof(struct vm_entry));
+    struct vm_entry *heap_vm = kmalloc(sizeof(struct vm_entry), &M_VM_ENTRY, 0);
     memset(heap_vm, 0, sizeof(struct vm_entry));
     heap_vm->base  = proc->heap_start;
     heap_vm->size  = 0;
@@ -35,7 +35,7 @@ static int binfmt_fmt_load(struct proc *proc, const char *path, struct inode *in
     proc->heap_vm  = heap_vm;
 
     /* Create stack vm_entry */
-    struct vm_entry *stack_vm = kmalloc(sizeof(struct vm_entry));
+    struct vm_entry *stack_vm = kmalloc(sizeof(struct vm_entry), &M_VM_ENTRY, 0);
     memset(stack_vm, 0, sizeof(struct vm_entry));
     stack_vm->base  = USER_STACK_BASE;
     stack_vm->size  = USER_STACK_SIZE;

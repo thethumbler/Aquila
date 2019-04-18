@@ -14,6 +14,8 @@
 #include <mm/vm.h>
 #include <ds/queue.h>
 
+MALLOC_DEFINE(M_VM_ENTRY, "vm-entry", "virtual memory map entry");
+
 struct vm_space kvm_space;
 
 int vm_map(struct vm_space *vm_space, struct vm_entry *vm_entry)
@@ -62,7 +64,7 @@ int vm_entry_insert(struct vm_space *vm_space, struct vm_entry *vm_entry)
     if (!cur)
         return -ENOMEM;
 
-    struct qnode *node = kmalloc(sizeof(struct qnode));
+    struct qnode *node = kmalloc(sizeof(struct qnode), &M_QNODE, 0);
     node->value = vm_entry;
     node->next = cur;
     node->prev = cur->prev;

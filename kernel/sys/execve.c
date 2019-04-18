@@ -21,8 +21,8 @@ int proc_execve(struct thread *thread, const char *fn, char * const _argp[], cha
         foreach(env, u_envp)
             ++envc;
 
-    char **argp = kmalloc((argc + 1) * sizeof(char *));
-    char **envp = kmalloc((envc + 1) * sizeof(char *));
+    char **argp = kmalloc((argc + 1) * sizeof(char *), &M_BUFFER, 0);
+    char **envp = kmalloc((envc + 1) * sizeof(char *), &M_BUFFER, 0);
 
     argp[argc] = NULL;
     envp[envc] = NULL;

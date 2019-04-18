@@ -26,7 +26,7 @@ ssize_t minix_read(struct inode *inode, off_t offset, size_t size, void *buf)
         size_t start = MIN(bs - offset % bs, size);
 
         if (start) {
-            read_buf = kmalloc(bs);
+            read_buf = kmalloc(bs, &M_BUFFER, 0);
 
             if ((err = minix_inode_block_read(desc, &m_inode, offset/bs, read_buf)) < 0)
                 goto error;
@@ -64,7 +64,7 @@ ssize_t minix_read(struct inode *inode, off_t offset, size_t size, void *buf)
 
     if (end) {
         if (!read_buf)
-            read_buf = kmalloc(bs);
+            read_buf = kmalloc(bs, &M_BUFFER, 0);
 
         if ((err = minix_inode_block_read(desc, &m_inode, offset/bs, read_buf)) < 0)
             goto error;
@@ -117,7 +117,7 @@ ssize_t minix_write(struct inode *inode, off_t offset, size_t size, void *buf)
         size_t start = MIN(bs - offset % bs, size);
 
         if (start) {
-            write_buf = kmalloc(bs);
+            write_buf = kmalloc(bs, &M_BUFFER, 0);
 
             if ((err = minix_inode_block_read(desc, &m_inode, offset/bs, write_buf)) < 0)
                 goto error;
@@ -158,7 +158,7 @@ ssize_t minix_write(struct inode *inode, off_t offset, size_t size, void *buf)
 
     if (end) {
         if (!write_buf)
-            write_buf = kmalloc(bs);
+            write_buf = kmalloc(bs, &M_BUFFER, 0);
 
         if ((err = minix_inode_block_read(desc, &m_inode, offset/bs, write_buf)) < 0)
             goto error;

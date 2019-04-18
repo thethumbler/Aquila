@@ -25,10 +25,21 @@ typedef struct timespec _time_t;
 
 typedef uint64_t time_t;
 typedef unsigned long sigset_t;
+typedef long suseconds_t;
 
 struct timespec {
     time_t   tv_sec;
     uint32_t tv_nsec;
+};
+
+struct timeval {
+    time_t      tv_sec;     /* seconds */
+    suseconds_t tv_usec;    /* microseconds */
+};
+
+struct timezone {
+    int tz_minuteswest;     /* minutes west of Greenwich */
+    int tz_dsttime;         /* type of DST correction */
 };
 
 #endif
