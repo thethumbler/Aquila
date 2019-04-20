@@ -5,7 +5,7 @@ build:
   before_script:
     - apt update && apt -y install build-essential texinfo grub-pc-bin xorriso wget m4 autoconf
   script:
-    - cd build-tools && bash build.sh distclean && bash build.sh
+    - cd build-tools && bash build.sh distclean && bash build.sh && cd ..
     - make aquila.iso -j$(nproc)
   # cache:
   #   paths:
