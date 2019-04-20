@@ -1,0 +1,11 @@
+--- ../gcc-7.3.0/contrib/download_prerequisites	2017-04-11 18:34:07.637265000 +0200
++++ contrib/download_prerequisites	2019-04-20 11:23:09.306180196 +0200
+@@ -219,7 +219,7 @@
+ do
+     if [ ${force} -gt 0 ]; then rm -f "${directory}/${ar}"; fi
+     [ -e "${directory}/${ar}" ]                                               \
+-        || ${fetch} --no-verbose -O "${directory}/${ar}" "${base_url}${ar}"       \
++        || ${fetch} -O "${directory}/${ar}" "${base_url}${ar}"       \
+         || die "Cannot download ${ar} from ${base_url}"
+ done
+ unset ar

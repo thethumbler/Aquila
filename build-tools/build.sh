@@ -141,6 +141,7 @@ if [[ ! -d "build-gcc" ]]; then
         tar xzf "pkgs/$GCC.tar.gz";
     fi;
     cd $GCC;
+    patch -p0 < ../patches/gcc-7.3.0-travis.patch;
     ./contrib/download_prerequisites;
     cd ..;
     mkdir -p "build-gcc" && cd "build-gcc";
