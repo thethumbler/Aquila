@@ -14,7 +14,7 @@ cache:
   - build-tools/autoconf-2.69
   - build-tools/automake-1.12.1
     # And gcc cross compiler
-  - build-tools/sys
+  - build-tools/sysroot
 script:
   - make aquila.iso
 deploy:
