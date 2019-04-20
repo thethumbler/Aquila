@@ -3,7 +3,7 @@ image: ubuntu:trusty
 build:
   stage: build
   before_script:
-    - apt update && apt -y install texinfo grub-pc-bin xorriso wget m4
+    - apt update && apt -y install build-essential texinfo grub-pc-bin xorriso wget m4
   script:
     - cd build-tools && bash build.sh distclean && bash build.sh
     - make aquila.iso -j$(nproc)
