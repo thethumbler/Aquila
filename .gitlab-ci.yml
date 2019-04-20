@@ -1,11 +1,12 @@
-image: 
+image: ubuntu
 
-build-deps:
-  stage: build-deps
+build:
+  stage: build
   before_script:
     - apt update && apt -y install texinfo grub-pc-bin xorriso
   script:
     - cd build-tools && bash build.sh distclean && bash build.sh
+    - make aquila.iso -j$(nproc)
   # cache:
   #   paths:
   #   - build-tools/pkgs
@@ -14,14 +15,6 @@ build-deps:
   #   - build-tools/autoconf-2.69
   #   - build-tools/automake-1.12.1
   #   - build-tools/sys
-
-
-build:
-  stage: build
-  dependencies:
-    - build-deps
-  script:
-    - make aquila.iso -j$(nproc)
   artifacts:
     paths:
       - aquila.iso
