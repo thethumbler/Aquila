@@ -32,7 +32,7 @@ endif
 KERNEL_MAKE_FLAGS := CONFIG=$(KERNEL_CONFIG)
 
 aquila.iso: iso/kernel.elf.gz iso/initrd.img.gz
-	$(GRUB_MKRESCUE) -d /usr/lib/grub/i386-pc/ --install-modules="multiboot normal videoinfo videotest gzio" -o aquila.iso iso/
+	$(GRUB_MKRESCUE) -d /usr/lib/grub/i386-pc/ -o aquila.iso iso/
 	#$(GRUB_MKRESCUE) -d /usr/lib/grub/i386-pc/ --install-modules="multiboot normal videoinfo videotest gzio" --locales="en@quot" --fonts=ascii -o aquila.iso iso/
 
 .PHONY: kernel initrd system
