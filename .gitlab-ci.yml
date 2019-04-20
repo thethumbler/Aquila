@@ -3,7 +3,7 @@ image: ubuntu
 build:
   stage: build
   before_script:
-    - apt update && apt -y install texinfo grub-pc-bin xorriso
+    - apt update && apt -y install texinfo grub-pc-bin xorriso wget
   script:
     - cd build-tools && bash build.sh distclean && bash build.sh
     - make aquila.iso -j$(nproc)
