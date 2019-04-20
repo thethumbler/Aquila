@@ -32,13 +32,18 @@ endif
 KERNEL_MAKE_FLAGS := CONFIG=$(KERNEL_CONFIG)
 
 aquila.iso: iso/kernel.elf.gz iso/initrd.img.gz
-	$(GRUB_MKRESCUE) -d /usr/lib/grub/i386-pc/ --install-modules="multiboot normal videoinfo videotest gzio" --locales="en@quot" --fonts=ascii -o aquila.iso iso/
+	$(GRUB_MKRESCUE) -d /usr/lib/grub/i386-pc/ --install-modules="multiboot normal videoinfo videotest gzio" -o aquila.iso iso/
+	#$(GRUB_MKRESCUE) -d /usr/lib/grub/i386-pc/ --install-modules="multiboot normal videoinfo videotest gzio" --locales="en@quot" --fonts=ascii -o aquila.iso iso/
 
 .PHONY: kernel initrd system
 kernel:
 	$(MAKE) $(KERNEL_MAKE_FLAGS) -C kernel/
 
-initrd: iso/initrd.img
+initrd: initrd/initrd.img
+
+initrd/initrd.img: system
+	$(MAKE) -C initrd/
+
 system:
 	$(MAKE) -C system/
 
@@ -55,9 +60,6 @@ iso/kernel.elf.gz: kernel kernel/arch/$(ARCH)/kernel.elf
 iso/initrd.img.gz: initrd/initrd.img
 	cp initrd/initrd.img iso/initrd.img
 	gzip -f iso/initrd.img
-
-initrd/initrd.img: system
-	$(MAKE) -C initrd/
 
 try: aquila.iso
 	qemu-kvm -cdrom aquila.iso -hda hd.img -serial stdio -m 1G -d cpu_reset -no-reboot -boot d
