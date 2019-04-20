@@ -10,7 +10,7 @@ Follow the instructions in this [wiki page.](https://github.com/mohamed-anwar/Aq
 #### CPU-based Features:
 ##### Supported Archetictures:
 > - [X] x86
-> - [ ] IA64
+> - [ ] x86-64
 
 - [X] Multitasking
 - [X] Multithreading
