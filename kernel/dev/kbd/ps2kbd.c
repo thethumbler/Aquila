@@ -76,6 +76,15 @@ static int ps2kbd_file_open(struct file *file)
     return posix_file_open(file);
 }
 
+static int ps2kbd_file_can_read(struct file *file, size_t size)
+{
+    printk("ps2kbd_file_can_read(file=%p, size=%d)\n", file, size);
+
+    (void) file;
+    return ringbuf_available(kbd_ring);
+}
+
+
 struct dev ps2kbddev = {
     .name  = "kbddev",
 
@@ -86,7 +95,7 @@ struct dev ps2kbddev = {
         .open  = ps2kbd_file_open,
         .read  = posix_file_read,
 
-        .can_read  = __vfs_can_always,
+        .can_read  = ps2kbd_file_can_read,
         .can_write = __vfs_can_never,
         .eof       = __vfs_eof_never,
     },

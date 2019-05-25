@@ -25,7 +25,8 @@ struct pty {
     struct queue pts_write_queue; /* Slave write, Master read wait queue */
 };
 
-#define PTY_BUF 1024
+#define PTY_BUF 4096
+#define BUF_THR 5
 
 static struct pty *ptys[256] = {0};
 
@@ -36,12 +37,23 @@ struct dev ptsdev;
 ssize_t pty_master_write(struct tty *tty, size_t size, void *buf)
 {
     struct pty *pty = (struct pty *) tty->p;
+
+    size_t r = pty->in->size - ringbuf_available(pty->out);
+    if (size <= BUF_THR && r < size)
+        return 0;
+
     return ringbuf_write(pty->out, size, buf);
 }
 
 ssize_t pty_slave_write(struct tty *tty, size_t size, void *buf)
 {
+    //printk("pty_slave_write(tty=%p, size=%d, buf=%p)\n", tty, size, buf);
     struct pty *pty = (struct pty *) tty->p;
+
+    size_t r = pty->in->size - ringbuf_available(pty->in);
+    if (size <= BUF_THR && r < size)
+        return 0;
+
     return ringbuf_write(pty->in, size, buf);
 }
 
@@ -143,6 +155,16 @@ ssize_t pts_write(struct devid *dd, off_t offset __unused, size_t size, void *bu
     return tty_slave_write(pty->tty, size, buf);
 }
 
+int pts_can_read(struct file *file, size_t size)
+{
+    struct devid *dd = &INODE_DEV(file->inode);
+    struct pty *pty = ptys[dd->minor];
+
+    //printk("pts_can_read -> %d\n", ringbuf_available(pty->in));
+
+    return ringbuf_available(pty->in);
+}
+
 /*************************************
  *
  * Pseudo Terminal Helpers
@@ -162,7 +184,8 @@ int pty_new(struct proc *proc, struct inode **master)
     struct pty *pty = NULL;
 
     pty = kmalloc(sizeof(struct pty), &M_PTY, 0);
-    if (pty == NULL) {
+
+    if (!pty) {
         err = -ENOMEM;
         goto error;
     }
@@ -239,7 +262,7 @@ struct dev ptsdev = {
         .write = posix_file_write,
         .ioctl = posix_file_ioctl,
 
-        .can_read  = __vfs_can_always,
+        .can_read  = pts_can_read,
         .can_write = __vfs_can_always,
         .eof       = __vfs_eof_never,
     }

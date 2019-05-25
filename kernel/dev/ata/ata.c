@@ -72,6 +72,14 @@ static ssize_t ata_read(struct devid *dd, off_t offset, size_t size, void *buf)
 
     offset += ata_partition_offset(drive, partition);
 
+    /*
+    struct ubc *ubc = atadev.getubc(dd);
+    for (size_t i = 0; i < size; ++i) {
+        ubc_read(drive->ubc, offset + i, buf + i * BLOCK_SIZE);
+    }
+
+    return 1;
+    */
     return drive->read(drive, offset, size, buf);
 }
 
@@ -88,7 +96,7 @@ static ssize_t ata_write(struct devid *dd, off_t offset, size_t size, void *buf)
     return drive->write(drive, offset, size, buf);
 }
 
-uint8_t ata_detect_drive(struct ata_drive *drive)
+static uint8_t ata_detect_drive(struct ata_drive *drive)
 {
     ata_select_drive(drive, 0);
 
@@ -177,12 +185,41 @@ done:
     return drive->type;
 }
 
-size_t ata_getbs(struct devid *dd __unused)
+static size_t ata_getbs(struct devid *dd __unused)
 {
     return BLOCK_SIZE;
 }
 
-int ata_probe()
+static ssize_t ata_ubc_fill(struct ata_drive *drive, uintptr_t block, void *buf)
+{
+    printk("ata_ubc_fill(drive=%p, block=%p, buf=%p)\n", drive, block, buf);
+    ssize_t ret = drive->read(drive, block, 1, buf);
+    //printk("ret = %d\n", ret);
+    return ret;
+}
+
+static ssize_t ata_ubc_flush(struct ata_drive *drive, uintptr_t block, void *buf)
+{
+    printk("ata_ubc_flush(drive=%p, block=%p, buf=%p)\n", drive, block, buf);
+    return drive->write(drive, block, 1, buf);
+}
+
+static struct ubc *ata_getubc(struct devid *dd)
+{
+    /* Get drive and parition numbers */
+    size_t drive_id  = dd->minor / 64;
+    struct ata_drive *drive = &drives[drive_id];
+
+    if (!drive)
+        return NULL;
+
+    if (!drive->ubc)
+        drive->ubc = ubc_new(BLOCK_SIZE, drive, ata_ubc_fill, ata_ubc_flush);
+
+    return drive->ubc;
+}
+
+static int ata_probe()
 {
     struct pci_dev ide;
     int count;
@@ -301,6 +338,8 @@ struct dev atadev = {
         .read  = posix_file_read,
         .write = posix_file_write,
     },
+
+    .getubc = ata_getubc,
 };
 
 MODULE_INIT(ata, ata_probe, NULL)

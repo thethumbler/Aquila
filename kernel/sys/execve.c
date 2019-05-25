@@ -14,11 +14,11 @@ int proc_execve(struct thread *thread, const char *fn, char * const _argp[], cha
     int argc = 0, envc = 0;
     
     if (u_argp)
-        foreach(arg, u_argp)
+        for (char **arg_p = u_argp; *arg_p; ++arg_p)
             ++argc;
 
     if (u_envp)
-        foreach(env, u_envp)
+        for (char **env_p = u_envp; *env_p; ++env_p)
             ++envc;
 
     char **argp = kmalloc((argc + 1) * sizeof(char *), &M_BUFFER, 0);
@@ -77,11 +77,11 @@ int thread_execve(struct thread *thread, char * const _argp[], char * const _env
     int argc = 0, envc = 0;
     
     if (envp)
-        foreach(env, envp)
+        for (char **env_p = envp; *env_p; ++env_p)
             ++envc;
 
     if (argp)
-        foreach(arg, argp)
+        for (char **arg_p = argp; *arg_p; ++arg_p)
             ++argc;
 
     char *u_envp[envc+1];

@@ -1,5 +1,5 @@
-#ifndef _QUEUE_H
-#define _QUEUE_H
+#ifndef _DS_QUEUE_H
+#define _DS_QUEUE_H
 
 #include <core/system.h>
 
@@ -91,7 +91,7 @@ static inline void queue_remove(struct queue *queue, void *value)
     if (!queue || !queue->count)
         return;
 
-    forlinked (node, queue->head, node->next) {
+    for (struct qnode *node = queue->head; node; node = node->next) {
         if (node->value == value) {
             if (!node->prev) {    /* Head */
                 dequeue(queue);
@@ -131,4 +131,4 @@ static inline void queue_node_remove(struct queue *queue, struct qnode *node)
     return;
 }
 
-#endif /* _QUEUE_H */
+#endif /* ! _DS_QUEUE_H */

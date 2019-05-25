@@ -1,5 +1,5 @@
-#ifndef _SIGNAL_H
-#define _SIGNAL_H
+#ifndef _SYS_SIGNAL_H
+#define _SYS_SIGNAL_H
 
 #include <core/system.h>
 
@@ -63,4 +63,4 @@ int signal_send(int pid, int sig);
 int signal_proc_send(struct proc *proc, int signal);
 int signal_pgrp_send(struct pgroup *pg, int signal);
 
-#endif /* ! _SIGNAL_H */
+#endif /* ! _SYS_SIGNAL_H */

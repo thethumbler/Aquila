@@ -102,7 +102,7 @@ int virtfs_vunlink(struct vnode *vdir, const char *fn, struct uio *uio)
 
 
     prev = cur = NULL;
-    forlinked (dirent, dir, dirent->next) {
+    for (struct virtfs_dirent *dirent = dir; dirent; dirent = dirent->next) {
         if (!strcmp(dirent->d_name, fn)) {
             cur = dirent;
             goto found;
@@ -141,7 +141,7 @@ int virtfs_vfind(struct vnode *dir, const char *fn, struct vnode *child)
     if (!_dir)  /* Directory not initialized */
         return -ENOENT;
 
-    forlinked (dirent, _dir, dirent->next) {
+    for (struct virtfs_dirent *dirent = _dir; dirent; dirent = dirent->next) {
         if (!strcmp(dirent->d_name, fn)) {
             next = dirent->d_ino;
             goto found;
@@ -184,7 +184,7 @@ ssize_t virtfs_readdir(struct inode *dir, off_t offset, struct dirent *dirent)
     offset -= 2;
 
     int i = 0;
-    forlinked (e, _dirent, e->next) {
+    for (struct virtfs_dirent *e = _dirent; e; e = e->next) {
         if (i == offset) {
             found = 1;
             strcpy(dirent->d_name, e->d_name);

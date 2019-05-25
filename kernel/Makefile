@@ -41,3 +41,8 @@ $(patsubst %/,%/Makefile, $(dirs-y)): $(patsubst %/,%/Build.mk, $(dirs-y))
 .PHONY: distclean
 distclean: param = distclean
 distclean: $(dirs-y) arch/
+
+.PHONY: install
+install: all
+	$(MKDIR) -p $(DESTDIR)/boot
+	$(CP) arch/$(ARCH)/kernel-$(VERSION).$(ARCH) $(DESTDIR)/boot/kernel

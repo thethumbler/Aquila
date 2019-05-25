@@ -77,12 +77,16 @@ skip_echo:
     return ret;
 }
 
-ssize_t tty_slave_write(struct tty *tty, size_t size, void *buf)
+ssize_t tty_slave_write(struct tty *tty, size_t size, void *_buf)
 {
+    const char *buf = (const char *) _buf;
+
     if (tty->tios.c_oflag & OPOST) {
-        size_t written;
+        size_t written = 0;
+
         for (written = 0; written < size; ++written) {
-            char c = ((char *) buf)[written];
+            char c = buf[written];
+
             if (c == '\n' && (tty->tios.c_oflag & ONLCR)) {
                 /* If ONLCR is set, the NL character shall
                  * be transmitted as the CR-NL character pair. 
@@ -121,7 +125,7 @@ ssize_t tty_slave_write(struct tty *tty, size_t size, void *buf)
         }
         return written;
     } else {
-        return tty->master_write(tty, size, buf);
+        return tty->master_write(tty, size, _buf);
     }
 }
 

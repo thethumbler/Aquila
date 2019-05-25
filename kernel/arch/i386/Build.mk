@@ -7,12 +7,6 @@ dirs-y += platform/
 
 elf    += kernel-$(VERSION).$(ARCH)
 
-ifeq ($(ARCH),i386)
 kernel-$(VERSION).$(ARCH): builtin.o
-	@echo -e "  ELF     " $@;
-	@$(CC) $(CFLAGS) -Wl,-Tkernel.$(ARCH).ld -lgcc -o $@
-else
-kernel-$(VERSION).$(ARCH): builtin.o
-	@echo -e "  ELF     " $@;
-	@$(CC) $(CFLAGS) -Wl,-Tkernel.$(ARCH).ld -lgcc -o $@
-endif
+	@echo "  ELF     " $(CWD)/$@;
+	@$(LD) $(LDFLAGS) -T kernel.$(ARCH).ld -o $@

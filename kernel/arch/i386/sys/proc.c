@@ -34,13 +34,6 @@ void arch_proc_init(struct proc *proc)
     thread->arch = arch;
 }
 
-void arch_proc_kill(struct proc *proc)
-{
-    struct pmap *pmap = proc->vm_space.pmap;
-    arch_release_frame(pmap->map);
-    kfree(pmap);
-}
-
 void arch_init_execve(struct proc *proc, int argc, char * const _argp[], int envc, char * const _envp[])
 {
     printk("arch_init_execve(proc=%p, argc=%d, _argp=%p, envc=%d, _envp=%p)\n", proc, argc, _argp, envc, _argp);

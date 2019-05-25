@@ -1,5 +1,5 @@
-#ifndef _RAMDEV_H
-#define _RAMDEV_H
+#ifndef _DEV_RAMDEV_H
+#define _DEV_RAMDEV_H
 
 #include <core/system.h>
 
@@ -11,4 +11,4 @@ struct ramdev_priv {
 
 extern struct dev ramdev;
 
-#endif /* ! _RAMDEV_H */
+#endif /* ! _DEV_RAMDEV_H */
