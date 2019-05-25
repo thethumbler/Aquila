@@ -18,7 +18,7 @@ struct dev *ttydev_mux(struct devid *dd)
 {
     switch (dd->minor) {
         case 0: /* /dev/tty */
-            // return ttydev
+            //return cur_thread->owner->pgrp->session->ttydev;
             break;
         case 1: /* /dev/console */
             return &condev;

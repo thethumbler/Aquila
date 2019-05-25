@@ -1,6 +1,7 @@
 #include <core/system.h>
 #include <core/module.h>
 #include <core/panic.h>
+#include <core/time.h>
 
 #include <fs/vfs.h>
 #include <fs/initramfs.h>
@@ -34,6 +35,13 @@ static int cpio_root_inode(struct inode *super, struct inode **ref)
     inode->uid   = 0;
     inode->gid   = 0;
     inode->nlink = 2;
+
+    struct timespec ts;
+    gettime(&ts);
+
+    inode->ctime = ts;
+    inode->atime = ts;
+    inode->mtime = ts;
 
     //inode->name  = NULL;
     inode->fs    = &cpio;
@@ -155,9 +163,11 @@ static struct inode *cpio_find(struct inode *root, const char *path)
     }
 
     int flag;
-    foreach (token, tokens) {
+    for (char **token_p = tokens; *token_p; ++token_p) {
+        char *token = *token_p;
+
         flag = 0;
-        forlinked (e, dir, ((struct cpio *) e->p)->next) {
+        for (struct inode *e = dir; e; e = ((struct cpio *) e->p)->next) {
             if (((struct cpio *) e->p)->name &&
                     !strcmp(((struct cpio *) e->p)->name, token)) {
                 cur = e;
@@ -194,7 +204,7 @@ static int cpio_vfind(struct vnode *parent, const char *name, struct vnode *chil
     if (!dir)   /* Directory has no children */
         return -ENOENT;
 
-    forlinked (e, dir, ((struct cpio *) e->p)->next) {
+    for (struct inode *e = dir; e; e = ((struct cpio *) e->p)->next) {
         if (((struct cpio *) e->p)->name &&
                 !strcmp(((struct cpio *) e->p)->name, name)) {
             if (child) {
@@ -316,8 +326,9 @@ static ssize_t cpio_readdir(struct inode *node, off_t offset, struct dirent *dir
     int i = 0;
     struct inode *dir = p->dir;
 
-    forlinked (e, dir, ((struct cpio *) e->p)->next) {
+    for (struct inode *e = dir; e; e = ((struct cpio *) e->p)->next) {
         if (i == offset) {
+            dirent->d_ino = (size_t) e;
             strcpy(dirent->d_name, ((struct cpio *) e->p)->name);   // FIXME
             break;
         }

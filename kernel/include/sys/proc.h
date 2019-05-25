@@ -1,5 +1,5 @@
-#ifndef _PROC_H
-#define _PROC_H
+#ifndef _SYS_PROC_H
+#define _SYS_PROC_H
 
 #include <core/system.h>
 
@@ -12,6 +12,7 @@ struct session;
 #include <ds/queue.h>
 #include <sys/thread.h>
 #include <sys/signal.h>
+#include <dev/dev.h>
 
 struct session {
     /* Session ID */
@@ -22,6 +23,9 @@ struct session {
 
     /* Session Leader */
     struct proc *leader;
+
+    /* Controlling Terminal */
+    //struct dev *ttydev;
 
     /* Session node on sessions queue */
     struct qnode *qnode;
@@ -131,7 +135,7 @@ pid_t proc_pid_alloc(void);
 void  proc_pid_free(int pid);
 struct proc *proc_pid_find(pid_t pid);
 
-int  proc_new(struct proc **ref);
+int proc_new(struct proc **ref);
 int session_new(struct proc *proc);
 int pgrp_new(struct proc *proc, struct pgroup **ref_pgrp);
 
@@ -150,4 +154,4 @@ extern struct queue *procs;
 extern struct queue *pgroups;
 extern struct queue *sessions;
 
-#endif /* ! _PROC_H */
+#endif /* ! _SYS_PROC_H */

@@ -1,5 +1,5 @@
-#ifndef _VFS_H
-#define _VFS_H
+#ifndef _FS_VFS_H
+#define _FS_VFS_H
 
 #include <core/system.h>
 
@@ -227,4 +227,4 @@ struct mountpoint {
     const char *options;
 };
 
-#endif /* !_VFS_H */
+#endif /* ! _FS_VFS_H */

@@ -31,13 +31,17 @@ static ssize_t fbdev_vesa_write(struct fbdev *fb, off_t offset, size_t size, voi
 
 static int fbdev_vesa_map(struct fbdev *fb, struct vm_entry *vm_entry)
 {
+    printk("fbdev_vesa_map(fb=%p, vm_entry=%p {base=%p, off=0x%x, size=0x%x})\n", fb, vm_entry, vm_entry->base, vm_entry->off, vm_entry->size);
+
     /* We do not support private maps */
     if (!(vm_entry->flags & VM_SHARED))
         return -ENOTSUP;
 
+#if 0
     /* Mapping framebuffer must start at 0 */
     if (vm_entry->off != 0 || vm_entry->size > vesa_vm.size)
         return -ENXIO;
+#endif
 
     vm_entry->paddr = vesa_vm.paddr;
     return vm_map(&kvm_space, vm_entry); /* XXX */

@@ -1,27 +1,5 @@
-#
-# Compilation flags
-#
-
-INCLUDES := \
-	-I. \
-	-I$(PDIR)/arch/$$(ARCH_DIR)/platform/$$(PLATFORM_DIR)/include \
-	-I$(PDIR)/arch/$$(ARCH_DIR)/include \
-	-I$(PDIR)/include \
-	-I$(PDIR) \
-	-I/opt/aquila/lib/gcc/i686-aquila/7.3.0/include/
-
-CC := $(PDIR)/../build-tools/sysroot/bin/i686-elf-gcc
-
-CFLAGS := $(INCLUDES) \
-		-nostdlib -ffreestanding -m32 \
-		-O3 -Wall -Wextra -Werror \
-		-Wno-unused -Wno-unused-parameter -march=i386 \
-		-funsigned-bitfields -fuse-ld=bfd
-
-AS := $(CC)
-ASFLAGS := $(CFLAGS)
-LD := $(PDIR)/../build-tools/sysroot/bin/i686-elf-ld.bfd
-LDFLAGS := -nostdlib -melf_i386
+include configs/misc.mk
+include configs/gcc.mk
 
 #
 # Configurations
@@ -91,4 +69,5 @@ FS_MINIX=y
 # Initramfs
 INITRAMFS_CPIO=y
 
-#NET_UNIX=y
+# Network
+NET_UNIX=y

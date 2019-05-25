@@ -1,5 +1,5 @@
-#ifndef _MBR_H
-#define _MBR_H
+#ifndef _FS_MBR_H
+#define _FS_MBR_H
 
 #include <core/system.h>
 
@@ -35,4 +35,4 @@ struct mbr {
     uint16_t boot_signature;
 } __packed;
 
-#endif
+#endif /* ! _FS_MBR_H */

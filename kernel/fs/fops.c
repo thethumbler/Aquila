@@ -111,11 +111,11 @@ ssize_t vfs_file_readdir(struct file *file, struct dirent *dirent)
 
 ssize_t vfs_file_close(struct file *file)
 {
-    if (file && file->flags & FILE_SOCKET)
-        return socket_shutdown(file, SHUT_RDWR);
-
     if (!file || !file->inode)
         return -EINVAL;
+
+    if (file->flags & FILE_SOCKET)
+        return socket_shutdown(file, SHUT_RDWR);
 
     if (ISDEV(file->inode))
         return kdev_file_close(&INODE_DEV(file->inode), file);
@@ -151,6 +151,9 @@ int vfs_file_trunc(struct file *file, off_t len)
 
 int vfs_file_can_read(struct file *file, size_t size)
 {
+    if (file && file->flags & FILE_SOCKET)
+        return socket_can_read(file, size);
+
     if (!file || !file->inode)
         return -EINVAL;
 
@@ -168,6 +171,9 @@ int vfs_file_can_read(struct file *file, size_t size)
 
 int vfs_file_can_write(struct file *file, size_t size)
 {
+    if (file && file->flags & FILE_SOCKET)
+        return socket_can_write(file, size);
+
     if (!file || !file->inode)
         return -EINVAL;
 

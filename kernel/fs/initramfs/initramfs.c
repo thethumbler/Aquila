@@ -50,7 +50,7 @@ int load_ramdisk(module_t *module)
     struct inode *root = NULL;
     int err = -1;
 
-    forlinked (node, archivers->head, node->next) {
+    for (struct qnode *node = archivers->head; node; node = node->next) {
         struct fs *fs = node->value;
 
         if (!(err = fs->load(rd_dev, &root)))

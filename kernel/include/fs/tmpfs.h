@@ -1,8 +1,8 @@
-#ifndef _TMPFS_H
-#define _TMPFS_H
+#ifndef _FS_TMPFS_H
+#define _FS_TMPFS_H
 
 #include <fs/vfs.h>
 
 extern struct fs tmpfs;
 
-#endif /* ! _TMPFS_H */
+#endif /* ! _FS_TMPFS_H */

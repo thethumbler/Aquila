@@ -21,7 +21,8 @@ int kargs_parse(const char *_cmdline)
 
     char **tokens = tokenize(_cmdline, ' ');
 
-    foreach (token, tokens) {
+    for (char **token_p = tokens; *token_p; ++token_p) {
+        char *token = *token_p;
         int i, len = strlen(token);
         for (i = 0; i < len; ++i) {
             if (token[i] == '=') {

@@ -1,5 +1,5 @@
-#ifndef _SCHED_H
-#define _SCHED_H
+#ifndef _SYS_SCHED_H
+#define _SYS_SCHED_H
 
 #include <core/system.h>
 #include <sys/proc.h>
@@ -17,4 +17,4 @@ void schedule(void);
 
 void sched_thread_ready(struct thread *thread);
 
-#endif /* ! _SCHED_H */
+#endif /* ! _SYS_SCHED_H */

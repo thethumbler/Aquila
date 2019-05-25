@@ -1,5 +1,5 @@
-#ifndef _VIRTFS_H
-#define _VIRTFS_H
+#ifndef _FS_VIRTFS_H
+#define _FS_VIRTFS_H
 
 #include <fs/vfs.h>
 
@@ -16,4 +16,4 @@ int virtfs_vfind(struct vnode *dir, const char *fn, struct vnode *child);
 ssize_t virtfs_readdir(struct inode *dir, off_t offset, struct dirent *dirent);
 int virtfs_close(struct inode *inode);
 
-#endif /* ! _VIRTFS_H */
+#endif /* ! _FS_VIRTFS_H */

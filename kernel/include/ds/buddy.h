@@ -1,5 +1,5 @@
-#ifndef _BUDDY_H
-#define _BUDDY_H
+#ifndef _DS_BUDDY_H
+#define _DS_BUDDY_H
 
 #include <core/system.h>
 #include <ds/bitmap.h>
@@ -12,4 +12,4 @@ struct buddy {
 
 #define BUDDY_IDX(idx) ((idx) ^ 0x1)
 
-#endif /* ! _BUDDY_H */
+#endif /* ! _DS_BUDDY_H */

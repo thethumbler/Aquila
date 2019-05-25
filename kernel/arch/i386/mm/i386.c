@@ -264,7 +264,7 @@ paddr_t arch_get_frame()
     return frame_get();
 }
 
-uintptr_t arch_get_frame_no_clr()
+paddr_t arch_get_frame_no_clr()
 {
     return frame_get_no_clr();
 }
@@ -374,7 +374,7 @@ void arch_pmap_decref(struct pmap *pmap)
         pmap_release(pmap);
 }
 
-void arch_pmap_fork(struct pmap *src_map, struct pmap *dst_map)
+int arch_pmap_fork(struct pmap *src_map, struct pmap *dst_map)
 {
     paddr_t base = src_map->map;
     paddr_t fork = dst_map->map;
@@ -413,6 +413,8 @@ void arch_pmap_fork(struct pmap *src_map, struct pmap *dst_map)
 
     frame_mount(old_mount);
     arch_pmap_switch(src_map);
+
+    return 0;
 }
 
 int arch_pmap_add(struct pmap *pmap, vaddr_t va, paddr_t pa, uint32_t flags)

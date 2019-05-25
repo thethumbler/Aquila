@@ -36,7 +36,7 @@ struct inode *icache_find(struct icache *icache, ino_t ino)
     if (!icache || !icache->inodes)
         return NULL;
 
-    forlinked (node, icache->inodes->head, node->next) {
+    for (struct qnode *node = icache->inodes->head; node; node = node->next) {
         struct inode *inode = (struct inode *) node->value;
         if (inode->ino == ino) {
             return inode;

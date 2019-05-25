@@ -15,7 +15,7 @@
 
 #include <cpu/cpu.h>
 
-#include <chipset/misc.h>
+#include <platform/misc.h>
 
 #include <sys/proc.h>
 #include <sys/sched.h>
@@ -50,7 +50,7 @@ struct ioaddr mouse = {
 
 static struct ringbuf *mouse_ring = RINGBUF_NEW(BUF_SIZE);   /* Mouse ring Buffer */
 static struct proc *proc = NULL; /* Current process using mouse */
-static queue_t *mouse_read_queue = QUEUE_NEW(); /* Mouse read queue */
+static struct queue *mouse_read_queue = QUEUE_NEW(); /* Mouse read queue */
 
 struct mouse_packet {
     uint8_t left    : 1;
@@ -86,7 +86,7 @@ void ps2mouse_handler(int byte)
     }
 }
 
-void ps2mouse_register()
+void ps2mouse_register(void)
 {
     x86_i8042_handler_register(2, ps2mouse_handler);
 }
@@ -99,14 +99,16 @@ static ssize_t ps2mouse_read(struct devid *dd __unused, off_t offset __unused, s
 static void __mouse_wait(uint32_t i)
 {
     return;
+#if 0
     //printk("__mouse_wait(%d)\n", i);
     if (!i)
         while (!(io_in8(&mouse, MOUSE_CMD) & 1));
     else
         while (io_in8(&mouse, MOUSE_CMD) & 2);
+#endif
 }
 
-static uint8_t __mouse_read()
+static uint8_t __mouse_read(void)
 {
     __mouse_wait(0);
     return io_in8(&mouse, MOUSE_DATA);
@@ -160,8 +162,15 @@ static int ps2mouse_file_open(struct file *file)
     return posix_file_open(file);
 }
 
+static int ps2mouse_file_can_read(struct file *file, size_t size)
+{
+    (void) file;
+    return ringbuf_available(mouse_ring);
+}
+
 static int ps2mouse_file_close(struct file *file)
 {
+    //printk("ps2mouse_file_close(file=%p)\n", file);
     proc = NULL;
     return posix_file_close(file);
 }
@@ -177,9 +186,9 @@ struct dev ps2mousedev = {
         .read  = posix_file_read,
         .close = ps2mouse_file_close,
 
-        .can_read  = __always,
-        .can_write = __never,
-        .eof       = __never,
+        .can_read  = ps2mouse_file_can_read,
+        .can_write = __vfs_can_never,
+        .eof       = __vfs_eof_never,
     },
 };
 

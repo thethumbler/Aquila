@@ -1,5 +1,5 @@
-#ifndef _BINFMT_H
-#define _BINFMT_H
+#ifndef _SYS_BINFMT_H
+#define _SYS_BINFMT_H
 
 #include <core/system.h>
 #include <fs/vfs.h>
@@ -12,4 +12,4 @@ struct binfmt {
 
 int binfmt_load(struct proc *proc, const char *path, struct proc **ref);
 
-#endif
+#endif /* ! _SYS_BINFMT_H */

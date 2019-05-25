@@ -38,9 +38,15 @@ void arch_handle_signal(int sig);
 
 /* arch/ARCH/mm/mm.c */
 void arch_mm_setup(void);
-//void arch_switch_mapping();
-//int  arch_page_map(paddr_t paddr, vaddr_t vaddr, int flags);
-//int  arch_page_unmap(vaddr_t vaddr);
+
+void arch_pmap_init(void);
+struct pmap *arch_pmap_switch(struct pmap *pmap);
+struct pmap *arch_pmap_create(void);
+void arch_pmap_incref(struct pmap *pmap);
+void arch_pmap_decref(struct pmap *pmap);
+int  arch_pmap_fork(struct pmap *src_map, struct pmap *dst_map);
+int  arch_pmap_add(struct pmap *pmap, vaddr_t va, paddr_t pa, uint32_t flags);
+void arch_pmap_remove(struct pmap *pmap, vaddr_t sva, vaddr_t eva);
 
 paddr_t arch_page_get_mapping(vaddr_t vaddr);
 
@@ -49,6 +55,5 @@ void arch_disable_interrupts(void);
 void arch_reboot(void);
 
 int arch_time_get(struct timespec *ts);
-//int arch_localtime(struct tm *tm);
 
 #endif /* ! _ARCH_H */

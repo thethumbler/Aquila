@@ -1,25 +1,28 @@
+my $path = $ENV{'PWD'};
 my $dir_name = $ENV{'PWD'};
 $dir_name =~ s/\S*\///g;
 
 print "include Build.mk\n";
+print 'CWD != realpath --relative-to=$(PDIR) .', "\n";
 print 'all: builtin.o $(elf)', "\n";
 
 print 'builtin.o: $(obj-y) $(dirs-y)', "\n";
-print "\t", '@echo -e "  LD      " ', "builtin.o;\n\t",
+print "\t", '@echo "  LD      " $(CWD)/builtin.o;', "\n\t",
 		'@$(LD) $(LDFLAGS) -r $(obj-y) $(patsubst %/,%/builtin.o, $(dirs-y)) -o builtin.o; ', "\n";
 
 print '.PHONY: $(dirs-y)', "\n";
 print '$(dirs-y): $(patsubst %/,%/Makefile, $(dirs-y))', "\n";
-print "\t", '@echo -e "  MK      " $@', "\n\t",
+print "\t", '@echo "  MK      " $(CWD)/$@;', "\n\t",
         '@$(MAKE) -C $@ $(param)', "\n";
 
 print '$(patsubst %/,%/Makefile, $(dirs-y)): $(patsubst %/,%/Build.mk, $(dirs-y))', "\n";
-print "\t", '@echo -e "  PL      " Makefile', "\n\t", '@cd $(dir $@) && $(PERL) $(PDIR)/scripts/gen.pl > Makefile', "\n";
+print "\t", '@echo "  PL      " $(CWD)/$@', "\n\t",
+        '@cd $(dir $@) && $(PERL) $(PDIR)/scripts/gen.pl > Makefile', "\n";
 
-print "%.o:%.c\n", "\t", '@echo -e "  CC      " $@;', "\n\t",
+print "%.o:%.c\n", "\t", '@echo "  CC      " $(CWD)/$@;', "\n\t",
         '@$(CC) $(CFLAGS) -c $< -o $@', "\n";
 
-print "%.o:%.S\n", "\t", '@echo -e "  AS      " $@;', "\n\t",
+print "%.o:%.S\n", "\t", '@echo "  AS      " $(CWD)/$@;', "\n\t",
         '@$(AS) $(ASFLAGS) -c $< -o $@', "\n";
 
 print '.PHONY: clean', "\n", 'clean: param = clean', "\n", 'clean: $(dirs-y)', "\n\t",

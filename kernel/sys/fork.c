@@ -33,20 +33,6 @@ static int copy_fds(struct proc *parent, struct proc *fork)
     return 0;
 }
 
-static int copy_vm_entries(struct proc *parent, struct proc *fork)
-{
-    /* Copy vm entries */
-    forlinked (node, parent->vm_space.vm_entries.head, node->next) {
-        struct vm_entry *pvm_entry = node->value;
-        struct vm_entry *vm_entry = kmalloc(sizeof(struct vm_entry), &M_VM_ENTRY, 0);
-        memcpy(vm_entry, pvm_entry, sizeof(struct vm_entry));
-
-        vm_entry->qnode = enqueue(&fork->vm_space.vm_entries, vm_entry);
-    }
-
-    return 0;
-}
-
 static int fork_proc_copy(struct proc *parent, struct proc *fork)
 {
     fork->pgrp = parent->pgrp;
@@ -118,7 +104,7 @@ int proc_fork(struct thread *thread, struct proc **ref)
         goto error;
 
     /* Copy virtual memory regions */
-    if ((err = copy_vm_entries(proc, fork)))
+    if ((err = vm_fork(&proc->vm_space, &fork->vm_space)))
         goto error;
 
     /* Call arch specific fork handler */
