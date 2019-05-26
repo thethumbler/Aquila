@@ -1,5 +1,5 @@
-#ifndef _PCI_H
-#define _PCI_H
+#ifndef _DEV_PCI_H
+#define _DEV_PCI_H
 
 #include <core/system.h>
 
@@ -37,14 +37,14 @@ void pci_ioaddr_set(struct ioaddr *io);
  * PCI Interface
  */
 
-int pci_scan_device(uint8_t class, uint8_t subclass, struct pci_dev *_dev, size_t nr);
-int pci_device_scan(uint16_t vendor_id, uint16_t device_id, struct pci_dev *ref);
-uint8_t pci_reg8_read(struct pci_dev *dev, uint8_t off);
+int      pci_scan_device(uint8_t class, uint8_t subclass, struct pci_dev *_dev, size_t nr);
+int      pci_device_scan(uint16_t vendor_id, uint16_t device_id, struct pci_dev *ref);
+uint8_t  pci_reg8_read(struct pci_dev *dev, uint8_t off);
 uint16_t pci_reg16_read(struct pci_dev *dev, uint8_t off);
 uint32_t pci_reg32_read(struct pci_dev *dev, uint8_t off);
-void pci_reg8_write(struct pci_dev *dev, uint8_t off, uint8_t val);
-void pci_reg16_write(struct pci_dev *dev, uint8_t off, uint8_t val);
-void pci_reg32_write(struct pci_dev *dev, uint8_t off, uint8_t val);
+void     pci_reg8_write(struct pci_dev *dev, uint8_t off, uint8_t val);
+void     pci_reg16_write(struct pci_dev *dev, uint8_t off, uint8_t val);
+void     pci_reg32_write(struct pci_dev *dev, uint8_t off, uint8_t val);
 uint32_t pci_read_bar(struct pci_dev *dev, uint8_t id);
 
-#endif /* ! _PCI_H */
+#endif /* ! _DEV_PCI_H */

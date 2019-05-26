@@ -1522,7 +1522,7 @@ static void request_status_string(VTermState *state, const char *command, size_t
 
   if(cmdlen == 2) {
     if(strneq(command, " q", 2)) {
-      int reply;
+      int reply = 0;
       switch(state->mode.cursor_shape) {
         case VTERM_PROP_CURSORSHAPE_BLOCK:     reply = 2; break;
         case VTERM_PROP_CURSORSHAPE_UNDERLINE: reply = 4; break;

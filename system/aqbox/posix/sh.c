@@ -148,33 +148,36 @@ void print_prompt()
     fflush(stdout);
 }
 
-int run_prog(char *name, char **argv)
+int run_prog(char *name, char **argv, int wait)
 {
     int cld;
-    if (cld = fork()) {
-        int s, pid;
-        do {
-            pid = waitpid(cld, &s, 0);
-        } while (pid != cld);
+    if ((cld = fork())) {
+        if (wait) {
+            int s, pid;
+            do {
+                pid = waitpid(cld, &s, 0);
+            } while (pid != cld);
 
-        if (WIFSIGNALED(s)) {   /* Terminated due to signal */
-            switch (WTERMSIG(s)) {
-                case SIGINT:    /* Ignore */
-                    break;
-                case SIGSEGV:
-                    fprintf(stderr, "Segmentation fault\n");
-                    break;
-                default:
-                    fprintf(stderr, "Terminated due to signal %d\n", WTERMSIG(s));
-                    break;
+            if (WIFSIGNALED(s)) {   /* Terminated due to signal */
+                switch (WTERMSIG(s)) {
+                    case SIGINT:    /* Ignore */
+                        break;
+                    case SIGSEGV:
+                        fprintf(stderr, "Segmentation fault\n");
+                        break;
+                    default:
+                        fprintf(stderr, "Terminated due to signal %d\n", WTERMSIG(s));
+                        break;
+                }
             }
         }
-
     } else {
         int x = execve(name, argv, environ);
         fprintf(stderr, "sh: execve: %s\n", strerror(errno));
         exit(x);
     }
+
+    return 0;
 }
 
 enum KEY_ACTION {
@@ -301,7 +304,7 @@ char *read_input()
                     printf("%s", read_buf);
 
                     /* XXX */
-                    snprintf(seq, 20, "\x1b[%dD", len-off);
+                    snprintf(seq, 20, "\x1b[%luD", len-off);
                     printf("%s", seq);
 
                     fflush(stdout);
@@ -353,7 +356,7 @@ char *read_input()
                 read_buf[len] = '\0';
                 printf("%s", read_buf);
 
-                snprintf(seq, 20, "\x1b[%dD", len-off);
+                snprintf(seq, 20, "\x1b[%luD", len-off);
                 printf("%s", seq);
 
                 fflush(stdout);
@@ -401,6 +404,13 @@ int eval(char *buf)
 
     argv[args_i] = NULL;
 
+    int wait = 1;
+    if (!strcmp(argv[args_i-1], "&")) {
+        --args_i;
+        argv[args_i] = NULL;
+        wait = 0;
+    }
+
     if (flags & F_DEBUG) {
         fprintf(stderr, "+ ");
         for (int i = 0; i < args_i; ++i) {
@@ -414,7 +424,7 @@ int eval(char *buf)
         int fd = open(argv[0], O_RDONLY);
         if (fd > 0) {
             close(fd);
-            return run_prog(argv[0], argv);
+            return run_prog(argv[0], argv, wait);
         } else {
             fprintf(stderr, "aqsh: %s: ", argv[0]);
             perror("");
@@ -437,11 +447,11 @@ int eval(char *buf)
             int fd = open(buf, O_RDONLY);
             if (fd > 0) {
                 close(fd);
-                int ret = run_prog(buf, argv);
+                int ret = run_prog(buf, argv, wait);
                 free(path);
                 return ret;
             }
-        } while (comp = strtok(NULL, ":"));
+        } while ((comp = strtok(NULL, ":")));
     }
 
     fprintf(stderr, "aqsh: %s: command not found\n", argv[0]);

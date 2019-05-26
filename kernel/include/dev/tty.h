@@ -1,5 +1,5 @@
-#ifndef _TTY_H
-#define _TTY_H
+#ifndef _DEV_TTY_H
+#define _DEV_TTY_H
 
 #include <core/system.h>
 
@@ -35,4 +35,4 @@ ssize_t tty_master_write(struct tty *tty, size_t size, void *buf);
 ssize_t tty_slave_write(struct tty *tty, size_t size, void *buf);
 int     tty_ioctl(struct tty *tty, int request, void *argp);
 
-#endif /* !_TTY_H */
+#endif /* ! _DEV_TTY_H */

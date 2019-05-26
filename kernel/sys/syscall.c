@@ -75,7 +75,7 @@ static void sys_close(int fildes)
 
     struct file *file = &cur_thread->owner->fds[fildes];
     
-    if (!file->inode) {
+    if (file == (void *) -1 || !file->inode) {
         arch_syscall_return(cur_thread, -EBADFD);
         return;
     }
@@ -95,7 +95,6 @@ static void sys_execve(const char *path, char * const argp[], char * const envp[
     }
 
     int err = 0;
-#if 1
     char *fn = strdup(path);
 
     if (!fn) {
@@ -106,42 +105,6 @@ static void sys_execve(const char *path, char * const argp[], char * const envp[
     err = proc_execve(cur_thread, fn, argp, envp);
 
     kfree(fn);
-#else
-
-    char **_argp = (char **) argp;
-    char **_envp = (char **) envp;
-
-    int argc = 0, envc = 0;
-
-    if (_argp)
-        foreach(arg, _argp)
-            ++argc;
-
-    if (_envp)
-        foreach(env, _envp)
-            ++envc;
-
-    char **u_argp = kmalloc(argc * sizeof(char *));
-    char **u_envp = kmalloc(envc * sizeof(char *));
-
-    for (int i = 0; i < argc; ++i)
-        u_argp[i] = strdup(argp[i]);
-
-    for (int i = 0; i < envc; ++i)
-        u_envp[i] = strdup(envp[i]);
-
-    cur_thread->owner->threads.head->value = cur_thread;
-    if ((err = binfmt_load(cur_thread->owner, path, NULL))) {
-        printk("err = %d\n", -err);
-        for (;;);
-    }
-
-    for (;;);
-
-    thread_execve(cur_thread, argp, envp);
-    printk("succ\n");
-    for (;;);
-#endif
 
     if (err) {
         arch_syscall_return(cur_thread, err);
@@ -269,7 +232,6 @@ static void sys_open(const char *path, int oflags, mode_t mode)
     uio.flags = oflags;
 
     int ret = vfs_lookup(path, &uio, &vnode, NULL);
-    //printk("vfs_lookup(%s) -> %d\n", path, ret);
 
     if (ret) {   /* Lookup failed */
         if ((ret == -ENOENT) && (oflags & O_CREAT)) {
@@ -335,6 +297,7 @@ static void sys_sbrk(ptrdiff_t incr)
     cur_thread->owner->heap += incr;
     cur_thread->owner->heap_vm->size += incr;
 
+    syscall_log(LOG_DEBUG, "current heap %p\n", ret);
     arch_syscall_return(cur_thread, ret);
 
     return;
@@ -377,47 +340,97 @@ static void sys_unlink(const char *path)
     arch_syscall_return(cur_thread, ret);
 }
 
+#define WNOHANG 1
 static void sys_waitpid(int pid, int *stat_loc, int options)
 {
     syscall_log(LOG_DEBUG, "waitpid(pid=%d, stat_loc=%p, options=0x%x)\n", pid, stat_loc, options);
 
-    struct proc *child = proc_pid_find(pid);
+    int nohang = options & WNOHANG;
 
-    /* If pid is invalid or current process is not parent of child */
-    if (child == NULL || child->parent != cur_thread->owner) {
-        arch_syscall_return(cur_thread, -ECHILD);
-        return;
-    }
+    if (pid < -1) {
+        /* wait for any child process whose process group ID
+              is equal to the absolute value of pid */
+        panic("unsupported");
+    } else if (pid == -1) {
 
-    if (!(child->running)) {  /* Child is killed */
+        /* wait for any child process */
+        for (;;) {
+            int found = 0;
+
+            for (struct qnode *node = procs->head; node; node = node->next) {
+                struct proc *proc = node->value;
+
+                if (proc->parent != cur_thread->owner)
+                    continue;
+
+                found = 1;
+
+                if (!proc->running) {
+                    if (stat_loc)
+                        *stat_loc = proc->exit;
+
+                    arch_syscall_return(cur_thread, proc->pid);
+                    proc_reap(proc);
+                    return;
+                }
+            }
+
+            if (nohang) {
+                arch_syscall_return(cur_thread, found? 0 : -ECHILD);
+                return;
+            }
+
+            if (thread_queue_sleep(&cur_thread->owner->wait_queue)) {
+                arch_syscall_return(cur_thread, -EINTR);
+                return;
+            }
+        }
+
+    } else if (pid == 0) {
+        /* wait for any child process whose process group ID
+              is equal to that of the calling process */
+        panic("unsupported");
+    } else {
+        /* wait for the child whose process ID is equal to the
+              value of pid */
+        struct proc *child = proc_pid_find(pid);
+
+        /* If pid is invalid or current process is not parent of child */
+        if (child == NULL || child->parent != cur_thread->owner) {
+            arch_syscall_return(cur_thread, -ECHILD);
+            return;
+        }
+
+        if (!(child->running)) {  /* Child is killed */
+            *stat_loc = child->exit;
+            arch_syscall_return(cur_thread, child->pid);
+            proc_reap(child);
+            return;
+        }
+
+        /*
+        if (options & WNOHANG) {
+            arch_syscall_return(cur_thread, 0);
+            return;
+        }
+        */
+
+        while (child->running) {
+            if (thread_queue_sleep(&cur_thread->owner->wait_queue)) {
+                arch_syscall_return(cur_thread, -EINTR);
+                return;
+            }
+        }
+
         *stat_loc = child->exit;
         arch_syscall_return(cur_thread, child->pid);
         proc_reap(child);
-        return;
     }
-
-    /*
-    if (options & WNOHANG) {
-        arch_syscall_return(cur_thread, 0);
-        return;
-    }
-    */
-
-    while (child->running) {
-        if (thread_queue_sleep(&cur_thread->owner->wait_queue)) {
-            arch_syscall_return(cur_thread, -EINTR);
-            return;
-        }
-    }
-
-    *stat_loc = child->exit;
-    arch_syscall_return(cur_thread, child->pid);
-    proc_reap(child);
 }
 
 static void sys_write(int fd, void *buf, size_t nbytes)
 {
-    //syscall_log(LOG_DEBUG, "write(fd=%d, buf=%p, nbytes=%d)\n", fd, buf, nbytes);
+    syscall_log(LOG_DEBUG, "write(fd=%d, buf=%p, nbytes=%d)\n", fd, buf, nbytes);
     
     if (fd < 0 || fd >= FDS_COUNT) {   /* Out of bounds */
         arch_syscall_return(cur_thread, -EBADFD);
@@ -557,7 +570,20 @@ static void sys_fcntl(int fd, int cmd, uintptr_t arg)
 
     struct file *file = &cur_thread->owner->fds[fd];
 
+    int dupfd = 0;
+
     switch (cmd) {
+        case F_DUPFD:
+            if (arg == 0)
+                dupfd = proc_fd_get(cur_thread->owner);
+            else
+                dupfd = arg;
+            cur_thread->owner->fds[dupfd] = *file;
+            arch_syscall_return(cur_thread, dupfd);
+            return;
+        case F_GETFD:
+            arch_syscall_return(cur_thread, file->flags);
+            return;
         case F_SETFD:
             file->flags = (int) arg; /* XXX */
             arch_syscall_return(cur_thread, 0);
@@ -663,7 +689,7 @@ static void sys_thread_join(int tid, void **value_ptr)
     struct proc *owner = cur_thread->owner;
     struct thread *thread = NULL;
 
-    forlinked (node, owner->threads.head, node->next) {
+    for (struct qnode *node = owner->threads.head; node; node = node->next) {
         struct thread *_thread = node->value;
         if (_thread->tid == tid)
             thread = _thread;
@@ -696,12 +722,12 @@ static void sys_setpgid(pid_t pid, pid_t pgid)
 {
     syscall_log(LOG_DEBUG, "setpgid(pid=%d, pgid=%d)\n", pid, pgid);
 
-    if (pid == 0 && pgid == 0) {
+    //if (pid == 0 && pgid == 0) {
         int ret = pgrp_new(cur_thread->owner, NULL);
         arch_syscall_return(cur_thread, ret);
-    } else {
-        panic("Unsupported");
-    }
+    //} else {
+    //    panic("Unsupported");
+    //}
 }
 
 static void sys_mknod(const char *path, uint32_t mode, uint32_t dev)
@@ -837,7 +863,7 @@ static void sys_munmap(void *addr, size_t len)
 
     struct vm_space *vm_space = &cur_thread->owner->vm_space;
 
-    forlinked (node, vm_space->vm_entries.head, node->next) {
+    for (struct qnode *node = vm_space->vm_entries.head; node; node = node->next) {
         struct vm_entry *vm_entry = node->value;
 
         if (vm_entry->base == (uintptr_t) addr && vm_entry->size == len) {
@@ -1075,19 +1101,58 @@ static void sys_umask(mode_t mask)
 static void sys_chmod(const char *path, mode_t mode)
 {
     syscall_log(LOG_DEBUG, "chmod(path=%s, mode=%d)\n", path, mode);
-    for (;;);
+    arch_syscall_return(cur_thread, -ENOSYS);
 }
 
 static void sys_sysconf(int name)
 {
     syscall_log(LOG_DEBUG, "sysconf(name=%d)\n", name);
-    for (;;);
+    arch_syscall_return(cur_thread, -ENOSYS);
 }
+
+#define F_OK    0
+#define X_OK    1
+#define W_OK    2
+#define R_OK    4
 
 static void sys_access(const char *path, int mode)
 {
     syscall_log(LOG_DEBUG, "access(path=%s, mode=%d)\n", path, mode);
-    for (;;);
+
+    int err = 0;
+
+    /* Look up the file */
+    struct vnode vnode;
+    struct inode *inode = NULL;
+    struct file  file;
+
+    struct uio uio = PROC_UIO(cur_thread->owner);
+    uio.flags = O_RDONLY; /* XXX */
+
+    err = vfs_lookup(path, &uio, &vnode, NULL);
+
+    if (err) goto done;
+
+    err = vfs_vget(&vnode, &inode);
+
+    if (err) goto done;
+
+    file = (struct file) {
+        .inode  = inode,
+        .offset = 0,
+        .flags  = uio.flags,
+    };
+
+    if ((err = vfs_perms_check(&file, &uio)))
+        goto done;
+
+done:
+    if (inode)
+        vfs_close(inode);
+
+    arch_syscall_return(cur_thread, err);
+
+    return;
 }
 
 static void sys_gettimeofday(struct timeval *tv, struct timezone *tz)
@@ -1095,6 +1160,73 @@ static void sys_gettimeofday(struct timeval *tv, struct timezone *tz)
     syscall_log(LOG_DEBUG, "gettimeofday(tv=%p, tz=%p)\n", tv, tz);
     arch_syscall_return(cur_thread, gettimeofday(tv, tz));
     return;
+}
+
+static void sys_sigmask(int how, void *set, void *oldset)
+{
+    syscall_log(LOG_DEBUG, "sigmask(how=%d, set=%p, oldset=%p)\n", how, set, oldset);
+    arch_syscall_return(cur_thread, -ENOTSUP);
+}
+
+typedef unsigned long fd_mask;
+
+#define  FD_SETSIZE  64
+#define   NFDBITS (sizeof (fd_mask) * 8)  /* bits per mask */
+#define  _howmany(x,y)   (((x)+((y)-1))/(y))
+
+typedef struct {
+    fd_mask fds_bits[_howmany(FD_SETSIZE, NFDBITS)];
+} fd_set;
+
+struct select_args {
+    int nfds;
+    fd_set *readfds;
+    fd_set *writefds;
+    fd_set *exceptfds;
+    struct timeval *timeout;
+};
+
+static void sys_select(struct select_args *args)
+{
+    syscall_log(LOG_DEBUG, "select(args=%p)\n", args);
+
+    int nfds = args->nfds;
+    fd_set *readfds = args->readfds;
+    fd_set *writefds = args->writefds;
+    fd_set *exceptfds = args->exceptfds;
+    struct timeval *timeout = args->timeout;
+
+    int count = 0;
+
+    for (int i = 0; i < nfds; ++i) {
+        if (readfds && readfds->fds_bits[i/NFDBITS] & (1 << (i % NFDBITS))) {
+            struct file *file = &cur_thread->owner->fds[i];
+            if (vfs_file_can_read(file, 1) > 0) {
+                readfds->fds_bits[i/NFDBITS] |= (1 << (i % NFDBITS));
+                ++count;
+            } else {
+                readfds->fds_bits[i/NFDBITS] &= ~(1 << (i % NFDBITS));
+            }
+        }
+
+        if (writefds && writefds->fds_bits[i/NFDBITS] & (1 << (i % NFDBITS))) {
+            struct file *file = &cur_thread->owner->fds[i];
+            if (vfs_file_can_write(file, 1) > 0) {
+                writefds->fds_bits[i/NFDBITS] |= (1 << (i % NFDBITS));
+                ++count;
+            } else {
+                writefds->fds_bits[i/NFDBITS] &= ~(1 << (i % NFDBITS));
+            }
+        }
+    }
+
+    arch_syscall_return(cur_thread, count);
+}
+
+static void sys_getpgrp(void)
+{
+    syscall_log(LOG_DEBUG, "getpgrp()\n");
+    arch_syscall_return(cur_thread, cur_thread->owner->pgrp->pgid);
 }
 
 void (*syscall_table[])() =  {
@@ -1149,6 +1281,10 @@ void (*syscall_table[])() =  {
     /* 48 */    sys_chmod,
     /* 49 */    sys_sysconf,
     /* 50 */    sys_gettimeofday,
+    /* 51 */    sys_access,
+    /* 52 */    sys_sigmask,
+    /* 53 */    sys_select,
+    /* 54 */    sys_getpgrp,
 };
 
 const size_t syscall_cnt = sizeof(syscall_table)/sizeof(syscall_table[0]);

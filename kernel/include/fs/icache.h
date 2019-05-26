@@ -1,5 +1,5 @@
-#ifndef _ICACHE_H
-#define _ICACHE_H
+#ifndef _FS_ICACHE_H
+#define _FS_ICACHE_H
 
 #include <fs/vfs.h>
 #include <ds/queue.h>
@@ -15,4 +15,4 @@ struct inode *icache_find(struct icache *icache, ino_t ino);
 
 MALLOC_DECLARE(M_ICACHE);
 
-#endif  /* ! _ICACHE_H */
+#endif  /* ! _FS_ICACHE_H */

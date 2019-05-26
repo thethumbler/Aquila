@@ -74,6 +74,7 @@ extern struct vm_space kvm_space;
 
 void kvmem_setup(void);
 
+int  vm_fork(struct vm_space *parent, struct vm_space *child);
 int  vm_map(struct vm_space *vm_space, struct vm_entry *vm_entry);
 void vm_unmap(struct vm_space *vm_space, struct vm_entry *vm_entry);
 void vm_unmap_full(struct vm_space *vm_space, struct vm_entry *vm_entry);

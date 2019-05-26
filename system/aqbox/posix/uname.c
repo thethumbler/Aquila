@@ -45,4 +45,6 @@ AQBOX_APPLET(uname)(int argc, char **argv)
 
         printf("\n");
     }
+
+    return 0;
 }

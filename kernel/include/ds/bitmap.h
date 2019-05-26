@@ -1,5 +1,5 @@
-#ifndef _BITMAP_H
-#define _BITMAP_H
+#ifndef _DS_BITMAP_H
+#define _DS_BITMAP_H
 
 #include <core/system.h>
 #include <core/string.h>
@@ -85,8 +85,9 @@ static inline void bitmap_clear_range(bitmap_t *bitmap, size_t findex, size_t li
 
     /* Set non block-aligned indices */
     while (i <= lindex) {
-        bitmap_clear(bitmap, i); ++i;
+        bitmap_clear(bitmap, i);
+        ++i;
     }
 }
 
-#endif /* !_BITMAP_H */
+#endif /* ! _DS_BITMAP_H */

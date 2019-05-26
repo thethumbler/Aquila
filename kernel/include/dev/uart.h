@@ -1,5 +1,5 @@
-#ifndef _UART_H
-#define _UART_H
+#ifndef _DEV_UART_H
+#define _DEV_UART_H
 
 #include <fs/vfs.h>
 #include <dev/tty.h>
@@ -22,4 +22,4 @@ int  uart_register(int id, struct uart *u);
 void uart_recieve_handler(struct uart *u, size_t size);
 void uart_transmit_handler(struct uart *u, size_t size);
 
-#endif /* ! _UART_H */
+#endif /* ! _DEV_UART_H */

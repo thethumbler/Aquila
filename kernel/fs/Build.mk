@@ -17,7 +17,7 @@ dirs-y += initramfs/
 dirs-y += posix/
 obj-y  += pipe.o
 obj-y  += icache.o
-#obj-y  += ubc.o
+obj-y  += ubc.o
 
 # Optional targets
 dirs-$(FS_TMPFS)  += tmpfs/

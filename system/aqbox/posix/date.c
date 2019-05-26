@@ -35,4 +35,6 @@ AQBOX_APPLET(date)(int argc, char **argv)
 
     strftime(buf, sizeof(buf), "%c", timeinfo);
     puts(buf);
+
+    return 0;
 }

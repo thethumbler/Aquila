@@ -11,7 +11,7 @@ int vfs_mount(const char *type, const char *dir, int flags, void *data, struct u
     struct fs *fs = NULL;
 
     /* Look up filesystem */
-    forlinked (entry, registered_fs, entry->next) {
+    for (struct fs_list *entry = registered_fs; entry; entry = entry->next) {
         if (!strcmp(entry->name, type)) {
             fs = entry->fs;
             break;

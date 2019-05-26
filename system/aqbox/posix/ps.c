@@ -43,7 +43,7 @@ AQBOX_APPLET(ps)(int argc, char **argv)
     }
 
     printf("  PID  PPID PATH\n");
-    while (dirent = readdir(proc)) {
+    while ((dirent = readdir(proc))) {
         if (dirent->d_name[0] > '0' && dirent->d_name[0] <= '9') {
             print_info(dirent->d_name);
         }

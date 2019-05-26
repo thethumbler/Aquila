@@ -1,5 +1,5 @@
-#ifndef _TERMIOS_H
-#define _TERMIOS_H
+#ifndef _FS_TERMIOS_H
+#define _FS_TERMIOS_H
 
 #include <core/system.h>
 
@@ -162,4 +162,4 @@ struct termios {
 #define TCSADRAIN   1
 #define TCSAFLUSH   2
 
-#endif /* ! _TERMIOS_H */
+#endif /* ! _FS_TERMIOS_H */

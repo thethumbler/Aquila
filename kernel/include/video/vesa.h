@@ -1,5 +1,5 @@
-#ifndef _FBDEV_VESA
-#define _FBDEV_VESA
+#ifndef _VIDEO_VESA
+#define _VIDEO_VESA
 
 #include <video/vbe.h>
 
@@ -8,4 +8,4 @@ struct fbdev_vesa {
     struct mode_info_block *mode_info;
 };
 
-#endif /* ! _FBDEV_VESA */
+#endif /* ! _VIDEO_VESA */

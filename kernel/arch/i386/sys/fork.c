@@ -11,9 +11,6 @@ int arch_proc_fork(struct thread *thread, struct proc *fork)
 {
     int err = 0;
 
-    struct pmap *parent_pmap = thread->owner->vm_space.pmap;
-    struct pmap *fork_pmap   = fork->vm_space.pmap; //NULL;
-
     struct x86_thread *ptarch = thread->arch;
     struct x86_thread *ftarch = NULL;
 
@@ -24,8 +21,6 @@ int arch_proc_fork(struct thread *thread, struct proc *fork)
         err = -ENOMEM;
         goto free_resources;
     }
-
-    arch_pmap_fork(parent_pmap, fork_pmap);
 
     /* Setup kstack */
     uintptr_t fkstack_base = (uintptr_t) kmalloc(KERN_STACK_SIZE, &M_KERN_STACK, 0);
@@ -47,8 +42,6 @@ int arch_proc_fork(struct thread *thread, struct proc *fork)
     ftarch->rsp = (uintptr_t) fork_regs;
 #endif
 
-    fork->vm_space.pmap = fork_pmap;
-
     struct thread *fthread = (struct thread *) fork->threads.head->value;
     fthread->arch = ftarch;
 
@@ -58,9 +51,6 @@ int arch_proc_fork(struct thread *thread, struct proc *fork)
     return 0;
 
 free_resources:
-    if (fork_pmap)
-        kfree(fork_pmap);
-
     if (ftarch)
         kfree(ftarch);
     return err;

@@ -43,7 +43,7 @@ struct dirent entries[MAX_ENTRIES];
 
 char *file_mode(struct stat *buf)
 {
-    char a_t;
+    char a_t = '\0';
     switch (buf->st_mode & S_IFMT) { 
         case S_IFDIR:  a_t = 'd'; break;
         case S_IFCHR:  a_t = 'c'; break;
@@ -127,9 +127,9 @@ int print_long_entry(char *path, char *fn)
     }
 
     if (S_ISCHR(buf.st_mode) || S_ISBLK(buf.st_mode))
-        printf("%s %u %s %s %8s %s %s\n", mode, nlink, owner, group, device, time, name);
+        printf("%s %4u %s %s %8s %s %s\n", mode, nlink, owner, group, device, time, name);
     else
-        printf("%s %u %s %s %8u %s %s\n", mode, nlink, owner, group, size, time, name);
+        printf("%s %4u %s %s %8lu %s %s\n", mode, nlink, owner, group, size, time, name);
 
     return 0;
 }
@@ -179,11 +179,11 @@ int do_ls(char *path, uint32_t flags)
         int j = 0;
         for (int i = 0; i < entries_idx + 1; ++i) {
             if ((flags & FLAG_a) || (entries[i].d_name[0] != '.')) {
-                printf("%-*s  ", maxlen, entries[i].d_name);
+                printf("%-*s  ", (int) maxlen, entries[i].d_name);
                 fflush(stdout);
                 ++j;
 
-                if (j == entries_per_line) {
+                if (j == (int) entries_per_line) {
                     j = 0;
                     printf("\n");
                     fflush(stdout);
@@ -198,10 +198,13 @@ int do_ls(char *path, uint32_t flags)
     }
 
     closedir(dir);
+
+    return 0;
 }
 
 int ls_usage()
 {
+    return 0;
 }
 
 AQBOX_APPLET(ls)(int argc, char **argv)

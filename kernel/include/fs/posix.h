@@ -1,5 +1,5 @@
-#ifndef __VFS_POSIX_H
-#define __VFS_POSIX_H
+#ifndef __FS_POSIX_H
+#define __FS_POSIX_H
 
 #include <fs/vfs.h>
 
@@ -17,4 +17,4 @@ int     posix_file_can_read(struct file *file, size_t size);
 int     posix_file_can_write(struct file *file, size_t size);
 int     posix_file_eof(struct file *file);
 
-#endif /* ! __VFS_POSIX_H */
+#endif /* ! __FS_POSIX_H */

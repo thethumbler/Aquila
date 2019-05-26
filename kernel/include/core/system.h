@@ -5,14 +5,6 @@
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 
-#if 1
-#define foreach(element, list) \
-    for (typeof(*list) *tmp = list, element = *tmp; element; element = *++tmp)
-
-#define forlinked(element, list, iter) \
-    for (typeof(list) element = list; element; element = iter)
-#endif
-
 #define MEMBER_SIZE(type, member) (sizeof(((type *)0)->member))
 
 #if defined(__TINYC__) || defined(__clang__) || defined(__PCC__)
@@ -28,10 +20,6 @@
 #define __packed     __attribute__((packed))
 #define __aligned(n) __attribute__((aligned(n)))
 #define __section(s) __attribute__((section(s)))
-
-#if defined(__TINYC__)
-//  #define __pragma_pack 1
-#endif
 
 #if defined(__TINYC__) || defined(__PCC__)
 #include <stddef.h>

@@ -1,5 +1,5 @@
-#ifndef _RINGBUF_H
-#define _RINGBUF_H
+#ifndef _DS_RINGBUF_H
+#define _DS_RINGBUF_H
 
 #include <core/system.h>
 #include <mm/mm.h>
@@ -115,4 +115,4 @@ static inline size_t ringbuf_available(struct ringbuf *ring)
     return ring->tail + ring->size - ring->head;
 }
 
-#endif /* ! _RINGBUF_H */
+#endif /* ! _DS_RINGBUF_H */

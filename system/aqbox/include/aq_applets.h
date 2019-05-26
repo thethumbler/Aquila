@@ -14,7 +14,6 @@ int cmd_mount(int, char**);
 int cmd_ps(int, char**);
 int cmd_pwd(int, char**);
 int cmd_readmbr(int, char**);
-int cmd_screenfetch(int, char**);
 int cmd_sh(int, char**);
 int cmd_stat(int, char**);
 int cmd_touch(int, char**);
@@ -52,7 +51,6 @@ struct applet {
     APPLET(pwd),
     APPLET(readmbr),
     APPLET(reboot),
-    APPLET(screenfetch),
     APPLET(sh),
     APPLET(stat),
     APPLET(touch),
