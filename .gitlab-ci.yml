@@ -5,6 +5,7 @@ build:
   before_script:
     - apt update && apt -y install make texinfo grub-pc-bin xorriso wget
   script:
+    - export PATH=$PATH:/opt/aquila/bin
     - export TRAVIS_BUILD_DIR=$(pwd)
     - make aquila.iso -j$(nproc)
   artifacts:
