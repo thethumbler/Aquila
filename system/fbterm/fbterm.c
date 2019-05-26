@@ -6,7 +6,9 @@
 #include <string.h>
 #include <errno.h>
 #include <sys/ioctl.h>
+#include <sys/wait.h>
 
+#define _POSIX_THREADS
 #define _POSIX_PTHREAD
 #include <pthread.h>
 
@@ -23,6 +25,7 @@ int debug_fd = -1;
 int debug_init()
 {
     debug_fd = open("/dev/kmsg", O_WRONLY);
+    return 0;
 }
 
 int debug(int level, const char *fmt, ...)
@@ -69,7 +72,7 @@ void fbterm_set_cursor(struct fbterm_ctx *ctx, int row, int col)
     ctx->cc = col;
 }
 
-size_t fbterm_clear(struct fbterm_ctx *ctx)
+void fbterm_clear(struct fbterm_ctx *ctx)
 {
     fb_clear(ctx);
 }
@@ -153,7 +156,7 @@ int damage(VTermRect rect, void *user)
         }
     }
 
-    return 1;
+    return 0;
 }
 
 int moverect(VTermRect dest, VTermRect src, void *user)
@@ -170,6 +173,8 @@ int moverect(VTermRect dest, VTermRect src, void *user)
     size_t sc1 = src.end_col;
 
     fbterm_rect_move(ctx, dr0, dr1, dc0, dc1, sr0, sr1, sc0, sc1);
+
+    return 0;
 }
 
 int movecursor(VTermPos pos, VTermPos oldpos, int visible, void *user)
@@ -188,31 +193,33 @@ int movecursor(VTermPos pos, VTermPos oldpos, int visible, void *user)
     /* Set new cursor if visible */
     //if (visible)
         fbterm_set_cursor(ctx, pos.row, pos.col);
+
+    return 0;
 }
 
 int settermprop(VTermProp prop, VTermValue *val, void *user)
 {
-
+    return 0;
 }
 
 int bell(void *user)
 {
-
+    return 0;
 }
 
 int resize(int rows, int cols, void *user)
 {
-
+    return 0;
 }
 
 int sb_pushline(int cols, const VTermScreenCell *cells, void *user)
 {
-
+    return 0;
 }
 
 int sb_popline(int cols, VTermScreenCell *cells, void *user)
 {
-
+    return 0;
 }
 
 struct font *font = NULL;
@@ -296,7 +303,7 @@ void launch_shell()
 {
     int shell_pid = 0;
 relaunch:
-    if (shell_pid = fork()) {   /* Relaunch shell if died */
+    if ((shell_pid = fork())) {   /* Relaunch shell if died */
         int s, pid;
         do {
             pid = waitpid(shell_pid, &s, 0);
@@ -328,7 +335,7 @@ int main(int argc, char **argv)
     int shell_pid = 0;
     pts_fn = fbterm_openpty(&pty);
 
-    if (shell_pid = fork()) {
+    if ((shell_pid = fork())) {
         if (fb_init("/dev/fb0")) {
             exit(-1);
         }

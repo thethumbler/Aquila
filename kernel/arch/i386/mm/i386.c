@@ -259,12 +259,12 @@ static void setup_i386_paging(void)
  *  Archeticture Interface
  */
 
-paddr_t arch_get_frame()
+paddr_t arch_get_frame(void)
 {
     return frame_get();
 }
 
-paddr_t arch_get_frame_no_clr()
+paddr_t arch_get_frame_no_clr(void)
 {
     return frame_get_no_clr();
 }

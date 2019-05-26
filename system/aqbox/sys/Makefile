@@ -1,21 +1,24 @@
 include Build.mk
 
+CWD != realpath --relative-to=$(SRCDIR) .
+
 all: builtin.o
 
 builtin.o: $(obj-y) $(dirs-y)
-	@echo -e "  LD      " builtin.o;
-	@$(LD) $(LDFLAGS) -r $(obj-y) $(patsubst %/,%/builtin.o, $(dirs-y)) -o builtin.o; 
+	@$(ECHO) "  SYSLD   " $(CWD)/builtin.o
+	@$(SYSLD) $(SYSLDFLAGS) -r $(obj-y) $(patsubst %/,%/builtin.o, $(dirs-y)) -o builtin.o 
 
 .PHONY: $(dirs-y)
 $(dirs-y): $(patsubst %/,%/Makefile, $(dirs-y))
-	@echo -e "  MK      " $@
+	@$(ECHO) "  MK      " $(CWD)/$@
 	@$(MAKE) -C $@ $(param)
 
 %.o:%.c
-	@echo -e "  CC      " $@;
-	@ $(CC) $(CFLAGS) -c $< -o $@
+	@$(ECHO) "  SYSCC   " $(CWD)/$@
+	@$(SYSCC) $(SYSCFLAGS) -c $< -o $@
 
 .PHONY: clean
 clean: param = clean
 clean: $(dirs-y)
-	$(RM) -f $(obj-y) builtin.o
+	@$(ECHO) "  RM      " $(obj-y) builtin.o
+	@$(RM) $(obj-y) builtin.o

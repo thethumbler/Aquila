@@ -2,32 +2,10 @@
 #define _PANIC_H
 
 #include <core/system.h>
+#include <core/arch.h>
 #include <core/printk.h>
 
 #define __PANIC_MSG "Bailing out. You are on your own. Good luck."
-
-#if 0
-struct stack_frame {
-    struct stack_frame *ebp;
-    uintptr_t eip;
-};
-
-static void stack_trace()
-{
-    printk("--- BEGIN STACK TRACE ---\n");
-
-    struct stack_frame *stk;
-    asm volatile ("movl %%ebp, %0":"=r"(stk));
-    printk("stack frame %p\n", stk);
-
-    for (int i = 0; stk && i < 1; ++i) {
-        printk("eip = %p\n", stk->eip);
-        stk = stk->ebp;
-    }
-
-    printk("--- END STACK TRACE ---\n");
-}
-#endif
 
 #define panic(s) \
 {\

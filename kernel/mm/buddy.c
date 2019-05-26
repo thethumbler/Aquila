@@ -126,7 +126,6 @@ paddr_t buddy_alloc(int zone, size_t _sz)
 static uintptr_t kernel_bound = 0;
 void buddy_free(int zone, paddr_t addr, size_t size)
 {
-    //printk("buddy_free(%x, %d) => ", addr, size);
     if (addr < kernel_bound)
         panic("Trying to free from kernel code");
 

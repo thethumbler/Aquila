@@ -107,6 +107,6 @@ int minix_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, stru
 int minix_vfind(struct vnode *dir, const char *fn, struct vnode *child);
 int minix_vget(struct vnode *vnode, struct inode **ref);
 
-int minix_inode_build(struct minix *desc, size_t id, struct inode **ref);
+int minix_inode_build(struct minix *desc, ino_t ino, struct inode **ref);
 
 #endif  /* ! _MINIX_H */

@@ -1,13 +1,12 @@
-CC := i686-aquila-pcc
+CC := clang
 
 CFLAGS := $(INCLUDES) \
 		-nostdlib -ffreestanding -m32 \
 		-O3 -Wall -Wextra -Werror \
-		-Wno-unused -Wno-unused-parameter \
-		-funsigned-bitfields
+		-Wno-unused -Wno-unused-parameter -march=i386
 
-AS := gcc
+AS := $(CC)
 ASFLAGS := $(CFLAGS)
 #LD := ld.gold
-LD := ld
+LD := ld.lld
 LDFLAGS := -nostdlib -melf_i386

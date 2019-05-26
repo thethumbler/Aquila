@@ -28,6 +28,6 @@ struct fbterm_ctx {
 
 void fbterm_set_cursor(struct fbterm_ctx *ctx, int cc, int cr);
 size_t fbterm_write(struct fbterm_ctx *ctx, const char *buf, size_t size);
-size_t fbterm_clear(struct fbterm_ctx *ctx);
+void fbterm_clear(struct fbterm_ctx *ctx);
 
 #endif

@@ -22,6 +22,5 @@ _retry:
         execve(argp[0], argp, 0);
     //}
 
-    //return 0;
-    //goto _retry;
+    return 0;
 }
