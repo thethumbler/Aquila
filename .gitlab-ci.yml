@@ -1,21 +1,12 @@
-image: ubuntu:trusty
+image: manwar/aquila
 
 build:
   stage: build
   before_script:
-    - apt update && apt -y install build-essential texinfo grub-pc-bin xorriso wget m4 autoconf
+    - apt update && apt -y install texinfo grub-pc-bin xorriso wget
   script:
     - export TRAVIS_BUILD_DIR=$(pwd)
-    - cd build-tools && bash build.sh && cd ..
     - make aquila.iso -j$(nproc)
-  cache:
-    paths:
-    - build-tools/pkgs
-    - build-tools/binutils-2.28
-    - build-tools/gcc-7.3.0
-    - build-tools/autoconf-2.69
-    - build-tools/automake-1.12.1
-    - build-tools/sysroot
   artifacts:
     paths:
       - aquila.iso
