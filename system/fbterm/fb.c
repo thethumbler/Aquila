@@ -28,13 +28,13 @@ static unsigned xres = 0, yres = 0, line_length = 0, bpp = 0;
 void fb_put_pixel(struct fbterm_ctx *ctx, int x, int y, uint32_t fg, uint32_t bg)
 {
     unsigned char a = _A(fg);
-    unsigned char *p = &ctx->textbuf[y * line_length + bpp*x];
+    unsigned char *p = (unsigned char *) &ctx->textbuf[y * line_length + bpp*x];
 
     p[0] = COLORMERGE(_R(fg), _R(bg), a);  /* Red */
     p[1] = COLORMERGE(_G(fg), _G(bg), a);  /* Green */
     p[2] = COLORMERGE(_B(fg), _B(bg), a);  /* Blue */
 
-    unsigned char *q = &ctx->backbuf[y * line_length + bpp*x];
+    unsigned char *q = (unsigned char *) &ctx->backbuf[y * line_length + bpp*x];
     q[0] = COLORMERGE(p[0], q[0], ctx->op);  /* Red */
     q[1] = COLORMERGE(p[1], q[1], ctx->op);  /* Green */
     q[2] = COLORMERGE(p[2], q[2], ctx->op);  /* Blue */
@@ -86,8 +86,8 @@ void fb_rect_move(struct fbterm_ctx *ctx, size_t dx0, size_t dx1, size_t dy0, si
 
     for (size_t y = dy0; y < dy1; ++y) {
         for (size_t x = dx0; x < dx1; ++x) {
-            unsigned char *p = &ctx->textbuf[y * line_length + bpp*x];
-            unsigned char *q = &ctx->backbuf[y * line_length + bpp*x];
+            unsigned char *p = (unsigned char *) &ctx->textbuf[y * line_length + bpp*x];
+            unsigned char *q = (unsigned char *) &ctx->backbuf[y * line_length + bpp*x];
             q[0] = COLORMERGE(p[0], q[0], ctx->op);  /* Red */
             q[1] = COLORMERGE(p[1], q[1], ctx->op);  /* Green */
             q[2] = COLORMERGE(p[2], q[2], ctx->op);  /* Blue */
@@ -97,8 +97,6 @@ void fb_rect_move(struct fbterm_ctx *ctx, size_t dx0, size_t dx1, size_t dy0, si
 
 void fb_render(struct fbterm_ctx *ctx)
 {
-    //lseek(fb, 0, SEEK_SET);
-    //write(fb, ctx->backbuf, line_length * yres);
     memcpy(fb_addr, ctx->backbuf, line_length * yres);
 }
 
@@ -128,7 +126,7 @@ int fb_cook_wallpaper(struct fbterm_ctx *ctx, char *path)
     njInit();
     int err = 0;
 
-    if (err = njDecode(buf, size)) {
+    if ((err = njDecode(buf, size))) {
         free(buf);
         debug(1, "Error decoding input file: %d\n", err);
         return -1;
@@ -138,7 +136,7 @@ int fb_cook_wallpaper(struct fbterm_ctx *ctx, char *path)
     size_t height = njGetHeight();
     size_t width  = njGetWidth();
     size_t cook_height, cook_width;
-    char *img_buf = njGetImage();
+    char *img_buf = (char *) njGetImage();
     size_t ncomp = njGetImageSize() / (height * width);
     size_t img_line_length = width * ncomp;
     size_t xpan = 0, ypan = 0, xoffset = 0, yoffset = 0;
@@ -224,8 +222,9 @@ int fb_init(const char *path)
 
     debug(INFO, "%s: xres = %u, yres = %u, depth = %u\n", path, xres, yres, var_screeninfo.bits_per_pixel);
 
-    fb_addr = 0xB0000000;
-    if (mmap(fb_addr, line_length * yres, PROT_WRITE, MAP_SHARED|MAP_FIXED, fb, 0)) {
+    fb_addr = mmap(NULL, line_length * yres, PROT_WRITE, MAP_SHARED, fb, 0);
+
+    if (fb_addr == MAP_FAILED) {
         return errno;
     }
 

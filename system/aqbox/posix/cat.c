@@ -74,4 +74,6 @@ AQBOX_APPLET(cat)(int argc, char **argv)
         else
             do_cat(argv[i]);
     }
+
+    return 0;
 }

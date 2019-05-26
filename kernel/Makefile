@@ -1,48 +1,46 @@
 export
 
-MAKEFLAGS += --no-print-directory -j$(nproc)
+PDIR := $(SRCDIR)/kernel
 
-PDIR := $(SRC_DIR)/kernel
+#
+# Add include pathes to CFLAGS & ASFLAGS
+#
 
-ifeq ($(CONFIG),)
-$(error Config file must be specified, e.g. 'make CONFIG=i686-pc')
-endif
+CFLAGS += \
+	-I. \
+	-I$(PDIR)/arch/$(ARCH_DIR)/platform/$(PLATFORM_DIR)/include \
+	-I$(PDIR)/arch/$(ARCH_DIR)/include \
+	-I$(PDIR)/include \
+	-I$(PDIR)
 
-include configs/$(CONFIG).mk
-
-PERL := perl
+ASFLAGS += \
+	-I. \
+	-I$(PDIR)/arch/$(ARCH_DIR)/platform/$(PLATFORM_DIR)/include \
+	-I$(PDIR)/arch/$(ARCH_DIR)/include \
+	-I$(PDIR)/include \
+	-I$(PDIR)
 
 dirs-y = core/ fs/ dev/ sys/ mm/ net/
 
 all: $(dirs-y) arch/
 
+.PHONY: $(dirs-y)
+$(dirs-y): $(patsubst %/,%/Makefile, $(dirs-y))
+	@$(ECHO) "  MK      " kernel/$@
+	@$(MAKE) -C $@ $(param)
+
+.PHONY: arch/
+arch/: $(dirs-y) arch/Makefile
+	@$(ECHO) "  MK      " kernel/$@
+	@$(MAKE) -C $@ $(param)
+
+.PHONY: install
+install: all
+	@$(ECHO) "Installing kernel-$(VERSION).$(ARCH) into $(DESTDIR)/boot/kernel"
+	@$(MKDIR) -p $(DESTDIR)/boot
+	@$(CP) arch/$(ARCH)/kernel-$(VERSION).$(ARCH) $(DESTDIR)/boot/kernel
+
 .PHONY: clean
 clean: param = clean
 clean: $(dirs-y) arch/
 
-.PHONY: $(dirs-y)
-$(dirs-y): $(patsubst %/,%/Makefile, $(dirs-y))
-	@echo -e "  MK      " $@
-	@$(MAKE) -C $@ $(param)
-
-arch/: $(dirs-y) arch/Makefile
-	@echo -e "  MK      " $@
-	@$(MAKE) -C $@ $(param)
-
-arch/Makefile: arch/Build.mk
-	@echo -e "  PL      " $<
-	@cd $(dir $@) && $(PERL) $(PDIR)/scripts/gen.pl >> Makefile
-
-$(patsubst %/,%/Makefile, $(dirs-y)): $(patsubst %/,%/Build.mk, $(dirs-y))
-	@echo -e "  PL      " $<
-	@cd $(dir $@) && $(PERL) $(PDIR)/scripts/gen.pl >> Makefile
-	
-
-.PHONY: distclean
-distclean: param = distclean
-distclean: $(dirs-y) arch/
-
-.PHONY: install
-install: all
-	$(MKDIR) -p $(DESTDIR)/boot
-	$(CP) arch/$(ARCH)/kernel-$(VERSION).$(ARCH) $(DESTDIR)/boot/kernel

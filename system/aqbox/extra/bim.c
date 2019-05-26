@@ -38,6 +38,7 @@
 #include <ctype.h>
 #include <dirent.h>
 //#include <poll.h>
+#include <sys/select.h>
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/ioctl.h>
@@ -207,9 +208,9 @@ struct {
 	STDIN_FILENO, /* tty_in */
 	"~/.bimrc", /* bimrc_path */
 	0, /* can scroll */
-	0, /* can hide/show cursor */
+	1, /* can hide/show cursor */
 	0, /* can use alternate screen */
-	1, /* can mouse */
+	0, /* can mouse */
 	0, /* can unicode */
 	1, /* can use bright colors */
 	1, /* can set title */
@@ -242,18 +243,28 @@ int bim_getch_timeout(int timeout) {
 		_bim_unget = -1;
 		return out;
 	}
+
 	//struct pollfd fds[1];
 	//fds[0].fd = global_config.tty_in;
 	//fds[0].events = POLLIN;
 	//int ret = poll(fds,1,timeout);
+
+	int fd = global_config.tty_in;
+
+	struct fd_set fdset;
+	FD_ZERO(&fdset);
+	FD_SET(fd, &fdset);
+
+	int ret = select(1, &fdset, NULL, NULL, NULL);
 	//if (ret > 0 && fds[0].revents & POLLIN) {
+	if (ret > 0 && FD_ISSET(fd, &fdset)) {
 		unsigned char buf[1];
 		if (read(global_config.tty_in, buf, 1) > 0)
 			return buf[0];
 		return -1;
-	//} else {
-	//	return -1;
-	//}
+	} else {
+		return -1;
+	}
 }
 
 #define HISTORY_SENTINEL     0
@@ -2509,7 +2520,8 @@ void render_line(line_t * line, int width, int offset) {
 			} else if (c.codepoint == ' ' && i == line->actual - 1) {
 				/* Special case: space at end of line */
 				_set_colors(COLOR_ALT_FG, COLOR_ALT_BG);
-				printf("·");
+				//printf("·");
+				printf(".");
 				_set_colors(COLOR_FG, COLOR_BG);
 			} else {
 				/* Normal characters get output */
@@ -3173,7 +3185,7 @@ struct syntax_definition * match_syntax(char * file) {
  */
 int is_all_numbers(const char * c) {
 	while (*c) {
-		if (!isdigit(*c)) return 0;
+		if (!isdigit((int) *c)) return 0;
 		c++;
 	}
 	return 1;
@@ -3956,7 +3968,7 @@ void process_command(char * cmd) {
 			redraw_text();
 			place_cursor_actual();
 		}
-	} else if (isdigit(*argv[0])) {
+	} else if (isdigit((int) *argv[0])) {
 		/* Go to line number */
 		goto_line(atoi(argv[0]));
 	} else {

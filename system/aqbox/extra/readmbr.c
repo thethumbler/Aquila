@@ -167,9 +167,11 @@ static int readmbr(const char *path)
         printf("  Type: 0x%x (%s)\n", mbr.ptab[i].type, part_type[type]? part_type[type] : "Unkown");
         printf("  Start C/H/S: %u/%u/%u\n", mbr.ptab[i].start_chs.c, mbr.ptab[i].start_chs.h, mbr.ptab[i].start_chs.s);
         printf("  End C/H/S: %u/%u/%u\n", mbr.ptab[i].end_chs.c, mbr.ptab[i].end_chs.h, mbr.ptab[i].end_chs.s);
-        printf("  Start LBA: 0x%x\n", mbr.ptab[i].start_lba);
-        printf("  Sectors: %u\n", mbr.ptab[i].sectors_count);
+        printf("  Start LBA: 0x%lx\n", mbr.ptab[i].start_lba);
+        printf("  Sectors: %lu\n", mbr.ptab[i].sectors_count);
     }
+
+    return 0;
 }
 
 AQBOX_APPLET(readmbr)(int argc, char *argv[])

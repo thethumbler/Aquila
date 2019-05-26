@@ -81,7 +81,7 @@ AQBOX_APPLET(login)(int argc, char **argv)
     char *args[] = {passwd->pw_shell, NULL}; /* XXX */
     int pid, status;
 
-    if (pid = fork()) {
+    if ((pid = fork())) {
         int r = waitpid(pid, &status, 0);
         printf("Shell returned status %x\n", status);
 
@@ -101,4 +101,6 @@ AQBOX_APPLET(login)(int argc, char **argv)
         int x = execve(passwd->pw_shell, args, environ);
         exit(x);
     }
+
+    return 0;
 }

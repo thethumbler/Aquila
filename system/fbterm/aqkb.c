@@ -125,6 +125,7 @@ void handle_keyboard(int fd, int scancode)
             }
         }
         
+        void vterm_push_output_sprintf(VTerm *vt, const char *format, ...);
         vterm_push_output_sprintf(active->vt, "%c", c);
     }
 }

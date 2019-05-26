@@ -29,7 +29,7 @@ AQBOX_APPLET(truncate)(int argc, char **argv)
         }
     }
 
-    if (flags & (FLAG_r | FLAG_s) == 0) {
+    if (flags & ((FLAG_r | FLAG_s) == 0)) {
         fprintf(stderr, "truncate: you must specify either '-s' or '-r'\n");
         return -1;
     }

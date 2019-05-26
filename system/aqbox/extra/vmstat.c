@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <string.h>
 
 #define KVMEM   "/proc/kvmem"
 #define BUFSIZE 1024

@@ -41,6 +41,8 @@ static int do_echo(int argc, const char *argv[], int flags)
 
     if (!(flags & FLAG_n))
         printf("\n");
+
+    return 0;
 }
 
 AQBOX_APPLET(echo)(int argc, char *argv[])

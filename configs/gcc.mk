@@ -1,6 +1,6 @@
-CC := $(PDIR)/../build-tools/sysroot/bin/i686-elf-gcc
+CC := /opt/aquila/bin/i686-aquila-gcc
 
-CFLAGS := $(INCLUDES) \
+CFLAGS += \
 		-nostdlib -ffreestanding -m32 \
 		-O3 -Wall -Wextra -Werror \
 		-Wno-unused -Wno-unused-parameter -march=i386 \
@@ -8,5 +8,8 @@ CFLAGS := $(INCLUDES) \
 
 AS := $(CC)
 ASFLAGS := $(CFLAGS)
-LD := $(PDIR)/../build-tools/sysroot/bin/i686-elf-ld.bfd
+LD := /opt/aquila/bin/i686-aquila-ld
 LDFLAGS := -nostdlib -melf_i386
+
+SYSCC := /opt/aquila/bin/i686-aquila-gcc
+SYSLD := /opt/aquila/bin/i686-aquila-ld

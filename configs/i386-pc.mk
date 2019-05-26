@@ -1,5 +1,4 @@
-include configs/misc.mk
-include configs/gcc.mk
+include $(SRCDIR)/configs/gcc.mk
 
 #
 # Configurations

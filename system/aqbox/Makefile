@@ -1,32 +1,32 @@
 export
 
-MAKEFLAGS += --no-print-directory
-
-PDIR = $(SRC_DIR)/system/aqbox
-CFLAGS += -I$(PDIR)/include
+CWD != realpath --relative-to=$(SRCDIR) .
+PDIR = $(SRCDIR)/system/aqbox
+SYSCFLAGS += -I$(PDIR)/include
 
 include Build.mk
 
 all: builtin.o aqbox
 
 aqbox: builtin.o aqbox.o
-	@echo -e "  ELF     " $@;
-	@$(CC) $(LDFLAGS) $< $(LDLIBS) -o $@;
+	@$(ECHO) "  ELF     " $(CWD)/$@
+	@$(SYSCC) $(SYSLDFLAGS) -lm $< $(SYSLDLIBS) -o $@
 
 builtin.o: $(obj-y) $(dirs-y)
-	@echo -e "  LD      " builtin.o;
-	$(LD) $(LDFLAGS) -r $(obj-y) $(patsubst %/,%/builtin.o, $(dirs-y)) -o builtin.o; 
+	@$(ECHO) "  SYSLD   " $(CWD)/builtin.o
+	@$(SYSLD) $(SYSLDFLAGS) -r $(obj-y) $(patsubst %/,%/builtin.o, $(dirs-y)) -o builtin.o
 
 .PHONY: $(dirs-y)
 $(dirs-y): $(patsubst %/,%/Makefile, $(dirs-y))
-	@echo -e "  MK      " $@
+	@$(ECHO) "  MK      " $(CWD)/$@
 	@$(MAKE) -C $@ $(param)
 
 %.o:%.c
-	@echo -e "  CC      " $@;
-	@$(CC) $(CFLAGS) -c $< -o $@
+	@$(ECHO) "  SYSCC   " $(CWD)/$@
+	@$(SYSCC) $(SYSCFLAGS) -c $< -o $@
 
 .PHONY: clean
 clean: param = clean
 clean: $(dirs-y)
-	$(RM) -f $(obj-y) builtin.o aqbox
+	@$(ECHO) "  RM      " $(obj-y) builtin.o aqbox
+	@$(RM) $(obj-y) builtin.o aqbox
