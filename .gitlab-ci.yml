@@ -3,7 +3,7 @@ image: manwar/aquila
 build:
   stage: build
   before_script:
-    - apt update && apt -y install texinfo grub-pc-bin xorriso wget
+    - apt update && apt -y install make texinfo grub-pc-bin xorriso wget
   script:
     - export TRAVIS_BUILD_DIR=$(pwd)
     - make aquila.iso -j$(nproc)
