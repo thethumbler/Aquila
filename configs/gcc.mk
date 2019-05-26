@@ -1,4 +1,4 @@
-CC := /opt/aquila/bin/i686-aquila-gcc
+CC := i686-aquila-gcc
 
 CFLAGS += \
 		-nostdlib -ffreestanding -m32 \
@@ -8,8 +8,8 @@ CFLAGS += \
 
 AS := $(CC)
 ASFLAGS := $(CFLAGS)
-LD := /opt/aquila/bin/i686-aquila-ld
+LD := i686-aquila-ld
 LDFLAGS := -nostdlib -melf_i386
 
-SYSCC := /opt/aquila/bin/i686-aquila-gcc
-SYSLD := /opt/aquila/bin/i686-aquila-ld
+SYSCC := i686-aquila-gcc
+SYSLD := i686-aquila-ld
