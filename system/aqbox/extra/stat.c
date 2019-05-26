@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <time.h>
 
 AQBOX_APPLET(stat)(int argc, char *argv[])
 {
@@ -28,7 +29,7 @@ AQBOX_APPLET(stat)(int argc, char *argv[])
             continue;
         }
 
-        char *type = NULL, a_t;
+        char *type = NULL, a_t = '\0';
         switch (buf.st_mode & S_IFMT) { 
             case S_IFDIR:  a_t = 'd'; type = "directory"; break;
             case S_IFCHR:  a_t = 'c'; type = "character special file"; break;
@@ -67,21 +68,23 @@ AQBOX_APPLET(stat)(int argc, char *argv[])
         }
 
         char atim[64], mtim[64], ctim[64];
-        strftime(atim, 64, "%F", &buf.st_atim);
-        strftime(mtim, 64, "%F", &buf.st_mtim);
-        strftime(ctim, 64, "%F", &buf.st_ctim);
+
+        /* FIXME */
+        strftime(atim, 64, "%F", (struct tm *) &buf.st_atim);
+        strftime(mtim, 64, "%F", (struct tm *) &buf.st_mtim);
+        strftime(ctim, 64, "%F", (struct tm *) &buf.st_ctim);
 
         printf("      Type: %s\n", type);
         printf("    Device: %x/%x\n", buf.st_dev >> 8, buf.st_dev & 0xff);
         printf("     Inode: %d\n", buf.st_ino);
         printf("Permission: %s\n", perm);
         printf("     Links: %d\n", buf.st_nlink);
-        printf("       UID: %d (%s)\n", buf.st_uid, passwd? passwd->pw_name : "not in /etc/passwd");
-        printf("       GID: %d\n", buf.st_gid);
+        printf("       UID: %lu (%s)\n", buf.st_uid, passwd? passwd->pw_name : "not in /etc/passwd");
+        printf("       GID: %lu (%s)\n", buf.st_gid, "root");
         printf("      rDev: %x/%x\n", buf.st_rdev >> 8, buf.st_rdev & 0xff);
-        printf("      Size: %d\n", buf.st_size);
-        printf("Block Size: %d\n", buf.st_blksize);
-        printf("    Blocks: %d\n", buf.st_blocks);
+        printf("      Size: %lu\n", buf.st_size);
+        printf("Block Size: %lu\n", buf.st_blksize);
+        printf("    Blocks: %lu\n", buf.st_blocks);
         printf("    Access: %s\n", atim);
         printf("    Modify: %s\n", mtim);
         printf("    Change: %s\n", ctim);

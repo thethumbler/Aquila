@@ -1,5 +1,5 @@
-#ifndef _ELF_H
-#define _ELF_H
+#ifndef _SYS_ELF_H
+#define _SYS_ELF_H
 
 #include <core/system.h>
 #include <fs/vfs.h>
@@ -95,4 +95,4 @@ struct elf64_section_hdr {
 int binfmt_elf_check(struct inode *file);
 int binfmt_elf_load(struct proc *proc, const char *path, struct inode *inode);
 
-#endif
+#endif /* ! _SYS_ELF_H */

@@ -7,10 +7,8 @@
 int socket_create(struct file *file, int domain, int type, int protocol)
 {
     switch (domain) {
-#if 0 /* FIXME */
         case AF_UNIX:
             return socket_unix_create(file, domain, type, protocol);
-#endif
     }
 
     return -EAFNOSUPPORT;
@@ -62,8 +60,14 @@ int socket_listen(struct file *file, int backlog)
 
 int socket_send(struct file *file, void *buf, size_t len, int flags)
 {
+    if (!file)
+        return -EINVAL;
+
     if (!(file->flags & FILE_SOCKET))
         return -ENOTSOCK;
+
+    if (!(file->socket))
+        return -EINVAL;
 
     if (!file->socket->ops || !file->socket->ops->send)
         return -EOPNOTSUPP;
@@ -80,6 +84,28 @@ int socket_recv(struct file *file, void *buf, size_t len, int flags)
         return -EOPNOTSUPP;
 
     return file->socket->ops->recv(file, buf, len, flags);
+}
+
+int socket_can_read(struct file *file, size_t len)
+{
+    if (!(file->flags & FILE_SOCKET))
+        return -ENOTSOCK;
+
+    if (!file->socket->ops || !file->socket->ops->can_read)
+        return -EOPNOTSUPP;
+
+    return file->socket->ops->can_read(file, len);
+}
+
+int socket_can_write(struct file *file, size_t len)
+{
+    if (!(file->flags & FILE_SOCKET))
+        return -ENOTSOCK;
+
+    if (!file->socket->ops || !file->socket->ops->can_write)
+        return -EOPNOTSUPP;
+
+    return file->socket->ops->can_write(file, len);
 }
 
 int socket_shutdown(struct file *file, int how)

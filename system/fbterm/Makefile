@@ -1,33 +1,34 @@
 export
 
-MAKEFLAGS += --no-print-directory
+PDIR := $(SRCDIR)/system/fbterm
+CWD != realpath --relative-to=$(SRCDIR) .
 
-PDIR := $(SRC_DIR)/system/fbterm
-CFLAGS += -I$(PDIR)/include
-LDLIBS += -lpthread
+SYSCFLAGS += -I$(PDIR)/include
+SYSLDLIBS += -lpthread
 
 include Build.mk
 
 all: builtin.o fbterm
 
 fbterm: builtin.o
-	@echo -e "  ELF     " $@;
-	@$(CC) $(LDFLAGS) $< $(LDLIBS) -o $@;
+	@$(ECHO) "  ELF     " $(CWD)/$@;
+	@$(SYSCC) $(SYSLDFLAGS) $< $(SYSLDLIBS) -o $@;
 
 builtin.o: $(obj-y) $(dirs-y)
-	@echo -e "  LD      " builtin.o;
-	@$(LD) $(LDFLAGS) -r $(obj-y) $(patsubst %/,%/builtin.o, $(dirs-y)) -o builtin.o; 
+	@$(ECHO) "  SYSLD   " $(CWD)/builtin.o;
+	@$(SYSLD) $(SYSLDFLAGS) -r $(obj-y) $(patsubst %/,%/builtin.o, $(dirs-y)) -o builtin.o; 
 
 .PHONY: $(dirs-y)
 $(dirs-y): $(patsubst %/,%/Makefile, $(dirs-y))
-	@echo -e "  MK      " $@
+	@$(ECHO) "  MK      " $(CWD)/$@
 	@$(MAKE) -C $@ $(param)
 
 %.o:%.c
-	@echo -e "  CC      " $@;
-	@$(CC) $(CFLAGS) -c $< -o $@
+	@$(ECHO) "  SYSCC   " $(CWD)/$@;
+	@$(SYSCC) $(SYSCFLAGS) -c $< -o $@
 
 .PHONY: clean
 clean: param = clean
 clean: $(dirs-y)
-	$(RM) -f fbterm builtin.o $(obj-y)
+	@$(ECHO) "  RM      " $(obj-y) builtin.o fbterm
+	@$(RM) -f fbterm builtin.o $(obj-y)

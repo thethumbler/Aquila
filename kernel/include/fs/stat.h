@@ -1,5 +1,5 @@
-#ifndef _STAT_H
-#define _STAT_H
+#ifndef _FS_STAT_H
+#define _FS_STAT_H
 
 #include <core/system.h>
 
@@ -66,4 +66,4 @@ struct  stat {
 #define S_ISCHR(n)  (((n) & S_IFMT) == S_IFCHR)
 #define S_ISIFO(n)  (((n) & S_IFMT) == S_IFIFO)
 
-#endif /* _STAT_H */
+#endif /* ! _FS_STAT_H */

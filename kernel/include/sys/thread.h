@@ -1,5 +1,5 @@
-#ifndef _THREAD_H
-#define _THREAD_H
+#ifndef _SYS_THREAD_H
+#define _SYS_THREAD_H
 
 #include <core/system.h>
 
@@ -53,4 +53,4 @@ int thread_kill(struct thread *thread);
 /* sys/execve.h */
 int thread_execve(struct thread *thread, char * const argp[], char * const envp[]);
 
-#endif /* ! _THREAD_H */
+#endif /* ! _SYS_THREAD_H */

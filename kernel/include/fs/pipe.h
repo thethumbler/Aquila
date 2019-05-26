@@ -1,5 +1,5 @@
-#ifndef _PIPE_H
-#define _PIPE_H
+#ifndef _FS_PIPE_H
+#define _FS_PIPE_H
 
 #include <core/system.h>
 
@@ -23,4 +23,4 @@ struct pipe {
 extern struct fs pipefs;
 int pipefs_pipe(struct file *read, struct file *write);
 
-#endif /* ! _PIPE_H */
+#endif /* ! _FS_PIPE_H */

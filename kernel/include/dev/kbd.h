@@ -11,4 +11,4 @@ struct keyboard {
     struct ringbuf *ring;
 };
 
-#endif /* _DEV_KBD_H */
+#endif /* ! _DEV_KBD_H */

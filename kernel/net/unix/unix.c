@@ -7,14 +7,18 @@
 
 #define SOCKBUF 8192
 
+MALLOC_DEFINE(M_SOCKET, "socket", "socket struct");
+MALLOC_DEFINE(M_UN_SOCKET, "unix socket", "unix socket struct");
+MALLOC_DEFINE(M_UN_CONN, "unix conn", "unix connection struct");
+
 static struct sock_ops socket_unix_ops;
 
 static struct queue *sockets = QUEUE_NEW();  /* Open sockets */
 
 int socket_unix_create(struct file *file, int domain, int type, int protocol)
 {
-    printk("socket_unix_create(file=%p, domain=%d, type=%d, protocol=%d)\n", file, domain, type, protocol);
-    struct socket *socket = kmalloc(sizeof(struct socket));
+    //printk("socket_unix_create(file=%p, domain=%d, type=%d, protocol=%d)\n", file, domain, type, protocol);
+    struct socket *socket = kmalloc(sizeof(struct socket), &M_SOCKET, 0);
 
     if (!socket)
         return -ENOMEM;
@@ -33,9 +37,15 @@ int socket_unix_create(struct file *file, int domain, int type, int protocol)
 
 static int socket_unix_accept(struct file *file, struct file *conn, const struct sockaddr *addr, socklen_t *len)
 {
-    printk("socket_unix_accept(socket=%p, conn=%p, addr=%p, len=%d)\n", file, conn, addr, len);
+    //printk("%d:%d socket_unix_accept(socket=%p, conn=%p, addr=%p, len=%p)\n", cur_thread->tid, cur_thread->owner->pid, file, conn, addr, len);
+    
+    if (!file || !file->socket)
+        return -EINVAL;
 
     struct un_socket *socket = file->socket->p;
+
+    if (!socket)
+        return -EINVAL;
 
     if (!socket->requests.count) {
         /* Sleep until a connection request is present */
@@ -47,7 +57,7 @@ static int socket_unix_accept(struct file *file, struct file *conn, const struct
 
     /* Initialize connection */
     conn->flags  |= FILE_SOCKET;
-    conn->socket  = kmalloc(sizeof(struct socket));
+    conn->socket  = kmalloc(sizeof(struct socket), &M_SOCKET, 0);
     memcpy(conn->socket, file->socket, sizeof(struct socket));
 
     conn->socket->domain = AF_UNIX_CONN;
@@ -68,7 +78,7 @@ static int socket_unix_accept(struct file *file, struct file *conn, const struct
 
 static int socket_unix_bind(struct file *file, const struct sockaddr *addr, socklen_t len)
 {
-    printk("socket_unix_bind(file=%p, addr=%p, len=%d)\n", file, addr, len);
+    //printk("socket_unix_bind(file=%p, addr=%p, len=%d)\n", file, addr, len);
     struct sockaddr_un *addr_un = (struct sockaddr_un *) addr;
 
     /* Get path vnode */
@@ -78,8 +88,11 @@ static int socket_unix_bind(struct file *file, const struct sockaddr *addr, sock
 
     err = vfs_lookup(addr_un->sun_path, &uio, &vnode, NULL);
 
-    if (!err) /* File exists */
-        return -EINVAL;
+    if (err && err != -ENOENT)
+        return err;
+
+    if (!err)
+        return -EEXIST;
 
     /* Create socket */
     if ((err = vfs_mknod(addr_un->sun_path, S_IFSOCK, 0, &uio, NULL)))
@@ -89,7 +102,7 @@ static int socket_unix_bind(struct file *file, const struct sockaddr *addr, sock
     if ((err = vfs_lookup(addr_un->sun_path, &uio, &vnode, NULL)))
         return err;
 
-    struct un_socket *socket = kmalloc(sizeof(struct un_socket));
+    struct un_socket *socket = kmalloc(sizeof(struct un_socket), &M_UN_SOCKET, 0);
 
     if (!socket)
         return -ENOMEM;
@@ -107,7 +120,7 @@ static int socket_unix_bind(struct file *file, const struct sockaddr *addr, sock
 
 static int socket_unix_connect(struct file *file, const struct sockaddr *addr, socklen_t len)
 {
-    printk("socket_unix_connect(socket=%p, addr=%p, len=%d)\n", file, addr, len);
+    //printk("socket_unix_connect(socket=%p, addr=%p, len=%d)\n", file, addr, len);
 
     struct sockaddr_un *addr_un = (struct sockaddr_un *) addr;
 
@@ -116,6 +129,8 @@ static int socket_unix_connect(struct file *file, const struct sockaddr *addr, s
     struct vnode vnode = {0};
     struct uio uio = PROC_UIO(cur_thread->owner);
 
+    //printk("path = %s\n", addr_un->sun_path);
+
     /* Open socket */
     if ((err = vfs_lookup(addr_un->sun_path, &uio, &vnode, NULL))) {
         return err;
@@ -123,7 +138,7 @@ static int socket_unix_connect(struct file *file, const struct sockaddr *addr, s
 
     struct un_socket *socket = NULL;
 
-    forlinked(node, sockets->head, node->next) {
+    for (struct qnode *node = sockets->head; node; node = node->next) {
         struct un_socket *_socket = (struct un_socket *) node->value;
         if (_socket->vnode.super == vnode.super && _socket->vnode.ino == vnode.ino) {
             socket = _socket;
@@ -134,7 +149,7 @@ static int socket_unix_connect(struct file *file, const struct sockaddr *addr, s
     if ((!socket->listening) || socket->requests.count > socket->backlog)
         return -ECONNREFUSED;
 
-    struct un_conn *request = kmalloc(sizeof(struct un_conn));
+    struct un_conn *request = kmalloc(sizeof(struct un_conn), &M_UN_CONN, 0);
 
     if (!request)
         return -ENOMEM;
@@ -160,7 +175,7 @@ static int socket_unix_connect(struct file *file, const struct sockaddr *addr, s
 
 static int socket_unix_listen(struct file *file, int backlog)
 {
-    printk("socket_unix_listen(file=%p, backlog=%d)\n", file, backlog);
+    //printk("socket_unix_listen(file=%p, backlog=%d)\n", file, backlog);
 
     struct un_socket *socket = (struct un_socket *) file->socket->p;
 
@@ -172,7 +187,7 @@ static int socket_unix_listen(struct file *file, int backlog)
 
 static ssize_t socket_unix_send(struct file *file, void *buf, size_t len, int flags)
 {
-    printk("socket_unix_send(file=%p, buf=%p, len=%d, flags=%x)\n", file, buf, len, flags);
+    //printk("socket_unix_send(file=%p, buf=%p, len=%d, flags=%x)\n", file, buf, len, flags);
 
     if (file->socket->domain != AF_UNIX_CONN)
         return -ENOTCONN;
@@ -223,7 +238,7 @@ static ssize_t socket_unix_send(struct file *file, void *buf, size_t len, int fl
 
 static ssize_t socket_unix_recv(struct file *file, void *buf, size_t len, int flags)
 {
-    printk("socket_unix_recv(file=%p, buf=%p, len=%d, flags=%x)\n", file, buf, len, flags);
+    //printk("socket_unix_recv(file=%p, buf=%p, len=%d, flags=%x)\n", file, buf, len, flags);
 
     if (file->socket->domain != AF_UNIX_CONN)
         return -ENOTCONN;
@@ -270,9 +285,68 @@ static ssize_t socket_unix_recv(struct file *file, void *buf, size_t len, int fl
     }
 }
 
+static int socket_unix_can_read(struct file *file, size_t len)
+{
+    //printk("socket_unix_can_read(file=%p, len=%d)\n", file, len);
+
+    if (!file || !file->socket)
+        return -EINVAL;
+
+    if (file->socket->domain == AF_UNIX) {
+        struct un_socket *socket = file->socket->p;
+        return socket->requests.count;
+    }
+
+    if (file->socket->domain != AF_UNIX_CONN)
+        return -ENOTCONN;
+
+    struct un_conn *conn = file->socket->p;
+
+    struct ringbuf *ring = NULL;
+
+    if (file->offset == 0) {
+        /* Server */
+        ring = conn->sico;
+    } else {
+        /* Client */
+        ring = conn->soci;
+    }
+
+    if (!ring)
+        return -ENOTCONN; /* ??? */
+
+    return ringbuf_available(ring);
+}
+
+static int socket_unix_can_write(struct file *file, size_t len)
+{
+    //printk("socket_unix_can_write(file=%p, len=%d)\n", file, len);
+
+    if (file->socket->domain != AF_UNIX_CONN)
+        return -ENOTCONN;
+
+    struct un_conn *conn = file->socket->p;
+
+    struct ringbuf *ring = NULL;
+
+    if (file->offset == 0) {
+        /* Server */
+        ring = conn->soci;
+    } else {
+        /* Client */
+        ring = conn->sico;
+    }
+
+    return ring->size - ringbuf_available(ring);
+}
+
+
 static int socket_unix_shutdown(struct file *file, int how)
 {
-    printk("socket_unix_shutdown(file=%p, how=%d)\n", file, how);
+    //printk("socket_unix_shutdown(file=%p, how=%d)\n", file, how);
+    
+    if (!file || !file->socket)
+        return -EINVAL;
     
     if (file->socket->domain == AF_UNIX_CONN) {
         /* Connected socket */
@@ -281,13 +355,17 @@ static int socket_unix_shutdown(struct file *file, int how)
         int client = file->offset;
 
         if ((client && (how & SHUT_RD)) || (!client && (how & SHUT_WR))) {
-            ringbuf_free(conn->soci);
-            conn->soci = NULL;
+            if (conn->soci) {
+                ringbuf_free(conn->soci);
+                conn->soci = NULL;
+            }
         }
 
         if ((client && (how & SHUT_WR)) || (!client && (how & SHUT_RD))) {
-            ringbuf_free(conn->sico);
-            conn->sico = NULL;
+            if (conn->sico) {
+                ringbuf_free(conn->sico);
+                conn->sico = NULL;
+            }
         }
 
         if (!conn->soci && !conn->sico) {
@@ -306,11 +384,13 @@ static int socket_unix_shutdown(struct file *file, int how)
 }
 
 static struct sock_ops socket_unix_ops = {
-    .accept   = socket_unix_accept,
-    .bind     = socket_unix_bind,
-    .connect  = socket_unix_connect,
-    .listen   = socket_unix_listen,
-    .recv     = socket_unix_recv,
-    .send     = socket_unix_send,
-    .shutdown = socket_unix_shutdown,
+    .accept    = socket_unix_accept,
+    .bind      = socket_unix_bind,
+    .connect   = socket_unix_connect,
+    .listen    = socket_unix_listen,
+    .recv      = socket_unix_recv,
+    .send      = socket_unix_send,
+    .can_read  = socket_unix_can_read,
+    .can_write = socket_unix_can_write,
+    .shutdown  = socket_unix_shutdown,
 };

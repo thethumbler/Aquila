@@ -158,7 +158,7 @@ void mm_page_fault(vaddr_t vaddr, int flags)
     struct queue *qvm_entries = &cur_thread->owner->vm_space.vm_entries;
     int vm_flag = 0;
 
-    forlinked (node, qvm_entries->head, node->next) {
+    for (struct qnode *node = qvm_entries->head; node; node = node->next) {
         struct vm_entry *vm_entry = node->value;
         uintptr_t vmr_end = vm_entry->base + vm_entry->size;
 

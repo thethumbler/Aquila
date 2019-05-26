@@ -2,7 +2,7 @@
 #define _CORE_ASSERT_H
 
 #define assert(x) \
-    if(!(x)) \
+    if (!(x)) \
         panic("Assertion " #x " failed");
 
 #define assert_sizeof(o, sz) \

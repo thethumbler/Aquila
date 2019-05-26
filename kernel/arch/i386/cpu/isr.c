@@ -106,8 +106,6 @@ void __x86_isr(struct x86_regs *regs)
 #else
         if (regs->rip == 0x0FFF) {  /* Signal return */
 #endif
-            //printk("Returned from signal [regs=%p]\n", regs);
-
             /* Fix kstack and regs pointers*/
             arch->regs = (struct x86_regs *) arch->kstack;
             arch->kstack += sizeof(struct x86_regs); 

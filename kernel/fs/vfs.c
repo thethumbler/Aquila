@@ -77,14 +77,23 @@ int vfs_parse_path(const char *path, struct uio *uio, char **abs_path)
     char *valid_tokens[512];
     size_t i = 0;
 
-    foreach (token, tokens) {
+    for (char **token_p = tokens; *token_p; ++token_p) {
+        char *token = *token_p;
         if (token[0] == '.') {
-            if (token[1] == '.' && i > 0)
-                valid_tokens[--i] = NULL;
-        } else {
-            if (*token)
-                valid_tokens[i++] = token;
+            if (token[1] == '\0')
+                continue;
+
+            if (token[1] == '.') {
+                if (token[2] == '\0') {
+                    if (i > 0)
+                        valid_tokens[--i] = NULL;
+                    continue;
+                }
+            }
+
         }
+
+        if (*token) valid_tokens[i++] = token;
     }
 
     valid_tokens[i] = NULL;
@@ -92,7 +101,8 @@ int vfs_parse_path(const char *path, struct uio *uio, char **abs_path)
     out[0] = '/';
 
     size_t j = 1;
-    foreach (token, valid_tokens) {
+    for (char **token_p = valid_tokens; *token_p; ++token_p) {
+        char *token = *token_p;
         size_t len = strlen(token);
         memcpy(out + j, token, len);
         j += len;
@@ -125,7 +135,9 @@ struct vfs_path *vfs_get_mountpoint(char **tokens)
     size_t token_i = 0;
     int check_last_node = 0;
 
-    foreach (token, tokens) {
+    for (char **token_p = tokens; *token_p; ++token_p) {
+        char *token = *token_p;
+
         check_last_node = 0;
 
         if (cur_node->node) {
@@ -135,7 +147,7 @@ struct vfs_path *vfs_get_mountpoint(char **tokens)
 
         if (cur_node->children) {
             cur_node = cur_node->children;
-            forlinked (m_node, cur_node, m_node->next) {
+            for (struct vfs_node *m_node = cur_node; m_node; m_node = m_node->next) {
                 if (!strcmp(token, m_node->name)) {
                     cur_node = m_node;
                     check_last_node = 1;
@@ -181,13 +193,15 @@ int vfs_bind(const char *path, struct inode *target)
 
     struct vfs_node *cur_node = &vfs_graph;
 
-    foreach (token, tokens) {
+    for (char **token_p = tokens; *token_p; ++token_p) {
+        char *token = *token_p;
+
         if (cur_node->children) {
             cur_node = cur_node->children;
 
             /* Look for token in node children */
             struct vfs_node *last_node = NULL;
-            forlinked (node, cur_node, node->next) {
+            for (struct vfs_node *node = cur_node; node; node = node->next) {
                 last_node = node;
                 if (!strcmp(node->name, token)) {   /* Found */
                     cur_node = node;
@@ -267,7 +281,8 @@ int vfs_lookup(const char *path, struct uio *uio, struct vnode *vnode, char **ab
     cur.mode = S_IFDIR; /* XXX */
     next.super = p->mountpoint;
 
-    foreach (token, p->tokens) {
+    for (char **token_p = p->tokens; *token_p; ++token_p) {
+        char *token = *token_p;
         if ((ret = vfs_vfind(&cur, token, &next)))
             goto error;
         memcpy(&cur, &next, sizeof(cur));

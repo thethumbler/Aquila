@@ -110,7 +110,7 @@ error:
 
 struct proc *proc_pid_find(pid_t pid)
 {
-    forlinked (node, procs->head, node->next) {
+    for (struct qnode *node = procs->head; node; node = node->next) {
         struct proc *proc = node->value;
         if (proc->pid == pid)
             return proc;
@@ -170,29 +170,6 @@ void proc_kill(struct proc *proc)
 
     proc->running = 0;
 
-    struct vm_space *vm_space = &proc->vm_space;
-    vm_space_destroy(vm_space);
-    arch_pmap_decref(vm_space->pmap);
-
-    /* Free kernel-space resources */
-    kfree(proc->fds);
-    kfree(proc->cwd);
-
-    while (proc->sig_queue->count)
-        dequeue(proc->sig_queue);
-
-    kfree(proc->sig_queue);
-
-    /* Mark all children as orphans */
-    forlinked (node, procs->head, node->next) {
-        struct proc *_proc = node->value;
-
-        if (_proc->parent == proc)
-            _proc->parent = NULL;
-    }
-
-    kfree(proc->name);
-
     int kill_cur_thread = 0;
 
     /* Kill all threads */
@@ -214,13 +191,45 @@ void proc_kill(struct proc *proc)
         kfree(thread);
     }
 
+    /* close all file descriptors */
+    for (int i = 0; i < FDS_COUNT; ++i) {
+        struct file *file = &proc->fds[i];
+        if (file->inode && file->inode != (void *) -1) {
+            vfs_file_close(file);
+            file->inode = NULL;
+        }
+    }
+
+    struct vm_space *vm_space = &proc->vm_space;
+    vm_space_destroy(vm_space);
+    arch_pmap_decref(vm_space->pmap);
+
+    /* Free kernel-space resources */
+    kfree(proc->fds);
+    kfree(proc->cwd);
+
+    while (proc->sig_queue->count)
+        dequeue(proc->sig_queue);
+
+    kfree(proc->sig_queue);
+
+    /* Mark all children as orphans */
+    for (struct qnode *node = procs->head; node; node = node->next) {
+        struct proc *_proc = node->value;
+
+        if (_proc->parent == proc)
+            _proc->parent = NULL;
+    }
+
+    kfree(proc->name);
+
     /* XXX */
     queue_node_remove(proc->pgrp->procs, proc->pgrp_node);
 
     /* Wakeup parent if it is waiting for children */
     if (proc->parent) {
         thread_queue_wakeup(&proc->parent->wait_queue);
-        //signal_proc_send(proc->parent, SIGCHLD);
+        signal_proc_send(proc->parent, SIGCHLD);
     } else { 
         /* Orphan zombie, just reap it */
         proc_reap(proc);
@@ -357,9 +366,8 @@ e_nomem:
     err = -ENOMEM;
 
 error:
-    if (pgrp) {
+    if (pgrp)
         kfree(pgrp);
-    }
 
     return err;
 }

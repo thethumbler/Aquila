@@ -88,7 +88,8 @@ size_t ext2_inode_block_read(struct ext2 *desc, struct ext2_inode *inode, size_t
     }
 
     panic("Not impelemented");
-    return 0;
+
+    /* unreachable */
 }
 
 size_t ext2_inode_block_write(struct ext2 *desc, struct ext2_inode *inode, uint32_t inode_nr, size_t idx, void *buf)

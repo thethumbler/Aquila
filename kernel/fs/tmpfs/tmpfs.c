@@ -159,7 +159,8 @@ static int tmpfs_mount(const char *dir, int flags __unused, void *data __unused)
 
     if (mdata->opt) {
         char **tokens = tokenize(mdata->opt, ',');
-        foreach (token, tokens) {
+        for (char **token_p = tokens; *token_p; ++token_p) {
+            char *token = *token_p;
             if (!strncmp(token, "mode=", 5)) {    /* ??? */
                 char *t = token + 5;
                 mode = 0;

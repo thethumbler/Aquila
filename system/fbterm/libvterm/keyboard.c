@@ -70,30 +70,30 @@ typedef struct {
 static keycodes_s keycodes[] = {
   { KEYCODE_NONE }, // NONE
 
-  { KEYCODE_ENTER,   '\r'   }, // ENTER
-  { KEYCODE_TAB,     '\t'   }, // TAB
-  { KEYCODE_LITERAL, '\x7f' }, // BACKSPACE == ASCII DEL
-  { KEYCODE_LITERAL, '\x1b' }, // ESCAPE
+  { KEYCODE_ENTER,   '\r',   0}, // ENTER
+  { KEYCODE_TAB,     '\t',   0}, // TAB
+  { KEYCODE_LITERAL, '\x7f', 0}, // BACKSPACE == ASCII DEL
+  { KEYCODE_LITERAL, '\x1b', 0}, // ESCAPE
 
-  { KEYCODE_CSI_CURSOR, 'A' }, // UP
-  { KEYCODE_CSI_CURSOR, 'B' }, // DOWN
-  { KEYCODE_CSI_CURSOR, 'D' }, // LEFT
-  { KEYCODE_CSI_CURSOR, 'C' }, // RIGHT
+  { KEYCODE_CSI_CURSOR, 'A', 0}, // UP
+  { KEYCODE_CSI_CURSOR, 'B', 0}, // DOWN
+  { KEYCODE_CSI_CURSOR, 'D', 0}, // LEFT
+  { KEYCODE_CSI_CURSOR, 'C', 0}, // RIGHT
 
   { KEYCODE_CSINUM, '~', 2 },  // INS
   { KEYCODE_CSINUM, '~', 3 },  // DEL
-  { KEYCODE_CSI_CURSOR, 'H' }, // HOME
-  { KEYCODE_CSI_CURSOR, 'F' }, // END
+  { KEYCODE_CSI_CURSOR, 'H', 0}, // HOME
+  { KEYCODE_CSI_CURSOR, 'F', 0}, // END
   { KEYCODE_CSINUM, '~', 5 },  // PAGEUP
   { KEYCODE_CSINUM, '~', 6 },  // PAGEDOWN
 };
 
 static keycodes_s keycodes_fn[] = {
   { KEYCODE_NONE },            // F0 - shouldn't happen
-  { KEYCODE_CSI_CURSOR, 'P' }, // F1
-  { KEYCODE_CSI_CURSOR, 'Q' }, // F2
-  { KEYCODE_CSI_CURSOR, 'R' }, // F3
-  { KEYCODE_CSI_CURSOR, 'S' }, // F4
+  { KEYCODE_CSI_CURSOR, 'P', 0}, // F1
+  { KEYCODE_CSI_CURSOR, 'Q', 0}, // F2
+  { KEYCODE_CSI_CURSOR, 'R', 0}, // F3
+  { KEYCODE_CSI_CURSOR, 'S', 0}, // F4
   { KEYCODE_CSINUM, '~', 15 }, // F5
   { KEYCODE_CSINUM, '~', 17 }, // F6
   { KEYCODE_CSINUM, '~', 18 }, // F7

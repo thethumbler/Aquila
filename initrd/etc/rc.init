@@ -24,5 +24,3 @@ mknod /dev/fd0 b 2 0
 echo mounting devpts on /dev/pts
 mkdir /dev/pts
 mount -t devpts /dev/pts
-
-#mount -t minix /dev/hda1 /mnt

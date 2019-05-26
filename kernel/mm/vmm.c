@@ -9,6 +9,7 @@
  */
 
 #include <core/system.h>
+#include <core/arch.h> /* FIXME */
 #include <core/panic.h>
 #include <mm/mm.h>
 #include <mm/vm.h>
@@ -43,21 +44,56 @@ void vm_unmap_full(struct vm_space *vm_space, struct vm_entry *vm_entry)
     }
 }
 
+int vm_fork(struct vm_space *parent, struct vm_space *child)
+{
+    /* Copy vm entries */
+    for (struct qnode *node = parent->vm_entries.head; node; node = node->next) {
+        struct vm_entry *pvm_entry = node->value;
+        struct vm_entry *vm_entry = kmalloc(sizeof(struct vm_entry), &M_VM_ENTRY, 0);
+        memcpy(vm_entry, pvm_entry, sizeof(struct vm_entry));
+
+        vm_entry->qnode = enqueue(&child->vm_entries, vm_entry);
+    }
+
+    /* Copy pmaps */
+    arch_pmap_fork(parent->pmap, child->pmap);
+
+    return 0;
+}
+
 int vm_entry_insert(struct vm_space *vm_space, struct vm_entry *vm_entry)
 {
     struct queue *queue = &vm_space->vm_entries;
+
+    int alloc = !vm_entry->base;
 
     uintptr_t end = vm_entry->base + vm_entry->size;
 
     struct qnode *cur = NULL;
     uintptr_t prev_end = 0;
 
-    forlinked (node, queue->head, node->next) {
+    if (alloc) {
+        /* look for the last valid entry */
+        for (struct qnode *node = queue->head; node; node = node->next) {
+            struct vm_entry *cur_vm_entry = (struct vm_entry *) node->value;
+
+            if (cur_vm_entry->base - prev_end >= vm_entry->size) {
+                vm_entry->base = cur_vm_entry->base - vm_entry->size;
+                end = vm_entry->base + vm_entry->size;
+            }
+
+            prev_end = cur_vm_entry->base + cur_vm_entry->size;
+        }
+    }
+
+    for (struct qnode *node = queue->head; node; node = node->next) {
         struct vm_entry *cur_vm_entry = (struct vm_entry *) node->value;
-        if (cur_vm_entry->base >= end && prev_end <= vm_entry->base) {
+
+        if (vm_entry->base && cur_vm_entry->base >= end && prev_end <= vm_entry->base) {
             cur = node;
             break;
         }
+
         prev_end = cur_vm_entry->base + cur_vm_entry->size;
     }
 

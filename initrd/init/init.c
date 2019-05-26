@@ -14,7 +14,7 @@ int log_init()
     log_fd = open("/dev/kmsg", O_WRONLY);
 }
 
-int log(int level, const char *fmt, ...)
+int _log(int level, const char *fmt, ...)
 {
     static char buf[512];
 
@@ -36,22 +36,22 @@ int run(char **argv)
         while (pid != child);
     } else {
         int x = execv(argv[0], argv);
-        log(1, "failed to execute %s: %s\n", argv[0], strerror(errno));
+        _log(1, "failed to execute %s: %s\n", argv[0], strerror(errno));
         exit(x);
     }
 
     return status;
 }
 
-int signal_handler(int sig)
+void signal_handler(int sig)
 {
     switch (sig) {
         case SIGTERM:
-            log(1, "init: reached target reboot\n");
+            _log(1, "init: reached target reboot\n");
             exit(0);
         default:
             /* ignore */
-            return 0;
+            return;
     }
 }
 
@@ -65,13 +65,13 @@ int main(int argc, char **argv)
     log_init();
 
     if (open("/dev/kmsg", O_WRONLY) != 2) {
-        log(1, "could not open stderr\n");
+        _log(1, "could not open stderr\n");
     }
 
-    log(1, "init: started\n");
+    _log(1, "init: started\n");
 
     /* execute /etc/rc.init script */
-    log(1, "init: executing /etc/rc.init script\n");
+    _log(1, "init: executing /etc/rc.init script\n");
     char *argp[] = {"/bin/sh", "/etc/rc.init", NULL};
     run(argp);
 
@@ -89,7 +89,7 @@ int main(int argc, char **argv)
     }
 
     if (use_fbterm || !use_serial) {
-        log(1, "init: starting fbterm\n");
+        _log(1, "init: starting fbterm\n");
         char *argp[] = {"/bin/fbterm", NULL};
         if (!fork()) {
             for (int i = 0; i < 3; ++i)

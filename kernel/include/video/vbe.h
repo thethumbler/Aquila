@@ -1,5 +1,5 @@
-#ifndef VBE_H
-#define VBE_H
+#ifndef _VIDEO_VBE_H
+#define _VIDEO_VBE_H
 
 #include <core/system.h>
 
@@ -184,4 +184,4 @@ struct pm_info_block {
     uint8_t     checksum;
 } __packed;
 
-#endif
+#endif /* _VIDEO_VBE_H */

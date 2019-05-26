@@ -8,6 +8,7 @@ struct dev;
 
 #include <mm/vm.h>
 #include <fs/vfs.h>
+#include <fs/ubc.h>
 #include <sys/proc.h>
 
 struct devid {
@@ -29,6 +30,9 @@ struct dev {
 
     struct dev *(*mux)(struct devid *dev);    /* Device Multiplexr */
     size_t  (*getbs)(struct devid *dev);      /* Block size, for blkdev */
+
+    /* device cache */
+    struct ubc *(*getubc)(struct devid *dev);
 };
 
 /* Kernel Device Subsystem Handlers */
