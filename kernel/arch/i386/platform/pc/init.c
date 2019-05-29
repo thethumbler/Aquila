@@ -4,6 +4,19 @@
 #include <dev/pci.h>
 #include <platform/misc.h>
 
+
+/* PCI bus */
+#define PCI_ADDR    0xCF8
+#define PCI_TYPE    IOADDR_PORT
+
+/* i8042 PS/2 controller */
+#define I8042_ADDR  0x60
+#define I8042_TYPE  IOADDR_PORT
+
+/* i8254 PIT controller */
+#define I8254_ADDR  0x40
+#define I8254_TYPE  IOADDR_PORT
+
 #define PIC_MASTER  0x20
 #define PIC_SLAVE   0xA0
 
@@ -23,30 +36,31 @@ static int x86_pc_pic_init(void)
 static void x86_pc_pci_init(void)
 {
     printk("x86: Initializing PCI\n");
+
     struct ioaddr pci;
-    pci.addr = 0xCF8;
-    pci.type = IOADDR_PORT;
+
+    pci.addr = PCI_ADDR;
+    pci.type = PCI_TYPE;
+
     pci_ioaddr_set(&pci);
 }
 
-#define I8042_PORT  0x60
 static int x86_pc_i8042_init(void)
 {
     struct ioaddr i8042;
 
-    i8042.addr = I8042_PORT;
-    i8042.type = IOADDR_PORT;
+    i8042.addr = I8042_ADDR;
+    i8042.type = I8042_TYPE;
 
     return x86_i8042_setup(&i8042);
 }
 
-#define PIT_CHANNEL0    0x40
 static int x86_pc_pit_init(void)
 {
     struct ioaddr pit;
 
-    pit.addr = PIT_CHANNEL0;
-    pit.type = IOADDR_PORT;
+    pit.addr = I8254_ADDR;
+    pit.type = I8254_TYPE;
 
     return x86_pit_setup(&pit);
 }

@@ -14,6 +14,8 @@
 #include <boot/boot.h>
 #include <console/earlycon.h>
 
+#include <ds/hashmap.h>
+
 void kmain(struct boot *boot)
 {
     kdev_init();

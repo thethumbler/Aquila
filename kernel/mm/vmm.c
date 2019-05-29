@@ -16,6 +16,7 @@
 #include <ds/queue.h>
 
 MALLOC_DEFINE(M_VM_ENTRY, "vm-entry", "virtual memory map entry");
+MALLOC_DEFINE(M_VM_OBJECT, "vm-object", "virtual memory object");
 
 struct vm_space kvm_space;
 
@@ -122,4 +123,18 @@ void vm_space_destroy(struct vm_space *vm_space)
         vm_unmap_full(vm_space, vm_entry);
         kfree(vm_entry);
     }
+}
+
+struct vm_object *vm_object_inode(struct inode *inode)
+{
+    if (!inode)
+        return NULL;
+
+    if (!inode->vm_object) {
+        inode->vm_object = kmalloc(sizeof(struct vm_object), &M_VM_OBJECT, 0);
+        memset(inode->vm_object, 0, sizeof(struct vm_object));
+        inode->vm_object->inode = inode;
+    }
+
+    return inode->vm_object;
 }

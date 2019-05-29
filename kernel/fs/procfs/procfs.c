@@ -331,8 +331,8 @@ static ssize_t procfs_proc_maps(int pid, off_t off, size_t size, void *buf)
                 vm_entry->base + vm_entry->size,  /* End address */
                 perm,   /* Access permissions */
                 vm_entry->off, /* Offset in file */
-                vm_entry->inode? vm_entry->inode->dev : 0, /* Device ID */
-                vm_entry->inode? vm_entry->inode->ino : 0, /* Inode ID */
+                vm_entry->vm_object? vm_entry->vm_object->inode->dev : 0, /* Device ID */
+                vm_entry->vm_object? vm_entry->vm_object->inode->ino : 0, /* Inode ID */
                 desc); 
     }
     
@@ -508,7 +508,7 @@ static int procfs_vget(struct vnode *vnode, struct inode **inode)
                 node->atime = ts;
                 node->mtime = ts;
 
-                //icache_insert(&procfs_icache, node);
+                icache_insert(&procfs_icache, node);
             }
 
             if (inode)
@@ -546,7 +546,7 @@ static int procfs_vget(struct vnode *vnode, struct inode **inode)
             node->atime = ts;
             node->mtime = ts;
 
-            //icache_insert(&procfs_icache, node);
+            icache_insert(&procfs_icache, node);
         }
 
         if (inode)
@@ -560,12 +560,11 @@ static int procfs_vget(struct vnode *vnode, struct inode **inode)
 
 static int procfs_close(struct inode *inode)
 {
-    /*
-    if (icache_find(&procfs_icache, inode->ino))
-        icache_remove(&procfs_icache, inode);
-    */
-
-    kfree(inode);
+    if (inode->ref == 0) {
+        if (icache_find(&procfs_icache, inode->ino))
+            icache_remove(&procfs_icache, inode);
+        kfree(inode);
+    }
 
     return 0;
 }
@@ -582,6 +581,7 @@ static int procfs_init()
     procfs_root->mode = S_IFDIR | 0555;
     procfs_root->ino  = (vino_t) procfs_root;
     procfs_root->fs   = &procfs;
+    procfs_root->ref  = 1;
 
     struct timespec ts;
     gettime(&ts);

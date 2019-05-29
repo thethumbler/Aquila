@@ -17,6 +17,7 @@
 #include <sys/proc.h>
 #include <ds/queue.h>
 #include <bits/errno.h>
+#include <net/socket.h>
 
 MALLOC_DECLARE(M_FDS);
 
@@ -29,6 +30,16 @@ static int copy_fds(struct proc *parent, struct proc *fork)
         return -ENOMEM;
 
     memcpy(fork->fds, parent->fds, FDS_COUNT * sizeof(struct file));
+
+    for (int i = 0; i < FDS_COUNT; ++i) {
+        struct file *file = &fork->fds[i];
+        if (file->inode && (file->inode != (void *) -1)) {
+            if (file->flags & FILE_SOCKET)
+                file->socket->ref++;
+            else
+                file->inode->ref++;
+        }
+    }
 
     return 0;
 }

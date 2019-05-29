@@ -26,7 +26,7 @@ struct x86_cpu cpus[32];
 int cpus_count;
 struct boot *__kboot;
 
-void cpu_init()
+void x86_cpu_init(void)
 {
     earlycon_init();
     printk("x86: Welcome to AquilaOS!\n");

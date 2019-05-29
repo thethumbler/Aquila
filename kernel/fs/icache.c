@@ -5,7 +5,7 @@ MALLOC_DEFINE(M_ICACHE, "icache", "inode cache structure");
 
 void icache_init(struct icache *icache)
 {
-    icache->inodes = queue_new();
+    icache->hashmap = hashmap_new(0);
 }
 
 int icache_insert(struct icache *icache, struct inode *inode)
@@ -13,34 +13,35 @@ int icache_insert(struct icache *icache, struct inode *inode)
     if (!icache)
         return -EINVAL;
 
-    if (!icache->inodes)
+    if (!icache->hashmap)
         icache_init(icache);
 
-    enqueue(icache->inodes, inode);
-
-    return 0;
+    hash_t hash = hashmap_digest(&inode->ino, sizeof(inode->ino));
+    return hashmap_insert(icache->hashmap, hash, inode);
 }
 
 int icache_remove(struct icache *icache, struct inode *inode)
 {
-    if (!icache || !icache->inodes)
+    if (!icache || !icache->hashmap)
         return -EINVAL;
 
-    queue_remove(icache->inodes, inode);
+    hash_t hash = hashmap_digest(&inode->ino, sizeof(inode->ino));
+    hashmap_remove(icache->hashmap, hash);
 
     return 0;
 }
 
 struct inode *icache_find(struct icache *icache, ino_t ino)
 {
-    if (!icache || !icache->inodes)
+    if (!icache || !icache->hashmap)
         return NULL;
 
-    for (struct qnode *node = icache->inodes->head; node; node = node->next) {
-        struct inode *inode = (struct inode *) node->value;
-        if (inode->ino == ino) {
-            return inode;
-        }
+    hash_t hash = hashmap_digest(&ino, sizeof(ino));
+
+    struct hashmap_node *node = hashmap_lookup(icache->hashmap, hash);
+
+    if (node) {
+        return (struct inode *) node->entry;
     }
 
     return NULL;

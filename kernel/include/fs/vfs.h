@@ -99,13 +99,16 @@ struct inode {
     struct fs   *fs;
 
     /* Filesystem handler private data */
-    void        *p;
+    void *p;
 
     /* Number of processes referencing this node */
-    ssize_t     ref;
+    size_t ref;
 
-    struct queue     *read_queue;
-    struct queue     *write_queue;
+    struct queue *read_queue;
+    struct queue *write_queue;
+
+    /* virtual memory object associated with inode */
+    struct vm_object *vm_object;
 };
 
 struct vnode {

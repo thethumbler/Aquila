@@ -12,4 +12,8 @@ struct binfmt {
 
 int binfmt_load(struct proc *proc, const char *path, struct proc **ref);
 
+/* sys/binfmt/elf.c */
+int binfmt_elf_check(struct inode *file);
+int binfmt_elf_load(struct proc *proc, const char *path, struct inode *inode);
+
 #endif /* ! _SYS_BINFMT_H */

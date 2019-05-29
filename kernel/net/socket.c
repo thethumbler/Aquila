@@ -116,5 +116,10 @@ int socket_shutdown(struct file *file, int how)
     if (!file->socket->ops || !file->socket->ops->shutdown)
         return -EOPNOTSUPP;
 
-    return file->socket->ops->shutdown(file, how);
+    file->socket->ref--;
+
+    if (!file->socket->ref)
+        return file->socket->ops->shutdown(file, how);
+
+    return 0;
 }

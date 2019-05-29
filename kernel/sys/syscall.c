@@ -820,7 +820,7 @@ static void sys_mmap(struct mmap_args *args, void **ret)
         goto error;
     }
 
-    /* Initialize VMR */
+    /* Initialize VM entry */
     vm_entry->base   = (uintptr_t) args->addr;
     vm_entry->size   = args->len;
     vm_entry->flags  = args->prot & PROT_READ  ? VM_UR : 0;
@@ -828,7 +828,8 @@ static void sys_mmap(struct mmap_args *args, void **ret)
     vm_entry->flags |= args->prot & PROT_EXEC  ? VM_UX : 0;
     vm_entry->flags |= args->flags & MAP_SHARED ? VM_SHARED : 0;
     vm_entry->flags |= VM_FILE;  /* TODO Support anonymous maps */
-    vm_entry->inode  = file->inode;
+    //vm_entry->inode  = file->inode;
+    vm_entry->vm_object = vm_object_inode(file->inode);
     vm_entry->off    = args->off;
 
     if (!(args->flags & MAP_FIXED))

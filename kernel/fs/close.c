@@ -1,4 +1,5 @@
 #include <core/system.h>
+#include <core/panic.h>
 #include <fs/vfs.h>
 
 int vfs_close(struct inode *inode)
@@ -11,9 +12,12 @@ int vfs_close(struct inode *inode)
     if (!inode->fs->iops.close)
         return -ENOSYS;
 
-    --inode->ref;
+    if (!inode->ref)
+        panic("closing an already closed inode");
 
-    if (inode->ref <= 0) {   /* Why < ? */
+    inode->ref--;
+
+    if (!inode->ref) {
         return inode->fs->iops.close(inode);
     }
 

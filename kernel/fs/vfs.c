@@ -113,7 +113,6 @@ int vfs_parse_path(const char *path, struct uio *uio, char **abs_path)
     out[j > 1? --j : 1] = 0;
 
     free_tokens(tokens);
-    kfree(tokens);
     kfree(buf);
 
     if (abs_path)
@@ -405,20 +404,23 @@ int vfs_vget(struct vnode *vnode, struct inode **inode)
     return ret;
 }
 
-int vfs_map(struct vm_entry *vmr)
+int vfs_map(struct vm_entry *vm_entry)
 {
-    struct inode *inode = vmr->inode;
+    if (!vm_entry || !vm_entry->vm_object)
+        return -EINVAL;
+
+    struct inode *inode = vm_entry->vm_object->inode;
 
     if (!inode || !inode->fs)
         return -EINVAL;
 
     if (ISDEV(inode))
-        return kdev_map(&INODE_DEV(inode), vmr);
+        return kdev_map(&INODE_DEV(inode), vm_entry);
 
     if (!inode->fs->iops.map)
         return -ENOSYS;
 
-    return inode->fs->iops.map(vmr);
+    return inode->fs->iops.map(vm_entry);
 }
 
 /* ================== VFS high level mappings ================== */

@@ -50,7 +50,6 @@ build_multiboot_mmap(multiboot_info_t *info, mmap_t *boot_mmap)
 static inline void 
 build_multiboot_modules(multiboot_info_t *info, module_t *modules)
 {
-    extern char *lower_kernel_heap;
     multiboot_module_t *mods = (multiboot_module_t *)(uintptr_t) info->mods_addr;
 
     for (unsigned i = 0; i < info->mods_count; ++i) {
@@ -59,9 +58,6 @@ build_multiboot_modules(multiboot_info_t *info, module_t *modules)
             .size = mods[i].mod_end - mods[i].mod_start,
             .cmdline = (char *) VMA((uintptr_t) mods[i].cmdline)
         };
-
-        if ((uintptr_t) lower_kernel_heap < mods[i].mod_start)
-            lower_kernel_heap = (char *)(uintptr_t) mods[i].mod_end;
     }
 }
 
@@ -71,6 +67,31 @@ static inline struct boot *process_multiboot_info(multiboot_info_t *info)
 
     boot.cmdline = (char *) VMA((uintptr_t) info->cmdline);
     boot.total_mem = info->mem_lower + info->mem_upper;
+
+    if (info->flags & MULTIBOOT_INFO_ELF_SHDR) {
+        boot.shdr = (struct elf32_section_hdr *) VMA((uintptr_t) info->u.elf_sec.addr);
+        boot.shdr_num = info->u.elf_sec.num;
+
+        struct elf32_section_hdr *symtab = NULL;
+        struct elf32_section_hdr *strtab = NULL;
+
+        for (size_t i = 0; i < boot.shdr_num; ++i) {
+            struct elf32_section_hdr *shdr = &boot.shdr[i];
+
+            if (shdr->type == SHT_SYMTAB) {
+                symtab = shdr;
+                symtab->addr = VMA((uintptr_t) symtab->addr);
+                boot.symtab = symtab;
+                boot.symnum = shdr->size / sizeof(struct elf32_sym);
+            }
+
+            if (shdr->type == SHT_STRTAB && !strtab) {
+                strtab = shdr;
+                strtab->addr = VMA((uintptr_t) strtab->addr);
+                boot.strtab = strtab;
+            }
+        }
+    }
 
     boot.mmap_count = get_multiboot_mmap_count(info);
     static mmap_t mmap[32];

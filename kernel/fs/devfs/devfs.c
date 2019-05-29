@@ -39,6 +39,7 @@ static int devfs_init()
     devfs_root->mode  = S_IFDIR | 0775;
     devfs_root->nlink = 2;
     devfs_root->fs    = &devfs;
+    devfs_root->ref   = 1;
 
     struct timespec ts;
     gettime(&ts);

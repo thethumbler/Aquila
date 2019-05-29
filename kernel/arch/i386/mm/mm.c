@@ -19,10 +19,5 @@
 
 void arch_mm_setup(void)
 {
-    /* Fix kernel heap pointer */
-    extern char *lower_kernel_heap;
-    extern char *kernel_heap;
-    kernel_heap = VMA(lower_kernel_heap);
-
     arch_pmap_init();
 }

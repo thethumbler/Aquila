@@ -35,6 +35,7 @@ static int cpio_root_inode(struct inode *super, struct inode **ref)
     inode->uid   = 0;
     inode->gid   = 0;
     inode->nlink = 2;
+    inode->ref   = 1;
 
     struct timespec ts;
     gettime(&ts);
@@ -301,6 +302,7 @@ static ssize_t cpio_read(struct inode *inode, off_t offset, size_t len, void *bu
     len = MIN(len, inode->size - offset);
     struct cpio *p = inode->p;
     struct inode *super = p->super;
+
     return vfs_read(super, p->data + offset, len, buf);
 }
 

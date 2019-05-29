@@ -30,6 +30,8 @@ int socket_unix_create(struct file *file, int domain, int type, int protocol)
     socket->protocol = protocol;
     socket->ops      = &socket_unix_ops;
     socket->p        = NULL;
+    socket->ref      = 1;
+
     file->flags     |= FILE_SOCKET;
     file->socket     = socket;
     return 0;
@@ -107,7 +109,7 @@ static int socket_unix_bind(struct file *file, const struct sockaddr *addr, sock
     if (!socket)
         return -ENOMEM;
 
-    memset(socket, 0, sizeof(socket));
+    memset(socket, 0, sizeof(struct un_socket));
 
     memcpy(&socket->vnode, &vnode, sizeof(vnode));
 
@@ -128,8 +130,6 @@ static int socket_unix_connect(struct file *file, const struct sockaddr *addr, s
     int err = 0;
     struct vnode vnode = {0};
     struct uio uio = PROC_UIO(cur_thread->owner);
-
-    //printk("path = %s\n", addr_un->sun_path);
 
     /* Open socket */
     if ((err = vfs_lookup(addr_un->sun_path, &uio, &vnode, NULL))) {

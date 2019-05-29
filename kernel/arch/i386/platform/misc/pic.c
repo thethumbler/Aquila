@@ -234,11 +234,11 @@ int x86_pic_setup(struct ioaddr *_master, struct ioaddr *_slave)
     slave  = *_slave;
 
     if (x86_pic_probe()) {
-        printk("8259 PIC: Controller not found\n");
+        printk("i8259: Controller not found\n");
         return -1;
     }
 
-    printk("8259 PIC: Initializing [Master: %p (%s), Salve: %p (%s)]\n",
+    printk("i8259: Initializing [Master: %p (%s), Salve: %p (%s)]\n",
             master.addr, ioaddr_type_str(&master),
             slave.addr, ioaddr_type_str(&slave));
 

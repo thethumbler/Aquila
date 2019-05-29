@@ -29,19 +29,7 @@ volatile uint64_t _BSP_PML4[512] __aligned(PAGE_SIZE);
 #define RW  _BV(1)
 #define PCD _BV(4)
 
-extern char kernel_end; /* Defined in linker script */
-char *lower_kernel_heap = &kernel_end;  /* Start of kernel heap */
-
-static inline void *init_heap_alloc(size_t size, size_t align)
-{
-    char *ret = (char *)((uintptr_t)(lower_kernel_heap + align - 1) & (~(align - 1)));
-    lower_kernel_heap = ret + size;
-
-    memset(ret, 0, size);   /* We always clear the allocated area */
-
-    return ret;
-}
-
+extern char kernel_end;
 char scratch[1024 * 1024] __aligned(PAGE_SIZE); /* 1 MiB scratch area */
 
 static inline void enable_paging(uintptr_t page_directory)
@@ -70,7 +58,7 @@ static void switch_to_higher_half(void)
     entries = ((uintptr_t)(&kernel_end) + KERNEL_HEAP_SIZE + TABLE_MASK) / TABLE_SIZE;
 
 #if ARCH_BITS==32
-    uint32_t *_BSP_PT = (uint32_t *) scratch; //init_heap_alloc(entries * PAGE_SIZE, PAGE_SIZE);
+    uint32_t *_BSP_PT = (uint32_t *) scratch;
 
     /* identity map pages */
     for (i = 0; i < entries * 1024; ++i)
@@ -109,7 +97,7 @@ static void switch_to_higher_half(void)
 #endif
 }
 
-void early_init()
+void x86_bootstrap()
 {
     /* We assume that GrUB loaded a valid GDT */
     /* Then we map the kernel to the higher half */
@@ -125,8 +113,8 @@ void early_init()
 #endif
 
     /* Ready to get out of here */
-    extern void cpu_init(void);
-    cpu_init();
+    extern void x86_cpu_init(void);
+    x86_cpu_init();
 
     /* Why would we ever get back here? however we should be precautious */
     for (;;)

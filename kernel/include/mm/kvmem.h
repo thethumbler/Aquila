@@ -16,6 +16,8 @@ MALLOC_DECLARE(M_BUFFER);
 MALLOC_DECLARE(M_RINGBUF);
 MALLOC_DECLARE(M_QUEUE);
 MALLOC_DECLARE(M_QNODE);
+MALLOC_DECLARE(M_HASHMAP);
+MALLOC_DECLARE(M_HASHMAP_NODE);
 
 void *kmalloc(size_t, struct malloc_type *type, int flags);
 void kfree(void *);

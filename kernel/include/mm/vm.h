@@ -5,9 +5,12 @@
 
 struct vm_space;
 struct vm_entry;
+struct vm_object;
+struct vm_page;
 
 #include <mm/mm.h>
 #include <ds/queue.h>
+#include <ds/hashmap.h>
 
 struct vm_space {
     struct pmap  *pmap;
@@ -46,27 +49,32 @@ struct vm_entry {
     size_t   size;
     uint32_t flags;
 
+    /* backening object */
+    struct vm_object *vm_object;
+
     /* offset in object */
     off_t off;
 
-    struct inode *inode;
+    //struct inode *inode;
     struct qnode *qnode;
 };
 
-struct vm_anon {
-
-};
-
 struct vm_object {
-    struct vm_page *page;
+    struct hashmap *pages;
+    struct vm_object *shadow;
+    struct inode *inode;
 };
 
 struct vm_page {
-    //struct vm_object *object;
+    struct vm_object *object;
+    off_t off;
 
-    size_t   refcnt;
     uint32_t flags;
     paddr_t  paddr;
+
+    struct qnode *qnode;
+
+    size_t   ref;
 };
 
 extern struct vm_page pages[];
@@ -80,6 +88,8 @@ void vm_unmap(struct vm_space *vm_space, struct vm_entry *vm_entry);
 void vm_unmap_full(struct vm_space *vm_space, struct vm_entry *vm_entry);
 int  vm_entry_insert(struct vm_space *vm_space, struct vm_entry *vm_entry);
 void vm_space_destroy(struct vm_space *vm_space);
+
+struct vm_object *vm_object_inode(struct inode *inode);
 
 MALLOC_DECLARE(M_VM_ENTRY);
 
