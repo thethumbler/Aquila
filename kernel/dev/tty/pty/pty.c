@@ -159,9 +159,6 @@ int pts_can_read(struct file *file, size_t size)
 {
     struct devid *dd = &INODE_DEV(file->inode);
     struct pty *pty = ptys[dd->minor];
-
-    //printk("pts_can_read -> %d\n", ringbuf_available(pty->in));
-
     return ringbuf_available(pty->in);
 }
 

@@ -2,10 +2,10 @@
 #define _FS_ICACHE_H
 
 #include <fs/vfs.h>
-#include <ds/queue.h>
+#include <ds/hashmap.h>
 
 struct icache {
-    struct queue *inodes;
+    struct hashmap *hashmap;
 };
 
 void icache_init(struct icache *icache);

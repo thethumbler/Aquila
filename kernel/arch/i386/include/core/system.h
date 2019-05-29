@@ -15,6 +15,8 @@
 #define TABLE_MASK  (TABLE_SIZE - 1)
 #endif
 
+#define KERNEL_BREAK 0xC0000000
+
 #include_next <core/system.h>
 
 #endif /* ! _X86_SYSTEM_H */

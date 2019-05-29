@@ -6,3 +6,4 @@ obj-y += isr.o
 obj-y += fpu.o
 obj-y += cpu.o
 obj-y += arith.o
+obj-y += trace.o

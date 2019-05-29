@@ -2,6 +2,7 @@
 #define _BOOT_H
 
 #include <core/system.h>
+#include <sys/elf.h>
 
 typedef struct {
     void *addr;
@@ -28,6 +29,14 @@ struct boot {
     int mmap_count;
     module_t *modules;
     mmap_t *mmap;
+
+    struct elf32_section_hdr *shdr;
+    uint32_t shdr_num;
+
+    struct elf32_section_hdr *symtab;
+    size_t symnum;
+
+    struct elf32_section_hdr *strtab;
 };
 
 #endif

@@ -178,6 +178,7 @@ static int tmpfs_mount(const char *dir, int flags __unused, void *data __unused)
     tmpfs_root->nlink = 2;
     tmpfs_root->fs    = &tmpfs;
     tmpfs_root->p     = NULL;
+    tmpfs_root->ref   = 1;
 
     struct timespec ts;
     gettime(&ts);

@@ -36,7 +36,7 @@ void arch_proc_init(struct proc *proc)
 
 void arch_init_execve(struct proc *proc, int argc, char * const _argp[], int envc, char * const _envp[])
 {
-    printk("arch_init_execve(proc=%p, argc=%d, _argp=%p, envc=%d, _envp=%p)\n", proc, argc, _argp, envc, _argp);
+    //printk("arch_init_execve(proc=%p, argc=%d, _argp=%p, envc=%d, _envp=%p)\n", proc, argc, _argp, envc, _argp);
 
     struct pmap *pmap = proc->vm_space.pmap;
     struct thread *thread = (struct thread *) proc->threads.head->value;

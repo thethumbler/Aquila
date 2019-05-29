@@ -72,7 +72,8 @@ static int binfmt_elf32_load(struct proc *proc, struct inode *inode)
             if (shdr.type == SHT_PROGBITS) {
                 vm_entry->flags |= VM_FILE;
                 vm_entry->off    = shdr.off;
-                vm_entry->inode  = inode;
+                //vm_entry->inode  = inode;
+                vm_entry->vm_object = vm_object_inode(inode);
             } else {
                 vm_entry->flags |= VM_ZERO;
             }

@@ -24,7 +24,8 @@ struct queue {
 };
 
 #define QUEUE_NEW() &(struct queue){0}
-static inline void *queue_new(void)
+
+static inline struct queue *queue_new(void)
 {
     struct queue *queue;
 

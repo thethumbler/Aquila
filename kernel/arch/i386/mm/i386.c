@@ -181,7 +181,7 @@ static inline void page_unmap(vaddr_t vaddr)
         paddr_t table = GET_PHYS_ADDR(PAGE_DIR[pdidx]);
         mm_page_decref(table);
 
-        if (mm_page_refcnt(table) == 0)
+        if (mm_page_ref(table) == 0)
             table_unmap(pdidx);
 
         tlb_invalidate_page(vaddr);
@@ -294,7 +294,7 @@ void arch_mm_page_fault(vaddr_t vaddr, int err)
     if (page) { /* Page is mapped */
         paddr_t paddr = GET_PHYS_ADDR(page);
 
-        if (mm_page_refcnt(paddr) == 1) {
+        if (mm_page_ref(paddr) == 1) {
             PAGE_TBL(VDIR(page_addr))[VTBL(page_addr)] |= PG_WRITE;
             tlb_invalidate_page(vaddr);
         } else {
@@ -353,7 +353,7 @@ struct pmap *arch_pmap_create(void)
     memset(pmap, 0, sizeof(struct pmap));
 
     pmap->map = arch_get_frame();
-    pmap->refcnt = 1;
+    pmap->ref = 1;
 
     return pmap;
 }
@@ -362,15 +362,15 @@ struct pmap *arch_pmap_create(void)
 void arch_pmap_incref(struct pmap *pmap)
 {
     /* XXX Handle overflow */
-    pmap->refcnt++;
+    pmap->ref++;
 }
 #endif
 
 void arch_pmap_decref(struct pmap *pmap)
 {
-    pmap->refcnt--;
+    pmap->ref--;
 
-    if (pmap->refcnt == 0)
+    if (pmap->ref == 0)
         pmap_release(pmap);
 }
 

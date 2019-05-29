@@ -56,11 +56,13 @@ _start:
 
     and  $-16, %esp /* Align stack to 16 byte */
 
+    mov  $0, %ebp
+
     cli
 
 #if ARCH_BITS==32
-    .extern early_init
-    call early_init
+    .extern x86_bootstrap
+    call x86_bootstrap
 #else
     .extern x86_64_bootstrap
     call x86_64_bootstrap

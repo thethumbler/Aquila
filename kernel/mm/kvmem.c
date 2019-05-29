@@ -16,6 +16,8 @@ MALLOC_DEFINE(M_BUFFER, "buffer", "generic buffer");
 MALLOC_DEFINE(M_RINGBUF, "ring-buffer", "ringbuffer structure");
 MALLOC_DEFINE(M_QUEUE, "queue", "queue structure");
 MALLOC_DEFINE(M_QNODE, "queue-node", "queue node structure");
+MALLOC_DEFINE(M_HASHMAP, "hashmap", "hashmap structure");
+MALLOC_DEFINE(M_HASHMAP_NODE, "hashmap-node", "hashmap node structure");
 
 int debug_kmalloc = 0;
 
@@ -194,11 +196,10 @@ void kfree(void *_ptr)
     }
 
     if (nodes[cur_node].free)  { /* Node is already free, dangling pointer? */
-        //printk("double free detected at %p\n", ptr);
+        printk("double free detected at %p\n", ptr);
         if (nodes[cur_node].type)
             printk("object type: %s\n", nodes[cur_node].type->name);
-        //stack_trace();
-        //panic("double free");
+        panic("double free");
         goto done;
     }
 
@@ -238,7 +239,7 @@ void kfree(void *_ptr)
     cur_node = 0;
     while (nodes[cur_node].next < LAST_NODE_INDEX) {
         if (nodes[cur_node].free) {
-            struct vm_entry vm_entry;
+            struct vm_entry vm_entry = {0};
 
             vm_entry.paddr = 0;
             vm_entry.base  = NODE_ADDR(nodes[cur_node]);

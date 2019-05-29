@@ -60,6 +60,13 @@ void arch_thread_create(struct thread *thread, uintptr_t stack, uintptr_t entry,
     memset(arch, 0, sizeof(struct x86_thread));
 
     arch->kstack = (uintptr_t) kmalloc(KERN_STACK_SIZE, &M_KERN_STACK, 0) + KERN_STACK_SIZE;
+
+    /* dummy return address */
+    PUSH(arch->kstack, void *, 0);
+
+    /* dummy base pointer */
+    PUSH(arch->kstack, void *, 0);
+
 #if ARCH_BITS==32
     arch->eflags = X86_EFLAGS;
     arch->eip = entry;

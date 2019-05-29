@@ -5,9 +5,10 @@ INPUT(boot/builtin.o cpu/builtin.o earlycon/builtin.o mm/builtin.o sys/builtin.o
 OUTPUT(kernel.elf)
 
 SECTIONS {
-
     LMA = 0x100000;
     . = LMA;
+
+    kernel_start = .;
 
     .boot.text : ALIGN(0x1000) {
         *boot*.o(.text*)
@@ -48,6 +49,10 @@ SECTIONS {
 
     .rel.plt : AT(ADDR(.rel.plt) - _VMA) ALIGN(0x1000) {
         *(.rel.plt)
+    }
+
+    .strtab : AT(ADDR(.strtab) - _VMA) ALIGN(0x1000) {
+        *(.strtab)
     }
 
     .shstrtab : AT(ADDR(.shstrtab) - _VMA) ALIGN(0x1000) {

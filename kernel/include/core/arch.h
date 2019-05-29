@@ -56,4 +56,6 @@ void arch_reboot(void);
 
 int arch_time_get(struct timespec *ts);
 
+void arch_stack_trace(void);
+
 #endif /* ! _ARCH_H */

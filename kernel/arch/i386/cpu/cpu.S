@@ -159,6 +159,7 @@ isr_handler:
 #if ARCH_BITS==32
     push_context
     push %esp
+    mov $0, %ebp
     call __x86_isr
     pop %eax
     pop_context

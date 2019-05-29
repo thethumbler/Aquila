@@ -13,14 +13,29 @@
 #include <ds/bitmap.h>
 #include <ds/buddy.h>
 #include <mm/buddy.h>
-#include <mm/heap.h>
+#include <boot/boot.h>
 
 size_t k_total_mem, k_used_mem;
+static uintptr_t kstart = 0, kend = 0;
+
+static char alloc_area[1024 * 1024]; /* 8 MiB heap area */
+static char *alloc_mark = alloc_area;
+
+static inline void *alloc(size_t size, size_t align)
+{
+    printk("alloc(size=0x%x, align=%d)\n", size, align);
+
+    char *ret = (char *)((uintptr_t)(alloc_mark + align - 1) & (~(align - 1)));
+    alloc_mark = ret + size;
+    memset(ret, 0, size);
+    return ret;
+}
 
 struct buddy buddies[BUDDY_ZONE_NR][BUDDY_MAX_ORDER+1];
-uintptr_t buddy_zone_offset[BUDDY_ZONE_NR] = {
+uintptr_t buddy_zone_offset[BUDDY_ZONE_NR+1] = {
     [BUDDY_ZONE_DMA]     = 0,           /* 0 - 16 MiB */
     [BUDDY_ZONE_NORMAL]  = 0x1000000,   /* 16 MiB -  */
+    [BUDDY_ZONE_NR]      = (uintptr_t) -1,
 };
 
 static size_t buddy_recursive_alloc(int zone, size_t order)
@@ -123,11 +138,10 @@ paddr_t buddy_alloc(int zone, size_t _sz)
     }
 }
 
-static uintptr_t kernel_bound = 0;
 void buddy_free(int zone, paddr_t addr, size_t size)
 {
-    if (addr < kernel_bound)
-        panic("Trying to free from kernel code");
+    if (addr >= kstart && addr < kend)
+        panic("trying to free from kernel code");
 
     size_t sz = BUDDY_MIN_BS;
 
@@ -148,14 +162,21 @@ void buddy_free(int zone, paddr_t addr, size_t size)
 
 void buddy_set_unusable(paddr_t addr, size_t size)
 {
+    printk("buddy_set_unusable(addr=%p, size=%x)\n", addr, size);
+
     for (int zone = 0; size && zone < BUDDY_ZONE_NR; ++zone) {
 
-        if (addr < buddy_zone_offset[zone])
-            break;
+        uintptr_t zone_start = buddy_zone_offset[zone];
+        uintptr_t zone_end   = buddy_zone_offset[zone+1];
 
-        uintptr_t zone_addr = addr - buddy_zone_offset[zone];
+        if (addr + size < zone_start || addr >= zone_end)
+            continue;
+
+        uintptr_t zone_addr = MAX(addr, zone_start) - zone_start;
+        uintptr_t zone_size = MIN(addr + size, zone_end) - zone_start - zone_addr;
+
         size_t start_idx = zone_addr / BUDDY_MAX_BS;
-        size_t end_idx   = (zone_addr + size + BUDDY_MAX_BS - 1) / BUDDY_MAX_BS;
+        size_t end_idx   = (zone_addr + zone_size + BUDDY_MAX_BS - 1) / BUDDY_MAX_BS;
 
         if (end_idx > buddies[zone][BUDDY_MAX_ORDER].bitmap.max_idx)
             end_idx = buddies[zone][BUDDY_MAX_ORDER].bitmap.max_idx;
@@ -168,6 +189,8 @@ void buddy_set_unusable(paddr_t addr, size_t size)
             buddies[zone][BUDDY_MAX_ORDER].first_free_idx = end_idx + 1;
 
         buddies[zone][BUDDY_MAX_ORDER].usable -= (end_idx - start_idx + 1);
+
+        k_used_mem += size;
     }
 }
 
@@ -191,7 +214,7 @@ int buddy_setup(size_t total_mem)
         for (int i = BUDDY_MAX_ORDER; i >= 0; --i) {
             size_t bmsize = bitmap_size(bits_cnt);
 
-            buddies[zone][i].bitmap.map = heap_alloc(bmsize, 4);
+            buddies[zone][i].bitmap.map = alloc(bmsize, 4);
             buddies[zone][i].bitmap.max_idx = bits_cnt - 1;
 
             bits_cnt <<= 1;
@@ -210,14 +233,23 @@ int buddy_setup(size_t total_mem)
     }
 
     /* FIXME */
-    size_t kernel_buddies = ((uintptr_t) LMA(kernel_heap) + BUDDY_MAX_BS - 1)/BUDDY_MAX_BS;
-    kernel_bound = kernel_buddies * BUDDY_MAX_BS;
+    extern char kernel_start;
+    extern char kernel_end;
 
-    buddy_set_unusable(0, kernel_bound);
+    kstart = (uintptr_t) &kernel_start;
+    kend   = (uintptr_t) &kernel_end;
 
-    //for (size_t i = 0; i < kernel_buddies; ++i) {
-    //    buddy_alloc(BUDDY_ZONE_DMA, BUDDY_MAX_BS);
-    //}
+    buddy_set_unusable(kstart, kend - kstart);
+
+    extern struct boot *__kboot;
+
+    if (__kboot->symtab) {
+        buddy_set_unusable(LMA((uintptr_t) __kboot->symtab->addr), __kboot->symtab->size);
+    }
+
+    if (__kboot->strtab) {
+        buddy_set_unusable(LMA((uintptr_t) __kboot->strtab->addr), __kboot->strtab->size);
+    }
 
     return 0;
 }
