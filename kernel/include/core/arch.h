@@ -44,11 +44,14 @@ struct pmap *arch_pmap_switch(struct pmap *pmap);
 struct pmap *arch_pmap_create(void);
 void arch_pmap_incref(struct pmap *pmap);
 void arch_pmap_decref(struct pmap *pmap);
-int  arch_pmap_fork(struct pmap *src_map, struct pmap *dst_map);
+//int  arch_pmap_fork(struct pmap *src_map, struct pmap *dst_map);
 int  arch_pmap_add(struct pmap *pmap, vaddr_t va, paddr_t pa, uint32_t flags);
 void arch_pmap_remove(struct pmap *pmap, vaddr_t sva, vaddr_t eva);
+void arch_pmap_protect(struct pmap *pmap, vaddr_t sva, vaddr_t eva, uint32_t prot);
+void arch_pmap_page_copy(paddr_t src, paddr_t dst);
+void arch_pmap_remove_all(struct pmap *pmap);
 
-paddr_t arch_page_get_mapping(vaddr_t vaddr);
+paddr_t arch_page_get_mapping(struct pmap *pmap, vaddr_t vaddr);
 
 void arch_disable_interrupts(void);
 

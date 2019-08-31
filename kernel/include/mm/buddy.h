@@ -3,8 +3,11 @@
 
 #include <mm/mm.h>
 
+/** max buddy order */
 #define BUDDY_MAX_ORDER (10)
+/** buddy minimum block size */
 #define BUDDY_MIN_BS    (4096)
+/** buddy maximum block size */
 #define BUDDY_MAX_BS    (BUDDY_MIN_BS << BUDDY_MAX_ORDER)
 
 #define BUDDY_ZONE_NR       2

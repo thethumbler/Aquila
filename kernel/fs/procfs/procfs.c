@@ -58,14 +58,14 @@ static ssize_t procfs_meminfo(off_t off, size_t size, char *buf)
 /* proc/kvmem */
 static ssize_t procfs_kvmem(off_t off, size_t size, char *buf)
 {
-    printk("procfs_kvmem(off=%d, size=%d, buf=%p)\n", off, size, buf);
+    //printk("procfs_kvmem(off=%d, size=%d, buf=%p)\n", off, size, buf);
 
     extern struct queue *malloc_types;
 
     char kvmem_buf[1024];
     int sz = 0;
 
-    for (struct qnode *node = malloc_types->head; node; node = node->next) {
+    queue_for (node, malloc_types) {
         struct malloc_type *type = (struct malloc_type *) node->value;
         sz += snprintf(kvmem_buf + sz, sizeof(kvmem_buf) - sz,
                 "%s %d %d\n", type->name, type->nr, type->total);
@@ -191,7 +191,7 @@ static ssize_t procfs_mounts(off_t off, size_t size, char *buf)
     extern struct queue *mounts;
     int sz = 0;
 
-    for (struct qnode *node = mounts->head; node; node = node->next) {
+    queue_for (node, mounts) {
         struct mountpoint *mp = node->value;
         sz += snprintf(mounts_buf + sz, sizeof(mounts_buf) - sz,
                 "%s %s %s %s\n", mp->dev, mp->path, mp->type, mp->options);
@@ -218,16 +218,18 @@ static ssize_t procfs_buddyinfo(off_t off, size_t size, char *buf)
 
     int sz = 0;
 
-    sz += snprintf(buddyinfo_buf + sz, sizeof(buddyinfo_buf) - sz, "Zone DMA\t");
+    /*
+    sz += snprintf(buddyinfo_buf + sz, sizeof(buddyinfo_buf) - sz, "Zone DMA\n");
     for (int i = 0; i < BUDDY_MAX_ORDER + 1; ++i) {
-        sz += snprintf(buddyinfo_buf + sz, sizeof(buddyinfo_buf) - sz, "%d\t",
-                buddies[0][i].usable);
+        sz += snprintf(buddyinfo_buf + sz, sizeof(buddyinfo_buf) - sz, "2^%d: %d\n",
+                12 + i, buddies[0][i].usable);
     }
+    */
 
-    sz += snprintf(buddyinfo_buf + sz, sizeof(buddyinfo_buf) - sz, "\nZone Normal\t");
+    sz += snprintf(buddyinfo_buf + sz, sizeof(buddyinfo_buf) - sz, "\nZone Normal\n");
     for (int i = 0; i < BUDDY_MAX_ORDER + 1; ++i) {
-        sz += snprintf(buddyinfo_buf + sz, sizeof(buddyinfo_buf) - sz, "%d\t",
-                buddies[1][i].usable);
+        sz += snprintf(buddyinfo_buf + sz, sizeof(buddyinfo_buf) - sz, "2^%d: %d\n",
+                12 + i, buddies[1][i].usable);
     }
 
     sz += snprintf(buddyinfo_buf + sz, sizeof(buddyinfo_buf) - sz, "\n");
@@ -284,7 +286,7 @@ static ssize_t procfs_proc_status(int pid, off_t off, size_t size, void *buf)
             proc->uid,
             proc->gid,
             proc->heap,
-            proc->threads_nr
+            proc->threads.count
             );
 
     if (off < sz) {
@@ -308,7 +310,7 @@ static ssize_t procfs_proc_maps(int pid, off_t off, size_t size, void *buf)
     int sz = 0;
 
     struct queue *vm_entries = &proc->vm_space.vm_entries;
-    for (struct qnode *node = vm_entries->head; node; node = node->next) {
+    queue_for (node, vm_entries) {
         struct vm_entry *vm_entry = node->value;
 
         char perm[5] = {0};
@@ -325,20 +327,83 @@ static ssize_t procfs_proc_maps(int pid, off_t off, size_t size, void *buf)
         if (vm_entry == proc->heap_vm)
             desc = "[heap]";
 
+        struct inode *inode = NULL;
+
+        if (vm_entry->vm_object && vm_entry->vm_object->type == VMOBJ_FILE)
+            inode = (struct inode *) vm_entry->vm_object->p;
+
         sz += snprintf(maps_buf + sz, sizeof(maps_buf) - sz,
                 "%x-%x %s %x %x %x %s\n",
                 vm_entry->base,  /* Start address */
                 vm_entry->base + vm_entry->size,  /* End address */
                 perm,   /* Access permissions */
                 vm_entry->off, /* Offset in file */
-                vm_entry->vm_object? vm_entry->vm_object->inode->dev : 0, /* Device ID */
-                vm_entry->vm_object? vm_entry->vm_object->inode->ino : 0, /* Inode ID */
+                inode? inode->dev : 0, /* Device ID */
+                inode? inode->ino : 0, /* Inode ID */
                 desc); 
     }
     
     if (off < sz) {
         ssize_t ret = MIN(size, (size_t)(sz - off));
         memcpy(buf, maps_buf + off, ret);
+        return ret;
+    }
+
+    return 0;
+}
+
+static ssize_t procfs_proc_vmstats(int pid, off_t off, size_t size, void *buf)
+{
+    struct proc *proc = proc_pid_find(pid);
+
+    if (!proc)
+        return -ENONET;
+
+    char vmstats_buf[4096];
+
+    int sz = 0;
+
+    struct queue *vm_entries = &proc->vm_space.vm_entries;
+
+    queue_for (node, vm_entries) {
+        struct vm_entry *vm_entry = node->value;
+
+        char perm[5] = {0};
+        perm[0] = vm_entry->flags & VM_UR? 'r' : '-';
+        perm[1] = vm_entry->flags & VM_UW? 'w' : '-';
+        perm[2] = vm_entry->flags & VM_UX? 'x' : '-';
+        perm[3] = vm_entry->flags & VM_SHARED? 's' : 'p';
+
+        const char *type = "";
+        switch (vm_entry->vm_object->type) {
+            case VMOBJ_FILE: type = "file"; break;
+            case VMOBJ_ZERO: type = "anon"; break;
+            //case VMOBJ_SHADOW: type = "shadow"; break;
+        }
+
+        /*
+        printk("%p-%p %s %p %p %s\n",
+                vm_entry->base,
+                vm_entry->base + vm_entry->size,
+                perm,
+                vm_entry->off,
+                vm_entry->vm_object,
+                type); 
+                */
+
+        sz += snprintf(vmstats_buf + sz, sizeof(vmstats_buf) - sz,
+                "%p-%p %s %p %p %s\n",
+                vm_entry->base,
+                vm_entry->base + vm_entry->size,
+                perm,
+                vm_entry->off,
+                vm_entry->vm_object,
+                0); //type); 
+    }
+    
+    if (off < sz) {
+        ssize_t ret = MIN(size, (size_t)(sz - off));
+        memcpy(buf, vmstats_buf + off, ret);
         return ret;
     }
 
@@ -352,7 +417,8 @@ struct procfs_proc_entry {
 
 static struct procfs_proc_entry proc_entries[] = {
     {"status", procfs_proc_status},
-    {"maps",   procfs_proc_maps},
+    {"maps", procfs_proc_maps},
+    {"vmstats", procfs_proc_vmstats},
 };
 
 #define PROCFS_PROC_ENTRIES  (sizeof(proc_entries)/sizeof(proc_entries[0]))
@@ -405,7 +471,7 @@ static ssize_t procfs_readdir(struct inode *inode, off_t offset, struct dirent *
 
         --offset;
 
-        for (struct qnode *node = procs->head; node; node = node->next) {
+        queue_for (node, procs) {
             if (!offset) {
                 struct proc *proc = node->value;
                 snprintf(dirent->d_name, 10, "%d", proc->pid);
@@ -455,7 +521,7 @@ static int procfs_vfind(struct vnode *parent, const char *name, struct vnode *ch
             return 0;
         }
 
-        for (struct qnode *node = procs->head; node; node = node->next) {
+        queue_for (node, procs) {
             struct proc *proc = node->value;
             char buf[10];
             snprintf(buf, 10, "%d", proc->pid);

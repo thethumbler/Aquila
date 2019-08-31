@@ -4,6 +4,10 @@
 #include <fs/vfs.h>
 #include <ds/hashmap.h>
 
+/**
+ * \ingroup vfs
+ * \brief inode cache
+ */
 struct icache {
     struct hashmap *hashmap;
 };

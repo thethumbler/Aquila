@@ -31,14 +31,20 @@ int initramfs_archiver_register(struct fs *fs)
     if (!enqueue(archivers, fs))
         return -ENOMEM;
 
+    printk("initramfs: registered archiver: %s\n", fs->name);
+
     return 0;
 }
 
 int load_ramdisk(module_t *module)
 {
-    printk("kernel: Loading ramdisk\n");
+    printk("kernel: loading ramdisk\n");
 
     rd_dev = kmalloc(sizeof(struct inode), &M_INODE, 0);
+
+    if (!rd_dev)
+        return -ENOMEM;
+
     memset(rd_dev, 0, sizeof(struct inode));
 
     extern size_t rd_size;
@@ -46,11 +52,12 @@ int load_ramdisk(module_t *module)
     rd_dev->mode = S_IFBLK;
     rd_dev->rdev = DEV(1, 0);
     rd_dev->size = rd_size;
+    rd_dev->fs   = &devfs;
 
     struct inode *root = NULL;
     int err = -1;
 
-    for (struct qnode *node = archivers->head; node; node = node->next) {
+    queue_for (node, archivers) {
         struct fs *fs = node->value;
 
         if (!(err = fs->load(rd_dev, &root)))
@@ -62,7 +69,5 @@ int load_ramdisk(module_t *module)
         panic("Could not load ramdisk\n");
     }
 
-    vfs_mount_root(root);
-
-    return 0;
+    return vfs_mount_root(root);
 }

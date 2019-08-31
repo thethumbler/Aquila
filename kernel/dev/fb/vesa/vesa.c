@@ -29,9 +29,9 @@ static ssize_t fbdev_vesa_write(struct fbdev *fb, off_t offset, size_t size, voi
     return size;
 }
 
-static int fbdev_vesa_map(struct fbdev *fb, struct vm_entry *vm_entry)
+static int fbdev_vesa_map(struct fbdev *fb, struct vm_space *vm_space, struct vm_entry *vm_entry)
 {
-    //printk("fbdev_vesa_map(fb=%p, vm_entry=%p {base=%p, off=0x%x, size=0x%x})\n", fb, vm_entry, vm_entry->base, vm_entry->off, vm_entry->size);
+    printk("fbdev_vesa_map(fb=%p, vm_space=%p, vm_entry=%p {base=%p, off=0x%x, size=0x%x})\n", fb, vm_space, vm_entry, vm_entry->base, vm_entry->off, vm_entry->size);
 
     /* We do not support private maps */
     if (!(vm_entry->flags & VM_SHARED))
@@ -44,7 +44,7 @@ static int fbdev_vesa_map(struct fbdev *fb, struct vm_entry *vm_entry)
 #endif
 
     vm_entry->paddr = vesa_vm.paddr;
-    return vm_map(&kvm_space, vm_entry); /* XXX */
+    return vm_map(vm_space, vm_entry);
 }
 
 static int fbdev_vesa_prope(int i __unused, struct fbdev *fb)

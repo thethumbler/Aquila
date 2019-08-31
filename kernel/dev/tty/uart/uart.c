@@ -114,7 +114,7 @@ int uart_register(int id, struct uart *u)
 done:
     devices[id] = u;
 
-    printk("uart: Registered uart %d: %s\n", id, u->name);
+    printk("uart: registered uart %d: %s\n", id, u->name);
     return id;
 }
 

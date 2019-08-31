@@ -16,7 +16,7 @@ ssize_t ext2_read(struct inode *node, off_t offset, size_t size, void *buf)
     if ((size_t) offset >= inode.size)
         return 0;
 
-    size = MIN(size, inode.size - offset);
+    size = MIN(size, (size_t) (inode.size - offset));
     
     char *read_buf = NULL;
 
@@ -92,7 +92,7 @@ ssize_t ext2_write(struct inode *node, off_t offset, size_t size, void *buf)
         ext2_inode_write(desc, node->ino, &inode);
     }
 
-    size = MIN(size, inode.size - offset);
+    size = MIN(size, (size_t) (inode.size - offset));
     
     char *write_buf = NULL;
 

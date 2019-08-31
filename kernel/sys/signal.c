@@ -63,7 +63,7 @@ int signal_proc_send(struct proc *proc, int signal)
 
 int signal_pgrp_send(struct pgroup *pg, int signal)
 {
-    for (struct qnode *node = pg->procs->head; node; node = node->next) {
+    queue_for (node, pg->procs) {
         struct proc *proc = node->value;
         signal_proc_send(proc, signal);
     }

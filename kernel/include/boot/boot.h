@@ -30,13 +30,13 @@ struct boot {
     module_t *modules;
     mmap_t *mmap;
 
-    struct elf32_section_hdr *shdr;
+    struct elf32_shdr *shdr;
     uint32_t shdr_num;
 
-    struct elf32_section_hdr *symtab;
+    struct elf32_shdr *symtab;
     size_t symnum;
 
-    struct elf32_section_hdr *strtab;
+    struct elf32_shdr *strtab;
 };
 
 #endif

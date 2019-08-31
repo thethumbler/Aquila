@@ -138,7 +138,7 @@ static int socket_unix_connect(struct file *file, const struct sockaddr *addr, s
 
     struct un_socket *socket = NULL;
 
-    for (struct qnode *node = sockets->head; node; node = node->next) {
+    queue_for (node, sockets) {
         struct un_socket *_socket = (struct un_socket *) node->value;
         if (_socket->vnode.super == vnode.super && _socket->vnode.ino == vnode.ino) {
             socket = _socket;

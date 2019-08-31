@@ -69,25 +69,25 @@ static inline struct boot *process_multiboot_info(multiboot_info_t *info)
     boot.total_mem = info->mem_lower + info->mem_upper;
 
     if (info->flags & MULTIBOOT_INFO_ELF_SHDR) {
-        boot.shdr = (struct elf32_section_hdr *) VMA((uintptr_t) info->u.elf_sec.addr);
+        boot.shdr = (struct elf32_shdr *) VMA((uintptr_t) info->u.elf_sec.addr);
         boot.shdr_num = info->u.elf_sec.num;
 
-        struct elf32_section_hdr *symtab = NULL;
-        struct elf32_section_hdr *strtab = NULL;
+        struct elf32_shdr *symtab = NULL;
+        struct elf32_shdr *strtab = NULL;
 
         for (size_t i = 0; i < boot.shdr_num; ++i) {
-            struct elf32_section_hdr *shdr = &boot.shdr[i];
+            struct elf32_shdr *shdr = &boot.shdr[i];
 
-            if (shdr->type == SHT_SYMTAB) {
+            if (shdr->sh_type == SHT_SYMTAB) {
                 symtab = shdr;
-                symtab->addr = VMA((uintptr_t) symtab->addr);
+                symtab->sh_addr = VMA((uintptr_t) symtab->sh_addr);
                 boot.symtab = symtab;
-                boot.symnum = shdr->size / sizeof(struct elf32_sym);
+                boot.symnum = shdr->sh_size / sizeof(struct elf32_sym);
             }
 
-            if (shdr->type == SHT_STRTAB && !strtab) {
+            if (shdr->sh_type == SHT_STRTAB && !strtab) {
                 strtab = shdr;
-                strtab->addr = VMA((uintptr_t) strtab->addr);
+                strtab->sh_addr = VMA((uintptr_t) strtab->sh_addr);
                 boot.strtab = strtab;
             }
         }

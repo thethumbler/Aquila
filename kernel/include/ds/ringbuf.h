@@ -4,8 +4,12 @@
 #include <core/system.h>
 #include <mm/mm.h>
 
-#define INDEX(ring, i) ((i) % ((ring)->size))
+#define RING_INDEX(ring, i) ((i) % ((ring)->size))
 
+/**
+ * \ingroup ds
+ * \brief ring buffer
+ */
 struct ringbuf {
     char *buf;
     size_t size;
@@ -13,26 +17,54 @@ struct ringbuf {
     size_t tail;
 };
 
+/**
+ * \ingroup ds
+ * \brief create a new statically allocated ring buffer
+ */
 #define RINGBUF_NEW(sz) (&(struct ringbuf){.buf = (char[sz]){0}, .size = sz, .head = 0, .tail = 0})
 
+/**
+ * \ingroup ds
+ * \brief create a new dynamically allocated ring buffer
+ */
 static inline struct ringbuf *ringbuf_new(size_t size)
 {
     struct ringbuf *ring = kmalloc(sizeof(struct ringbuf), &M_BUFFER, 0);
-    *ring = (struct ringbuf) {
-        .buf = kmalloc(size, &M_BUFFER, 0),
-        .size = size,
-        .head = 0,
-        .tail = 0
-    };
+
+    if (!ring)
+        return NULL;
+
+    ring->buf  = kmalloc(size, &M_BUFFER, 0);
+
+    if (!ring->buf) {
+        kfree(ring);
+        return NULL;
+    }
+
+    ring->size = size;
+    ring->head = 0;
+    ring->tail = 0;
+
     return ring;
 }
 
+/**
+ * \ingroup ds
+ * \brief free a dynamically allocated ring buffer
+ */
 static inline void ringbuf_free(struct ringbuf *r)
 {
+    if (!r)
+        return;
+
     kfree(r->buf);
     kfree(r);
 }
 
+/** 
+ * \ingroup ds
+ * \brief read from a ring buffer
+ */
 static inline size_t ringbuf_read(struct ringbuf *ring, size_t n, char *buf)
 {
     size_t size = n;
@@ -49,6 +81,10 @@ static inline size_t ringbuf_read(struct ringbuf *ring, size_t n, char *buf)
     return size - n;
 }
 
+/** 
+ * \ingroup ds
+ * \brief peek (non-destructive read) from a ring buffer
+ */
 static inline size_t ringbuf_read_noconsume(struct ringbuf *ring, off_t off, size_t n, char *buf)
 {
     size_t size = n;
@@ -74,7 +110,7 @@ static inline size_t ringbuf_write(struct ringbuf *ring, size_t n, char *buf)
     size_t size = n;
 
     while (n) {
-        if (INDEX(ring, ring->head) == INDEX(ring, ring->tail) + 1) /* Ring is full */
+        if (RING_INDEX(ring, ring->head) == RING_INDEX(ring, ring->tail) + 1) /* Ring is full */
             break;
 
         if (ring->tail == ring->size)
@@ -92,9 +128,9 @@ static inline size_t ringbuf_write_overwrite(struct ringbuf *ring, size_t n, cha
     size_t size = n;
 
     while (n) {
-        if (INDEX(ring, ring->head) == INDEX(ring, ring->tail) + 1) {
+        if (RING_INDEX(ring, ring->head) == RING_INDEX(ring, ring->tail) + 1) {
             /* move head to match */
-            ring->head = INDEX(ring, ring->head) + 1;
+            ring->head = RING_INDEX(ring, ring->head) + 1;
         }
 
         if (ring->tail == ring->size)

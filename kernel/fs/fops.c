@@ -4,6 +4,10 @@
 #include <net/socket.h>
 #include <bits/fcntl.h>
 
+/**
+ * \ingroup vfs
+ * \brief open a new file
+ */
 int vfs_file_open(struct file *file)
 {
     if (!file || !file->inode || !file->inode->fs)
@@ -21,6 +25,10 @@ int vfs_file_open(struct file *file)
     return file->inode->fs->fops.open(file);
 }
 
+/**
+ * \ingroup vfs
+ * \brief read from an open file
+ */
 ssize_t vfs_file_read(struct file *file, void *buf, size_t nbytes)
 {
     if (file && file->flags & FILE_SOCKET)
@@ -41,6 +49,10 @@ ssize_t vfs_file_read(struct file *file, void *buf, size_t nbytes)
     return file->inode->fs->fops.read(file, buf, nbytes);
 }
 
+/**
+ * \ingroup vfs
+ * \brief write to an open file
+ */
 ssize_t vfs_file_write(struct file *file, void *buf, size_t nbytes)
 {
     if (file && file->flags & FILE_SOCKET)
@@ -61,6 +73,10 @@ ssize_t vfs_file_write(struct file *file, void *buf, size_t nbytes)
     return file->inode->fs->fops.write(file, buf, nbytes);
 }
 
+/**
+ * \ingroup vfs
+ * \brief perform ioctl on an open file
+ */
 int vfs_file_ioctl(struct file *file, int request, void *argp)
 {
     if (!file || !file->inode)
@@ -78,6 +94,10 @@ int vfs_file_ioctl(struct file *file, int request, void *argp)
     return file->inode->fs->fops.ioctl(file, request, argp);
 }
 
+/**
+ * \ingroup vfs
+ * \brief perform a seek in an open file
+ */
 off_t vfs_file_lseek(struct file *file, off_t offset, int whence)
 {
     if (!file || !file->inode)
@@ -95,6 +115,10 @@ off_t vfs_file_lseek(struct file *file, off_t offset, int whence)
     return file->inode->fs->fops.lseek(file, offset, whence);
 }
 
+/**
+ * \ingroup vfs
+ * \brief read entries from an open directory
+ */
 ssize_t vfs_file_readdir(struct file *file, struct dirent *dirent)
 {
     if (!file || !file->inode || !file->inode->fs)
@@ -109,6 +133,10 @@ ssize_t vfs_file_readdir(struct file *file, struct dirent *dirent)
     return file->inode->fs->fops.readdir(file, dirent);
 }
 
+/**
+ * \ingroup vfs
+ * \brief close an open file
+ */
 ssize_t vfs_file_close(struct file *file)
 {
     if (!file || !file->inode)
@@ -129,6 +157,10 @@ ssize_t vfs_file_close(struct file *file)
     return file->inode->fs->fops.close(file);
 }
 
+/**
+ * \ingroup vfs
+ * \brief truncate an open file
+ */
 int vfs_file_trunc(struct file *file, off_t len)
 {
     if (file && file->flags & FILE_SOCKET)

@@ -1,3 +1,8 @@
+/**
+ * \defgroup vfs kernel/vfs
+ * \brief virtual filesystem
+ */
+
 #include <core/system.h>
 #include <core/string.h>
 #include <mm/mm.h>
@@ -14,13 +19,13 @@ MALLOC_DEFINE(M_VFS_PATH, "vfs-path", "vfs path structure");
 MALLOC_DEFINE(M_VFS_NODE, "vfs-node", "vfs node structure");
 MALLOC_DEFINE(M_FS_LIST, "fs-list", "filesystems list");
 
-static int vfs_log_level = LOG_NONE;
+static int vfs_log_level = LOG_INFO;
 static inline DEF_LOGGER(vfs, vfs_log, vfs_log_level)
 
-/* List of registered filesystems */
+/** list of registered filesystems */
 struct fs_list *registered_fs = NULL;
 
-/* VFS mountpoints graph */
+/* vfs mountpoints graph */
 struct vfs_node {
     const char *name;
     struct vfs_node *children;
@@ -35,12 +40,14 @@ struct vfs_node {
 /* ================== VFS Graph helpers ================== */
 
 struct inode *vfs_root = NULL;
-void vfs_mount_root(struct inode *node)
+int vfs_mount_root(struct inode *node)
 {
     /* TODO Flush mountpoints */
     vfs_root = node;
     vfs_graph.node = node;
     vfs_graph.children = NULL;  /* XXX */
+
+    return 0;
 }
 
 char **canonicalize_path(const char * const path)
@@ -230,7 +237,7 @@ next:;
 
 void vfs_init(void)
 {
-    vfs_log(LOG_INFO, "Initializing\n");
+    vfs_log(LOG_INFO, "initializing\n");
 }
 
 int vfs_install(struct fs *fs)
@@ -246,14 +253,14 @@ int vfs_install(struct fs *fs)
 
     registered_fs = node;
 
-    vfs_log(LOG_INFO, "Registered filesystem %s\n", fs->name);
+    vfs_log(LOG_INFO, "registered filesystem %s\n", fs->name);
 
     return 0;
 }
 
 int vfs_lookup(const char *path, struct uio *uio, struct vnode *vnode, char **abs_path)
 {
-    vfs_log(LOG_DEBUG, "vfs_lookup(%s, uio=%p, vnode=%p, abs_path=%p)\n", path, uio, vnode, abs_path);
+    vfs_log(LOG_DEBUG, "vfs_lookup(path=%s, uio=%p, vnode=%p, abs_path=%p)\n", path, uio, vnode, abs_path);
 
     int ret = 0;
     struct vfs_path *p = NULL;
@@ -276,8 +283,8 @@ int vfs_lookup(const char *path, struct uio *uio, struct vnode *vnode, char **ab
     struct vnode cur, next;
 
     cur.super  = p->mountpoint;
-    cur.ino  = p->mountpoint->ino;
-    cur.mode = S_IFDIR; /* XXX */
+    cur.ino    = p->mountpoint->ino;
+    cur.mode   = S_IFDIR; /* XXX */
     next.super = p->mountpoint;
 
     for (char **token_p = p->tokens; *token_p; ++token_p) {
@@ -328,6 +335,8 @@ error:
 
 int vfs_vfind(struct vnode *parent, const char *name, struct vnode *child)
 {
+    vfs_log(LOG_DEBUG, "vfs_vfind(parent=%p, name=%s, child=%p)\n", parent, name, child);
+
     if (!parent || !parent->super || !parent->super->fs)
         return -EINVAL;
 
@@ -404,23 +413,23 @@ int vfs_vget(struct vnode *vnode, struct inode **inode)
     return ret;
 }
 
-int vfs_map(struct vm_entry *vm_entry)
+int vfs_map(struct vm_space *vm_space, struct vm_entry *vm_entry)
 {
-    if (!vm_entry || !vm_entry->vm_object)
+    if (!vm_entry || !vm_entry->vm_object || vm_entry->vm_object->type != VMOBJ_FILE)
         return -EINVAL;
 
-    struct inode *inode = vm_entry->vm_object->inode;
+    struct inode *inode = (struct inode *) vm_entry->vm_object->p;
 
     if (!inode || !inode->fs)
         return -EINVAL;
 
     if (ISDEV(inode))
-        return kdev_map(&INODE_DEV(inode), vm_entry);
+        return kdev_map(&INODE_DEV(inode), vm_space, vm_entry);
 
     if (!inode->fs->iops.map)
         return -ENOSYS;
 
-    return inode->fs->iops.map(vm_entry);
+    return inode->fs->iops.map(vm_space, vm_entry);
 }
 
 /* ================== VFS high level mappings ================== */

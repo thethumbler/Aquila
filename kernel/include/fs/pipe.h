@@ -10,13 +10,18 @@ struct pipe;
 
 #define PIPE_BUFLEN 1024
 
+/**
+ * \ingroup vfs
+ * \brief unix pipe
+ */
 struct pipe {
-    /* Readers reference count */
+    /** readers reference count */
     unsigned r_ref;
 
-    /* Writers reference count */
+    /** writers reference count */
     unsigned w_ref;
 
+    /** ring buffer */
     struct ringbuf *ring;
 };
 

@@ -9,6 +9,11 @@
  */
 
 
+/** 
+ * \defgroup sys kernel/sys
+ * \brief system managment
+ */
+
 #include <core/system.h>
 #include <core/panic.h>
 
@@ -110,7 +115,7 @@ error:
 
 struct proc *proc_pid_find(pid_t pid)
 {
-    for (struct qnode *node = procs->head; node; node = node->next) {
+    queue_for (node, procs) {
         struct proc *proc = node->value;
         if (proc->pid == pid)
             return proc;
@@ -214,7 +219,7 @@ void proc_kill(struct proc *proc)
     kfree(proc->sig_queue);
 
     /* Mark all children as orphans */
-    for (struct qnode *node = procs->head; node; node = node->next) {
+    queue_for (node, procs) {
         struct proc *_proc = node->value;
 
         if (_proc->parent == proc)

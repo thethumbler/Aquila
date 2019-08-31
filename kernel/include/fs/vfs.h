@@ -12,6 +12,10 @@ struct iops;
 
 #include <bits/dirent.h>
 
+/**
+ * \ingroup vfs
+ * \brief file operations
+ */
 struct fops {
     int         (*open)    (struct file *file);
     ssize_t     (*read)    (struct file *file, void *buf, size_t size);    
@@ -38,7 +42,10 @@ struct fops {
 
 MALLOC_DECLARE(M_INODE);
 
-/* User I/O operation */
+/**
+ * \ingroup vfs
+ * \brief user I/O operation
+ */
 struct uio {
     char     *root; /* Root Directory */
     char     *cwd;  /* Current Working Directory */
@@ -48,7 +55,10 @@ struct uio {
     uint32_t flags;
 };
 
-/* Inode Operations */
+/**
+ * \ingroup vfs
+ * \brief inode operations
+ */
 struct iops {
     ssize_t (*read)    (struct inode *inode, off_t offset, size_t size, void *buf);
     ssize_t (*write)   (struct inode *inode, off_t offset, size_t size, void *buf);
@@ -61,14 +71,21 @@ struct iops {
     int     (*vunlink) (struct vnode *dir, const char *fn, struct uio *uio);
     int     (*vfind)   (struct vnode *dir, const char *name, struct vnode *child);
     int     (*vget)    (struct vnode *vnode, struct inode **inode);
-    int     (*map)     (struct vm_entry *vm_entry);
+    int     (*map)     (struct vm_space *vm_space, struct vm_entry *vm_entry);
 };
 
+/**
+ * \ingroup vfs
+ */
 struct vfs_path {
     struct inode *mountpoint;
     char **tokens;
 };
 
+/**
+ * \ingroup vfs
+ * \brief filesystem structure
+ */
 struct fs {
     char *name;
     int (*init)  ();
@@ -82,7 +99,10 @@ struct fs {
     int nodev;
 };
 
-/* in-core inode structure */
+/**
+ * \ingroup vfs
+ * \brief in-core inode structure
+ */
 struct inode {
     ino_t       ino;
     size_t      size;
@@ -92,22 +112,23 @@ struct inode {
     uid_t       uid;
     gid_t       gid;
     nlink_t     nlink;
+
     _time_t     atime;
     _time_t     mtime;
     _time_t     ctime;
 
     struct fs   *fs;
 
-    /* Filesystem handler private data */
+    /** filesystem handler private data */
     void *p;
 
-    /* Number of processes referencing this node */
+    /** number of processes referencing this inode */
     size_t ref;
 
     struct queue *read_queue;
     struct queue *write_queue;
 
-    /* virtual memory object associated with inode */
+    /** virtual memory object associated with inode */
     struct vm_object *vm_object;
 };
 
@@ -138,9 +159,18 @@ typedef struct  {
     void   *p;
 } vfs_mountpoint_t;
 
+/**
+ * \ingroup vfs
+ * \brief list of registered filesystems
+ */
 struct fs_list {
+    /** filesystem name */
     const char *name;
+
+    /** filesystem structure */
     struct fs  *fs;
+
+    /** next entry in the list */
     struct fs_list *next;
 };
 
@@ -174,7 +204,7 @@ static inline int __vfs_vunlink_rofs(struct vnode *dir, const char *fn,
 /* Filesystem operations */
 void    vfs_init(void);
 int     vfs_install(struct fs *fs);
-void    vfs_mount_root(struct inode *inode);
+int     vfs_mount_root(struct inode *inode);
 int     vfs_bind(const char *path, struct inode *target);
 int     vfs_mount(const char *type, const char *dir, int flags, void *data, struct uio *uio);
 
@@ -185,7 +215,7 @@ int     vfs_vmkdir(struct vnode *dir, const char *dname, struct uio *uio, struct
 int     vfs_vunlink(struct vnode *dir, const char *fn, struct uio *uio);
 int     vfs_vfind(struct vnode *vnode, const char *name, struct vnode *child);
 int     vfs_vget(struct vnode *vnode, struct inode **inode);
-int     vfs_map(struct vm_entry *vm_entry);
+int     vfs_map(struct vm_space *vm_space, struct vm_entry *vm_entry);
 
 ssize_t vfs_read(struct inode *inode, off_t offset, size_t size, void *buf);
 ssize_t vfs_write(struct inode *inode, off_t offset, size_t size, void *buf);

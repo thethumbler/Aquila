@@ -37,6 +37,6 @@ struct cpio {
     struct inode *next;  /* For directories */
 };
 
-extern struct fs cpio;
+extern struct fs cpiofs;
 
 #endif /* !_CPIO_H */

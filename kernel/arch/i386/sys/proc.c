@@ -42,7 +42,6 @@ void arch_init_execve(struct proc *proc, int argc, char * const _argp[], int env
     struct thread *thread = (struct thread *) proc->threads.head->value;
 
     cur_thread = thread;
-    //arch_switch_mapping(pmap->map);
     arch_pmap_switch(pmap);
 
     arch_sys_execve(proc, argc, _argp, envc, _envp);

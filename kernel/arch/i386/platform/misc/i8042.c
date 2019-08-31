@@ -66,10 +66,10 @@ static void x86_i8042_second_handler(struct x86_regs *r)
 
 static void x86_i8042_handler_install(void)
 {
-    printk("i8042: Installing IRQ %d\n", FIRST_IRQ);
+    printk("i8042: installing IRQ %d\n", FIRST_IRQ);
     x86_irq_handler_install(FIRST_IRQ, x86_i8042_first_handler);
 
-    printk("i8042: Installing IRQ %d\n", SECOND_IRQ);
+    printk("i8042: installing IRQ %d\n", SECOND_IRQ);
     x86_irq_handler_install(SECOND_IRQ, x86_i8042_second_handler);
 
     /* flush any pending data */
@@ -101,15 +101,15 @@ int x86_i8042_setup(struct ioaddr *io)
     int check = kargs_get("i8042.nocheck", NULL);
 
     if (check && !(read_status() & STATUS_SYSTEM)) {
-        printk("i8042: Controller not found\n");
+        printk("i8042: controller not found\n");
         return -1;
     } else {
-        printk("i8042: Skipping check\n");
+        printk("i8042: skipping check\n");
     }
 
     //x86_i8042_check();
 
-    printk("i8042: Initializing controller [%p (%s)]\n", io->addr, ioaddr_type_str(io));
+    printk("i8042: initializing controller [%p (%s)]\n", io->addr, ioaddr_type_str(io));
     x86_i8042_handler_install();
     return 0;
 }

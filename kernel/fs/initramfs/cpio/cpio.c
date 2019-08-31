@@ -44,10 +44,8 @@ static int cpio_root_inode(struct inode *super, struct inode **ref)
     inode->atime = ts;
     inode->mtime = ts;
 
-    //inode->name  = NULL;
-    inode->fs    = &cpio;
+    inode->fs    = &cpiofs;
     inode->p     = p;
-
 
     p->super     = super;
     p->parent    = NULL;
@@ -100,7 +98,7 @@ static int cpio_new_inode(const char *name, struct cpio_hdr *hdr, size_t sz, siz
     inode->mtime = (struct timespec) {.tv_sec  = hdr->mtime[0] * 0x10000 + hdr->mtime[1], .tv_nsec = 0};
     inode->rdev  = hdr->rdev;
 
-    inode->fs   = &cpio;
+    inode->fs   = &cpiofs;
     inode->p    = p;
 
     p->super  = sp;
@@ -193,8 +191,6 @@ static struct inode *cpio_find(struct inode *root, const char *path)
 
 static int cpio_vfind(struct vnode *parent, const char *name, struct vnode *child)
 {
-    //printk("cpio_vfind(parent=%p, name=%s, child=%p)\n", parent, name, child);
-
     struct inode *root = (struct inode *) parent->ino;
 
     if (!S_ISDIR(root->mode))   /* Not even a directory */
@@ -356,10 +352,11 @@ static int cpio_eof(struct file *file)
 
 static int cpio_init()
 {
-    return initramfs_archiver_register(&cpio);
+    return initramfs_archiver_register(&cpiofs);
 }
 
-struct fs cpio = {
+struct fs cpiofs = {
+    .name = "cpio",
     .load = cpio_load,
 
     .iops = {

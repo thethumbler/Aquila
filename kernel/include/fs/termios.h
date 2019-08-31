@@ -9,6 +9,10 @@ typedef unsigned int  tcflag_t;
 
 #define NCCS 32
 
+/**
+ * \ingroup vfs
+ * \brief terminal I/O structure
+ */
 struct termios {
     tcflag_t c_iflag;
     tcflag_t c_oflag;

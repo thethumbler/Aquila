@@ -1,11 +1,10 @@
-/**********************************************************************
- *                  Physical Memory Manager
+/**
+ * \defgroup mm kernel/mm
+ * \brief Memory Management
  *
- *
- *  This file is part of AquilaOS and is released under the terms of
- *  GNU GPLv3 - See LICENSE.
- *
- *  Copyright (C) Mohamed Anwar
+ * The memory management subsystem is responsible for the allocation
+ * of physical memory pages, management of virtual memory of processes
+ * and caching of virtual memory objects.
  */
 
 #include <core/system.h>
@@ -21,34 +20,70 @@
 struct vm_page pages[768*1024];
 #define PAGE(addr)    (pages[(addr)/PAGE_SIZE])
 
+/** 
+ * \ingroup mm
+ * \brief increment references count of a physical page
+ */
 void mm_page_incref(paddr_t paddr)
 {
     PAGE(paddr).ref++;
 }
 
+/**
+ * \ingroup mm
+ * \brief decrement references count of a physical page
+ */
 void mm_page_decref(paddr_t paddr)
 {
     PAGE(paddr).ref--;
 }
 
+/**
+ * \ingroup mm
+ * \brief get reference counts of a physical page
+ */
 size_t mm_page_ref(paddr_t paddr)
 {
     return PAGE(paddr).ref;
 }
 
-paddr_t mm_page_alloc(void)
+/**
+ * \ingroup mm
+ * \brief get the virtual memory structure associated with a physical page
+ */
+struct vm_page *mm_page(paddr_t paddr)
 {
-    /* Get new frame */
-    return buddy_alloc(BUDDY_ZONE_NORMAL, PAGE_SIZE);
+    return &PAGE(paddr);
 }
 
+/**
+ * \ingroup mm
+ * \brief allocate an unused page from physical memory
+ */
+struct vm_page *mm_page_alloc(void)
+{
+    /* Get new frame */
+    paddr_t paddr = buddy_alloc(BUDDY_ZONE_NORMAL, PAGE_SIZE);
+    struct vm_page *vm_page = &PAGE(paddr);
+
+    memset(vm_page, 0, sizeof(struct vm_page));
+    vm_page->paddr = paddr;
+
+    return vm_page;
+}
+
+/**
+ * \ingroup mm
+ * \brief deallocate a page
+ */
 void mm_page_dealloc(paddr_t paddr)
 {
     /* TODO: Check out of bounds */
+    buddy_free(BUDDY_ZONE_NORMAL, paddr, PAGE_SIZE);
 
     /* Release frame if it is no longer referenced */
-    if (mm_page_ref(paddr) == 0)
-        buddy_free(BUDDY_ZONE_NORMAL, paddr, PAGE_SIZE);
+    //if (mm_page_ref(paddr) == 0)
+    //    buddy_free(BUDDY_ZONE_NORMAL, paddr, PAGE_SIZE);
 }
 
 int mm_page_map(struct pmap *pmap, vaddr_t vaddr, paddr_t paddr, int flags)
@@ -56,7 +91,7 @@ int mm_page_map(struct pmap *pmap, vaddr_t vaddr, paddr_t paddr, int flags)
     /* TODO: Check out of bounds */
 
     /* Increment references count to physical page */
-    mm_page_incref(paddr);
+    //mm_page_incref(paddr);
 
     return arch_pmap_add(pmap, vaddr, paddr, flags);
 }
@@ -68,19 +103,18 @@ int mm_page_unmap(struct pmap *pmap, vaddr_t vaddr)
     /* TODO: Check out of bounds */
 
     /* Check if page is mapped */
-    paddr_t paddr = arch_page_get_mapping(vaddr);
-
-    //printk("paddr = %p\n", paddr);
+    paddr_t paddr = arch_page_get_mapping(pmap, vaddr);
 
     if (paddr) {
         /* Decrement references count to physical page */
-        mm_page_decref(paddr);
+        //mm_page_decref(paddr);
 
         /* Call arch specific page unmapper */
         arch_pmap_remove(pmap, vaddr, vaddr + PAGE_SIZE);
 
         /* Release page -- checks ref count */
-        mm_page_dealloc(paddr);
+        //mm_page_dealloc(paddr);
+
         return 0;
     }
 
@@ -95,18 +129,18 @@ int mm_map(struct pmap *pmap, paddr_t paddr, vaddr_t vaddr, size_t size, int fla
 
     int alloc = !paddr;
 
-    vaddr_t endaddr = UPPER_PAGE_BOUNDARY(vaddr + size);
-    vaddr = LOWER_PAGE_BOUNDARY(vaddr);
-    paddr = LOWER_PAGE_BOUNDARY(paddr);
+    vaddr_t endaddr = PAGE_ROUND(vaddr + size);
+    vaddr = PAGE_ALIGN(vaddr);
+    paddr = PAGE_ALIGN(paddr);
 
     size_t nr = (endaddr - vaddr) / PAGE_SIZE;
 
     while (nr--) {
-        paddr_t phys = arch_page_get_mapping(vaddr);
+        paddr_t phys = arch_page_get_mapping(pmap, vaddr);
 
         if (!phys) {
             if (alloc) {
-                paddr = mm_page_alloc();
+                paddr = mm_page_alloc()->paddr;
                 //printk("paddr = %p\n", paddr);
             }
             mm_page_map(pmap, vaddr, paddr, flags);
@@ -121,12 +155,13 @@ int mm_map(struct pmap *pmap, paddr_t paddr, vaddr_t vaddr, size_t size, int fla
 
 void mm_unmap(struct pmap *pmap, vaddr_t vaddr, size_t size)
 {
+    //printk("mm_unmap(pmap=%p, vaddr=%p, size=%ld)\n", pmap, vaddr, size);
     /* TODO: Check out of bounds */
 
     if (size < PAGE_SIZE) return;
 
-    vaddr_t sva = UPPER_PAGE_BOUNDARY(vaddr);
-    vaddr_t eva = LOWER_PAGE_BOUNDARY(vaddr + size);
+    vaddr_t sva = PAGE_ROUND(vaddr);
+    vaddr_t eva = PAGE_ALIGN(vaddr + size);
 
     //arch_pmap_remove(pmap, sva, eva);
 
@@ -142,10 +177,12 @@ void mm_unmap(struct pmap *pmap, vaddr_t vaddr, size_t size)
 
 void mm_unmap_full(struct pmap *pmap, vaddr_t vaddr, size_t size)
 {
+    //printk("mm_unmap_full(pmap=%p, vaddr=%p, size=%ld)\n", pmap, vaddr, size);
+
     /* TODO: Check out of bounds */
 
-    vaddr_t start = LOWER_PAGE_BOUNDARY(vaddr);
-    vaddr_t end   = UPPER_PAGE_BOUNDARY(vaddr + size);
+    vaddr_t start = PAGE_ALIGN(vaddr);
+    vaddr_t end   = PAGE_ROUND(vaddr + size);
 
     size_t nr = (end - start)/PAGE_SIZE;
 
@@ -155,68 +192,9 @@ void mm_unmap_full(struct pmap *pmap, vaddr_t vaddr, size_t size)
     }
 }
 
-void mm_page_fault(vaddr_t vaddr, int flags)
-{
-    //if (vaddr > KERNEL_BREAK)
-    //    panic("faulting from kernel space");
-
-    //printk("mm_page_fault(vaddr=%p, flags=%x)\n", vaddr, flags);
-
-    vaddr_t page_addr = vaddr & ~PAGE_MASK;
-    vaddr_t page_end  = page_addr + PAGE_SIZE;
-
-    struct queue *vm_entries = &cur_thread->owner->vm_space.vm_entries;
-    int vm_flag = 0;
-
-    for (struct qnode *node = vm_entries->head; node; node = node->next) {
-        struct vm_entry *vm_entry = node->value;
-        uintptr_t vm_end = vm_entry->base + vm_entry->size;
-
-        /* exclude non overlapping VM entries */
-        if (page_end <= vm_entry->base || page_addr >= vm_end)
-            continue;
-
-        /* page overlaps vm_entry in at least one byte */
-        vm_flag = 1;
-
-        struct pmap *pmap = cur_thread->owner->vm_space.pmap;
-        mm_map(pmap, 0, page_addr, PAGE_SIZE, VM_URWX);  /* FIXME */
-
-        uintptr_t addr_start = page_addr;
-        if (vm_entry->base > page_addr)
-            addr_start = vm_entry->base;
-
-        uintptr_t addr_end = page_end;
-        if (vm_end < page_end)
-            addr_end = vm_end;
-
-        size_t size = addr_end - addr_start;
-        size_t file_off = addr_start - vm_entry->base;
-
-        /* File backed */
-        if (vm_entry->flags & VM_FILE) {
-            struct vm_object *vm_object = vm_entry->vm_object;
-            //vfs_read(vm_entry->inode, vm_entry->off + file_off, size, (void *) addr_start);
-            vfs_read(vm_object->inode, vm_entry->off + file_off, size, (void *) addr_start);
-        }
-
-        /* Zero fill */
-        if (vm_entry->flags & VM_ZERO)
-            memset((void *) addr_start, 0, size);
-    }
-
-    if (vm_flag) {
-        return;
-    }
-
-    printk("mm_page_fault(vaddr=%p, flags=%x)\n", vaddr, flags);
-    signal_proc_send(cur_thread->owner, SIGSEGV);
-    return;
-}
-
 void mm_setup(struct boot *boot)
 {
-    printk("kernel: Total memory: %d KiB, %d MiB\n", boot->total_mem, boot->total_mem / 1024);
+    printk("kernel: total memory: %d KiB, %d MiB\n", boot->total_mem, boot->total_mem / 1024);
 
     buddy_setup(boot->total_mem * 1024);
 

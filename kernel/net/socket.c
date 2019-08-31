@@ -1,3 +1,8 @@
+/**
+ * \defgroup net kernel/net
+ * \brief networking subsystem
+ */
+
 #include <core/system.h>
 #include <core/string.h>
 #include <ds/queue.h>

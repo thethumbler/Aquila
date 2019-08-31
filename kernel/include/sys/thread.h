@@ -14,33 +14,37 @@ typedef enum {
     ZOMBIE,
 } state_t;
 
+/**
+ * \ingroup sys
+ * \brief thread
+ */
 struct thread {
-    /* Thread ID */
+    /** Thread ID */
     tid_t tid;
 
-    /* Thread current state */
+    /** Thread current state */
     state_t state;
 
-    /* Thread owner process */
+    /** Thread owner process */
     struct proc *owner;
 
-    /* Thread stack */
+    /** Thread stack */
     uintptr_t stack;
     uintptr_t stack_base;
     size_t    stack_size;
 
-    /* Current sleep queue */
+    /** Current sleep queue */
     struct queue *sleep_queue;
     struct qnode *sleep_node;
 
-    /* Scheduler queue */
+    /** Scheduler queue */
     struct queue *sched_queue;
     struct qnode *sched_node;
 
-    /* Arch specific data */
+    /** Arch specific data */
     void *arch;
 
-    /* Thread flags */
+    /** Thread flags */
     int spawned;
 };
 

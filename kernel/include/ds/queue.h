@@ -8,6 +8,10 @@ struct queue;
 
 #include <core/string.h>
 
+/**
+ * \ingroup ds
+ * \brief queue node
+ */
 struct qnode {
     void *value;
     struct qnode *prev;
@@ -16,6 +20,10 @@ struct qnode {
 
 #define QUEUE_TRACE 1
 
+/**
+ * \ingroup ds
+ * \brief queue
+ */
 struct queue {
     size_t count;
     struct qnode *head;
@@ -23,8 +31,18 @@ struct queue {
     int flags;
 };
 
+#define queue_for(n, q) for (struct qnode *(n) = (q)->head; (n); (n) = (n)->next)
+
+/**
+ * \ingroup ds
+ * \brief create a new statically allocated queue
+ */
 #define QUEUE_NEW() &(struct queue){0}
 
+/**
+ * \ingroup ds
+ * \brief create a new dynamically allocated queue
+ */
 static inline struct queue *queue_new(void)
 {
     struct queue *queue;
@@ -36,6 +54,10 @@ static inline struct queue *queue_new(void)
     return queue;
 }
 
+/**
+ * \ingroup ds
+ * \brief insert a new element in a queue
+ */
 static inline struct qnode *enqueue(struct queue *queue, void *value) 
 {
     if (!queue)
@@ -69,6 +91,10 @@ static inline struct qnode *enqueue(struct queue *queue, void *value)
     return node;
 }
 
+/**
+ * \ingroup ds
+ * \brief get an element from a queue and remove it
+ */
 static inline void *dequeue(struct queue *queue)
 {
     if (!queue || !queue->count)
@@ -81,18 +107,23 @@ static inline void *dequeue(struct queue *queue)
 
     if (queue->head)
         queue->head->prev = NULL;
+
     void *value = head->value;
     kfree(head);
 
     return value;
 }
 
+/**
+ * \ingroup ds
+ * \brief remove an element matching a specific value from a queue
+ */
 static inline void queue_remove(struct queue *queue, void *value)
 {
     if (!queue || !queue->count)
         return;
 
-    for (struct qnode *node = queue->head; node; node = node->next) {
+    queue_for (node, queue) {
         if (node->value == value) {
             if (!node->prev) {    /* Head */
                 dequeue(queue);
@@ -113,6 +144,10 @@ static inline void queue_remove(struct queue *queue, void *value)
     }
 }
 
+/**
+ * \ingroup ds
+ * \brief remove an element from a queue given the queue node
+ */
 static inline void queue_node_remove(struct queue *queue, struct qnode *node)
 {
     if (!queue || !queue->count || !node)

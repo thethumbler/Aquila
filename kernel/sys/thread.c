@@ -20,10 +20,8 @@ int thread_new(struct proc *proc, struct thread **ref)
 
     memset(thread, 0, sizeof(struct thread));
 
-    /* TODO Use a better tid allocation method */
     thread->owner = proc;
-    proc->threads_nr++;
-    thread->tid = proc->threads_nr;
+    thread->tid = proc->threads.count + 1;
 
     enqueue(&proc->threads, thread);
 

@@ -24,7 +24,9 @@
 static struct ioaddr master;
 static struct ioaddr slave;
 
-/*
+/**
+ * \file pic.c
+ * ```
  * ICW1 (Sent on COMMAND port of each PIC)
  *
  * | A7 | A6 | A5 | 1 | LTIM | ADI | SINGL | IC4 |
@@ -37,7 +39,7 @@ static struct ioaddr slave;
  *                        | 0=INTERVAL OF 8
  *                        |
  *              1=LEVEL TRIGERED MODE
- *              0=EDGE  TRIGERED MODE
+ *              0= EDGE TRIGERED MODE
  *
  *******************************************************************************
  * ICW2 (Sent on DATA port of each PIC)
@@ -68,14 +70,14 @@ static struct ioaddr slave;
  * ICW4 (Sent on DATA port of each PIC)
  * Well, I am too lazy to write this one XD so I will just tell you that setting
  * the least-significant bit sets the PIC to 8086 MODE
- *
+ *```
  */
 
 #define ICW1        0x11 /* Both Master and Slave use the same ICW1 */
-#define MASTER_ICW2 0x20 /* Interrupts (from Master) start from offset 32 */
-#define SLAVE_ICW2  0x28 /* Interrupts (from Slave)  start from offset 40 */
-#define MASTER_ICW3 0x04 /* Master has a Slave attached to IR 2 */
-#define SLAVE_ICW3  0x02 /* Slave ID is 2 */
+#define ICW2_MASTER 0x20 /* Interrupts (from Master) start from offset 32 */
+#define ICW2_SLAVE  0x28 /* Interrupts (from Slave)  start from offset 40 */
+#define ICW3_MASTER 0x04 /* Master has a Slave attached to IR 2 */
+#define ICW3_SLAVE  0x02 /* Slave ID is 2 */
 #define ICW4        0x01 /* Sets PIC to 8086 MODE */
 
 /* The mask value currently on slave:master */
@@ -117,10 +119,10 @@ static void x86_irq_remap(void)
 
     io_out8(&master, PIC_CMD,  ICW1);
     io_out8(&slave,  PIC_CMD,  ICW1);
-    io_out8(&master, PIC_DATA, MASTER_ICW2);
-    io_out8(&slave,  PIC_DATA, SLAVE_ICW2);
-    io_out8(&master, PIC_DATA, MASTER_ICW3);
-    io_out8(&slave,  PIC_DATA, SLAVE_ICW3);
+    io_out8(&master, PIC_DATA, ICW2_MASTER);
+    io_out8(&slave,  PIC_DATA, ICW2_SLAVE);
+    io_out8(&master, PIC_DATA, ICW3_MASTER);
+    io_out8(&slave,  PIC_DATA, ICW3_SLAVE);
     io_out8(&master, PIC_DATA, ICW4);
     io_out8(&slave,  PIC_DATA, ICW4);
 }
@@ -238,7 +240,7 @@ int x86_pic_setup(struct ioaddr *_master, struct ioaddr *_slave)
         return -1;
     }
 
-    printk("i8259: Initializing [Master: %p (%s), Salve: %p (%s)]\n",
+    printk("i8259: initializing [Master: %p (%s), Salve: %p (%s)]\n",
             master.addr, ioaddr_type_str(&master),
             slave.addr, ioaddr_type_str(&slave));
 
