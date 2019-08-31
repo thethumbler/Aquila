@@ -6,6 +6,10 @@
 
 /* All operations are uniform regardless of endianess */
 
+/**
+ * \ingroup ds
+ * \brief bitmap
+ */
 typedef struct {
     uint32_t *map;
     size_t   max_idx;   /* max index */

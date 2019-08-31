@@ -14,113 +14,119 @@ struct session;
 #include <sys/signal.h>
 #include <dev/dev.h>
 
+/**
+ * \ingroup sys
+ * \brief session
+ */
 struct session {
-    /* Session ID */
+    /** Session ID */
     pid_t sid;
 
-    /* Process Groups */
+    /** Process Groups */
     struct queue *pgps;
 
-    /* Session Leader */
+    /** Session Leader */
     struct proc *leader;
 
     /* Controlling Terminal */
     //struct dev *ttydev;
 
-    /* Session node on sessions queue */
+    /** Session node on sessions queue */
     struct qnode *qnode;
 };
 
+/**
+ * \ingroup sys
+ * \brief process Group
+ */
 struct pgroup {
-    /* Process Group ID */
+    /** Process Group ID */
     pid_t pgid;
 
-    /* Associated Session */
+    /** Associated Session */
     struct session *session;
 
-    /* Session Queue Node */
+    /** Session Queue Node */
     struct qnode *session_node;
 
-    /* Processes */
+    /** Processes */
     struct queue *procs;
 
-    /* Process Group Leader */
+    /** Process Group Leader */
     struct proc *leader;
 
-    /* Group node on pgroups queue */
+    /** Group node on pgroups queue */
     struct qnode *qnode;
 };
 
+/**
+ * \ingroup sys
+ * \brief process
+ */
 struct proc {
-    /* Process ID */
+    /** Process ID */
     pid_t pid;
 
-    /* Associated Process Group */
+    /** Associated Process Group */
     struct pgroup *pgrp;
     struct qnode  *pgrp_node;
 
-    /* Process name - XXX */
+    /** Process name - XXX */
     char *name;
 
-    /* Open file descriptors */
+    /** Open file descriptors */
     struct file *fds;
 
-    /* Parent process */
+    /** Parent process */
     struct proc *parent;
 
-    /* Current Working Directory */
+    /** Current Working Directory */
     char *cwd;
 
-    /* File mode creation mask */
+    /** File mode creation mask */
     mode_t mask;
 
-    /* User ID */
+    /** User ID */
     uid_t uid;
 
-    /* Groupd ID */
+    /** Groupd ID */
     gid_t gid;
 
-    /* Process initial heap pointer */
+
+    /** Process initial heap pointer */
     uintptr_t heap_start;
 
-    /* Process current heap pointer */
+    /** Process current heap pointer */
     uintptr_t heap;
 
-    /* Process entry point */  
+    /** Process entry point */  
     uintptr_t entry;
 
-    /* Virtual memory regions */
+    /** Virtual memory regions */
     struct vm_space vm_space;
 
     struct vm_entry *heap_vm;
     struct vm_entry *stack_vm;
 
-    //struct queue     vmr;
-    //struct vmr  *heap_vmr;   /* VMR used as heap */
-    //struct vmr  *stack_vmr;  /* VMR used as stack */
-
-    /* Process threads */
+    /** Process threads */
     struct queue threads;
 
-    /* Number of threads */
-    size_t threads_nr;
-
-    /* Threads join wait queue */
+    /** Threads join wait queue */
     struct queue thread_join;
 
-    /* Recieved Signals Queue */
+    /** Recieved signals queue */
     struct queue *sig_queue;
 
-    /* Registered signal handlers */
-    struct sigaction sigaction[SIG_MAX+1];
-
-    /* Dummy queue for children wait */
+    /** Dummy queue for children wait */
     struct queue wait_queue;
 
-    /* Exit status of process */
+    /** Registered signal handlers */
+    struct sigaction sigaction[SIG_MAX+1];
+
+    /** Exit status of process */
     int exit;
 
-    /* Process is running? */
+    /** Process is running? */
     int running;
 };
 

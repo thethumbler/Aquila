@@ -7,7 +7,7 @@ typedef void (*__ctor)(void);
 
 int modules_init(void)
 {
-    printk("kernel: Loading builtin modules\n");
+    printk("kernel: loading builtin modules\n");
 
     /* Initalize built-in modules */
     __ctor *f = (void *) &__minit;

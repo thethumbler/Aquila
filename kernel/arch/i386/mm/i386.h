@@ -10,6 +10,6 @@
 #define VTBL(n) (((n) >> 12) & 0x3ff)
 #define VDIR(n) (((n) >> 22) & 0x3ff)
 
-#define GET_PHYS_ADDR(s) ((s) & ~0xfff)
+#define PHYSADDR(s) ((s) & ~0xfff)
 
 #endif /* ! _PAGING_I386_H */

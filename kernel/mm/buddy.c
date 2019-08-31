@@ -1,4 +1,4 @@
-/**********************************************************************
+/*
  *                  Buddy Memory Allocator 
  *
  *
@@ -18,13 +18,11 @@
 size_t k_total_mem, k_used_mem;
 static uintptr_t kstart = 0, kend = 0;
 
-static char alloc_area[1024 * 1024]; /* 8 MiB heap area */
+static char alloc_area[1024 * 1024]; /* 1 MiB heap area */
 static char *alloc_mark = alloc_area;
 
 static inline void *alloc(size_t size, size_t align)
 {
-    printk("alloc(size=0x%x, align=%d)\n", size, align);
-
     char *ret = (char *)((uintptr_t)(alloc_mark + align - 1) & (~(align - 1)));
     alloc_mark = ret + size;
     memset(ret, 0, size);
@@ -111,6 +109,10 @@ static void buddy_recursive_free(int zone, size_t order, size_t idx)
     }
 }
 
+/** allocate new buddy
+ * @param zone zone index
+ * @param _sz chunk size
+ */
 paddr_t buddy_alloc(int zone, size_t _sz)
 {
     if (_sz > BUDDY_MAX_BS)
@@ -162,7 +164,8 @@ void buddy_free(int zone, paddr_t addr, size_t size)
 
 void buddy_set_unusable(paddr_t addr, size_t size)
 {
-    printk("buddy_set_unusable(addr=%p, size=%x)\n", addr, size);
+
+    printk("buddy: set unusable: %p-%p\n", addr, addr+size-1);
 
     for (int zone = 0; size && zone < BUDDY_ZONE_NR; ++zone) {
 
@@ -244,11 +247,13 @@ int buddy_setup(size_t total_mem)
     extern struct boot *__kboot;
 
     if (__kboot->symtab) {
-        buddy_set_unusable(LMA((uintptr_t) __kboot->symtab->addr), __kboot->symtab->size);
+        struct elf32_shdr *shdr = __kboot->symtab;
+        buddy_set_unusable(LMA((uintptr_t) shdr->sh_addr), shdr->sh_size);
     }
 
     if (__kboot->strtab) {
-        buddy_set_unusable(LMA((uintptr_t) __kboot->strtab->addr), __kboot->strtab->size);
+        struct elf32_shdr *shdr = __kboot->strtab;
+        buddy_set_unusable(LMA((uintptr_t) shdr->sh_addr), shdr->sh_size);
     }
 
     return 0;

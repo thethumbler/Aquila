@@ -7,22 +7,25 @@ struct  stat;
 
 #include <core/types.h>
 
+/**
+ * \ingroup vfs
+ */
 struct  stat {
-  uint16_t  st_dev;
-  uint16_t  st_ino;
-  uint32_t  st_mode;
-  uint16_t  st_nlink;
-  uint32_t  st_uid;
-  uint32_t  st_gid;
-  uint16_t  st_rdev;
-  uint32_t  st_size;
-
-  struct timespec  st_atime;
-  struct timespec  st_mtime;
-  struct timespec  st_ctime;
-
-  uint32_t   st_blksize;
-  uint32_t   st_blocks;
+    uint16_t  st_dev;
+    uint16_t  st_ino;
+    uint32_t  st_mode;
+    uint16_t  st_nlink;
+    uint32_t  st_uid;
+    uint32_t  st_gid;
+    uint16_t  st_rdev;
+    uint32_t  st_size;
+    
+    struct timespec  st_atime;
+    struct timespec  st_mtime;
+    struct timespec  st_ctime;
+    
+    uint32_t   st_blksize;
+    uint32_t   st_blocks;
 };
 
 #define S_IFMT      0170000UL /* type of file */
@@ -55,7 +58,7 @@ struct  stat {
 
 #define S_IROTH     0000004 /* read permission, other */
 #define S_IWOTH     0000002 /* write permission, other */
-#define S_IXOTH     0000001/* execute/search permission, other */
+#define S_IXOTH     0000001 /* execute/search permission, other */
 #define S_IRWXO     (S_IROTH | S_IWOTH | S_IXOTH)
 
 #define S_ISSOCK(n) (((n) & S_IFMT) == S_IFSOCK)

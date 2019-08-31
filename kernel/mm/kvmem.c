@@ -2,6 +2,7 @@
 #include <core/panic.h>
 #include <core/assert.h>
 #include <mm/mm.h>
+#include <mm/buddy.h> /* XXX */
 #include <mm/vm.h>
 
 uintptr_t __stack_chk_guard = 0xDEADBEEF;
@@ -142,8 +143,8 @@ void *kmalloc(size_t size, struct malloc_type *type, int flags)
     kvmem_used += NODE_SIZE(nodes[i]);
     kvmem_obj_cnt++;
 
-    vaddr_t map_base = LOWER_PAGE_BOUNDARY(NODE_ADDR(nodes[i]));
-    vaddr_t map_end  = UPPER_PAGE_BOUNDARY(NODE_ADDR(nodes[i]) + NODE_SIZE(nodes[i]));
+    vaddr_t map_base = PAGE_ALIGN(NODE_ADDR(nodes[i]));
+    vaddr_t map_end  = PAGE_ROUND(NODE_ADDR(nodes[i]) + NODE_SIZE(nodes[i]));
     size_t  map_size = (map_end - map_base)/PAGE_SIZE;
 
     if (map_size) {
@@ -239,16 +240,39 @@ void kfree(void *_ptr)
     cur_node = 0;
     while (nodes[cur_node].next < LAST_NODE_INDEX) {
         if (nodes[cur_node].free) {
-            struct vm_entry vm_entry = {0};
+            //struct vm_entry vm_entry = {0};
 
-            vm_entry.paddr = 0;
-            vm_entry.base  = NODE_ADDR(nodes[cur_node]);
-            vm_entry.size  = NODE_SIZE(nodes[cur_node]);
-            vm_entry.flags = VM_KRW;
+            //vm_entry.paddr = 0;
+            //vm_entry.base  = NODE_ADDR(nodes[cur_node]);
+            //vm_entry.size  = NODE_SIZE(nodes[cur_node]);
+            //vm_entry.flags = VM_KRW;
 
-            vm_unmap(&kvm_space, &vm_entry);
+            vaddr_t vaddr = NODE_ADDR(nodes[cur_node]);
+            size_t  size  = NODE_SIZE(nodes[cur_node]);
+
+            //vm_unmap(&kvm_space, &vm_entry);
+
+            /* XXX */
+            if (size < PAGE_SIZE) goto next;
+
+            vaddr_t sva = PAGE_ROUND(vaddr);
+            vaddr_t eva = PAGE_ALIGN(vaddr + size);
+
+            size_t nr = (eva - sva)/PAGE_SIZE;
+
+            while (nr--) {
+                paddr_t paddr = arch_page_get_mapping(kvm_space.pmap, sva);
+
+                if (paddr) {
+                    arch_pmap_remove(kvm_space.pmap, sva, sva + PAGE_SIZE);
+                    buddy_free(BUDDY_ZONE_NORMAL, paddr, PAGE_SIZE);
+                }
+
+                sva += PAGE_SIZE;
+            }
         }
 
+next:
         cur_node = nodes[cur_node].next;
     }
 

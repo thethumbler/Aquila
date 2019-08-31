@@ -1,14 +1,3 @@
-/*
- *          fork() syscall handler
- *
- *
- *  This file is part of AquilaOS and is released under
- *  the terms of GNU GPLv3 - See LICENSE.
- *
- *  Copyright (C) Mohamed Anwar
- */
-
-
 #include <core/system.h>
 #include <core/string.h>
 #include <core/arch.h>
@@ -110,13 +99,31 @@ int proc_fork(struct thread *thread, struct proc **ref)
         goto error;
     }
 
-    /* Copy file descriptors */
+    /* copy file descriptors */
     if ((err = copy_fds(proc, fork)))
         goto error;
 
-    /* Copy virtual memory regions */
-    if ((err = vm_fork(&proc->vm_space, &fork->vm_space)))
+    /* copy virtual memory space */
+    if ((err = vm_space_fork(&proc->vm_space, &fork->vm_space)))
         goto error;
+
+    /* Fix heap & stack entry pointers -- XXX yes, we are doing this */
+    struct qnode *pvm_node = proc->vm_space.vm_entries.head;
+    struct qnode *fvm_node = fork->vm_space.vm_entries.head;
+
+    while (pvm_node) {
+        struct vm_entry *pvm_entry = pvm_node->value;
+        struct vm_entry *fvm_entry = fvm_node->value;
+
+        if (pvm_entry == proc->heap_vm)
+            fork->heap_vm = fvm_entry;
+
+        if (pvm_entry == proc->stack_vm)
+            fork->stack_vm = fvm_entry;
+
+        pvm_node = pvm_node->next;
+        fvm_node = fvm_node->next;
+    }
 
     /* Call arch specific fork handler */
     err = arch_proc_fork(thread, fork);

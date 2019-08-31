@@ -22,7 +22,7 @@ static int binfmt_fmt_load(struct proc *proc, const char *path, struct inode *in
     proc->name = strdup(path);
 
     /* Align heap */
-    proc->heap_start = UPPER_PAGE_BOUNDARY(proc->heap_start);
+    proc->heap_start = PAGE_ROUND(proc->heap_start);
     proc->heap = proc->heap_start;
 
     /* Create heap vm_entry */
@@ -30,8 +30,12 @@ static int binfmt_fmt_load(struct proc *proc, const char *path, struct inode *in
     memset(heap_vm, 0, sizeof(struct vm_entry));
     heap_vm->base  = proc->heap_start;
     heap_vm->size  = 0;
-    heap_vm->flags = VM_URW | VM_ZERO;
+    heap_vm->flags = VM_URW;
     heap_vm->qnode = enqueue(&proc->vm_space.vm_entries, heap_vm);
+
+    heap_vm->vm_object = NULL; //vm_object_anon();
+    //vm_object_incref(heap_vm->vm_object);
+    
     proc->heap_vm  = heap_vm;
 
     /* Create stack vm_entry */
@@ -41,6 +45,10 @@ static int binfmt_fmt_load(struct proc *proc, const char *path, struct inode *in
     stack_vm->size  = USER_STACK_SIZE;
     stack_vm->flags = VM_URW;
     stack_vm->qnode = enqueue(&proc->vm_space.vm_entries, stack_vm);
+
+    stack_vm->vm_object = NULL; //vm_object_anon();
+    //vm_object_incref(stack_vm->vm_object);
+
     proc->stack_vm  = stack_vm;
 
     struct thread *thread = (struct thread *) proc->threads.head->value;

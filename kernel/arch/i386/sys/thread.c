@@ -33,6 +33,8 @@ void arch_thread_spawn(struct thread *thread)
 
 void arch_thread_switch(struct thread *thread)
 {
+    //printk("[%d:%d] %s: arch_thread_switch(thread=%p)\n", thread->owner->pid, thread->tid, thread->owner->name, thread);
+
     struct x86_thread *arch  = thread->arch;
     struct pmap *pmap = thread->owner->vm_space.pmap;
 
@@ -98,7 +100,7 @@ void arch_thread_kill(struct thread *thread)
 
     if (thread == cur_thread) {
         /* We don't wanna die here */
-        uintptr_t esp = VMA(0x100000);
+        uintptr_t esp = VMA(0x100000); /* XXX */
         x86_kernel_stack_set(esp);
     }
 

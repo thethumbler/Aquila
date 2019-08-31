@@ -293,13 +293,13 @@ static void sys_sbrk(ptrdiff_t incr)
 {
     syscall_log(LOG_DEBUG, "sbrk(incr=0x%x)\n", incr);
 
-    uintptr_t ret = cur_thread->owner->heap;
-    cur_thread->owner->heap += incr;
-    cur_thread->owner->heap_vm->size += incr;
+    uintptr_t heap_start = cur_thread->owner->heap_start;
+    uintptr_t heap = cur_thread->owner->heap;
 
-    syscall_log(LOG_DEBUG, "current heap %p\n", ret);
-    arch_syscall_return(cur_thread, ret);
+    cur_thread->owner->heap = heap + incr;
+    cur_thread->owner->heap_vm->size = PAGE_ROUND(heap + incr - heap_start);
 
+    arch_syscall_return(cur_thread, heap);
     return;
 }
 
@@ -357,7 +357,7 @@ static void sys_waitpid(int pid, int *stat_loc, int options)
         for (;;) {
             int found = 0;
 
-            for (struct qnode *node = procs->head; node; node = node->next) {
+            queue_for (node, procs) {
                 struct proc *proc = node->value;
 
                 if (proc->parent != cur_thread->owner)
@@ -689,7 +689,7 @@ static void sys_thread_join(int tid, void **value_ptr)
     struct proc *owner = cur_thread->owner;
     struct thread *thread = NULL;
 
-    for (struct qnode *node = owner->threads.head; node; node = node->next) {
+    queue_for (node, &owner->threads) {
         struct thread *_thread = node->value;
         if (_thread->tid == tid)
             thread = _thread;
@@ -813,7 +813,7 @@ static void sys_mmap(struct mmap_args *args, void **ret)
 
     /* Allocate VMR */
     struct vm_entry *vm_entry;
-    vm_entry = kmalloc(sizeof(struct vm_entry), &M_VM_ENTRY, 0);
+    vm_entry = vm_entry_new();
 
     if (vm_entry == NULL) {
         err = -ENOMEM;
@@ -827,18 +827,18 @@ static void sys_mmap(struct mmap_args *args, void **ret)
     vm_entry->flags |= args->prot & PROT_WRITE ? VM_UW : 0;
     vm_entry->flags |= args->prot & PROT_EXEC  ? VM_UX : 0;
     vm_entry->flags |= args->flags & MAP_SHARED ? VM_SHARED : 0;
-    vm_entry->flags |= VM_FILE;  /* TODO Support anonymous maps */
-    //vm_entry->inode  = file->inode;
-    vm_entry->vm_object = vm_object_inode(file->inode);
     vm_entry->off    = args->off;
+
+    vm_entry->vm_object = vm_object_inode(file->inode);
 
     if (!(args->flags & MAP_FIXED))
         vm_entry->base = 0;  /* Allocate memory region */
 
-    if ((err = vm_entry_insert(&cur_thread->owner->vm_space, vm_entry)))
+    struct vm_space *vm_space = &cur_thread->owner->vm_space;
+    if ((err = vm_space_insert(vm_space, vm_entry)))
         goto error;
 
-    if (!(args->flags & MAP_PRIVATE) && (err = vfs_map(vm_entry)))
+    if (!(args->flags & MAP_PRIVATE) && (err = vfs_map(vm_space, vm_entry)))
         goto error;
 
     *ret = (void *) vm_entry->base;
@@ -864,7 +864,7 @@ static void sys_munmap(void *addr, size_t len)
 
     struct vm_space *vm_space = &cur_thread->owner->vm_space;
 
-    for (struct qnode *node = vm_space->vm_entries.head; node; node = node->next) {
+    queue_for (node, &vm_space->vm_entries) {
         struct vm_entry *vm_entry = node->value;
 
         if (vm_entry->base == (uintptr_t) addr && vm_entry->size == len) {

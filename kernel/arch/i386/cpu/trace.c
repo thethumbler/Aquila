@@ -13,6 +13,7 @@ int __printing_trace = 0;
 
 void arch_stack_trace()
 {
+#if 0
     __printing_trace = 1;
 
     struct stack_frame *stk;
@@ -21,12 +22,12 @@ void arch_stack_trace()
 
     printk("stack trace:\n");
 
-    const char *strs = (const char *) __kboot->strtab->addr;
+    const char *strs = (const char *) __kboot->strtab->sh_addr;
 
     for (int frame = 0; stk && frame < 20; ++frame) {
 
         /* find symbol */
-        struct elf32_sym *sym = (struct elf32_sym *) __kboot->symtab->addr;
+        struct elf32_sym *sym = (struct elf32_sym *) __kboot->symtab->sh_addr;
 
         int found = 0;
 
@@ -49,4 +50,5 @@ void arch_stack_trace()
 
         stk = stk->bp;
     }
+#endif
 }

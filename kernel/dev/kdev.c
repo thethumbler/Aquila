@@ -1,3 +1,8 @@
+/**
+ * \defgroup kdev kernel/kdev
+ * \brief devices management
+ */
+
 #include <core/system.h>
 #include <dev/dev.h>
 #include <fs/vfs.h>
@@ -381,7 +386,7 @@ int kdev_ioctl(struct devid *dd, int request, void *argp)
     return dev->ioctl(dd, request, argp);
 }
 
-int kdev_map(struct devid *dd, struct vm_entry *vm_entry)
+int kdev_map(struct devid *dd, struct vm_space *vm_space, struct vm_entry *vm_entry)
 {
     struct dev *dev = NULL;
 
@@ -391,7 +396,7 @@ int kdev_map(struct devid *dd, struct vm_entry *vm_entry)
     if (!dev->map)
         return -ENXIO;
 
-    return dev->map(dd, vm_entry);
+    return dev->map(dd, vm_space, vm_entry);
 }
 
 int kdev_file_open(struct devid *dd, struct file *file)
@@ -511,19 +516,31 @@ int kdev_file_eof(struct devid *dd, struct file *file)
     return dev->fops.eof(file);
 }
 
+/**
+ * \ingroup kdev
+ * \brief register a new character device
+ */
 void kdev_chrdev_register(devid_t major, struct dev *dev)
 {
     chrdev[major] = dev; /* XXX */
-    printk("kdev: Registered chrdev %d: %s\n", major, dev->name);
+    printk("kdev: registered chrdev %d: %s\n", major, dev->name);
 }
 
+/**
+ * \ingroup kdev
+ * \brief register a new block device
+ */
 void kdev_blkdev_register(devid_t major, struct dev *dev)
 {
     blkdev[major] = dev; /* XXX */
-    printk("kdev: Registered blkdev %d: %s\n", major, dev->name);
+    printk("kdev: registered blkdev %d: %s\n", major, dev->name);
 }
 
+/**
+ * \ingroup kdev
+ * \brief initialize kdev subsystem
+ */
 void kdev_init()
 {
-    printk("kdev: Initializing\n");
+    printk("kdev: initializing\n");
 }

@@ -31,17 +31,17 @@ void x86_cpu_init(void)
     earlycon_init();
     printk("x86: Welcome to AquilaOS!\n");
 
-    printk("x86: Installing GDT\n");
+    printk("x86: installing GDT\n");
     x86_gdt_setup();
     x86_tss_setup(VMA(0x100000ULL));
 
-    printk("x86: Installing IDT\n");
+    printk("x86: installing IDT\n");
     x86_idt_setup();
 
-    printk("x86: Installing ISRs\n");
+    printk("x86: installing ISRs\n");
     x86_isr_setup();
 
-    printk("x86: Processing multiboot info block %p\n", (uintptr_t) multiboot_info);
+    printk("x86: processing multiboot info block at %p\n", (uintptr_t) multiboot_info);
     struct boot *boot = process_multiboot_info((multiboot_info_t *)(uintptr_t) multiboot_info);
     __kboot = boot;
 

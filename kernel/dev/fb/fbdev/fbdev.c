@@ -52,10 +52,10 @@ static int fbdev_ioctl(struct devid *dd, int request, void *argp)
     return -1;
 }
 
-static int fbdev_map(struct devid *dd, struct vm_entry *vm_entry)
+static int fbdev_map(struct devid *dd, struct vm_space *vm_space, struct vm_entry *vm_entry)
 {
     struct fbdev *fb = &registered_fbs[dd->minor];
-    return fb->map(fb, vm_entry);
+    return fb->map(fb, vm_space, vm_entry);
 }
 
 int fbdev_probe()

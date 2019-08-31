@@ -92,7 +92,7 @@ int arch_time_get(struct timespec *ts)
 int x86_cmos_setup(struct ioaddr *ioaddr)
 {
     cmos = *ioaddr;
-    printk("CMOS: Initializing [%p (%s)]\n", cmos.addr, ioaddr_type_str(&cmos));
+    printk("cmos: initializing [%p (%s)]\n", cmos.addr, ioaddr_type_str(&cmos));
 
     return 0;
 }

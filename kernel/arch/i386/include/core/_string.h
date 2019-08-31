@@ -55,7 +55,7 @@ static inline int strncmp(const char *s1, const char *s2, size_t n)
         "1:"
             /* Before you start blaming me for this awful solution, I tried
              * setting direction flag and scanning the string backwards but
-             * for some reason it does not work, if you know why please elaborate !
+             * for some reason it does not work, if you know why please elaborate!
              */
             "mov $4, %%ecx;"
             "sub $4, %%esi;"

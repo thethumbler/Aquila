@@ -2,6 +2,10 @@
 #include <core/panic.h>
 #include <fs/vfs.h>
 
+/** close an inode
+ * \ingroup vfs
+ * \brief closes an inode (i.e. decrements reference counts)
+ */
 int vfs_close(struct inode *inode)
 {
     /* Invalid request */

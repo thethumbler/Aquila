@@ -16,15 +16,15 @@
 #include <bits/dirent.h>
 
 /**
- * posix_file_read
  *
- * Reads up to `size' bytes from a file to `buf'.
+ * Reads up to `size` bytes from a file to `buf`.
+ *
  * Conforming to `IEEE Std 1003.1, 2013 Edition'
  * 
- * @file    File Descriptor for the function to operate on.
- * @buf     Buffer to write to.
- * @size    Number of bytes to read.
- * @returns read bytes on success, or error-code on failure.
+ * @param file    File Descriptor for the function to operate on.
+ * @param buf     Buffer to write to.
+ * @param size    Number of bytes to read.
+ * @param returns read bytes on success, or error-code on failure.
  */
 
 ssize_t posix_file_read(struct file *file, void *buf, size_t size)

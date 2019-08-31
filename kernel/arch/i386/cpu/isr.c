@@ -115,7 +115,19 @@ void __x86_isr(struct x86_regs *regs)
             return_from_signal((uintptr_t) arch->regs);
         }
 
-        arch_mm_page_fault(read_cr2(), __x86_isr_err_num);
+#if 0
+        const char *name = cur_thread->owner->name;
+        if (name && !strcmp(name, "/bin/fbterm")) {
+            x86_dump_registers(regs);
+            printk("page = %p\n", read_cr2());
+            for (;;);
+        }
+#endif
+
+        //x86_dump_registers(regs);
+        uintptr_t addr = read_cr2();
+
+        arch_mm_page_fault(addr, __x86_isr_err_num);
         return;
     }
 

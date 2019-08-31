@@ -1,3 +1,8 @@
+/**
+ * \defgroup core kernel/core
+ * \brief core system components
+ */
+
 #include <core/printk.h>
 #include <core/panic.h>
 #include <core/string.h>
@@ -16,6 +21,15 @@
 
 #include <ds/hashmap.h>
 
+/** 
+ * \ingroup core
+ * \brief entry point of the kernel
+ *
+ * This is the function that gets executed after the bootstrapping and
+ * platform initialization is completed.
+ *
+ * \param boot structure representing system state after bootstrapping
+ */
 void kmain(struct boot *boot)
 {
     kdev_init();
@@ -27,7 +41,7 @@ void kmain(struct boot *boot)
     else
         panic("No modules loaded: unable to load ramdisk");
 
-    printk("kernel: Loading init process\n");
+    printk("kernel: loading init process\n");
 
     struct proc *init;
     int err;
@@ -36,10 +50,18 @@ void kmain(struct boot *boot)
         panic("failed to allocate process structure for init");
     }
 
-    if ((err = binfmt_load(init, "/init", &init))) {
-        printk("error: %d\n", -err);
+    cur_thread = (struct thread *) init->threads.head;
+    cur_thread->owner = init;
+    arch_pmap_switch(init->vm_space.pmap);
+
+    const char *init_p = "/init";
+
+    if ((err = binfmt_load(init, init_p, &init))) {
+        printk("failed to load %s: error: %d\n", init_p, -err);
         panic("could not load init process");
     }
+
+    //cur_thread = NULL;
 
     arch_proc_init(init);
 

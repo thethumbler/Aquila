@@ -16,7 +16,7 @@ ssize_t minix_read(struct inode *inode, off_t offset, size_t size, void *buf)
     if ((size_t) offset >= m_inode.size)
         return 0;
 
-    size = MIN(size, m_inode.size - offset);
+    size = MIN(size, (size_t) (m_inode.size - offset));
 
     ssize_t ret = 0;
     char *_buf = buf;
@@ -107,7 +107,7 @@ ssize_t minix_write(struct inode *inode, off_t offset, size_t size, void *buf)
             goto error;
     }
 
-    size = MIN(size, m_inode.size - offset);
+    size = MIN(size, (size_t) (m_inode.size - offset));
 
     ssize_t ret = 0;
     char *_buf = buf;

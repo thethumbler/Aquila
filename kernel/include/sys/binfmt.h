@@ -5,6 +5,10 @@
 #include <fs/vfs.h>
 #include <sys/proc.h>
 
+/**
+ * \ingroup sys
+ * \brief binary format
+ */
 struct binfmt {
     int (*check)(struct inode *inode);
     int (*load)(struct proc *proc, const char *path, struct inode *inode);
