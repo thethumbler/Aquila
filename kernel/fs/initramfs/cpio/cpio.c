@@ -6,19 +6,20 @@
 #include <fs/vfs.h>
 #include <fs/initramfs.h>
 #include <fs/posix.h>
+#include <fs/rofs.h>
 
 #include <cpio.h>
 
 MALLOC_DEFINE(M_CPIO, "cpio", "CPIO structure");
 
-static int cpio_root_inode(struct inode *super, struct inode **ref)
+static int cpio_root_node(struct vnode *super, struct vnode **ref)
 {
     int err = 0;
-    struct inode *inode = NULL;
+    struct vnode *vnode = NULL;
     struct cpio *p = NULL;
 
-    inode = kmalloc(sizeof(struct inode), &M_INODE, 0);
-    if (inode == NULL) {
+    vnode = kmalloc(sizeof(struct vnode), &M_VNODE, M_ZERO);
+    if (vnode == NULL) {
         err = -ENOMEM;
         goto error;
     }
@@ -29,23 +30,23 @@ static int cpio_root_inode(struct inode *super, struct inode **ref)
         goto error;
     }
 
-    inode->ino   = (ino_t) inode;
-    inode->size  = 0;
-    inode->mode  = S_IFDIR | 0775;
-    inode->uid   = 0;
-    inode->gid   = 0;
-    inode->nlink = 2;
-    inode->ref   = 1;
+    vnode->ino   = (ino_t) vnode;
+    vnode->size  = 0;
+    vnode->mode  = S_IFDIR | 0775;
+    vnode->uid   = 0;
+    vnode->gid   = 0;
+    vnode->nlink = 2;
+    vnode->ref   = 1;
 
     struct timespec ts;
     gettime(&ts);
 
-    inode->ctime = ts;
-    inode->atime = ts;
-    inode->mtime = ts;
+    vnode->ctime = ts;
+    vnode->atime = ts;
+    vnode->mtime = ts;
 
-    inode->fs    = &cpiofs;
-    inode->p     = p;
+    vnode->fs    = &cpiofs;
+    vnode->p     = p;
 
     p->super     = super;
     p->parent    = NULL;
@@ -54,34 +55,31 @@ static int cpio_root_inode(struct inode *super, struct inode **ref)
     p->data      = 0;
     p->next      = NULL;
 
-    if (ref)
-        *ref = inode;
+    if (ref) *ref = vnode;
 
     return 0;
 
 error:
     if (p)
         kfree(p);
-    if (inode)
-        kfree(inode);
+    if (vnode)
+        kfree(vnode);
 
     return err;
 }
 
-static int cpio_new_inode(const char *name, struct cpio_hdr *hdr, size_t sz, size_t data, struct inode *sp, struct inode **ref)
+static int cpio_new_node(const char *name, struct cpio_hdr *hdr, size_t sz, size_t data, struct vnode *sp, struct vnode **ref)
 {
     int err = 0;
-    struct inode *inode = NULL;
+    struct vnode *vnode = NULL;
     struct cpio *p = NULL;
 
-    inode = kmalloc(sizeof(struct inode), &M_INODE, 0);
+    vnode = kmalloc(sizeof(struct vnode), &M_VNODE, M_ZERO);
 
-    if (inode == NULL) {
+    if (vnode == NULL) {
         err = -ENOMEM;
         goto error;
     }
-
-    memset(inode, 0, sizeof(struct inode));
 
     p = kmalloc(sizeof(struct cpio), &M_CPIO, 0);
     if (p == NULL) {
@@ -89,17 +87,17 @@ static int cpio_new_inode(const char *name, struct cpio_hdr *hdr, size_t sz, siz
         goto error;
     }
 
-    inode->ino   = (vino_t) inode;
-    inode->size  = sz;
-    inode->uid   = 0;
-    inode->gid   = 0;
-    inode->mode  = hdr->mode;
-    inode->nlink = hdr->nlink;
-    inode->mtime = (struct timespec) {.tv_sec  = hdr->mtime[0] * 0x10000 + hdr->mtime[1], .tv_nsec = 0};
-    inode->rdev  = hdr->rdev;
+    vnode->ino   = (vino_t) vnode;
+    vnode->size  = sz;
+    vnode->uid   = 0;
+    vnode->gid   = 0;
+    vnode->mode  = hdr->mode;
+    vnode->nlink = hdr->nlink;
+    vnode->mtime = (struct timespec) {.tv_sec  = hdr->mtime[0] * 0x10000 + hdr->mtime[1], .tv_nsec = 0};
+    vnode->rdev  = hdr->rdev;
 
-    inode->fs   = &cpiofs;
-    inode->p    = p;
+    vnode->fs   = &cpiofs;
+    vnode->p    = p;
 
     p->super  = sp;
     p->parent = NULL;
@@ -109,22 +107,21 @@ static int cpio_new_inode(const char *name, struct cpio_hdr *hdr, size_t sz, siz
     p->next   = NULL;
     p->name   = strdup(name);
 
-    if (ref)
-        *ref = inode;
+    if (ref) *ref = vnode;
 
     return 0;
 
 error:
     if (p)
         kfree(p);
-    if (inode)
-        kfree(inode);
+    if (vnode)
+        kfree(vnode);
     return err;
 }
 
-static struct inode *cpio_new_child_node(struct inode *parent, struct inode *child)
+static struct vnode *cpio_new_child_node(struct vnode *parent, struct vnode *child)
 {
-    if (!parent || !child)  /* Invalid inode */
+    if (!parent || !child)  /* invalid vnode */
         return NULL;
 
     if (!S_ISDIR(parent->mode)) /* Adding child to non directory parent */
@@ -133,7 +130,7 @@ static struct inode *cpio_new_child_node(struct inode *parent, struct inode *chi
     struct cpio *pp = (struct cpio *) parent->p;
     struct cpio *cp = (struct cpio *) child->p;
 
-    struct inode *tmp = pp->dir;
+    struct vnode *tmp = pp->dir;
 
     cp->next = tmp;
     pp->dir = child;
@@ -144,15 +141,15 @@ static struct inode *cpio_new_child_node(struct inode *parent, struct inode *chi
     return child;
 }
 
-static struct inode *cpio_find(struct inode *root, const char *path)
+static struct vnode *cpio_find(struct vnode *root, const char *path)
 {
     char **tokens = tokenize(path, '/');
 
     if (!S_ISDIR(root->mode))   /* Not even a directory */
         return NULL;
 
-    struct inode *cur = root;
-    struct inode *dir = ((struct cpio *) cur->p)->dir;
+    struct vnode *cur = root;
+    struct vnode *dir = ((struct cpio *) cur->p)->dir;
 
     if (!dir) { /* Directory has no children */
         if (*tokens == NULL)
@@ -166,7 +163,7 @@ static struct inode *cpio_find(struct inode *root, const char *path)
         char *token = *token_p;
 
         flag = 0;
-        for (struct inode *e = dir; e; e = ((struct cpio *) e->p)->next) {
+        for (struct vnode *e = dir; e; e = ((struct cpio *) e->p)->next) {
             if (((struct cpio *) e->p)->name &&
                     !strcmp(((struct cpio *) e->p)->name, token)) {
                 cur = e;
@@ -189,26 +186,22 @@ static struct inode *cpio_find(struct inode *root, const char *path)
     return cur;
 }
 
-static int cpio_vfind(struct vnode *parent, const char *name, struct vnode *child)
+static int cpio_finddir(struct vnode *root, const char *name, struct dirent *dirent)
 {
-    struct inode *root = (struct inode *) parent->ino;
-
     if (!S_ISDIR(root->mode))   /* Not even a directory */
         return -ENOTDIR;
 
-    struct inode *dir = ((struct cpio *) root->p)->dir;
+    struct vnode *dir = ((struct cpio *) root->p)->dir;
 
     if (!dir)   /* Directory has no children */
         return -ENOENT;
 
-    for (struct inode *e = dir; e; e = ((struct cpio *) e->p)->next) {
+    for (struct vnode *e = dir; e; e = ((struct cpio *) e->p)->next) {
         if (((struct cpio *) e->p)->name &&
                 !strcmp(((struct cpio *) e->p)->name, name)) {
-            if (child) {
-                child->ino  = (vino_t) e;
-                child->mode = e->mode;
-                child->uid  = e->uid;
-                child->gid  = e->gid;
+            if (dirent) {
+                dirent->d_ino = (vino_t) e;
+                strcpy(dirent->d_name, name);
             }
 
             return 0;
@@ -218,19 +211,19 @@ static int cpio_vfind(struct vnode *parent, const char *name, struct vnode *chil
     return -ENOENT;
 }
 
-static int cpio_vget(struct vnode *vnode, struct inode **inode)
+static int cpio_vget(struct vnode *super, ino_t ino, struct vnode **vnode)
 {
-    *inode = (struct inode *) vnode->ino;
+    *vnode = (struct vnode *) ino;
     return 0;
 }
 
 #define MAX_NAMESIZE    1024
 
-static int cpio_load(struct inode *dev, struct inode **super)
+static int cpio_load(struct vnode *dev, struct vnode **super)
 {
     /* Allocate the root node */
-    struct inode *rootfs = NULL;
-    cpio_root_inode(dev, &rootfs);
+    struct vnode *rootfs = NULL;
+    cpio_root_node(dev, &rootfs);
 
     struct cpio_hdr hdr;
     size_t offset = 0;
@@ -277,10 +270,10 @@ static int cpio_load(struct inode *dev, struct inode **super)
         
         data_offset += hdr.namesize + (hdr.namesize % 2);
 
-        struct inode *_node = NULL; 
-        cpio_new_inode(strdup(name), &hdr, size, data_offset, dev, &_node);
+        struct vnode *_node = NULL; 
+        cpio_new_node(strdup(name), &hdr, size, data_offset, dev, &_node);
 
-        struct inode *parent = cpio_find(rootfs, dir);
+        struct vnode *parent = cpio_find(rootfs, dir);
         cpio_new_child_node(parent, _node);
     }
 
@@ -290,19 +283,19 @@ static int cpio_load(struct inode *dev, struct inode **super)
     return 0;
 }
 
-static ssize_t cpio_read(struct inode *inode, off_t offset, size_t len, void *buf)
+static ssize_t cpio_read(struct vnode *vnode, off_t offset, size_t len, void *buf)
 {
-    if ((size_t) offset >= inode->size)
+    if ((size_t) offset >= vnode->size)
         return 0;
 
-    len = MIN(len, inode->size - offset);
-    struct cpio *p = inode->p;
-    struct inode *super = p->super;
+    len = MIN(len, vnode->size - offset);
+    struct cpio *p = vnode->p;
+    struct vnode *super = p->super;
 
     return vfs_read(super, p->data + offset, len, buf);
 }
 
-static ssize_t cpio_readdir(struct inode *node, off_t offset, struct dirent *dirent)
+static ssize_t cpio_readdir(struct vnode *node, off_t offset, struct dirent *dirent)
 {
     if (offset == 0) {
         strcpy(dirent->d_name, ".");
@@ -322,9 +315,9 @@ static ssize_t cpio_readdir(struct inode *node, off_t offset, struct dirent *dir
         return 0;
 
     int i = 0;
-    struct inode *dir = p->dir;
+    struct vnode *dir = p->dir;
 
-    for (struct inode *e = dir; e; e = ((struct cpio *) e->p)->next) {
+    for (struct vnode *e = dir; e; e = ((struct cpio *) e->p)->next) {
         if (i == offset) {
             dirent->d_ino = (size_t) e;
             strcpy(dirent->d_name, ((struct cpio *) e->p)->name);   // FIXME
@@ -336,17 +329,17 @@ static ssize_t cpio_readdir(struct inode *node, off_t offset, struct dirent *dir
     return i == offset;
 }
 
-static int cpio_close(struct inode *inode)
+static int cpio_close(struct vnode *vnode)
 {
     return 0;
 }
 
 static int cpio_eof(struct file *file)
 {
-    if (S_ISDIR(file->inode->mode)) {
-        return (size_t) file->offset >= ((struct cpio *) file->inode->p)->count;
+    if (S_ISDIR(file->vnode->mode)) {
+        return (size_t) file->offset >= ((struct cpio *) file->vnode->p)->count;
     } else {
-        return (size_t) file->offset >= file->inode->size;
+        return (size_t) file->offset >= file->vnode->size;
     }
 }
 
@@ -359,14 +352,17 @@ struct fs cpiofs = {
     .name = "cpio",
     .load = cpio_load,
 
-    .iops = {
+    .vops = {
         .read    = cpio_read,
         .readdir = cpio_readdir,
-        .vfind   = cpio_vfind,
+        .finddir = cpio_finddir,
         .vget    = cpio_vget,
-        .vmknod  = __vfs_vmknod_rofs,
-        .vunlink = __vfs_vunlink_rofs,
         .close   = cpio_close,
+
+        .write   = rofs_write,
+        .trunc   = rofs_trunc,
+        .vmknod  = rofs_vmknod,
+        .vunlink = rofs_vunlink,
     },
     
     .fops = {

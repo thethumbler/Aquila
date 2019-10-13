@@ -7,24 +7,24 @@
 
 void arch_handle_signal(int sig)
 {
-    uintptr_t handler = cur_thread->owner->sigaction[sig].sa_handler;
+    uintptr_t handler = curproc->sigaction[sig].sa_handler;
 
     /* can't signal a zmobie */
-    if (!cur_thread->owner->running)
+    if (!curproc->running)
         return;
 
     if (handler == SIG_DFL)
         handler = sig_default_action[sig];
 
-    struct x86_thread *arch = cur_thread->arch;
+    struct x86_thread *arch = curthread->arch;
 
     switch (handler) {
         case SIGACT_IGNORE:
             return;
         case SIGACT_ABORT:
         case SIGACT_TERMINATE:
-            cur_thread->owner->exit = PROC_EXIT(sig, sig);
-            proc_kill(cur_thread->owner);
+            curproc->exit = PROC_EXIT(sig, sig);
+            proc_kill(curproc);
             arch_sleep();
             break;  /* We should never reach this anyway */
     }

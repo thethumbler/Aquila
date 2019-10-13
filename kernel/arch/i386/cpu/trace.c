@@ -13,10 +13,10 @@ int __printing_trace = 0;
 
 void arch_stack_trace()
 {
-#if 0
+#if 1
     __printing_trace = 1;
 
-    struct stack_frame *stk;
+    struct stack_frame *stk = NULL;
 
     asm volatile ("movl %%ebp, %0":"=r"(stk));
 

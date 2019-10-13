@@ -1,3 +1,8 @@
+/**
+ * \defgroup dev-tty kernel/dev/tty
+ * \brief tty device
+ */
+
 #include <core/system.h>
 #include <core/module.h>
 #include <dev/ttydev.h>

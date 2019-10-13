@@ -34,11 +34,6 @@ typedef uint64_t vaddr_t;
 
 void arch_mm_page_fault(vaddr_t vaddr, int err);
 
-struct pmap {
-    paddr_t map;
-    size_t  ref;
-};
-
 #include_next <mm/mm.h>
 
 #endif /* ! _I386_MM_H */

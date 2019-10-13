@@ -2,28 +2,29 @@
 #include <fs/vfs.h>
 #include <dev/dev.h>
 
-/** read data from an inode
+/**
  * \ingroup vfs
+ * \brief read data from a vnode
  */
-ssize_t vfs_read(struct inode *inode, off_t offset, size_t size, void *buf)
+ssize_t vfs_read(struct vnode *vnode, off_t off, size_t size, void *buf)
 {
-    //vfs_log(LOG_DEBUG, "vfs_read(inode=%p, offset=%d, size=%d, buf=%p)\n", inode, offset, size, buf);
+    vfs_log(LOG_DEBUG, "vfs_read(vnode=%p, off=%d, size=%d, buf=%p)\n", vnode, off, size, buf);
 
-    /* Invalid request */
-    if (!inode)
+    /* invalid request */
+    if (!vnode)
         return -EINVAL;
 
-    /* Device node */
-    if (ISDEV(inode))
-        return kdev_read(&INODE_DEV(inode), offset, size, buf);
+    /* device node */
+    if (ISDEV(vnode))
+        return kdev_read(&VNODE_DEV(vnode), off, size, buf);
 
-    /* Invalid request */
-    if (!inode->fs)
+    /* invalid request */
+    if (!vnode->fs)
         return -EINVAL;
 
-    /* Operation not supported */
-    if (!inode->fs->iops.read)
+    /* operation not supported */
+    if (!vnode->fs->vops.read)
         return -ENOSYS;
 
-    return inode->fs->iops.read(inode, offset, size, buf);
+    return vnode->fs->vops.read(vnode, off, size, buf);
 }

@@ -10,10 +10,14 @@
 #include <core/system.h>
 #include <core/panic.h>
 #include <core/arch.h>
+
 #include <boot/boot.h>
+
+#include <mm/pmap.h>
 #include <mm/mm.h>
 #include <mm/vm.h>
 #include <mm/buddy.h>
+
 #include <sys/sched.h>
 
 /* FIXME use boot time allocation scheme */
@@ -93,7 +97,7 @@ int mm_page_map(struct pmap *pmap, vaddr_t vaddr, paddr_t paddr, int flags)
     /* Increment references count to physical page */
     //mm_page_incref(paddr);
 
-    return arch_pmap_add(pmap, vaddr, paddr, flags);
+    return pmap_add(pmap, vaddr, paddr, flags);
 }
 
 int mm_page_unmap(struct pmap *pmap, vaddr_t vaddr)
@@ -110,7 +114,7 @@ int mm_page_unmap(struct pmap *pmap, vaddr_t vaddr)
         //mm_page_decref(paddr);
 
         /* Call arch specific page unmapper */
-        arch_pmap_remove(pmap, vaddr, vaddr + PAGE_SIZE);
+        pmap_remove(pmap, vaddr, vaddr + PAGE_SIZE);
 
         /* Release page -- checks ref count */
         //mm_page_dealloc(paddr);
@@ -163,7 +167,7 @@ void mm_unmap(struct pmap *pmap, vaddr_t vaddr, size_t size)
     vaddr_t sva = PAGE_ROUND(vaddr);
     vaddr_t eva = PAGE_ALIGN(vaddr + size);
 
-    //arch_pmap_remove(pmap, sva, eva);
+    //pmap_remove(pmap, sva, eva);
 
 #if 1
     size_t nr = (eva - sva)/PAGE_SIZE;

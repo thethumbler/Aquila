@@ -2,27 +2,28 @@
 #include <fs/vfs.h>
 #include <dev/dev.h>
 
-int vfs_ioctl(struct inode *inode, unsigned long request, void *argp)
+int vfs_ioctl(struct vnode *vnode, unsigned long request, void *argp)
 {
-    //vfs_log(LOG_DEBUG, "vfs_ioctl(inode=%p, request=%ld, argp=%p)\n", inode, request, argp);
+    vfs_log(LOG_DEBUG, "vfs_ioctl(vnode=%p, request=%ld, argp=%p)\n", vnode, request, argp);
 
     /* TODO Basic ioctl handling */
+
     /* Invalid request */
-    if (!inode)
+    if (!vnode)
         return -EINVAL;
 
     /* Device node */
-    if (ISDEV(inode))
-        return kdev_ioctl(&INODE_DEV(inode), request, argp);
+    if (ISDEV(vnode))
+        return kdev_ioctl(&VNODE_DEV(vnode), request, argp);
 
     /* Invalid request */
-    if (!inode->fs)
+    if (!vnode->fs)
         return -EINVAL;
 
     /* Operation not supported */
-    if (!inode->fs->iops.ioctl)
+    if (!vnode->fs->vops.ioctl)
         return -ENOSYS;
 
-    return inode->fs->iops.ioctl(inode, request, argp);
+    return vnode->fs->vops.ioctl(vnode, request, argp);
 }
 

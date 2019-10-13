@@ -4,7 +4,9 @@
 
 MALLOC_DEFINE(M_VM_ANON, "vm-anon", "anonymous virtual memory object");
 
-/** check if two arefs are equal in a hashmap
+/**
+ * \ingroup mm
+ * \brief check if two arefs are equal in a hashmap
  */
 static int vm_aref_eq(void *_a, void *_b)
 {
@@ -18,16 +20,15 @@ static int vm_aref_eq(void *_a, void *_b)
     return a->vm_page->off == *b;
 }
 
-/** create new anon structure
+/**
+ * \ingroup mm
+ * \brief create new anon structure
  */
 struct vm_anon *vm_anon_new(void)
 {
-    struct vm_anon *vm_anon = kmalloc(sizeof(struct vm_anon), &M_VM_ANON, 0);
+    struct vm_anon *vm_anon = kmalloc(sizeof(struct vm_anon), &M_VM_ANON, M_ZERO);
+    if (!vm_anon) goto error;
 
-    if (!vm_anon)
-        goto error;
-
-    memset(vm_anon, 0, sizeof(struct vm_anon));
     vm_anon->arefs = hashmap_new(0, vm_aref_eq);
 
     if (!vm_anon->arefs)
@@ -36,7 +37,7 @@ struct vm_anon *vm_anon_new(void)
     return vm_anon;
 
 error:
-    panic("failed to allocate vm_anon");
+    //panic("failed to allocate vm_anon");
 
     if (vm_anon) {
         if (vm_anon->arefs)
@@ -47,23 +48,28 @@ error:
     return NULL;
 }
 
+/**
+ * \ingroup mm
+ * \brief destroy all resources associated with an aref
+ */
 void vm_aref_destroy(struct vm_aref *vm_aref)
 {
-    //printk("vm_aref_destroy(vm_aref=%p)\n", vm_aref);
+    /* nothing to do */
 }
 
+/**
+ * \ingroup mm
+ * \brief decrement references to an aref
+ */
 void vm_aref_decref(struct vm_aref *vm_aref)
 {
     vm_aref->ref--;
-
-    /*
-    if (!vm_aref->ref) {
-        //printk("should free vm_aref %p\n", vm_aref);
-        kfree(vm_aref);
-    }
-    */
 }
 
+/**
+ * \ingroup mm
+ * \brief destroy all resources associated with an anon
+ */
 void vm_anon_destroy(struct vm_anon *vm_anon)
 {
     if (!vm_anon) return;
@@ -91,7 +97,9 @@ void vm_anon_destroy(struct vm_anon *vm_anon)
     hashmap_free(vm_anon->arefs);
 }
 
-/** increment number of references to a vm anon
+/**
+ * \ingroup mm
+ * \brief increment number of references to a vm anon
  */
 void vm_anon_incref(struct vm_anon *vm_anon)
 {
@@ -101,7 +109,9 @@ void vm_anon_incref(struct vm_anon *vm_anon)
     vm_anon->ref++;
 }
 
-/** decrement number of references to a vm anon
+/**
+ * \ingroup mm
+ * \brief decrement number of references to a vm anon
  * and destroy it when it reaches zero
  */
 void vm_anon_decref(struct vm_anon *vm_anon)
@@ -117,7 +127,9 @@ void vm_anon_decref(struct vm_anon *vm_anon)
     }
 }
 
-/** copy all aref structures from `src` to `dst`
+/**
+ * \ingroup mm
+ * \brief copy all aref structures from `src` to `dst`
  */
 static int vm_anon_copy_arefs(struct vm_anon *src, struct vm_anon *dst)
 {
@@ -136,7 +148,9 @@ static int vm_anon_copy_arefs(struct vm_anon *src, struct vm_anon *dst)
     return 0;
 }
 
-/** clone an existing anon into a new anon
+/**
+ * \ingroup mm
+ * \brief clone an existing anon into a new anon
  */
 struct vm_anon *vm_anon_copy(struct vm_anon *vm_anon)
 {

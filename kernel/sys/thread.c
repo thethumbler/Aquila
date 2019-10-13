@@ -1,5 +1,6 @@
 #include <core/system.h>
 #include <core/arch.h>
+#include <core/panic.h>
 #include <sys/proc.h>
 #include <sys/sched.h>
 #include <ds/queue.h>
@@ -13,12 +14,8 @@ int thread_new(struct proc *proc, struct thread **ref)
     if (!proc)
         return -EINVAL;
 
-    thread = kmalloc(sizeof(struct thread), &M_THREAD, 0);
-
-    if (!thread)
-        return -ENOMEM;
-
-    memset(thread, 0, sizeof(struct thread));
+    thread = kmalloc(sizeof(struct thread), &M_THREAD, M_ZERO);
+    if (!thread) return -ENOMEM;
 
     thread->owner = proc;
     thread->tid = proc->threads.count + 1;
@@ -44,26 +41,29 @@ int thread_kill(struct thread *thread)
 
 int thread_queue_sleep(struct queue *queue)
 {
+    if (!queue)
+        panic("sleeping in a blackhole?");
+
 #ifdef DEBUG_SLEEP_QUEUE
-    printk("[%d:%d] %s: Sleeping on queue %p\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name, queue);
+    printk("[%d:%d] %s: Sleeping on queue %p\n", curproc->pid, curthread->tid, curproc->name, queue);
 #endif
 
-    struct qnode *sleep_node = enqueue(queue, cur_thread);
+    struct qnode *sleep_node = enqueue(queue, curthread);
 
-    cur_thread->sleep_queue = queue;
-    cur_thread->sleep_node  = sleep_node;
-    cur_thread->state = ISLEEP;
+    curthread->sleep_queue = queue;
+    curthread->sleep_node  = sleep_node;
+    curthread->state = ISLEEP;
     arch_sleep();
 
     /* Woke up */
-    if (cur_thread->state != ISLEEP) {
+    if (curthread->state != ISLEEP) {
         /* A signal interrupted the sleep */
 #ifdef DEBUG_SLEEP_QUEUE
-        printk("[%d:%d] %s: Sleeping was interrupted by a signal\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name);
+        printk("[%d:%d] %s: Sleeping was interrupted by a signal\n", curproc->pid, curthread->tid, curproc->name);
 #endif
         return -EINTR;
     } else {
-        cur_thread->state = RUNNABLE;
+        curthread->state = RUNNABLE;
         return 0;
     }
 }

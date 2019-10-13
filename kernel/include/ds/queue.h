@@ -72,11 +72,11 @@ static inline struct qnode *enqueue(struct queue *queue, void *value)
     node = kmalloc(sizeof(struct qnode), &M_QNODE, 0);
     if (!node) return NULL;
 
+    memset(node, 0, sizeof(struct qnode));
+
     if (trace) printk("qtrace: allocated node %p\n", node);
 
     node->value = value;
-    node->next  = NULL;
-    node->prev  = NULL;
 
     if (!queue->count) {
         /* Queue is not initalized */
@@ -107,6 +107,9 @@ static inline void *dequeue(struct queue *queue)
 
     if (queue->head)
         queue->head->prev = NULL;
+
+    if (head == queue->tail)
+        queue->tail = NULL;
 
     void *value = head->value;
     kfree(head);

@@ -57,12 +57,12 @@ ssize_t uart_8250_transmit(struct uart *u __unused, char c)
 void uart_8250_irq()
 {
     if (serial_received()) {
-        if (uart_8250.inode) /* If open */
+        if (uart_8250.vnode) /* If open */
             uart_recieve_handler(&uart_8250, 1);
     }
 
     if (serial_empty()) {
-        if (uart_8250.inode) /* If open */
+        if (uart_8250.vnode) /* If open */
             uart_transmit_handler(&uart_8250, 1);
     }
 }

@@ -16,14 +16,18 @@
 
 #include <core/system.h>
 #include <core/panic.h>
-
 #include <core/string.h>
 #include <core/arch.h>
+
+#include <mm/pmap.h>
 #include <mm/mm.h>
 #include <mm/vm.h>
+
 #include <sys/proc.h>
 #include <sys/sched.h>
+
 #include <fs/vfs.h>
+
 #include <ds/queue.h>
 #include <ds/bitmap.h>
 
@@ -41,7 +45,7 @@ struct queue *sessions = QUEUE_NEW();
 /* all process groups */
 struct queue *pgroups = QUEUE_NEW();
 
-bitmap_t *pid_bitmap = BITMAP_NEW(4096);
+struct bitmap *pid_bitmap = BITMAP_NEW(4096);
 static int ff_pid = 1;
 
 int proc_pid_alloc()
@@ -71,21 +75,19 @@ int proc_new(struct proc **ref)
     struct thread *thread = NULL;
     struct pmap *pmap = NULL;
 
-    proc = kmalloc(sizeof(struct proc), &M_PROC, 0);
+    proc = kmalloc(sizeof(struct proc), &M_PROC, M_ZERO);
 
     if (!proc) {
         err = -ENOMEM;
         goto error;
     }
 
-    memset(proc, 0, sizeof(struct proc));
-
     err = thread_new(proc, &thread);
 
     if (err != 0)
         goto error;
 
-    pmap = arch_pmap_create();
+    pmap = pmap_create();
 
     if (pmap == NULL) {
         err = -ENOMEM;
@@ -133,14 +135,12 @@ int proc_init(struct proc *proc)
 
     proc->pid = proc_pid_alloc();
 
-    proc->fds = kmalloc(FDS_COUNT * sizeof(struct file), &M_FDS, 0);
+    proc->fds = kmalloc(FDS_COUNT * sizeof(struct file), &M_FDS, M_ZERO);
 
     if (!proc->fds) {
         err = -ENOMEM;
         goto error;
     }
-
-    memset(proc->fds, 0, FDS_COUNT * sizeof(struct file));
 
     proc->sig_queue = queue_new();  /* Initalize signals queue */
 
@@ -175,7 +175,7 @@ void proc_kill(struct proc *proc)
 
     proc->running = 0;
 
-    int kill_cur_thread = 0;
+    int kill_curthread = 0;
 
     /* Kill all threads */
     while (proc->threads.count) {
@@ -187,8 +187,8 @@ void proc_kill(struct proc *proc)
         if (thread->sched_node) /* Thread is in the scheduler queue */
             queue_node_remove(thread->sched_queue, thread->sched_node);
 
-        if (thread == cur_thread) {
-            kill_cur_thread = 1;
+        if (thread == curthread) {
+            kill_curthread = 1;
             continue;
         }
 
@@ -199,15 +199,15 @@ void proc_kill(struct proc *proc)
     /* close all file descriptors */
     for (int i = 0; i < FDS_COUNT; ++i) {
         struct file *file = &proc->fds[i];
-        if (file->inode && file->inode != (void *) -1) {
+        if (file->vnode && file->vnode != (void *) -1) {
             vfs_file_close(file);
-            file->inode = NULL;
+            file->vnode = NULL;
         }
     }
 
     struct vm_space *vm_space = &proc->vm_space;
     vm_space_destroy(vm_space);
-    arch_pmap_decref(vm_space->pmap);
+    pmap_decref(vm_space->pmap);
 
     /* Free kernel-space resources */
     kfree(proc->fds);
@@ -240,7 +240,7 @@ void proc_kill(struct proc *proc)
         proc_reap(proc);
     }
 
-    if (kill_cur_thread) {
+    if (kill_curthread) {
         arch_cur_thread_kill();
         panic("How did we get here?");
     }
@@ -259,8 +259,8 @@ int proc_reap(struct proc *proc)
 int proc_fd_get(struct proc *proc)
 {
     for (int i = 0; i < FDS_COUNT; ++i) {
-        if (!proc->fds[i].inode) {
-            proc->fds[i].inode = (void *) -1;    
+        if (!proc->fds[i].vnode) {
+            proc->fds[i].vnode = (void *) -1;    
             return i;
         }
     }
@@ -271,7 +271,7 @@ int proc_fd_get(struct proc *proc)
 void proc_fd_release(struct proc *proc, int fd)
 {
     if (fd < FDS_COUNT) {
-        proc->fds[fd].inode = NULL;
+        proc->fds[fd].vnode = NULL;
     }
 }
 
@@ -282,16 +282,12 @@ int session_new(struct proc *proc)
     struct pgroup  *pgrp    = NULL;
 
     /* allocate a new session structure */
-    session = kmalloc(sizeof(struct session), &M_SESSION, 0);
+    session = kmalloc(sizeof(struct session), &M_SESSION, M_ZERO);
     if (!session) goto e_nomem;
 
-    memset(session, 0, sizeof(struct session));
-
     /* allocate a new process group structure for the session */
-    pgrp = kmalloc(sizeof(struct pgroup), &M_PGROUP, 0);
+    pgrp = kmalloc(sizeof(struct pgroup), &M_PGROUP, M_ZERO);
     if (!pgrp) goto e_nomem;
-
-    memset(pgrp, 0, sizeof(struct pgroup));
 
     session->pgps = queue_new();
     if (!session->pgps) goto e_nomem;
@@ -337,10 +333,8 @@ int pgrp_new(struct proc *proc, struct pgroup **ref)
     int err = 0;
     struct pgroup *pgrp = NULL;
     
-    pgrp = kmalloc(sizeof(struct pgroup), &M_PGROUP, 0);
+    pgrp = kmalloc(sizeof(struct pgroup), &M_PGROUP, M_ZERO);
     if (!pgrp) goto e_nomem;
-
-    memset(pgrp, 0, sizeof(struct pgroup));
 
     pgrp->pgid = proc->pid;
     pgrp->session = proc->pgrp->session;

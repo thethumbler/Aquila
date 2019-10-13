@@ -11,7 +11,7 @@
 struct buddy {
     size_t first_free_idx;
     size_t usable;
-    bitmap_t bitmap;
+    struct bitmap bitmap;
 };
 
 #define BUDDY_IDX(idx) ((idx) ^ 0x1)

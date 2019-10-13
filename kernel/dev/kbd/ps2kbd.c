@@ -68,10 +68,10 @@ static int ps2kbd_file_open(struct file *file)
     if (proc) /* Only one process can open kbd */
         return -EACCES;
 
-    proc = cur_thread->owner;
+    proc = curproc;
 
     /* This is either really smart or really dumb */
-    file->inode->read_queue = kbd_read_queue;    
+    file->vnode->read_queue = kbd_read_queue;    
 
     return posix_file_open(file);
 }

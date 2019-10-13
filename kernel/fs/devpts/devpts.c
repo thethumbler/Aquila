@@ -7,23 +7,18 @@
 #include <fs/devpts.h>
 
 /* devpts root directory (usually mounted on /dev/pts) */
-struct inode *devpts_root = NULL;
-struct vnode vdevpts_root;
+struct vnode *devpts_root = NULL;
 
 int devpts_init()
 {
     int err = 0;
 
     /* devpts is really just tmpfs */
-    devpts.iops = tmpfs.iops;
+    devpts.vops = tmpfs.vops;
     devpts.fops = tmpfs.fops;
 
-    devpts_root = kmalloc(sizeof(struct inode), &M_INODE, 0);
-
-    if (!devpts_root)
-        return -ENOMEM;
-
-    memset(devpts_root, 0, sizeof(struct inode));
+    devpts_root = kmalloc(sizeof(struct vnode), &M_VNODE, M_ZERO);
+    if (!devpts_root) return -ENOMEM;
 
     devpts_root->ino   = (vino_t) devpts_root;
     devpts_root->mode  = S_IFDIR | 0775;
@@ -36,10 +31,6 @@ int devpts_init()
     devpts_root->ctime = ts;
     devpts_root->atime = ts;
     devpts_root->mtime = ts;
-
-    vdevpts_root.super = devpts_root;
-    vdevpts_root.ino   = (vino_t) devpts_root;
-    vdevpts_root.mode  = S_IFDIR;
 
     err = vfs_install(&devpts);
 

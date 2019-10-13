@@ -1,19 +1,28 @@
 #include <ext2.h>
 #include <ds/bitmap.h>
-#include <core/panic.h> /* XXX */
+#include <core/panic.h>
 
-int ext2_inode_read(struct ext2 *desc, uint32_t inode, struct ext2_inode *ref)
+static inline off_t ext2_inode_off(struct ext2 *desc, ino_t ino)
 {
-    if (inode >= desc->superblock->inodes_count)    /* Invalid inode */
+    /* invalid inode */
+    if (ino >= desc->superblock->ninodes)
         return -EINVAL;
 
-    uint32_t block_group = (inode - 1) / desc->superblock->inodes_per_block_group;
-    struct ext2_block_group_descriptor *bgd = &desc->bgd_table[block_group];
+    uint32_t group_id = (ino - 1) / desc->superblock->ginodes;
+    uint32_t index    = (ino - 1) % desc->superblock->ginodes;
 
-    uint32_t index = (inode - 1) % desc->superblock->inodes_per_block_group;
+    struct ext2_group *group = &desc->groups[group_id];
+    return group->inodes * desc->bs + index * desc->superblock->inode_size;
+}
+
+int ext2_inode_read(struct ext2 *desc, ino_t ino, struct ext2_inode *ref)
+{
+    off_t off;
+    
+    if ((off = ext2_inode_off(desc, ino)) < 0)
+        return off;
     
     if (ref) {
-        off_t off = bgd->inode_table * desc->bs + index * desc->superblock->inode_size;
         size_t size = sizeof(struct ext2_inode);
         ssize_t r;
 
@@ -29,19 +38,15 @@ int ext2_inode_read(struct ext2 *desc, uint32_t inode, struct ext2_inode *ref)
     return 0;
 }
 
-struct ext2_inode *ext2_inode_write(struct ext2 *desc, uint32_t inode, struct ext2_inode *i)
+int ext2_inode_write(struct ext2 *desc, ino_t ino, struct ext2_inode *ext2_inode)
 {
-    if (inode >= desc->superblock->inodes_count)    /* Invalid inode */
-        return NULL;
+    off_t off = ext2_inode_off(desc, ino);
+    size_t inode_size = desc->superblock->inode_size;
 
-    uint32_t block_group = (inode - 1) / desc->superblock->inodes_per_block_group;
-    struct ext2_block_group_descriptor *bgd = &desc->bgd_table[block_group];
-
-    uint32_t index = (inode - 1) % desc->superblock->inodes_per_block_group;
-    uint32_t inode_size = desc->superblock->inode_size;
-    
-    vfs_write(desc->supernode, bgd->inode_table * desc->bs + index * inode_size, inode_size, i);
-    return i;
+    if (off < 0)
+        return off;
+     
+    return vfs_write(desc->supernode, off, sizeof(struct ext2_inode), ext2_inode);
 }
 
 size_t ext2_inode_block_read(struct ext2 *desc, struct ext2_inode *inode, size_t idx, void *buf)
@@ -98,13 +103,13 @@ size_t ext2_inode_block_write(struct ext2 *desc, struct ext2_inode *inode, uint3
 
     if (idx < EXT2_DIRECT_POINTERS) {
         if (!inode->direct_pointer[idx]) {    /* Allocate */
-            inode->direct_pointer[idx] = ext2_block_allocate(desc);
+            inode->direct_pointer[idx] = ext2_block_alloc(desc);
             ext2_inode_write(desc, inode_nr, inode);
         }
         ext2_block_write(desc, inode->direct_pointer[idx], buf);
     } else if (idx < EXT2_DIRECT_POINTERS + p) {
         if (!inode->singly_indirect_pointer) {    /* Allocate */
-            inode->singly_indirect_pointer = ext2_block_allocate(desc);
+            inode->singly_indirect_pointer = ext2_block_alloc(desc);
             ext2_inode_write(desc, inode_nr, inode);
         }
 
@@ -113,7 +118,7 @@ size_t ext2_inode_block_write(struct ext2 *desc, struct ext2_inode *inode, uint3
         uint32_t block = tmp[idx - EXT2_DIRECT_POINTERS];
 
         if (!block) {   /* Allocate */
-            tmp[idx - EXT2_DIRECT_POINTERS] = ext2_block_allocate(desc);
+            tmp[idx - EXT2_DIRECT_POINTERS] = ext2_block_alloc(desc);
             ext2_block_write(desc, inode->singly_indirect_pointer, tmp);
         }
 
@@ -126,23 +131,31 @@ size_t ext2_inode_block_write(struct ext2 *desc, struct ext2_inode *inode, uint3
     return 0;
 }
 
-uint32_t ext2_inode_allocate(struct ext2 *desc)
+ino_t ext2_inode_alloc(struct ext2 *desc)
 {
+    printk("ext2_inode_alloc(desc=%p)\n", desc);
+
     uint32_t *buf = kmalloc(desc->bs, &M_BUFFER, 0);
     uint32_t inode = 0, real_inode = 0, group = 0;
-    bitmap_t bm = {0};
+    struct bitmap bm = {0};
 
-    for (unsigned i = 0; i < desc->bgds_count; ++i) {
-        if (desc->bgd_table[i].unallocated_inodes_count) {
-            ext2_block_read(desc, desc->bgd_table[i].inode_usage_bitmap, buf);
+    for (unsigned i = 0; i < desc->ngroups; ++i) {
+        inode = 0;
+
+        if (desc->groups[i].free_inodes) {
+            ext2_block_read(desc, desc->groups[i].imap, buf);
 
             bm.map = buf;
-            bm.max_idx = desc->superblock->inodes_per_block_group;
+            bm.max_idx = desc->superblock->ginodes;
             
-            /* Look for a free inode */
+            /* look for a free inode */
             for (; bitmap_check(&bm, inode); ++inode);
+
+            if (inode == bm.max_idx)
+                continue;
+
             group = i;
-            real_inode = inode + group * desc->superblock->inodes_per_block_group;
+            real_inode = inode + group * desc->superblock->ginodes + 1;
             break;
         }
     }
@@ -157,14 +170,14 @@ uint32_t ext2_inode_allocate(struct ext2 *desc)
 
     /* Update bitmap */
     bitmap_set(&bm, inode);
-    ext2_block_write(desc, desc->bgd_table[group].inode_usage_bitmap, buf);
+    ext2_block_write(desc, desc->groups[group].imap, buf);
 
     /* Update block group descriptor */
-    desc->bgd_table[group].unallocated_inodes_count--;
+    desc->groups[group].free_inodes--;
     ext2_bgd_table_rewrite(desc);
 
     /* Update super block */
-    desc->superblock->unallocated_inodes_count--;
+    desc->superblock->free_inodes--;
     ext2_superblock_rewrite(desc);
 
     kfree(buf);

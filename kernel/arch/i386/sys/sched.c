@@ -6,14 +6,20 @@
 
 #include "sys.h"
 
-uint32_t timer_freq = 100;
+uint32_t timer_freq = 62;
 uint32_t timer_ticks = 0;
 uint32_t timer_sub_ticks = 0;
 
 static void x86_sched_handler(struct x86_regs *r) 
 {
+    ++timer_sub_ticks;
+    if (timer_sub_ticks == timer_freq) {
+        timer_ticks++;
+        timer_sub_ticks = 0;
+    }
+
     if (!kidle) {
-        struct x86_thread *arch = (struct x86_thread *) cur_thread->arch;
+        struct x86_thread *arch = (struct x86_thread *) curthread->arch;
 
         extern uintptr_t x86_read_ip(void);
 
@@ -47,7 +53,7 @@ static void x86_sched_handler(struct x86_regs *r)
 
 void arch_sched_init(void)
 {
-    platform_timer_setup(1, x86_sched_handler);
+    platform_timer_setup(20000, x86_sched_handler);
 }
 
 static void __arch_idle(void)
@@ -61,7 +67,7 @@ static char __idle_stack[8192] __aligned(16);
 
 void arch_idle(void)
 {
-    cur_thread = NULL;
+    curthread = NULL;
 
     uintptr_t esp = VMA(0x100000);
     x86_kernel_stack_set(esp);
@@ -72,9 +78,9 @@ void arch_idle(void)
 
 static void __arch_cur_thread_kill(void)
 {
-    thread_kill(cur_thread);    /* Will set the stack to VMA(0x100000) */
-    kfree(cur_thread);
-    cur_thread = NULL;
+    thread_kill(curthread);    /* Will set the stack to VMA(0x100000) */
+    kfree(curthread);
+    curthread = NULL;
     kernel_idle();
 }
 

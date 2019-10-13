@@ -9,6 +9,7 @@
 #include <core/module.h>
 #include <core/arch.h>
 #include <mm/mm.h>
+#include <mm/pmap.h> /* XXX */
 #include <mm/vm.h>
 #include <dev/dev.h>
 #include <fs/vfs.h>
@@ -50,18 +51,17 @@ void kmain(struct boot *boot)
         panic("failed to allocate process structure for init");
     }
 
-    cur_thread = (struct thread *) init->threads.head;
-    cur_thread->owner = init;
-    arch_pmap_switch(init->vm_space.pmap);
+    curthread = (struct thread *) init->threads.head;
+    curproc   = init;
+
+    pmap_switch(init->vm_space.pmap);
 
     const char *init_p = "/init";
 
     if ((err = binfmt_load(init, init_p, &init))) {
-        printk("failed to load %s: error: %d\n", init_p, -err);
+        printk("kernel: failed to load %s: error: %d\n", init_p, -err);
         panic("could not load init process");
     }
-
-    //cur_thread = NULL;
 
     arch_proc_init(init);
 

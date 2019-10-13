@@ -14,13 +14,13 @@
 #include <dev/dev.h>
 #include <net/socket.h>
 
-MALLOC_DEFINE(M_INODE, "inode", "inode structure");
+MALLOC_DEFINE(M_VNODE, "vnode", "vnode structure");
 MALLOC_DEFINE(M_VFS_PATH, "vfs-path", "vfs path structure");
 MALLOC_DEFINE(M_VFS_NODE, "vfs-node", "vfs node structure");
 MALLOC_DEFINE(M_FS_LIST, "fs-list", "filesystems list");
 
-static int vfs_log_level = LOG_INFO;
-static inline DEF_LOGGER(vfs, vfs_log, vfs_log_level)
+static int vfs_log_level = LOG_NONE;
+LOGGER_DEFINE(vfs, vfs_log, vfs_log_level)
 
 /** list of registered filesystems */
 struct fs_list *registered_fs = NULL;
@@ -31,26 +31,26 @@ struct vfs_node {
     struct vfs_node *children;
     struct vfs_node *next;
 
-    /* Reference to node */
-    struct inode *node;
+    /* reference to node */
+    struct vnode *vnode;
 } vfs_graph = {
     .name = "/",
 };
 
 /* ================== VFS Graph helpers ================== */
 
-struct inode *vfs_root = NULL;
-int vfs_mount_root(struct inode *node)
+struct vnode *vfs_root = NULL;
+int vfs_mount_root(struct vnode *vnode)
 {
     /* TODO Flush mountpoints */
-    vfs_root = node;
-    vfs_graph.node = node;
+    vfs_root = vnode;
+    vfs_graph.vnode = vnode;
     vfs_graph.children = NULL;  /* XXX */
 
     return 0;
 }
 
-char **canonicalize_path(const char * const path)
+char **tokenize_path(const char * const path)
 {
     /* Tokenize slash seperated words in path into tokens */
     char **tokens = tokenize(path, '/');
@@ -146,7 +146,7 @@ struct vfs_path *vfs_get_mountpoint(char **tokens)
 
         check_last_node = 0;
 
-        if (cur_node->node) {
+        if (cur_node->vnode) {
             last_target_node = cur_node;
             path->tokens = tokens + token_i;
         }
@@ -170,18 +170,18 @@ next:;
         ++token_i;
     }
 
-    if (check_last_node && cur_node->node) {
+    if (check_last_node && cur_node->vnode) {
         last_target_node = cur_node;
         path->tokens = tokens + token_i;
     }
 
-    path->mountpoint = last_target_node->node;
+    path->root = last_target_node->vnode;
 
     return path;
 }
 
 /*  Bind VFS path to node */
-int vfs_bind(const char *path, struct inode *target)
+int vfs_bind(const char *path, struct vnode *target)
 {
     /* if path is NULL pointer, or path is empty string, or no target return EINVAL */
     if (!path ||  !*path || !target)
@@ -193,7 +193,7 @@ int vfs_bind(const char *path, struct inode *target)
     }
 
     /* Canonicalize Path */
-    char **tokens = canonicalize_path(path);
+    char **tokens = tokenize_path(path);
     
     /* FIXME: should check for existence */
 
@@ -216,14 +216,19 @@ int vfs_bind(const char *path, struct inode *target)
             }
 
             /* Not found, create it */
-            struct vfs_node *new_node = kmalloc(sizeof(struct vfs_node), &M_VFS_NODE, 0);
-            memset(new_node, 0, sizeof(struct vfs_node));
+            struct vfs_node *new_node = kmalloc(sizeof(struct vfs_node), &M_VFS_NODE, M_ZERO);
+            if (!new_node) {
+                /* TODO */
+            }
+
             new_node->name = strdup(token);
             last_node->next = new_node;
             cur_node = new_node;
         } else {
-            struct vfs_node *new_node = kmalloc(sizeof(struct vfs_node), &M_VFS_NODE, 0);
-            memset(new_node, 0, sizeof(struct vfs_node));
+            struct vfs_node *new_node = kmalloc(sizeof(struct vfs_node), &M_VFS_NODE, M_ZERO);
+            if (!new_node) {
+                /* TODO */
+            }
             new_node->name = strdup(token);
             cur_node->children = new_node;
             cur_node = new_node;
@@ -231,7 +236,7 @@ int vfs_bind(const char *path, struct inode *target)
 next:;
     }
 
-    cur_node->node = target;
+    cur_node->vnode = target;
     return 0;
 }
 
@@ -243,193 +248,17 @@ void vfs_init(void)
 int vfs_install(struct fs *fs)
 {
     struct fs_list *node = kmalloc(sizeof(struct fs_list), &M_FS_LIST, 0);
-
-    if (!node)
-        return -ENOMEM;
+    if (!node) return -ENOMEM;
 
     node->name = fs->name;
     node->fs   = fs;
-    node->next = registered_fs;
 
+    node->next = registered_fs;
     registered_fs = node;
 
     vfs_log(LOG_INFO, "registered filesystem %s\n", fs->name);
 
     return 0;
-}
-
-int vfs_lookup(const char *path, struct uio *uio, struct vnode *vnode, char **abs_path)
-{
-    vfs_log(LOG_DEBUG, "vfs_lookup(path=%s, uio=%p, vnode=%p, abs_path=%p)\n", path, uio, vnode, abs_path);
-
-    int ret = 0;
-    struct vfs_path *p = NULL;
-    char **tokens = NULL;
-
-    /* if path is NULL pointer, or path is empty string, return ENOENT */
-    if (!path ||  !*path)
-        return -ENOENT;
-
-    char *_path = NULL;
-    if ((ret = vfs_parse_path(path, uio, &_path)))
-        goto error;
-
-    /* Canonicalize Path */
-    tokens = canonicalize_path(_path);
-
-    /* Get mountpoint & path */
-    p = vfs_get_mountpoint(tokens);
-
-    struct vnode cur, next;
-
-    cur.super  = p->mountpoint;
-    cur.ino    = p->mountpoint->ino;
-    cur.mode   = S_IFDIR; /* XXX */
-    next.super = p->mountpoint;
-
-    for (char **token_p = p->tokens; *token_p; ++token_p) {
-        char *token = *token_p;
-        if ((ret = vfs_vfind(&cur, token, &next)))
-            goto error;
-        memcpy(&cur, &next, sizeof(cur));
-    }
-
-    free_tokens(tokens);
-    kfree(p);
-    memcpy(vnode, &cur, sizeof(cur));
-
-    if (abs_path)
-        *abs_path = strdup(_path);
-
-    kfree(_path);
-
-    /* Resolve symbolic links */
-    if (S_ISLNK(cur.mode) && !(uio->flags & O_NOFOLLOW)) {
-        /* TODO enforce limit */
-        //char sym[64];
-        char *sym = kmalloc(1024, &M_BUFFER, 0);
-        memset(sym, 0, 1024);
-        struct inode *inode;
-        vfs_vget(&cur, &inode);
-        vfs_read(inode, 0, 1024, sym);
-        ret = vfs_lookup(sym, uio, vnode, NULL);
-        kfree(sym);
-        vfs_close(inode);
-        return ret;
-    }
-
-    return 0;
-
-error:
-    if (tokens)
-        free_tokens(tokens);
-    if (p)
-        kfree(p);
-    if (_path)
-        kfree(_path);
-
-    return ret;
-}
-
-/* ================== VFS inode ops mappings ================== */
-
-int vfs_vfind(struct vnode *parent, const char *name, struct vnode *child)
-{
-    vfs_log(LOG_DEBUG, "vfs_vfind(parent=%p, name=%s, child=%p)\n", parent, name, child);
-
-    if (!parent || !parent->super || !parent->super->fs)
-        return -EINVAL;
-
-    if (!parent->super->fs->iops.vfind)
-        return -ENOSYS;
-
-    if (!S_ISDIR(parent->mode))
-        return -ENOTDIR;
-
-    return parent->super->fs->iops.vfind(parent, name, child);
-}
-
-/* ================== VFS vnode ops mappings ================== */
-
-int vfs_vmknod(struct vnode *dir, const char *name, mode_t mode, dev_t dev, struct uio *uio, struct inode **ref)
-{
-    /* Invalid request */
-    if (!dir || !dir->super || !dir->super->fs)
-        return -EINVAL;
-
-    /* Not a directory */
-    if (!S_ISDIR(dir->mode))
-        return -ENOTDIR;
-
-    /* Operation not supported */
-    if (!dir->super->fs->iops.vmknod)
-        return -ENOSYS;
-
-    int ret = dir->super->fs->iops.vmknod(dir, name, mode, dev, uio, ref);
-
-    if (!ret && ref && *ref)
-        (*ref)->ref++;
-
-    return ret;
-}
-
-int vfs_vcreat(struct vnode *dir, const char *name, struct uio *uio, struct inode **ref)
-{
-    return vfs_vmknod(dir, name, S_IFREG, 0, uio, ref);
-}
-
-int vfs_vmkdir(struct vnode *dir, const char *name, struct uio *uio, struct inode **ref)
-{
-    return vfs_vmknod(dir, name, S_IFDIR, 0, uio, ref);
-}
-
-int vfs_vunlink(struct vnode *dir, const char *fn, struct uio *uio)
-{
-    /* Invalid request */
-    if (!dir|| !dir->super || !dir->super->fs)
-        return -EINVAL;
-
-    /* Operation not supported */
-    if (!dir->super->fs->iops.vunlink)
-        return -ENOSYS;
-
-    return dir->super->fs->iops.vunlink(dir, fn, uio);
-}
-
-int vfs_vget(struct vnode *vnode, struct inode **inode)
-{
-    if (!vnode || !vnode->super || !vnode->super->fs)
-        return -EINVAL;
-
-    if (!vnode->super->fs->iops.vget)
-        return -ENOSYS;
-
-    int ret = vnode->super->fs->iops.vget(vnode, inode);
-
-    if (!ret && inode && *inode) {
-        (*inode)->ref++;
-    }
-
-    return ret;
-}
-
-int vfs_map(struct vm_space *vm_space, struct vm_entry *vm_entry)
-{
-    if (!vm_entry || !vm_entry->vm_object || vm_entry->vm_object->type != VMOBJ_FILE)
-        return -EINVAL;
-
-    struct inode *inode = (struct inode *) vm_entry->vm_object->p;
-
-    if (!inode || !inode->fs)
-        return -EINVAL;
-
-    if (ISDEV(inode))
-        return kdev_map(&INODE_DEV(inode), vm_space, vm_entry);
-
-    if (!inode->fs->iops.map)
-        return -ENOSYS;
-
-    return inode->fs->iops.map(vm_space, vm_entry);
 }
 
 /* ================== VFS high level mappings ================== */
@@ -440,9 +269,9 @@ int vfs_perms_check(struct file *file, struct uio *uio)
         return 0;
     }
 
-    mode_t mode = file->inode->mode;
-    uid_t  uid  = file->inode->uid;
-    gid_t  gid  = file->inode->gid;
+    mode_t mode = file->vnode->mode;
+    uid_t  uid  = file->vnode->uid;
+    gid_t  gid  = file->vnode->gid;
 
 read_perms:
     /* Read permissions */

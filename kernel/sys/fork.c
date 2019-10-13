@@ -12,7 +12,7 @@ MALLOC_DECLARE(M_FDS);
 
 static int copy_fds(struct proc *parent, struct proc *fork)
 {
-    /* Copy open files descriptors */
+    /* copy open files descriptors */
     fork->fds = kmalloc(FDS_COUNT * sizeof(struct file), &M_FDS, 0);
 
     if (!fork->fds)
@@ -22,11 +22,11 @@ static int copy_fds(struct proc *parent, struct proc *fork)
 
     for (int i = 0; i < FDS_COUNT; ++i) {
         struct file *file = &fork->fds[i];
-        if (file->inode && (file->inode != (void *) -1)) {
+        if (file->vnode && (file->vnode != (void *) -1)) {
             if (file->flags & FILE_SOCKET)
                 file->socket->ref++;
             else
-                file->inode->ref++;
+                file->vnode->ref++;
         }
     }
 

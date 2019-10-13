@@ -1,6 +1,9 @@
 #ifndef _EARLY_CONSOLE_H
 #define _EARLY_CONSOLE_H
 
+/**
+ * \brief early console
+ */
 struct earlycon {
     void (*init)(void);
     int  (*puts)(char *);

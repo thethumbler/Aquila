@@ -6,12 +6,11 @@
 #include <core/system.h>
 #include <dev/dev.h>
 #include <fs/vfs.h>
-#include <fs/ubc.h>
 
 MALLOC_DEFINE(M_KDEV_BLK, "kdev-blk", "kdev block buffer");
 
-static struct dev *chrdev[256];
-static struct dev *blkdev[256];
+struct dev *chrdev[256];
+struct dev *blkdev[256];
 
 static inline struct dev *kdev_get(struct devid *dd)
 {
@@ -182,159 +181,6 @@ done:
     return ret;
 }
 
-ssize_t kdev_ubc_bread(struct devid *dd, off_t offset, size_t size, void *buf)
-{
-    printk("kdev_ubc_bread(dd=%p, offset=%d, size=%d, buf=%p)\n", dd, offset, size, buf);
-
-    struct dev *dev = kdev_get(dd);
-    struct ubc *ubc = dev->getubc(dd);
-    size_t bs = dev->getbs(dd);
-
-    int err = 0;
-    ssize_t ret = 0;
-
-    char *cbuf = buf;
-    char *bbuf = NULL;
-
-    /* Read up to block boundary */
-    if (offset % bs) {
-        if (!bbuf && !(bbuf = kmalloc(bs, &M_KDEV_BLK, 0)))
-            return -ENOMEM;
-
-        size_t start = MIN(bs - offset % bs, size);
-
-        if (start) {
-            if ((err = ubc_read(ubc, offset/bs, bbuf)) < 0)
-                goto error;
-
-            memcpy(cbuf, bbuf + (offset % bs), start);
-
-            ret    += start;
-            size   -= start;
-            cbuf   += start;
-            offset += start;
-
-            if (!size)
-                goto done;
-        }
-    }
-
-    /* Read entire blocks */
-    size_t count = size/bs;
-
-    if (count) {
-        for (size_t i = 0; i < count; ++i) {
-            if ((err = ubc_read(ubc, offset/bs + i, cbuf + i * bs)) < 0)
-                goto error;
-        }
-
-        ret    += count * bs;
-        size   -= count * bs;
-        cbuf   += count * bs;
-        offset += count * bs;
-
-        if (!size)
-            goto done;
-    }
-
-    size_t end = size % bs;
-
-    if (end) {
-        if (!bbuf && !(bbuf = kmalloc(bs, &M_KDEV_BLK, 0)))
-            return -ENOMEM;
-
-        if ((err = ubc_read(ubc, offset/bs, bbuf)) < 0)
-            goto error;
-
-        printk("memcpy(cbuf=%p, bbuf=%p, size=%d)\n", cbuf, bbuf, end);
-        memcpy(cbuf, bbuf, end);
-        ret += end;
-    }
-
-done:
-    if (bbuf)
-        kfree(bbuf);
-
-    printk("ret = %d\n", ret);
-    return ret;
-
-error:
-    if (bbuf)
-        kfree(bbuf);
-
-    return err;
-}
-
-ssize_t kdev_ubc_bwrite(struct devid *dd, off_t offset, size_t size, void *buf)
-{
-    printk("kdev_ubc_bwrite(dd=%p, offset=%d, size=%d, buf=%p)\n", dd, offset, size, buf);
-
-    struct dev *dev = kdev_get(dd);
-    struct ubc *ubc = dev->getubc(dd);
-    size_t bs = dev->getbs(dd);
-
-    ssize_t ret = 0;
-    char *cbuf = buf;
-    char *bbuf = NULL;
-
-    if (offset % bs) {
-        if (!bbuf && !(bbuf = kmalloc(bs, &M_KDEV_BLK, 0)))
-            return -ENOMEM;
-
-        /* Write up to block boundary */
-        size_t start = MIN(bs - offset % bs, size);
-
-        if (start) {
-            ubc_read(ubc, offset/bs, bbuf);
-            memcpy(bbuf + (offset % bs), cbuf, start);
-            ubc_write(ubc, offset/bs, bbuf);
-
-            ret    += start;
-            size   -= start;
-            cbuf   += start;
-            offset += start;
-
-            if (!size)
-                goto done;
-        }
-    }
-
-
-    /* Write entire blocks */
-    size_t count = size/bs;
-
-    if (count) {
-        for (size_t i = 0; i < count; ++i)
-            ubc_write(ubc, offset/bs + i, cbuf + bs * i);
-
-        ret    += count * bs;
-        size   -= count * bs;
-        cbuf   += count * bs;
-        offset += count * bs;
-
-        if (!size)
-            goto done;
-    }
-
-    size_t end = size % bs;
-
-    if (end) {
-        if (!bbuf && !(bbuf = kmalloc(bs, &M_KDEV_BLK, 0)))
-            return -ENOMEM;
-
-        ubc_read(ubc, offset/bs, bbuf);
-        memcpy(bbuf, cbuf, end);
-        ubc_write(ubc, offset/bs, bbuf);
-        ret += end;
-    }
-
-done:
-    if (bbuf)
-        kfree(bbuf);
-
-    return ret;
-}
-
 ssize_t kdev_read(struct devid *dd, off_t offset, size_t size, void *buf)
 {
     //printk("kdev_read(dd=%p, offset=%d, size=%d, buf=%p)\n", dd, offset, size, buf);
@@ -349,8 +195,6 @@ ssize_t kdev_read(struct devid *dd, off_t offset, size_t size, void *buf)
 
     if (S_ISCHR(dd->type))
         return dev->read(dd, offset, size, buf);
-    //else if (dev->getubc && dev->getubc(dd))
-    //    return kdev_ubc_bread(dd, offset, size, buf);
     else
         return kdev_bread(dd, offset, size, buf);
 }
@@ -367,8 +211,6 @@ ssize_t kdev_write(struct devid *dd, off_t offset, size_t size, void *buf)
 
     if (S_ISCHR(dd->type))
         return dev->write(dd, offset, size, buf);
-    else if (dev->getubc && dev->getubc(dd))
-        return kdev_ubc_bwrite(dd, offset, size, buf);
     else
         return kdev_bwrite(dd, offset, size, buf);
 }
@@ -459,7 +301,7 @@ ssize_t kdev_file_close(struct devid *dd, struct file *file)
         return -ENXIO;
 
     if (!dev->fops.close)
-        return -ENXIO;
+        return -EINVAL;
 
     return dev->fops.close(file);
 }

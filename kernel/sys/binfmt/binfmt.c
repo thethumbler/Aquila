@@ -9,13 +9,13 @@ static struct binfmt binfmt_list[] = {
 
 #define NR_BINFMT   ((sizeof(binfmt_list)/sizeof(binfmt_list[0])))
 
-static int binfmt_fmt_load(struct proc *proc, const char *path, struct inode *inode, struct binfmt *binfmt, struct proc **ref)
+static int binfmt_fmt_load(struct proc *proc, const char *path, struct vnode *vnode, struct binfmt *binfmt, struct proc **ref)
 {
     int err = 0;
 
     vm_space_destroy(&proc->vm_space);
 
-    if ((err = binfmt->load(proc, path, inode)))
+    if ((err = binfmt->load(proc, path, vnode)))
         goto error;
 
     kfree(proc->name);
@@ -26,8 +26,11 @@ static int binfmt_fmt_load(struct proc *proc, const char *path, struct inode *in
     proc->heap = proc->heap_start;
 
     /* Create heap vm_entry */
-    struct vm_entry *heap_vm = kmalloc(sizeof(struct vm_entry), &M_VM_ENTRY, 0);
-    memset(heap_vm, 0, sizeof(struct vm_entry));
+    struct vm_entry *heap_vm = kmalloc(sizeof(struct vm_entry), &M_VM_ENTRY, M_ZERO);
+    if (!heap_vm) {
+        /* TODO */
+    }
+
     heap_vm->base  = proc->heap_start;
     heap_vm->size  = 0;
     heap_vm->flags = VM_URW;
@@ -39,8 +42,11 @@ static int binfmt_fmt_load(struct proc *proc, const char *path, struct inode *in
     proc->heap_vm  = heap_vm;
 
     /* Create stack vm_entry */
-    struct vm_entry *stack_vm = kmalloc(sizeof(struct vm_entry), &M_VM_ENTRY, 0);
-    memset(stack_vm, 0, sizeof(struct vm_entry));
+    struct vm_entry *stack_vm = kmalloc(sizeof(struct vm_entry), &M_VM_ENTRY, M_ZERO);
+    if (!stack_vm) {
+        /* TODO */
+    }
+
     stack_vm->base  = USER_STACK_BASE;
     stack_vm->size  = USER_STACK_SIZE;
     stack_vm->flags = VM_URW;
@@ -63,8 +69,7 @@ error:
 
 int binfmt_load(struct proc *proc, const char *path, struct proc **ref)
 {
-    struct vnode vnode;
-    struct inode *inode = NULL;
+    struct vnode *vnode = NULL;
     int err = 0;
 
     struct uio uio;
@@ -77,17 +82,14 @@ int binfmt_load(struct proc *proc, const char *path, struct proc **ref)
     if ((err = vfs_lookup(path, &uio, &vnode, NULL)))
         return err;
 
-    if ((err = vfs_vget(&vnode, &inode)))
-        return err;
-
     for (size_t i = 0; i < NR_BINFMT; ++i) {
-        if (!binfmt_list[i].check(inode)) {
-            binfmt_fmt_load(proc, path, inode, &binfmt_list[i], ref);
-            vfs_close(inode);
+        if (!binfmt_list[i].check(vnode)) {
+            binfmt_fmt_load(proc, path, vnode, &binfmt_list[i], ref);
+            //vfs_close(vnode);
             return 0;
         }
     }
 
-    vfs_close(inode);
+    //vfs_close(vnode);
     return -ENOEXEC;
 }

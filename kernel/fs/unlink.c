@@ -16,18 +16,12 @@ int vfs_unlink(const char *path, struct uio *uio)
         goto error;
 
     /* Canonicalize Path */
-    tokens = canonicalize_path(_path);
+    tokens = tokenize_path(_path);
 
     /* Get mountpoint & path */
     p = vfs_get_mountpoint(tokens);
 
-    struct vnode cur, next;
-
-    cur.super  = p->mountpoint;
-    cur.ino  = p->mountpoint->ino;
-    cur.mode = S_IFDIR;
-    next.super = p->mountpoint;
-
+    struct vnode *dir = p->root;
     char *name = NULL;
     char **tok = p->tokens;
 
@@ -39,14 +33,17 @@ int vfs_unlink(const char *path, struct uio *uio)
             break;
         }
 
-        if ((ret = vfs_vfind(&cur, token, &next)))
+        struct dirent dirent;
+        if ((ret = vfs_finddir(dir, token, &dirent)))
             goto error;
 
-        memcpy(&cur, &next, sizeof(cur));
+        if ((ret = vfs_vget(p->root, dirent.d_ino, &dir)))
+            goto error;
+
         ++tok;
     }
 
-    if ((ret = vfs_vunlink(&cur, name, uio)))
+    if ((ret = vfs_vunlink(dir, name, uio)))
         goto error;
 
     free_tokens(tokens);

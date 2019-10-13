@@ -35,25 +35,13 @@
 #include <mm/vm.h>
 
 static int syscall_log_level = LOG_NONE;
-static inline int syscall_log(int level, const char *fmt, ...)
-{
-    if (level <= syscall_log_level) {
-        printk("syscall: [%d:%d] %s: ", cur_thread->owner->pid,
-                cur_thread->tid, cur_thread->owner->name);
-        va_list args;
-        va_start(args, fmt);
-        vprintk(fmt, args);
-        va_end(args);
-    }
-
-    return 0;
-}
+LOGGER_DEFINE(syscall, syscall_log, syscall_log_level)
 
 static void sys_exit(int code)
 {
     syscall_log(LOG_DEBUG, "exit(code=%d)\n", code);
 
-    struct proc *owner = cur_thread->owner;
+    struct proc *owner = curproc;
 
     owner->exit = PROC_EXIT(code, 0);  /* Child exited normally */
 
@@ -69,20 +57,20 @@ static void sys_close(int fildes)
     syscall_log(LOG_DEBUG, "close(fildes=%d)\n", fildes);
 
     if (fildes < 0 || fildes >= FDS_COUNT) {  /* Out of bounds */
-        arch_syscall_return(cur_thread, -EBADFD);
+        arch_syscall_return(curthread, -EBADFD);
         return; 
     }
 
-    struct file *file = &cur_thread->owner->fds[fildes];
+    struct file *file = &curproc->fds[fildes];
     
-    if (file == (void *) -1 || !file->inode) {
-        arch_syscall_return(cur_thread, -EBADFD);
+    if (file == (void *) -1 || !file->vnode) {
+        arch_syscall_return(curthread, -EBADFD);
         return;
     }
 
     int ret = vfs_file_close(file);
-    cur_thread->owner->fds[fildes].inode = NULL;
-    arch_syscall_return(cur_thread, ret);
+    curproc->fds[fildes].vnode = NULL;
+    arch_syscall_return(curthread, ret);
 }
 
 static void sys_execve(const char *path, char * const argp[], char * const envp[])
@@ -90,7 +78,7 @@ static void sys_execve(const char *path, char * const argp[], char * const envp[
     syscall_log(LOG_DEBUG, "execve(path=%s, argp=%p, envp=%p)\n", path, argp, envp);
 
     if (!path || !*path) {
-        arch_syscall_return(cur_thread, -ENOENT);
+        arch_syscall_return(curthread, -ENOENT);
         return;
     }
 
@@ -98,18 +86,18 @@ static void sys_execve(const char *path, char * const argp[], char * const envp[
     char *fn = strdup(path);
 
     if (!fn) {
-        arch_syscall_return(cur_thread, -ENOMEM);
+        arch_syscall_return(curthread, -ENOMEM);
         return;
     }
 
-    err = proc_execve(cur_thread, fn, argp, envp);
+    err = proc_execve(curthread, fn, argp, envp);
 
     kfree(fn);
 
     if (err) {
-        arch_syscall_return(cur_thread, err);
+        arch_syscall_return(curthread, err);
     } else {
-        sched_thread_spawn(cur_thread);
+        sched_thread_spawn(curthread);
     }
 }
 
@@ -118,7 +106,7 @@ static void sys_fork(void)
     syscall_log(LOG_DEBUG, "fork()\n");
 
     struct proc *fork = NULL;
-    proc_fork(cur_thread, &fork);
+    proc_fork(curthread, &fork);
 
     /* Returns are handled inside proc_fork */
     if (fork != NULL) {
@@ -132,27 +120,27 @@ static void sys_fstat(int fildes, struct stat *buf)
     syscall_log(LOG_DEBUG, "fstat(fildes=%d, buf=%p)\n", fildes, buf);
 
     if (fildes < 0 || fildes >= FDS_COUNT) {  /* Out of bounds */
-        arch_syscall_return(cur_thread, -EBADFD);
+        arch_syscall_return(curthread, -EBADFD);
         return; 
     }
 
-    struct file *file = &cur_thread->owner->fds[fildes];
+    struct file *file = &curproc->fds[fildes];
     
-    if (!file->inode) {
-        arch_syscall_return(cur_thread, -EBADFD);
+    if (!file->vnode) {
+        arch_syscall_return(curthread, -EBADFD);
         return;
     }
 
-    struct inode *inode = file->inode;
+    struct vnode *vnode = file->vnode;
 
-    int ret = vfs_stat(inode, buf);
-    arch_syscall_return(cur_thread, ret);
+    int ret = vfs_stat(vnode, buf);
+    arch_syscall_return(curthread, ret);
 }
 
 static void sys_getpid(void)
 {
     syscall_log(LOG_DEBUG, "getpid()\n");
-    arch_syscall_return(cur_thread, cur_thread->owner->pid);
+    arch_syscall_return(curthread, curproc->pid);
 }
 
 static void sys_isatty(int fildes)
@@ -160,26 +148,26 @@ static void sys_isatty(int fildes)
     syscall_log(LOG_DEBUG, "isatty(fildes=%d)\n", fildes);
 
     if (fildes < 0 || fildes >= FDS_COUNT) {  /* Out of bounds */
-        arch_syscall_return(cur_thread, -EBADFD);
+        arch_syscall_return(curthread, -EBADFD);
         return; 
     }
 
-    struct inode *node = cur_thread->owner->fds[fildes].inode;
+    struct vnode *node = curproc->fds[fildes].vnode;
 
     if (!node) {    /* Invalid File Descriptor */
-        arch_syscall_return(cur_thread, -EBADFD);
+        arch_syscall_return(curthread, -EBADFD);
         return;
     }
 
-    //arch_syscall_return(cur_thread, node->rdev & (136 << 8));
-    arch_syscall_return(cur_thread, 1);
+    //arch_syscall_return(curthread, node->rdev & (136 << 8));
+    arch_syscall_return(curthread, 1);
 }
 
 static void sys_kill(pid_t pid, int sig)
 {
     syscall_log(LOG_DEBUG, "kill(pid=%d, sig=%d)\n", pid, sig);
     int ret = signal_send(pid, sig);
-    arch_syscall_return(cur_thread, ret);
+    arch_syscall_return(curthread, ret);
 }
 
 static void sys_link(const char *oldpath, const char *newpath)
@@ -189,7 +177,7 @@ static void sys_link(const char *oldpath, const char *newpath)
 
     /* TODO */
 
-    arch_syscall_return(cur_thread, -ENOSYS);
+    arch_syscall_return(curthread, -ENOSYS);
 }
 
 static void sys_lseek(int fildes, off_t offset, int whence)
@@ -198,44 +186,43 @@ static void sys_lseek(int fildes, off_t offset, int whence)
             fildes, offset, whence);
 
     if (fildes < 0 || fildes >= FDS_COUNT) {  /* Out of bounds */
-        arch_syscall_return(cur_thread, -EBADFD);
+        arch_syscall_return(curthread, -EBADFD);
         return; 
     }
 
-    struct file *file = &cur_thread->owner->fds[fildes];
+    struct file *file = &curproc->fds[fildes];
 
-    if (!file->inode) {    /* Invalid File Descriptor */
-        arch_syscall_return(cur_thread, -EBADFD);
+    if (!file->vnode) {    /* Invalid File Descriptor */
+        arch_syscall_return(curthread, -EBADFD);
         return;
     }
 
     int ret = vfs_file_lseek(file, offset, whence);
-    arch_syscall_return(cur_thread, ret);
+    arch_syscall_return(curthread, ret);
 }
 
 static void sys_open(const char *path, int oflags, mode_t mode)
 {
     syscall_log(LOG_DEBUG, "open(path=%s, oflags=0x%x, mode=0x%x)\n", path, oflags, mode);
     
-    int fd = proc_fd_get(cur_thread->owner);  /* Find a free file descriptor */
+    int fd = proc_fd_get(curproc);  /* Find a free file descriptor */
 
     if (fd == -1) {
         /* Reached maximum number of open file descriptors */
-        arch_syscall_return(cur_thread, -EMFILE);
+        arch_syscall_return(curthread, -EMFILE);
         return;
     }
 
     /* Look up the file */
-    struct vnode vnode;
-    struct inode *inode = NULL;
-    struct uio uio = PROC_UIO(cur_thread->owner);
+    struct vnode *vnode = NULL;
+    struct uio uio = PROC_UIO(curproc);
     uio.flags = oflags;
 
     int ret = vfs_lookup(path, &uio, &vnode, NULL);
 
     if (ret) {   /* Lookup failed */
         if ((ret == -ENOENT) && (oflags & O_CREAT)) {
-            if ((ret = vfs_creat(path, mode, &uio, &inode))) {
+            if ((ret = vfs_creat(path, mode, &uio, &vnode))) {
                 goto done;
             }
 
@@ -245,32 +232,30 @@ static void sys_open(const char *path, int oflags, mode_t mode)
         goto done;
     }
 
-    ret = vfs_vget(&vnode, &inode);
-
     if (ret)
         goto done;
 
 o_creat:
-    cur_thread->owner->fds[fd] = (struct file) {
-        .inode  = inode,
+    curproc->fds[fd] = (struct file) {
+        .vnode  = vnode,
         .offset = 0,
         .flags  = oflags,
     };
 
-    if ((ret = vfs_perms_check(&cur_thread->owner->fds[fd], &uio)))
+    if ((ret = vfs_perms_check(&curproc->fds[fd], &uio)))
         goto done;
 
-    ret = vfs_file_open(&cur_thread->owner->fds[fd]);
+    ret = vfs_file_open(&curproc->fds[fd]);
 
 done:
     if (ret < 0) { /* open returned an error code */
-        proc_fd_release(cur_thread->owner, fd);
-        vfs_close(inode);
+        proc_fd_release(curproc, fd);
+        vfs_close(vnode);
     } else {
         ret = fd;
     }
 
-    arch_syscall_return(cur_thread, ret);
+    arch_syscall_return(curthread, ret);
     return;
 }
 
@@ -279,13 +264,13 @@ static void sys_read(int fildes, void *buf, size_t nbytes)
     syscall_log(LOG_DEBUG, "read(fd=%d, buf=%p, count=%d)\n", fildes, buf, nbytes);
     
     if (fildes < 0 || fildes >= FDS_COUNT) {  /* Out of bounds */
-        arch_syscall_return(cur_thread, -EBADFD);
+        arch_syscall_return(curthread, -EBADFD);
         return; 
     }
 
-    struct file *file = &cur_thread->owner->fds[fildes];
+    struct file *file = &curproc->fds[fildes];
     int ret = vfs_file_read(file, buf, nbytes);
-    arch_syscall_return(cur_thread, ret);
+    arch_syscall_return(curthread, ret);
     return;
 }
 
@@ -293,13 +278,13 @@ static void sys_sbrk(ptrdiff_t incr)
 {
     syscall_log(LOG_DEBUG, "sbrk(incr=0x%x)\n", incr);
 
-    uintptr_t heap_start = cur_thread->owner->heap_start;
-    uintptr_t heap = cur_thread->owner->heap;
+    uintptr_t heap_start = curproc->heap_start;
+    uintptr_t heap = curproc->heap;
 
-    cur_thread->owner->heap = heap + incr;
-    cur_thread->owner->heap_vm->size = PAGE_ROUND(heap + incr - heap_start);
+    curproc->heap = heap + incr;
+    curproc->heap_vm->size = PAGE_ROUND(heap + incr - heap_start);
 
-    arch_syscall_return(cur_thread, heap);
+    arch_syscall_return(curthread, heap);
     return;
 }
 
@@ -307,23 +292,17 @@ static void sys_stat(const char *path, struct stat *buf)
 {
     syscall_log(LOG_DEBUG, "stat(path=%s, buf=%p)\n", path, buf);
 
-    struct vnode vnode;
-    struct inode *inode = NULL;
+    struct vnode *vnode = NULL;
     int ret = 0;
-    struct uio uio = PROC_UIO(cur_thread->owner);
+    struct uio uio = PROC_UIO(curproc);
 
     if ((ret = vfs_lookup(path, &uio, &vnode, NULL))) {
-        arch_syscall_return(cur_thread, ret);
+        arch_syscall_return(curthread, ret);
         return;
     }
 
-    if ((ret = vfs_vget(&vnode, &inode))) {
-        arch_syscall_return(cur_thread, ret);
-        return;
-    }
-
-    ret = vfs_stat(inode, buf);
-    arch_syscall_return(cur_thread, ret);
+    ret = vfs_stat(vnode, buf);
+    arch_syscall_return(curthread, ret);
 }
 
 static void sys_times()
@@ -335,9 +314,9 @@ static void sys_unlink(const char *path)
 {
     syscall_log(LOG_DEBUG, "unlink(path=%p)\n", path);
 
-    struct uio uio = PROC_UIO(cur_thread->owner);
+    struct uio uio = PROC_UIO(curproc);
     int ret = vfs_unlink(path, &uio);
-    arch_syscall_return(cur_thread, ret);
+    arch_syscall_return(curthread, ret);
 }
 
 #define WNOHANG 1
@@ -360,7 +339,7 @@ static void sys_waitpid(int pid, int *stat_loc, int options)
             queue_for (node, procs) {
                 struct proc *proc = node->value;
 
-                if (proc->parent != cur_thread->owner)
+                if (proc->parent != curproc)
                     continue;
 
                 found = 1;
@@ -369,19 +348,19 @@ static void sys_waitpid(int pid, int *stat_loc, int options)
                     if (stat_loc)
                         *stat_loc = proc->exit;
 
-                    arch_syscall_return(cur_thread, proc->pid);
+                    arch_syscall_return(curthread, proc->pid);
                     proc_reap(proc);
                     return;
                 }
             }
 
             if (nohang) {
-                arch_syscall_return(cur_thread, found? 0 : -ECHILD);
+                arch_syscall_return(curthread, found? 0 : -ECHILD);
                 return;
             }
 
-            if (thread_queue_sleep(&cur_thread->owner->wait_queue)) {
-                arch_syscall_return(cur_thread, -EINTR);
+            if (thread_queue_sleep(&curproc->wait_queue)) {
+                arch_syscall_return(curthread, -EINTR);
                 return;
             }
         }
@@ -396,34 +375,34 @@ static void sys_waitpid(int pid, int *stat_loc, int options)
         struct proc *child = proc_pid_find(pid);
 
         /* If pid is invalid or current process is not parent of child */
-        if (child == NULL || child->parent != cur_thread->owner) {
-            arch_syscall_return(cur_thread, -ECHILD);
+        if (child == NULL || child->parent != curproc) {
+            arch_syscall_return(curthread, -ECHILD);
             return;
         }
 
         if (!(child->running)) {  /* Child is killed */
             *stat_loc = child->exit;
-            arch_syscall_return(cur_thread, child->pid);
+            arch_syscall_return(curthread, child->pid);
             proc_reap(child);
             return;
         }
 
         /*
         if (options & WNOHANG) {
-            arch_syscall_return(cur_thread, 0);
+            arch_syscall_return(curthread, 0);
             return;
         }
         */
 
         while (child->running) {
-            if (thread_queue_sleep(&cur_thread->owner->wait_queue)) {
-                arch_syscall_return(cur_thread, -EINTR);
+            if (thread_queue_sleep(&curproc->wait_queue)) {
+                arch_syscall_return(curthread, -EINTR);
                 return;
             }
         }
 
         *stat_loc = child->exit;
-        arch_syscall_return(cur_thread, child->pid);
+        arch_syscall_return(curthread, child->pid);
         proc_reap(child);
     }
 }
@@ -433,13 +412,13 @@ static void sys_write(int fd, void *buf, size_t nbytes)
     syscall_log(LOG_DEBUG, "write(fd=%d, buf=%p, nbytes=%d)\n", fd, buf, nbytes);
     
     if (fd < 0 || fd >= FDS_COUNT) {   /* Out of bounds */
-        arch_syscall_return(cur_thread, -EBADFD);
+        arch_syscall_return(curthread, -EBADFD);
         return; 
     }
 
-    struct file *file = &cur_thread->owner->fds[fd];
+    struct file *file = &curproc->fds[fd];
     int ret = vfs_file_write(file, buf, nbytes);
-    arch_syscall_return(cur_thread, ret);
+    arch_syscall_return(curthread, ret);
     return;
 }
 
@@ -449,13 +428,13 @@ static void sys_ioctl(int fd, int request, void *argp)
             fd, request, argp);
 
     if (fd < 0 || fd >= FDS_COUNT) {  /* Out of bounds */
-        arch_syscall_return(cur_thread, -EBADFD);
+        arch_syscall_return(curthread, -EBADFD);
         return; 
     }
 
-    struct file *file = &cur_thread->owner->fds[fd];
+    struct file *file = &curproc->fds[fd];
     int ret = vfs_file_ioctl(file, request, argp);
-    arch_syscall_return(cur_thread, ret);
+    arch_syscall_return(curthread, ret);
     return;
 }
 
@@ -465,17 +444,17 @@ static void sys_sigaction(int sig, const struct sigaction *act, struct sigaction
             sig, act, oact);
 
     if (sig < 1 || sig > SIG_MAX) {
-        arch_syscall_return(cur_thread, -EINVAL);
+        arch_syscall_return(curthread, -EINVAL);
         return;
     }
 
     if (oact)
-        memcpy(oact, &cur_thread->owner->sigaction[sig], sizeof(struct sigaction));
+        memcpy(oact, &curproc->sigaction[sig], sizeof(struct sigaction));
 
     if (act)
-        memcpy(&cur_thread->owner->sigaction[sig], act, sizeof(struct sigaction));
+        memcpy(&curproc->sigaction[sig], act, sizeof(struct sigaction));
 
-    arch_syscall_return(cur_thread, 0);
+    arch_syscall_return(curthread, 0);
 }
 
 static void sys_readdir(int fd, struct dirent *dirent)
@@ -483,13 +462,13 @@ static void sys_readdir(int fd, struct dirent *dirent)
     syscall_log(LOG_DEBUG, "readdir(fd=%d, dirent=%p)\n", fd, dirent);
 
     if (fd < 0 || fd >= FDS_COUNT) {  /* Out of bounds */
-        arch_syscall_return(cur_thread, -EBADFD);
+        arch_syscall_return(curthread, -EBADFD);
         return; 
     }
 
-    struct file *file = &cur_thread->owner->fds[fd];
+    struct file *file = &curproc->fds[fd];
     int ret = vfs_file_readdir(file, dirent);
-    arch_syscall_return(cur_thread, ret);
+    arch_syscall_return(curthread, ret);
     return;
 }
 
@@ -502,8 +481,8 @@ struct mount_struct {
 
 static void sys_mount(struct mount_struct *args)
 {
-    if (cur_thread->owner->uid != 0) {
-        arch_syscall_return(cur_thread, -EACCES);
+    if (curproc->uid != 0) {
+        arch_syscall_return(curthread, -EACCES);
         return;
     }
 
@@ -515,8 +494,8 @@ static void sys_mount(struct mount_struct *args)
     syscall_log(LOG_DEBUG, "mount(type=%s, dir=%s, flags=%x, data=%p)\n",
             type, dir, flags, data);
 
-    int ret = vfs_mount(type, dir, flags, data, &PROC_UIO(cur_thread->owner));
-    arch_syscall_return(cur_thread, ret);
+    int ret = vfs_mount(type, dir, flags, data, &PROC_UIO(curproc));
+    arch_syscall_return(curthread, ret);
     return;
 }
 
@@ -524,10 +503,10 @@ static void sys_mkdir(const char *path, mode_t mode)
 {
     syscall_log(LOG_DEBUG, "mkdir(path=%s, mode=%x)\n", path, mode);
 
-    struct uio uio = PROC_UIO(cur_thread->owner);
+    struct uio uio = PROC_UIO(curproc);
 
     int ret = vfs_mkdir(path, mode, &uio, NULL);
-    arch_syscall_return(cur_thread, ret);
+    arch_syscall_return(curthread, ret);
     return;
 }
 
@@ -543,19 +522,19 @@ static void sys_uname(struct utsname *name)
     strcpy(name->version,  UTSNAME_VERSION);
     strcpy(name->machine,  UTSNAME_MACHINE);
 
-    arch_syscall_return(cur_thread, 0);
+    arch_syscall_return(curthread, 0);
     return;
 }
 
 static void sys_pipe(int fd[2])
 {
     syscall_log(LOG_DEBUG, "pipe(fd=%p)\n", fd);
-    int fd1 = proc_fd_get(cur_thread->owner);
-    int fd2 = proc_fd_get(cur_thread->owner);
-    pipefs_pipe(&cur_thread->owner->fds[fd1], &cur_thread->owner->fds[fd2]);
+    int fd1 = proc_fd_get(curproc);
+    int fd2 = proc_fd_get(curproc);
+    pipefs_pipe(&curproc->fds[fd1], &curproc->fds[fd2]);
     fd[0] = fd1;
     fd[1] = fd2;
-    arch_syscall_return(cur_thread, 0);
+    arch_syscall_return(curthread, 0);
 }
 
 static void sys_fcntl(int fd, int cmd, uintptr_t arg)
@@ -564,33 +543,33 @@ static void sys_fcntl(int fd, int cmd, uintptr_t arg)
             fd, cmd, arg);
 
     if (fd < 0 || fd >= FDS_COUNT) {  /* Out of bounds */
-        arch_syscall_return(cur_thread, -EBADFD);
+        arch_syscall_return(curthread, -EBADFD);
         return; 
     }
 
-    struct file *file = &cur_thread->owner->fds[fd];
+    struct file *file = &curproc->fds[fd];
 
     int dupfd = 0;
 
     switch (cmd) {
         case F_DUPFD:
             if (arg == 0)
-                dupfd = proc_fd_get(cur_thread->owner);
+                dupfd = proc_fd_get(curproc);
             else
                 dupfd = arg;
-            cur_thread->owner->fds[dupfd] = *file;
-            arch_syscall_return(cur_thread, dupfd);
+            curproc->fds[dupfd] = *file;
+            arch_syscall_return(curthread, dupfd);
             return;
         case F_GETFD:
-            arch_syscall_return(cur_thread, file->flags);
+            arch_syscall_return(curthread, file->flags);
             return;
         case F_SETFD:
             file->flags = (int) arg; /* XXX */
-            arch_syscall_return(cur_thread, 0);
+            arch_syscall_return(curthread, 0);
             return;
     }
 
-    arch_syscall_return(cur_thread, -EINVAL);
+    arch_syscall_return(curthread, -EINVAL);
 }
 
 static void sys_chdir(const char *path)
@@ -598,30 +577,30 @@ static void sys_chdir(const char *path)
     syscall_log(LOG_DEBUG, "chdir(path=%s)\n", path);
 
     if (!path || !*path) {
-        arch_syscall_return(cur_thread, -ENOENT);
+        arch_syscall_return(curthread, -ENOENT);
         return;
     }
 
     int ret = 0;
     char *abs_path = NULL;
 
-    struct vnode vnode;
-    ret = vfs_lookup(path, &PROC_UIO(cur_thread->owner), &vnode, &abs_path);
+    struct vnode *vnode = NULL;
+    ret = vfs_lookup(path, &PROC_UIO(curproc), &vnode, &abs_path);
 
     if (ret)
         goto free_resources;
 
-    if (!S_ISDIR(vnode.mode)) {
+    if (!S_ISDIR(vnode->mode)) {
         ret = -ENOTDIR;
         goto free_resources;
     }
 
-    kfree(cur_thread->owner->cwd);
-    cur_thread->owner->cwd = strdup(abs_path);
+    kfree(curproc->cwd);
+    curproc->cwd = strdup(abs_path);
 
 free_resources:
     kfree(abs_path);
-    arch_syscall_return(cur_thread, ret);
+    arch_syscall_return(curthread, ret);
 }
 
 static void sys_getcwd(char *buf, size_t size)
@@ -629,19 +608,19 @@ static void sys_getcwd(char *buf, size_t size)
     syscall_log(LOG_DEBUG, "getcwd(buf=%p, size=%d)\n", buf, size);
 
     if (!size) {
-        arch_syscall_return(cur_thread, -EINVAL);
+        arch_syscall_return(curthread, -EINVAL);
         return;
     }
 
-    size_t len = strlen(cur_thread->owner->cwd);
+    size_t len = strlen(curproc->cwd);
 
     if (size < len + 1) {
-        arch_syscall_return(cur_thread, -ERANGE);
+        arch_syscall_return(curthread, -ERANGE);
         return;
     }
 
-    memcpy(buf, cur_thread->owner->cwd, len + 1);
-    arch_syscall_return(cur_thread, 0);
+    memcpy(buf, curproc->cwd, len + 1);
+    arch_syscall_return(curthread, 0);
 }
 
 struct __uthread {
@@ -660,19 +639,19 @@ static void sys_thread_create(struct __uthread *__uthread)
             __uthread->arg, __uthread->attr);
 
     struct thread *thread;
-    thread_create(cur_thread, __uthread->stack, __uthread->entry, __uthread->uentry, __uthread->arg, __uthread->attr, &thread);
+    thread_create(curthread, __uthread->stack, __uthread->entry, __uthread->uentry, __uthread->arg, __uthread->attr, &thread);
     sched_thread_ready(thread);
-    arch_syscall_return(cur_thread, thread->tid);
+    arch_syscall_return(curthread, thread->tid);
 }
 
 static void sys_thread_exit(void *value_ptr)
 {
     syscall_log(LOG_DEBUG, "thread_exit(value_ptr=%p)\n", value_ptr);
 
-    //cur_thread->value_ptr = value_ptr;
-    struct proc *owner = cur_thread->owner;
+    //curthread->value_ptr = value_ptr;
+    struct proc *owner = curproc;
 
-    thread_kill(cur_thread);
+    thread_kill(curthread);
 
     /* Wakeup owner if it is waiting for joining */
     thread_queue_wakeup(&owner->thread_join);
@@ -686,7 +665,7 @@ static void sys_thread_join(int tid, void **value_ptr)
 {
     syscall_log(LOG_DEBUG, "thread_join(tid=%d, value_ptr=%p)\n", tid, value_ptr);
 
-    struct proc *owner = cur_thread->owner;
+    struct proc *owner = curproc;
     struct thread *thread = NULL;
 
     queue_for (node, &owner->threads) {
@@ -697,25 +676,25 @@ static void sys_thread_join(int tid, void **value_ptr)
 
     /* No such thread */
     if (!thread) {
-        arch_syscall_return(cur_thread, -ECHILD);
+        arch_syscall_return(curthread, -ECHILD);
         return;
     }
 
     if (thread->state == ZOMBIE) {  /* Thread is terminated */
         //*value_ptr = thread->value_ptr;
-        arch_syscall_return(cur_thread, thread->tid);
+        arch_syscall_return(curthread, thread->tid);
         return;
     }
 
     while (thread->state != ZOMBIE) {
-        if (thread_queue_sleep(&cur_thread->owner->thread_join)) {
-            arch_syscall_return(cur_thread, -EINTR);
+        if (thread_queue_sleep(&curproc->thread_join)) {
+            arch_syscall_return(curthread, -EINTR);
             return;
         }
     }
 
     //*value_ptr = thread->value_ptr;
-    arch_syscall_return(cur_thread, thread->tid);
+    arch_syscall_return(curthread, thread->tid);
 }
 
 static void sys_setpgid(pid_t pid, pid_t pgid)
@@ -723,8 +702,8 @@ static void sys_setpgid(pid_t pid, pid_t pgid)
     syscall_log(LOG_DEBUG, "setpgid(pid=%d, pgid=%d)\n", pid, pgid);
 
     //if (pid == 0 && pgid == 0) {
-        int ret = pgrp_new(cur_thread->owner, NULL);
-        arch_syscall_return(cur_thread, ret);
+        int ret = pgrp_new(curproc, NULL);
+        arch_syscall_return(curthread, ret);
     //} else {
     //    panic("Unsupported");
     //}
@@ -734,52 +713,46 @@ static void sys_mknod(const char *path, uint32_t mode, uint32_t dev)
 {
     syscall_log(LOG_DEBUG, "mknod(path=%s, mode=%x, dev=%x)\n", path, mode, dev);
 
-    int ret = vfs_mknod(path, mode, dev, &PROC_UIO(cur_thread->owner), NULL);
-    arch_syscall_return(cur_thread, ret);
+    int ret = vfs_mknod(path, mode, dev, &PROC_UIO(curproc), NULL);
+    arch_syscall_return(curthread, ret);
 }
 
 static void sys_lstat(const char *path, struct stat *buf)
 {
     syscall_log(LOG_DEBUG, "lstat(path=%s, buf=%p)\n", path, buf);
 
-    struct vnode vnode;
-    struct inode *inode = NULL;
+    struct vnode *vnode = NULL;
     int ret = 0;
-    struct uio uio = PROC_UIO(cur_thread->owner);
+    struct uio uio = PROC_UIO(curproc);
     uio.flags = O_NOFOLLOW;
 
     if ((ret = vfs_lookup(path, &uio, &vnode, NULL))) {
-        arch_syscall_return(cur_thread, ret);
+        arch_syscall_return(curthread, ret);
         return;
     }
 
-    if ((ret = vfs_vget(&vnode, &inode))) {
-        arch_syscall_return(cur_thread, ret);
-        return;
-    }
-
-    ret = vfs_stat(inode, buf);
-    arch_syscall_return(cur_thread, ret);
+    ret = vfs_stat(vnode, buf);
+    arch_syscall_return(curthread, ret);
 }
 
 static void sys_auth(uint32_t uid, const char *pw)
 {
     syscall_log(LOG_DEBUG, "auth(uid=%d, pw=%s)\n", uid, pw);
 
-    cur_thread->owner->uid = uid;   /* XXX */
-    arch_syscall_return(cur_thread, 0);
+    curproc->uid = uid;   /* XXX */
+    arch_syscall_return(curthread, 0);
 }
 
 static void sys_getuid(void)
 {
     syscall_log(LOG_DEBUG, "getuid()\n");
-    arch_syscall_return(cur_thread, cur_thread->owner->uid);
+    arch_syscall_return(curthread, curproc->uid);
 }
 
 static void sys_getgid(void)
 {
     syscall_log(LOG_DEBUG, "getgid()\n");
-    arch_syscall_return(cur_thread, cur_thread->owner->gid);
+    arch_syscall_return(curthread, curproc->gid);
 }
 
 struct mmap_args {
@@ -800,14 +773,14 @@ static void sys_mmap(struct mmap_args *args, void **ret)
 
     int fildes = args->fildes;
     if (fildes < 0 || fildes >= FDS_COUNT) {  /* Out of bounds */
-        arch_syscall_return(cur_thread, -EBADFD);
+        arch_syscall_return(curthread, -EBADFD);
         return; 
     }
 
-    struct file *file = &cur_thread->owner->fds[fildes];
+    struct file *file = &curproc->fds[fildes];
 
-    if (!file->inode) {    /* Invalid File Descriptor */
-        arch_syscall_return(cur_thread, -EBADFD);
+    if (!file->vnode) {    /* Invalid File Descriptor */
+        arch_syscall_return(curthread, -EBADFD);
         return;
     }
 
@@ -829,12 +802,12 @@ static void sys_mmap(struct mmap_args *args, void **ret)
     vm_entry->flags |= args->flags & MAP_SHARED ? VM_SHARED : 0;
     vm_entry->off    = args->off;
 
-    vm_entry->vm_object = vm_object_inode(file->inode);
+    vm_entry->vm_object = vm_object_vnode(file->vnode);
 
     if (!(args->flags & MAP_FIXED))
         vm_entry->base = 0;  /* Allocate memory region */
 
-    struct vm_space *vm_space = &cur_thread->owner->vm_space;
+    struct vm_space *vm_space = &curproc->vm_space;
     if ((err = vm_space_insert(vm_space, vm_entry)))
         goto error;
 
@@ -843,18 +816,18 @@ static void sys_mmap(struct mmap_args *args, void **ret)
 
     *ret = (void *) vm_entry->base;
 
-    arch_syscall_return(cur_thread, err);
+    arch_syscall_return(curthread, err);
     return;
 
 error:
     if (vm_entry) {
         if (vm_entry->qnode)
-            queue_node_remove(&cur_thread->owner->vm_space.vm_entries, vm_entry->qnode);
+            queue_node_remove(&curproc->vm_space.vm_entries, vm_entry->qnode);
 
         kfree(vm_entry);
     }
 
-    arch_syscall_return(cur_thread, err);
+    arch_syscall_return(curthread, err);
     return;
 }
 
@@ -862,7 +835,7 @@ static void sys_munmap(void *addr, size_t len)
 {
     syscall_log(LOG_DEBUG, "munmap(addr=%p, len=%d)\n", addr, len);
 
-    struct vm_space *vm_space = &cur_thread->owner->vm_space;
+    struct vm_space *vm_space = &curproc->vm_space;
 
     queue_for (node, &vm_space->vm_entries) {
         struct vm_entry *vm_entry = node->value;
@@ -871,13 +844,13 @@ static void sys_munmap(void *addr, size_t len)
             queue_node_remove(&vm_space->vm_entries, vm_entry->qnode);
             vm_unmap_full(vm_space, vm_entry);
             kfree(vm_entry);
-            arch_syscall_return(cur_thread, 0);
+            arch_syscall_return(curthread, 0);
             return;
         }
     }
 
     /* Not found */
-    arch_syscall_return(cur_thread, -EINVAL);
+    arch_syscall_return(curthread, -EINVAL);
     return;
 }
 
@@ -886,24 +859,24 @@ static void sys_socket(int domain, int type, int protocol)
     syscall_log(LOG_DEBUG, "socket(domain=%d, type=%d, protocol=%d)\n",
             domain, type, protocol);
 
-    int fd = proc_fd_get(cur_thread->owner);  /* Find a free file descriptor */
+    int fd = proc_fd_get(curproc);  /* Find a free file descriptor */
 
     if (fd == -1) {     /* No free file descriptor */
         /* Reached maximum number of open file descriptors */
-        arch_syscall_return(cur_thread, -EMFILE);
+        arch_syscall_return(curthread, -EMFILE);
         return;
     }
     
     int err = 0;
-    struct file *file = &cur_thread->owner->fds[fd];
+    struct file *file = &curproc->fds[fd];
 
     if ((err = socket_create(file, domain, type, protocol))) {
-        proc_fd_release(cur_thread->owner, fd);
-        arch_syscall_return(cur_thread, err);
+        proc_fd_release(curproc, fd);
+        arch_syscall_return(curthread, err);
         return;
     }
 
-    arch_syscall_return(cur_thread, fd);
+    arch_syscall_return(curthread, fd);
     return;
 }
 
@@ -913,28 +886,28 @@ static void sys_accept(int fd, const struct sockaddr *addr, uint32_t *len)
             fd, addr, len);
 
     if (fd < 0 || fd >= FDS_COUNT) {  /* Out of bounds */
-        arch_syscall_return(cur_thread, -EBADFD);
+        arch_syscall_return(curthread, -EBADFD);
         return; 
     }
 
-    int conn_fd = proc_fd_get(cur_thread->owner);
+    int conn_fd = proc_fd_get(curproc);
 
     if (conn_fd == -1) {
-        arch_syscall_return(cur_thread, -EMFILE);
+        arch_syscall_return(curthread, -EMFILE);
         return; 
     }
 
-    struct file *socket = &cur_thread->owner->fds[fd];
-    struct file *conn   = &cur_thread->owner->fds[conn_fd];
+    struct file *socket = &curproc->fds[fd];
+    struct file *conn   = &curproc->fds[conn_fd];
 
     int err = 0;
     if ((err = socket_accept(socket, conn, addr, len))) {
-        proc_fd_release(cur_thread->owner, conn_fd);
-        arch_syscall_return(cur_thread, err);
+        proc_fd_release(curproc, conn_fd);
+        arch_syscall_return(curthread, err);
         return; 
     }
 
-    arch_syscall_return(cur_thread, conn_fd);
+    arch_syscall_return(curthread, conn_fd);
     return;
 }
 
@@ -944,25 +917,25 @@ static void sys_bind(int fd, const struct sockaddr *addr, uint32_t len)
             fd, addr, len);
 
     if (fd < 0 || fd >= FDS_COUNT) {  /* Out of bounds */
-        arch_syscall_return(cur_thread, -EBADFD);
+        arch_syscall_return(curthread, -EBADFD);
         return; 
     }
 
-    struct file *file = &cur_thread->owner->fds[fd];
+    struct file *file = &curproc->fds[fd];
 
     if (!file) {
-        arch_syscall_return(cur_thread, -EBADFD);
+        arch_syscall_return(curthread, -EBADFD);
         return; 
     }
 
     int err = 0;
 
     if ((err = socket_bind(file, addr, len))) {
-        arch_syscall_return(cur_thread, err);
+        arch_syscall_return(curthread, err);
         return; 
     }
 
-    arch_syscall_return(cur_thread, 0);
+    arch_syscall_return(curthread, 0);
     return;
 }
 
@@ -972,19 +945,19 @@ static void sys_connect(int fd, const struct sockaddr *addr, uint32_t len)
             fd, addr, len);
 
     if (fd < 0 || fd >= FDS_COUNT) {  /* Out of bounds */
-        arch_syscall_return(cur_thread, -EBADFD);
+        arch_syscall_return(curthread, -EBADFD);
         return; 
     }
 
-    struct file *socket = &cur_thread->owner->fds[fd];
+    struct file *socket = &curproc->fds[fd];
     int err = 0;
 
     if ((err = socket_connect(socket, addr, len))) {
-        arch_syscall_return(cur_thread, err);
+        arch_syscall_return(curthread, err);
         return; 
     }
 
-    arch_syscall_return(cur_thread, 0);
+    arch_syscall_return(curthread, 0);
     return;
 }
 
@@ -993,25 +966,25 @@ static void sys_listen(int fd, int backlog)
     syscall_log(LOG_DEBUG, "listen(fd=%d, backlog=%d)\n", fd, backlog);
 
     if (fd < 0 || fd >= FDS_COUNT) {  /* Out of bounds */
-        arch_syscall_return(cur_thread, -EBADFD);
+        arch_syscall_return(curthread, -EBADFD);
         return; 
     }
 
-    struct file *file = &cur_thread->owner->fds[fd];
+    struct file *file = &curproc->fds[fd];
 
     if (!file) {
-        arch_syscall_return(cur_thread, -EBADFD);
+        arch_syscall_return(curthread, -EBADFD);
         return; 
     }
 
     int err = 0;
 
     if ((err = socket_listen(file, backlog))) {
-        arch_syscall_return(cur_thread, err);
+        arch_syscall_return(curthread, err);
         return; 
     }
 
-    arch_syscall_return(cur_thread, 0);
+    arch_syscall_return(curthread, 0);
     return;
 }
 
@@ -1033,25 +1006,25 @@ static void sys_send(struct socket_io_syscall *s)
             fd, buf, len, flags);
 
     if (fd < 0 || fd >= FDS_COUNT) {  /* Out of bounds */
-        arch_syscall_return(cur_thread, -EBADFD);
+        arch_syscall_return(curthread, -EBADFD);
         return; 
     }
 
-    struct file *file = &cur_thread->owner->fds[fd];
+    struct file *file = &curproc->fds[fd];
 
     if (!file) {
-        arch_syscall_return(cur_thread, -EBADFD);
+        arch_syscall_return(curthread, -EBADFD);
         return; 
     }
 
     int err = 0;
 
     if ((err = socket_send(file, buf, len, flags))) {
-        arch_syscall_return(cur_thread, err);
+        arch_syscall_return(curthread, err);
         return; 
     }
 
-    arch_syscall_return(cur_thread, 0);
+    arch_syscall_return(curthread, 0);
     return;
 }
 
@@ -1066,25 +1039,25 @@ static void sys_recv(struct socket_io_syscall *s)
             fd, buf, len, flags);
 
     if (fd < 0 || fd >= FDS_COUNT) {  /* Out of bounds */
-        arch_syscall_return(cur_thread, -EBADFD);
+        arch_syscall_return(curthread, -EBADFD);
         return; 
     }
 
-    struct file *file = &cur_thread->owner->fds[fd];
+    struct file *file = &curproc->fds[fd];
 
     if (!file) {
-        arch_syscall_return(cur_thread, -EBADFD);
+        arch_syscall_return(curthread, -EBADFD);
         return; 
     }
 
     int err = 0;
 
     if ((err = socket_recv(file, buf, len, flags))) {
-        arch_syscall_return(cur_thread, err);
+        arch_syscall_return(curthread, err);
         return; 
     }
 
-    arch_syscall_return(cur_thread, 0);
+    arch_syscall_return(curthread, 0);
     return;
 }
 
@@ -1092,23 +1065,23 @@ static void sys_umask(mode_t mask)
 {
     syscall_log(LOG_DEBUG, "umask(mask=%d)\n", mask);
 
-    mode_t cur_mask = cur_thread->owner->mask;
-    cur_thread->owner->mask = mask & 0777;
+    mode_t cur_mask = curproc->mask;
+    curproc->mask = mask & 0777;
 
-    arch_syscall_return(cur_thread, cur_mask);
+    arch_syscall_return(curthread, cur_mask);
     return;
 }
 
 static void sys_chmod(const char *path, mode_t mode)
 {
     syscall_log(LOG_DEBUG, "chmod(path=%s, mode=%d)\n", path, mode);
-    arch_syscall_return(cur_thread, -ENOSYS);
+    arch_syscall_return(curthread, -ENOSYS);
 }
 
 static void sys_sysconf(int name)
 {
     syscall_log(LOG_DEBUG, "sysconf(name=%d)\n", name);
-    arch_syscall_return(cur_thread, -ENOSYS);
+    arch_syscall_return(curthread, -ENOSYS);
 }
 
 #define F_OK    0
@@ -1123,23 +1096,21 @@ static void sys_access(const char *path, int mode)
     int err = 0;
 
     /* Look up the file */
-    struct vnode vnode;
-    struct inode *inode = NULL;
+    struct vnode *vnode = NULL;
     struct file  file;
 
-    struct uio uio = PROC_UIO(cur_thread->owner);
-    uio.flags = O_RDONLY; /* XXX */
+    struct uio uio = PROC_UIO(curproc);
+
+    uio.flags |= mode && R_OK? O_RDONLY : 0;
+    uio.flags |= mode && W_OK? O_WRONLY : 0;
+    uio.flags |= mode && X_OK? O_EXEC   : 0;
 
     err = vfs_lookup(path, &uio, &vnode, NULL);
 
     if (err) goto done;
 
-    err = vfs_vget(&vnode, &inode);
-
-    if (err) goto done;
-
     file = (struct file) {
-        .inode  = inode,
+        .vnode  = vnode,
         .offset = 0,
         .flags  = uio.flags,
     };
@@ -1148,10 +1119,10 @@ static void sys_access(const char *path, int mode)
         goto done;
 
 done:
-    if (inode)
-        vfs_close(inode);
+    if (vnode)
+        vfs_close(vnode);
 
-    arch_syscall_return(cur_thread, err);
+    arch_syscall_return(curthread, err);
 
     return;
 }
@@ -1159,14 +1130,14 @@ done:
 static void sys_gettimeofday(struct timeval *tv, struct timezone *tz)
 {
     syscall_log(LOG_DEBUG, "gettimeofday(tv=%p, tz=%p)\n", tv, tz);
-    arch_syscall_return(cur_thread, gettimeofday(tv, tz));
+    arch_syscall_return(curthread, gettimeofday(tv, tz));
     return;
 }
 
 static void sys_sigmask(int how, void *set, void *oldset)
 {
     syscall_log(LOG_DEBUG, "sigmask(how=%d, set=%p, oldset=%p)\n", how, set, oldset);
-    arch_syscall_return(cur_thread, -ENOTSUP);
+    arch_syscall_return(curthread, -ENOTSUP);
 }
 
 typedef unsigned long fd_mask;
@@ -1201,7 +1172,7 @@ static void sys_select(struct select_args *args)
 
     for (int i = 0; i < nfds; ++i) {
         if (readfds && readfds->fds_bits[i/NFDBITS] & (1 << (i % NFDBITS))) {
-            struct file *file = &cur_thread->owner->fds[i];
+            struct file *file = &curproc->fds[i];
             if (vfs_file_can_read(file, 1) > 0) {
                 readfds->fds_bits[i/NFDBITS] |= (1 << (i % NFDBITS));
                 ++count;
@@ -1211,7 +1182,7 @@ static void sys_select(struct select_args *args)
         }
 
         if (writefds && writefds->fds_bits[i/NFDBITS] & (1 << (i % NFDBITS))) {
-            struct file *file = &cur_thread->owner->fds[i];
+            struct file *file = &curproc->fds[i];
             if (vfs_file_can_write(file, 1) > 0) {
                 writefds->fds_bits[i/NFDBITS] |= (1 << (i % NFDBITS));
                 ++count;
@@ -1221,13 +1192,37 @@ static void sys_select(struct select_args *args)
         }
     }
 
-    arch_syscall_return(cur_thread, count);
+    arch_syscall_return(curthread, count);
 }
 
 static void sys_getpgrp(void)
 {
     syscall_log(LOG_DEBUG, "getpgrp()\n");
-    arch_syscall_return(cur_thread, cur_thread->owner->pgrp->pgid);
+    arch_syscall_return(curthread, curproc->pgrp->pgid);
+}
+
+static void sys_chown(const char *path, uid_t owner, gid_t group)
+{
+    syscall_log(LOG_DEBUG, "chown(path=%s, ownder=%d, group=%d)\n", path, owner, group);
+    arch_syscall_return(curthread, -ENOSYS);
+}
+
+static void sys_fchown(int fd, uid_t owner, gid_t group)
+{
+    syscall_log(LOG_DEBUG, "fchown(fd=%d, owner=%d, group=%d)\n", fd, owner, group);
+    arch_syscall_return(curthread, -ENOSYS);
+}
+
+static void sys_lchown(const char *path, uid_t owner, gid_t group)
+{
+    syscall_log(LOG_DEBUG, "lchown(path=%s, owner=%d, group=%d)\n", path, owner, group);
+    arch_syscall_return(curthread, -ENOSYS);
+}
+
+static void sys_utime(const char *path, const struct utimbuf *times)
+{
+    syscall_log(LOG_DEBUG, "utime(path=%s, times=%p)\n", path, times);
+    arch_syscall_return(curthread, -ENOSYS);
 }
 
 void (*syscall_table[])() =  {
@@ -1286,6 +1281,10 @@ void (*syscall_table[])() =  {
     /* 52 */    sys_sigmask,
     /* 53 */    sys_select,
     /* 54 */    sys_getpgrp,
+    /* 55 */    sys_chown,
+    /* 56 */    sys_fchown,
+    /* 57 */    sys_lchown,
+    /* 58 */    sys_utime,
 };
 
 const size_t syscall_cnt = sizeof(syscall_table)/sizeof(syscall_table[0]);

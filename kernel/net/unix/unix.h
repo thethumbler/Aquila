@@ -17,7 +17,7 @@ struct un_conn {
 };
 
 struct un_socket {
-    struct vnode vnode;     /* Identifier -- FIXME */
+    struct vnode *vnode;
 
     size_t backlog;    /* Number of connections to keep in queue */
 

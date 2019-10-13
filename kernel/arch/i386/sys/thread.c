@@ -5,6 +5,7 @@
 #include <sys/sched.h>
 #include <sys/signal.h>
 #include <ds/queue.h>
+#include <mm/pmap.h>
 
 MALLOC_DEFINE(M_KERN_STACK, "kern-stack", "kernel stack");
 MALLOC_DEFINE(M_X86_THREAD, "x86-thread", "x86 thread structure");
@@ -20,7 +21,7 @@ void arch_thread_spawn(struct thread *thread)
     struct x86_thread *arch  = thread->arch;
     struct pmap *pmap = thread->owner->vm_space.pmap;
 
-    arch_pmap_switch(pmap);
+    pmap_switch(pmap);
 
     x86_kernel_stack_set(arch->kstack);
 
@@ -38,7 +39,7 @@ void arch_thread_switch(struct thread *thread)
     struct x86_thread *arch  = thread->arch;
     struct pmap *pmap = thread->owner->vm_space.pmap;
 
-    arch_pmap_switch(pmap);
+    pmap_switch(pmap);
 
     x86_kernel_stack_set(arch->kstack);
     x86_fpu_disable();
@@ -58,8 +59,10 @@ void arch_thread_switch(struct thread *thread)
 
 void arch_thread_create(struct thread *thread, uintptr_t stack, uintptr_t entry, uintptr_t uentry, uintptr_t arg)
 {
-    struct x86_thread *arch = kmalloc(sizeof(struct x86_thread), &M_X86_THREAD, 0);
-    memset(arch, 0, sizeof(struct x86_thread));
+    struct x86_thread *arch = kmalloc(sizeof(struct x86_thread), &M_X86_THREAD, M_ZERO);
+    if (!arch) {
+        /* TODO */
+    }
 
     arch->kstack = (uintptr_t) kmalloc(KERN_STACK_SIZE, &M_KERN_STACK, 0) + KERN_STACK_SIZE;
 
@@ -98,7 +101,7 @@ void arch_thread_kill(struct thread *thread)
 {
     struct x86_thread *arch = (struct x86_thread *) thread->arch;
 
-    if (thread == cur_thread) {
+    if (thread == curthread) {
         /* We don't wanna die here */
         uintptr_t esp = VMA(0x100000); /* XXX */
         x86_kernel_stack_set(esp);
@@ -119,7 +122,7 @@ void arch_thread_kill(struct thread *thread)
 
 void internal_arch_sleep()
 {
-    struct x86_thread *arch = cur_thread->arch;
+    struct x86_thread *arch = curthread->arch;
     extern uintptr_t x86_read_ip(void);
 
     uintptr_t ip = 0, sp = 0, bp = 0;    

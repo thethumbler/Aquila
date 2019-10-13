@@ -1,6 +1,8 @@
 #include <core/system.h>
 #include <core/panic.h>
 #include <core/assert.h>
+
+#include <mm/pmap.h>
 #include <mm/mm.h>
 #include <mm/buddy.h> /* XXX */
 #include <mm/vm.h>
@@ -162,7 +164,13 @@ void *kmalloc(size_t size, struct malloc_type *type, int flags)
         type->qnode = enqueue(malloc_types, type);
     }
 
-    return (void *) NODE_ADDR(nodes[i]);
+    void *obj = (void *) NODE_ADDR(nodes[i]);
+
+    if (flags & M_ZERO) {
+        memset(obj, 0, size * 4);
+    }
+
+    return obj;
 }
 
 void kfree(void *_ptr)
@@ -201,7 +209,7 @@ void kfree(void *_ptr)
         if (nodes[cur_node].type)
             printk("object type: %s\n", nodes[cur_node].type->name);
         panic("double free");
-        goto done;
+        //goto done;
     }
 
     /* First we mark our node as free */
@@ -264,7 +272,7 @@ void kfree(void *_ptr)
                 paddr_t paddr = arch_page_get_mapping(kvm_space.pmap, sva);
 
                 if (paddr) {
-                    arch_pmap_remove(kvm_space.pmap, sva, sva + PAGE_SIZE);
+                    pmap_remove(kvm_space.pmap, sva, sva + PAGE_SIZE);
                     buddy_free(BUDDY_ZONE_NORMAL, paddr, PAGE_SIZE);
                 }
 

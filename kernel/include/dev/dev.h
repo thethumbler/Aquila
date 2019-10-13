@@ -8,7 +8,6 @@ struct dev;
 
 #include <mm/vm.h>
 #include <fs/vfs.h>
-#include <fs/ubc.h>
 #include <sys/proc.h>
 
 /**
@@ -38,9 +37,6 @@ struct dev {
 
     struct dev *(*mux)(struct devid *dev);    /* Device Multiplexr */
     size_t  (*getbs)(struct devid *dev);      /* Block size, for blkdev */
-
-    /* device cache */
-    struct ubc *(*getubc)(struct devid *dev);
 };
 
 /* Kernel Device Subsystem Handlers */
@@ -67,7 +63,7 @@ int     kdev_file_eof(struct devid *dd, struct file *file);
 #define DEV(major, minor) ((dev_t)(((major) & 0xFF) << 8) | ((minor) & 0xFF))
 #define DEV_MAJOR(dev)    ((devid_t)(((dev) >> 8) & 0xFF))
 #define DEV_MINOR(dev)    ((devid_t)(((dev) >> 0) & 0xFF))
-#define INODE_DEV(inode)  ((struct devid){.type = (inode)->mode & S_IFMT, .major = DEV_MAJOR((inode)->rdev), .minor = DEV_MINOR((inode)->rdev)})
+#define VNODE_DEV(vnode)  ((struct devid){.type = (vnode)->mode & S_IFMT, .major = DEV_MAJOR((vnode)->rdev), .minor = DEV_MINOR((vnode)->rdev)})
 
 /* Devices -- XXX */
 extern struct dev i8042dev;

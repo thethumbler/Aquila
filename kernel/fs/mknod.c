@@ -1,7 +1,7 @@
 #include <core/system.h>
 #include <fs/vfs.h>
 
-int vfs_mknod(const char *path, mode_t mode, dev_t dev, struct uio *uio, struct inode **ref)
+int vfs_mknod(const char *path, mode_t mode, dev_t dev, struct uio *uio, struct vnode **ref)
 {
     int ret = 0;
     struct vfs_path *p = NULL;
@@ -16,18 +16,12 @@ int vfs_mknod(const char *path, mode_t mode, dev_t dev, struct uio *uio, struct 
         goto error;
 
     /* Canonicalize Path */
-    tokens = canonicalize_path(_path);
+    tokens = tokenize_path(_path);
 
     /* Get mountpoint & path */
     p = vfs_get_mountpoint(tokens);
 
-    struct vnode cur, next;
-
-    cur.super  = p->mountpoint;
-    cur.ino    = p->mountpoint->ino;
-    cur.mode   = S_IFDIR; /* XXX */
-    next.super = p->mountpoint;
-
+    struct vnode *dir = p->root;
     char *name = NULL;
     char **tok = p->tokens;
 
@@ -39,14 +33,17 @@ int vfs_mknod(const char *path, mode_t mode, dev_t dev, struct uio *uio, struct 
             break;
         }
 
-        if ((ret = vfs_vfind(&cur, token, &next)))
+        struct dirent dirent;
+        if ((ret = vfs_finddir(dir, token, &dirent)))
             goto error;
 
-        memcpy(&cur, &next, sizeof(cur));
+        if ((ret = vfs_vget(p->root, dirent.d_ino, &dir)))
+            goto error;
+
         ++tok;
     }
 
-    if ((ret = vfs_vmknod(&cur, name, mode, dev, uio, ref)))
+    if ((ret = vfs_vmknod(dir, name, mode, dev, uio, ref)))
         goto error;
 
     free_tokens(tokens);
@@ -64,12 +61,12 @@ error:
     return ret;
 }
 
-int vfs_mkdir(const char *path, mode_t mode, struct uio *uio, struct inode **ref)
+int vfs_mkdir(const char *path, mode_t mode, struct uio *uio, struct vnode **ref)
 {
     return vfs_mknod(path, S_IFDIR | mode, 0, uio, ref);
 }
 
-int vfs_creat(const char *path, mode_t mode, struct uio *uio, struct inode **ref)
+int vfs_creat(const char *path, mode_t mode, struct uio *uio, struct vnode **ref)
 {
     return vfs_mknod(path, S_IFREG | mode, 0, uio, ref);
 }

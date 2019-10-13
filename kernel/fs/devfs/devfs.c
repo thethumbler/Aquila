@@ -20,20 +20,16 @@
 #include <bits/errno.h>
 
 /* devfs root directory (usually mounted on '/dev') */
-struct inode *devfs_root = NULL;
-struct vnode vdevfs_root;
+struct vnode *devfs_root = NULL;
 
 static int devfs_init()
 {
     /* devfs is really just tmpfs */
-    devfs.iops = tmpfs.iops;
+    devfs.vops = tmpfs.vops;
     devfs.fops = tmpfs.fops;
 
-    devfs_root = kmalloc(sizeof(struct inode), &M_INODE, 0);
-    if (devfs_root == NULL)
-        return -ENOMEM;
-
-    memset(devfs_root, 0, sizeof(struct inode));
+    devfs_root = kmalloc(sizeof(struct vnode), &M_VNODE, M_ZERO);
+    if (!devfs_root) return -ENOMEM;
 
     devfs_root->ino   = (vino_t) devfs_root;
     devfs_root->mode  = S_IFDIR | 0775;
@@ -47,10 +43,6 @@ static int devfs_init()
     devfs_root->ctime = ts;
     devfs_root->atime = ts;
     devfs_root->mtime = ts;
-
-    vdevfs_root.super = devfs_root;
-    vdevfs_root.ino   = (vino_t) devfs_root;
-    vdevfs_root.mode  = S_IFDIR | 0775;
 
     vfs_install(&devfs);
 

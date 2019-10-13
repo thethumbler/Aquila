@@ -2,24 +2,26 @@
 #include <fs/vfs.h>
 #include <dev/dev.h>
 
-int vfs_trunc(struct inode *inode, off_t len)
+int vfs_trunc(struct vnode *vnode, off_t len)
 {
+    vfs_log(LOG_DEBUG, "vfs_trunc(vnode=%p, len=%d)\n", vnode, len);
+
     /* Invalid request */
-    if (!inode)
+    if (!vnode)
         return -EINVAL;
 
     /* Device node */
-    if (ISDEV(inode))
+    if (ISDEV(vnode))
         return -EINVAL;
 
     /* Invalid request */
-    if (!inode->fs)
+    if (!vnode->fs)
         return -EINVAL;
 
     /* Operation not supported */
-    if (!inode->fs->iops.trunc)
+    if (!vnode->fs->vops.trunc)
         return -ENOSYS;
 
-    return inode->fs->iops.trunc(inode, len);
+    return vnode->fs->vops.trunc(vnode, len);
 }
 

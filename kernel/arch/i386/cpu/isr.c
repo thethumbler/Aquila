@@ -97,8 +97,8 @@ void __x86_isr(struct x86_regs *regs)
     extern uint32_t __x86_isr_int_num;
     extern uint32_t __x86_isr_err_num;
 
-    if (__x86_isr_int_num == 0xE && cur_thread) { /* Page Fault */
-        struct x86_thread *arch = cur_thread->arch;
+    if (__x86_isr_int_num == 0xE && curthread) { /* Page Fault */
+        struct x86_thread *arch = curthread->arch;
         //arch->regs = regs;
 
 #if ARCH_BITS==32
@@ -116,7 +116,7 @@ void __x86_isr(struct x86_regs *regs)
         }
 
 #if 0
-        const char *name = cur_thread->owner->name;
+        const char *name = curthread->owner->name;
         if (name && !strcmp(name, "/bin/fbterm")) {
             x86_dump_registers(regs);
             printk("page = %p\n", read_cr2());
@@ -137,7 +137,7 @@ void __x86_isr(struct x86_regs *regs)
     }
     
     if (__x86_isr_int_num == 0x80) {  /* syscall */
-        struct x86_thread *arch = cur_thread->arch;
+        struct x86_thread *arch = curthread->arch;
         arch->regs = regs;
         //asm volatile ("sti");
         arch_syscall(regs);

@@ -201,7 +201,7 @@ void vm_anon_decref(struct vm_anon *vm_anon);
 void vm_anon_destroy(struct vm_anon *vm_anon);
 
 /* mm/vm_object.c */
-struct vm_object *vm_object_inode(struct inode *inode);
+struct vm_object *vm_object_vnode(struct vnode *vnode);
 struct vm_page *vm_object_page_get(struct vm_object *vm_object, size_t off);
 void vm_object_page_insert(struct vm_object *vm_object, struct vm_page *vm_page);
 void vm_object_incref(struct vm_object *vm_object);

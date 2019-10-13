@@ -5,12 +5,14 @@
 #include <sys/sched.h>
 #include <sys/signal.h>
 #include <ds/queue.h>
+#include <mm/pmap.h>
 
 void arch_proc_init(struct proc *proc)
 {
-    //struct pmap *pmap = arch_pmap_create();
-    struct x86_thread *arch = kmalloc(sizeof(struct x86_thread), &M_X86_THREAD, 0);
-    memset(arch, 0, sizeof(struct x86_thread));
+    struct x86_thread *arch = kmalloc(sizeof(struct x86_thread), &M_X86_THREAD, M_ZERO);
+    if (!arch) {
+        /* TODO */
+    }
 
     //struct arch_binfmt *s = d;
     //pmap->map = s->new_map;
@@ -41,9 +43,9 @@ void arch_init_execve(struct proc *proc, int argc, char * const _argp[], int env
     struct pmap *pmap = proc->vm_space.pmap;
     struct thread *thread = (struct thread *) proc->threads.head->value;
 
-    cur_thread = thread;
-    arch_pmap_switch(pmap);
+    curthread = thread;
+    pmap_switch(pmap);
 
     arch_sys_execve(proc, argc, _argp, envc, _envp);
-    cur_thread = NULL;
+    curthread = NULL;
 }

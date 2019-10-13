@@ -48,7 +48,7 @@ static uint32_t atou32(const char *s)
 
 uint32_t x86_pit_period_set(uint32_t period_ns)
 {
-    printk("i8254: Requested period %d ns\n", period_ns);
+    printk("i8254: requested period %d ns\n", period_ns);
 
     uint32_t div;
     const char *arg_div = NULL;
@@ -56,15 +56,18 @@ uint32_t x86_pit_period_set(uint32_t period_ns)
     if (!kargs_get("i8254.div", &arg_div)) {
         div = atou32(arg_div);
     } else {
-        uint32_t freq = 1000000000UL/period_ns;
-        div = FBASE/freq;  
+        //uint32_t period_ms = period_ns / 1000UL;
+        //uint32_t freq = 1000000000UL/period_ms;
+        //printk("freq = %d Hz\n", freq);
+        //div = FBASE/freq;  
+        div = period_ns/838UL;
     }
 
     if (div == 0) div = 1;
 
-    period_ns = 1000000000UL/FBASE/div;
+    period_ns = 1000000000UL/(FBASE/div);
 
-    printk("i8254: Setting period to %d ns (div = %d) (freq)\n", period_ns, div);
+    printk("i8254: Setting period to %d ns (div = %d)\n", period_ns, div);
 
     struct pit_cmd_register cmd = {
         .bcd = 0,

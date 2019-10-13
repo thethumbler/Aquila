@@ -4,5 +4,5 @@
 
 int posix_file_close(struct file *file)
 {
-    return vfs_close(file->inode);
+    return vfs_close(file->vnode);
 }
