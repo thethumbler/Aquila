@@ -16,7 +16,7 @@
 int vprintk(const char *fmt, va_list args);
 int printk(const char *fmt, ...);
 
-#define DEF_LOGGER(module, name, _level) \
+#define LOGGER_DEFINE(module, name, _level) \
 int name(int level, const char *fmt, ...) \
 { \
     if (level <= _level) { \
@@ -28,5 +28,8 @@ int name(int level, const char *fmt, ...) \
     } \
     return 0; \
 }
+
+#define LOGGER_DECLARE(name) \
+int name(int level, const char *fmt, ...);
 
 #endif /* ! _PRINTK_H */

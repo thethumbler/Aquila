@@ -52,10 +52,15 @@ int sig_default_action[] = {
 
 int signal_proc_send(struct proc *proc, int signal)
 {
-    if (proc == cur_thread->owner) {
+    if (proc == curproc) {
         arch_handle_signal(signal);
     } else {
         enqueue(proc->sig_queue, (void *)(intptr_t) signal);
+
+        /* wake up main thread if sleeping - XXX */
+        struct thread *thread = (struct thread *) proc->threads.head->value;
+        if (thread->state == ISLEEP)
+            thread_queue_wakeup(thread->sleep_queue);
     }
 
     return 0;
@@ -73,7 +78,7 @@ int signal_pgrp_send(struct pgroup *pg, int signal)
 
 int signal_send(pid_t pid, int signal)
 {
-    if (cur_thread->owner->pid == pid) {
+    if (curproc->pid == pid) {
         arch_handle_signal(signal);
         return 0;
     } else {

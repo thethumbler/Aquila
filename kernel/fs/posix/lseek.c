@@ -11,7 +11,7 @@
 
 ssize_t posix_file_lseek(struct file *file, off_t offset, int whence)
 {
-    struct inode *inode = file->inode;
+    struct vnode *vnode = file->vnode;
 
     switch (whence) {
         case 0: /* SEEK_SET */
@@ -21,7 +21,7 @@ ssize_t posix_file_lseek(struct file *file, off_t offset, int whence)
             file->offset += offset;
             break;
         case 2: /* SEEK_END */
-            file->offset = inode->size + offset;
+            file->offset = vnode->size + offset;
             break;
     }
 

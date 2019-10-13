@@ -143,7 +143,7 @@ int tty_ioctl(struct tty *tty, int request, void *argp)
             break;
         case TIOCSPGRP:
             /* XXX */
-            tty->fg = cur_thread->owner->pgrp;
+            tty->fg = curproc->pgrp;
             break;
         case TIOCGWINSZ:
             memcpy(argp, &tty->ws, sizeof(struct winsize));
@@ -163,10 +163,8 @@ int tty_new(struct proc *proc, size_t buf_size, ttyio master,
 {
     struct tty *tty = NULL;
     
-    tty = kmalloc(sizeof(struct tty), &M_TTY, 0);
+    tty = kmalloc(sizeof(struct tty), &M_TTY, M_ZERO);
     if (!tty) return -ENOMEM;
-
-    memset(tty, 0, sizeof(struct tty));
 
     if (!buf_size)
         buf_size = TTY_BUF_SIZE;

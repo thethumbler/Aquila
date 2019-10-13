@@ -17,7 +17,7 @@
 #include <sys/elf.h>
 #include <mm/vm.h>
 
-static int binfmt_elf32_load(struct proc *proc, struct inode *inode)
+static int binfmt_elf32_load(struct proc *proc, struct vnode *vnode)
 {
     int err = 0;
 
@@ -25,7 +25,7 @@ static int binfmt_elf32_load(struct proc *proc, struct inode *inode)
 
     struct elf32_hdr hdr;
 
-    if (vfs_read(inode, 0, sizeof(hdr), &hdr) != sizeof(hdr))
+    if (vfs_read(vnode, 0, sizeof(hdr), &hdr) != sizeof(hdr))
         goto e_inval;
 
     uintptr_t proc_heap = 0;
@@ -34,7 +34,7 @@ static int binfmt_elf32_load(struct proc *proc, struct inode *inode)
     for (int i = 0; i < hdr.e_phnum; ++i) {
         struct elf32_phdr phdr;
         
-        if (vfs_read(inode, offset, sizeof(phdr), &phdr) != sizeof(phdr))
+        if (vfs_read(vnode, offset, sizeof(phdr), &phdr) != sizeof(phdr))
             goto e_inval;
 
         if (phdr.p_type == PT_LOAD) {
@@ -73,7 +73,7 @@ static int binfmt_elf32_load(struct proc *proc, struct inode *inode)
             if (!vm_entry->qnode)
                 goto e_nomem;
 
-            vm_entry->vm_object = vm_object_inode(inode);
+            vm_entry->vm_object = vm_object_vnode(vnode);
 
             if (!vm_entry->vm_object)
                 goto e_nomem;
@@ -135,7 +135,7 @@ error:
 }
 
 #if 0
-static int binfmt_elf64_load(struct proc *proc, struct inode *file)
+static int binfmt_elf64_load(struct proc *proc, struct vnode *file)
 {
     int err = 0;
 
@@ -167,8 +167,8 @@ static int binfmt_elf64_load(struct proc *proc, struct inode *file)
             if (shdr.type == SHT_PROGBITS) {
                 vmr->flags |= VM_FILE;
                 vmr->off   = shdr.off;
-                vmr->inode = file;
-                //vfs_read(vmr->inode, vmr->off, vmr->size, (void *) vmr->base);
+                vmr->vnode = file;
+                //vfs_read(vmr->vnode, vmr->off, vmr->size, (void *) vmr->base);
             } else {
                 vmr->flags |= VM_ZERO;
                 //memset((void *) vmr->base, 0, vmr->size);
@@ -189,10 +189,10 @@ static int binfmt_elf64_load(struct proc *proc, struct inode *file)
 }
 #endif
 
-int binfmt_elf_check(struct inode *inode)
+int binfmt_elf_check(struct vnode *vnode)
 {
     struct elf32_hdr hdr;
-    vfs_read(inode, 0, sizeof(hdr), &hdr);
+    vfs_read(vnode, 0, sizeof(hdr), &hdr);
 
     /* Check header */
     if (hdr.e_ident[EI_MAG0] == ELFMAG0 &&
@@ -204,18 +204,18 @@ int binfmt_elf_check(struct inode *inode)
     return -ENOEXEC;
 }
 
-int binfmt_elf_load(struct proc *proc, const char *path __unused, struct inode *inode)
+int binfmt_elf_load(struct proc *proc, const char *path __unused, struct vnode *vnode)
 {
     int err = 0;
 
     struct elf32_hdr hdr;
 
-    if (vfs_read(inode, 0, sizeof(hdr), &hdr) != sizeof(hdr))
+    if (vfs_read(vnode, 0, sizeof(hdr), &hdr) != sizeof(hdr))
         return -EINVAL;
 
     switch (hdr.e_ident[EI_CLASS]) {
         case ELFCLASS32:
-            return binfmt_elf32_load(proc, inode);
+            return binfmt_elf32_load(proc, vnode);
     }
 
     return -EINVAL;

@@ -2,26 +2,26 @@
 #include <fs/vfs.h>
 #include <dev/dev.h>
 
-ssize_t vfs_write(struct inode *inode, off_t offset, size_t size, void *buf)
+ssize_t vfs_write(struct vnode *vnode, off_t off, size_t size, void *buf)
 {
-    //vfs_log(LOG_DEBUG, "vfs_write(inode=%p, offset=%d, size=%d, buf=%p)\n", inode, offset, size, buf);
+    vfs_log(LOG_DEBUG, "vfs_write(vnode=%p, off=%d, size=%d, buf=%p)\n", vnode, off, size, buf);
 
     /* Invalid request */
-    if (!inode)
+    if (!vnode)
         return -EINVAL;
 
     /* Device node */
-    if (ISDEV(inode))
-        return kdev_write(&INODE_DEV(inode), offset, size, buf);
+    if (ISDEV(vnode))
+        return kdev_write(&VNODE_DEV(vnode), off, size, buf);
 
     /* Invalid request */
-    if (!inode->fs)
+    if (!vnode->fs)
         return -EINVAL;
 
     /* Operation not supported */
-    if (!inode->fs->iops.write)
+    if (!vnode->fs->vops.write)
         return -ENOSYS;
 
-    return inode->fs->iops.write(inode, offset, size, buf);
+    return vnode->fs->vops.write(vnode, off, size, buf);
 }
 

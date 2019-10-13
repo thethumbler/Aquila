@@ -2,27 +2,29 @@
 #include <core/panic.h>
 #include <fs/vfs.h>
 
-/** close an inode
+/** close a vnode
  * \ingroup vfs
- * \brief closes an inode (i.e. decrements reference counts)
+ * \brief closes a vnode (i.e. decrements reference counts)
  */
-int vfs_close(struct inode *inode)
+int vfs_close(struct vnode *vnode)
 {
-    /* Invalid request */
-    if (!inode || !inode->fs)
+    vfs_log(LOG_DEBUG, "vfs_close(vnode=%p)\n", vnode);
+
+    /* invalid request */
+    if (!vnode || !vnode->fs)
         return -EINVAL;
 
-    /* Operation not supported */
-    if (!inode->fs->iops.close)
+    /* operation not supported */
+    if (!vnode->fs->vops.close)
         return -ENOSYS;
 
-    if (!inode->ref)
-        panic("closing an already closed inode");
+    if (!vnode->ref)
+        panic("closing an already closed vnode");
 
-    inode->ref--;
+    vnode->ref--;
 
-    if (!inode->ref) {
-        return inode->fs->iops.close(inode);
+    if (!vnode->ref) {
+        return vnode->fs->vops.close(vnode);
     }
 
     return 0;

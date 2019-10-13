@@ -8,7 +8,7 @@
 #include <fs/vfs.h>
 #include <fs/devfs.h>
 #include <fs/posix.h>
-#include <fs/icache.h>
+#include <fs/vcache.h>
 
 #include <sys/proc.h>
 #include <sys/sched.h>
@@ -25,9 +25,8 @@ struct procfs_entry {
 };
 
 /* procfs root directory (usually mounted on /proc) */
-struct inode *procfs_root = NULL;
-struct vnode vprocfs_root;
-struct icache procfs_icache = {0};
+struct vnode *procfs_root = NULL;
+struct vcache procfs_vcache = {0};
 
 /* proc/meminfo */
 static ssize_t procfs_meminfo(off_t off, size_t size, char *buf)
@@ -68,7 +67,7 @@ static ssize_t procfs_kvmem(off_t off, size_t size, char *buf)
     queue_for (node, malloc_types) {
         struct malloc_type *type = (struct malloc_type *) node->value;
         sz += snprintf(kvmem_buf + sz, sizeof(kvmem_buf) - sz,
-                "%s %d %d\n", type->name, type->nr, type->total);
+                "%s %d %d\n", type->name, type->nr, type->total) - 1;
 
         if ((size_t) sz >= sizeof(kvmem_buf))
             break;
@@ -244,6 +243,43 @@ static ssize_t procfs_buddyinfo(off_t off, size_t size, char *buf)
     return 0;
 }
 
+/* proc/devices */
+static ssize_t procfs_devices(off_t off, size_t size, char *buf)
+{
+    char dev_buf[512];
+
+    int sz = 0;
+
+    extern struct dev *chrdev[256];
+    extern struct dev *blkdev[256];
+
+    sz += snprintf(dev_buf + sz, sizeof(dev_buf) - sz, "chrdev:\n");
+    for (int i = 0; i < 256; ++i) {
+        if (chrdev[i]) {
+            sz += snprintf(dev_buf + sz, sizeof(dev_buf) - sz, "%d\t%s\n", i, chrdev[i]->name);
+            if ((size_t) sz >= sizeof(dev_buf))
+                break;
+        }
+    }
+
+    sz += snprintf(dev_buf + sz, sizeof(dev_buf) - sz, "\nblkdev:\n");
+    for (int i = 0; i < 256; ++i) {
+        if (blkdev[i]) {
+            sz += snprintf(dev_buf + sz, sizeof(dev_buf) - sz, "%d\t%s\n", i, blkdev[i]->name);
+            if ((size_t) sz >= sizeof(dev_buf))
+                break;
+        }
+    }
+
+    if (off < sz) {
+        ssize_t ret = MIN(size, (size_t)(sz - off));
+        memcpy(buf, dev_buf + off, ret);
+        return ret;
+    }
+
+    return 0;
+}
+
 static struct procfs_entry entries[] = {
     {"meminfo", procfs_meminfo},
     {"cmdline", procfs_cmdline},
@@ -255,6 +291,7 @@ static struct procfs_entry entries[] = {
     {"buddyinfo", procfs_buddyinfo},
     {"kvmem", procfs_kvmem},
     {"mounts", procfs_mounts},
+    {"devices", procfs_devices},
 };
 
 #define PROCFS_ENTRIES  (sizeof(entries)/sizeof(entries[0]))
@@ -327,10 +364,10 @@ static ssize_t procfs_proc_maps(int pid, off_t off, size_t size, void *buf)
         if (vm_entry == proc->heap_vm)
             desc = "[heap]";
 
-        struct inode *inode = NULL;
+        struct vnode *vnode = NULL;
 
         if (vm_entry->vm_object && vm_entry->vm_object->type == VMOBJ_FILE)
-            inode = (struct inode *) vm_entry->vm_object->p;
+            vnode = (struct vnode *) vm_entry->vm_object->p;
 
         sz += snprintf(maps_buf + sz, sizeof(maps_buf) - sz,
                 "%x-%x %s %x %x %x %s\n",
@@ -338,8 +375,8 @@ static ssize_t procfs_proc_maps(int pid, off_t off, size_t size, void *buf)
                 vm_entry->base + vm_entry->size,  /* End address */
                 perm,   /* Access permissions */
                 vm_entry->off, /* Offset in file */
-                inode? inode->dev : 0, /* Device ID */
-                inode? inode->ino : 0, /* Inode ID */
+                vnode? vnode->dev : 0, /* Device ID */
+                vnode? vnode->ino : 0, /* Inode ID */
                 desc); 
     }
     
@@ -423,7 +460,7 @@ static struct procfs_proc_entry proc_entries[] = {
 
 #define PROCFS_PROC_ENTRIES  (sizeof(proc_entries)/sizeof(proc_entries[0]))
 
-static ssize_t procfs_read(struct inode *node, off_t offset, size_t size, void *buf)
+static ssize_t procfs_read(struct vnode *node, off_t offset, size_t size, void *buf)
 {
     size_t id = (size_t) node->p;
 
@@ -440,9 +477,11 @@ static ssize_t procfs_read(struct inode *node, off_t offset, size_t size, void *
     return -ENOSYS;
 }
 
-static ssize_t procfs_readdir(struct inode *inode, off_t offset, struct dirent *dirent)
+static ssize_t procfs_readdir(struct vnode *vnode, off_t offset, struct dirent *dirent)
 {
-    if (inode == procfs_root) {
+    //printk("procfs_readdir(vnode=%p, offset=%d, dirent=%p)\n", vnode, offset, dirent);
+
+    if (vnode == procfs_root) {
         if (offset == 0) {
             dirent->d_ino = 0;
             strcpy(dirent->d_name, ".");
@@ -480,8 +519,8 @@ static ssize_t procfs_readdir(struct inode *inode, off_t offset, struct dirent *
 
             --offset;
         }
-    } else if (inode->ino > 0) {
-        size_t pid = inode->ino / (PROCFS_PROC_ENTRIES + 1);
+    } else if (vnode->ino > 0) {
+        size_t pid = vnode->ino / (PROCFS_PROC_ENTRIES + 1);
 
         if (offset == 0) {
             dirent->d_ino = 0;
@@ -504,20 +543,20 @@ static ssize_t procfs_readdir(struct inode *inode, off_t offset, struct dirent *
     return 0;
 }
 
-static int procfs_vfind(struct vnode *parent, const char *name, struct vnode *child)
+static int procfs_finddir(struct vnode *parent, const char *name, struct dirent *dirent)
 {
-    if (parent->ino == (vino_t) procfs_root) {
+    //printk("procfs_finddir(parent=%p, name=%s, dirent=%p)\n", parent, name, dirent);
+
+    if (parent->ino == (ino_t) procfs_root) {
         for (size_t i = 0; i < PROCFS_ENTRIES; ++i) {
             if (!strcmp(name, entries[i].name)) {
-                child->ino  = -(i + 1);
-                child->mode = S_IFREG | 0444;
+                dirent->d_ino  = -(i + 1);
                 return 0;
             }
         }
 
         if (!strcmp(name, "self")) {
-            child->ino  = cur_thread->owner->pid * (PROCFS_PROC_ENTRIES + 1);
-            child->mode = S_IFDIR | 0555;
+            dirent->d_ino = curproc->pid * (PROCFS_PROC_ENTRIES + 1);
             return 0;
         }
 
@@ -527,8 +566,7 @@ static int procfs_vfind(struct vnode *parent, const char *name, struct vnode *ch
             snprintf(buf, 10, "%d", proc->pid);
 
             if (!strcmp(buf, name)) {
-                child->ino  = proc->pid * (PROCFS_PROC_ENTRIES + 1);
-                child->mode = S_IFDIR | 0555;
+                dirent->d_ino = proc->pid * (PROCFS_PROC_ENTRIES + 1);
                 return 0;
             }
         }
@@ -537,8 +575,7 @@ static int procfs_vfind(struct vnode *parent, const char *name, struct vnode *ch
 
         for (size_t i = 0; i < PROCFS_PROC_ENTRIES; ++i) {
             if (!strcmp(proc_entries[i].name, name)) {
-                child->ino  = pid * (PROCFS_PROC_ENTRIES + 1) + i + 1;
-                child->mode = S_IFREG | 0444;
+                dirent->d_ino  = pid * (PROCFS_PROC_ENTRIES + 1) + i + 1;
                 return 0;
             }
         }
@@ -547,22 +584,25 @@ static int procfs_vfind(struct vnode *parent, const char *name, struct vnode *ch
     return -ENOENT;
 }
 
-static int procfs_vget(struct vnode *vnode, struct inode **inode)
+static int procfs_vget(struct vnode *super, ino_t ino, struct vnode **vnode)
 {
-    if (vnode->ino == (vino_t) procfs_root) {
-        if (inode)
-            *inode = procfs_root;
+    //printk("procfs_vget(super=%p, ino=%d, vnode=%p)\n", super, ino, vnode);
+
+    int err = 0;
+
+    if (ino == (vino_t) procfs_root) {
+        if (vnode) *vnode = procfs_root;
         return 0;
-    } else if ((ssize_t) vnode->ino < 0) {
-        intptr_t id = -vnode->ino - 1;
+    } else if ((ssize_t) ino < 0) {
+        intptr_t id = -ino - 1;
 
         if ((size_t) id < PROCFS_ENTRIES) {
-            struct inode *node = NULL;
-            if (!(node = icache_find(&procfs_icache, id))) { /* Not in open inode table? */
-                node = kmalloc(sizeof(struct inode), &M_INODE, 0);
-                memset(node, 0, sizeof(struct inode));
+            struct vnode *node = NULL;
+            if (!(node = vcache_find(&procfs_vcache, id))) { /* Not in open vnode table? */
+                node = kmalloc(sizeof(struct vnode), &M_VNODE, M_ZERO);
+                if (!node) goto e_nomem;
 
-                node->ino  = vnode->ino;
+                node->ino  = ino;
                 node->mode = S_IFREG | 0555;
                 node->fs   = &procfs;
                 node->p    = (void *) id;
@@ -574,26 +614,24 @@ static int procfs_vget(struct vnode *vnode, struct inode **inode)
                 node->atime = ts;
                 node->mtime = ts;
 
-                icache_insert(&procfs_icache, node);
+                vcache_insert(&procfs_vcache, node);
             }
 
-            if (inode)
-                *inode = node;
-
+            if (vnode) *vnode = node;
             return 0;
         } else {
             return -ENONET;
         }
     } else {
-        size_t pid = vnode->ino / (PROCFS_PROC_ENTRIES + 1);
-        size_t id  = vnode->ino % (PROCFS_PROC_ENTRIES + 1);
-        struct inode *node = NULL;
+        size_t pid = ino / (PROCFS_PROC_ENTRIES + 1);
+        size_t id  = ino % (PROCFS_PROC_ENTRIES + 1);
+        struct vnode *node = NULL;
 
-        if (!(node = icache_find(&procfs_icache, vnode->ino))) { /* Not in open inode table? */
-            node = kmalloc(sizeof(struct inode), &M_INODE, 0);
-            memset(node, 0, sizeof(struct inode));
+        if (!(node = vcache_find(&procfs_vcache, ino))) { /* Not in open vnode table? */
+            node = kmalloc(sizeof(struct vnode), &M_VNODE, M_ZERO);
+            if (!node) goto e_nomem;
 
-            node->ino = vnode->ino;
+            node->ino = ino;
 
             if (id) {
                 //node->name = proc_entries[id].name;
@@ -612,24 +650,33 @@ static int procfs_vget(struct vnode *vnode, struct inode **inode)
             node->atime = ts;
             node->mtime = ts;
 
-            icache_insert(&procfs_icache, node);
+            vcache_insert(&procfs_vcache, node);
         }
 
-        if (inode)
-            *inode = node;
+        if (vnode) *vnode = node;
 
         return 0;
     }
 
-    //return -1;
+e_nomem:
+    err = -ENOMEM;
+error:
+    return err;
 }
 
-static int procfs_close(struct inode *inode)
+static int procfs_close(struct vnode *vnode)
 {
-    if (inode->ref == 0) {
-        if (icache_find(&procfs_icache, inode->ino))
-            icache_remove(&procfs_icache, inode);
-        kfree(inode);
+    /* we can't free the root vnode */
+    if (vnode == procfs_root) {
+        /* should we panic here? */
+        return 0;
+    }
+
+    if (vnode->ref == 0) {
+        if (vcache_find(&procfs_vcache, vnode->ino))
+            vcache_remove(&procfs_vcache, vnode);
+
+        kfree(vnode);
     }
 
     return 0;
@@ -637,12 +684,8 @@ static int procfs_close(struct inode *inode)
 
 static int procfs_init()
 {
-    procfs_root = kmalloc(sizeof(struct inode), &M_INODE, 0);
-
-    if (!procfs_root)
-        return -ENOMEM;
-
-    memset(procfs_root, 0, sizeof(struct inode));
+    procfs_root = kmalloc(sizeof(struct vnode), &M_VNODE, M_ZERO);
+    if (!procfs_root) return -ENOMEM;
 
     procfs_root->mode = S_IFDIR | 0555;
     procfs_root->ino  = (vino_t) procfs_root;
@@ -656,11 +699,7 @@ static int procfs_init()
     procfs_root->atime = ts;
     procfs_root->mtime = ts;
 
-    vprocfs_root.super  = procfs_root;
-    vprocfs_root.ino  = (vino_t) procfs_root;
-    vprocfs_root.mode = S_IFDIR | 0555;
-
-    icache_init(&procfs_icache);
+    vcache_init(&procfs_vcache);
 
     vfs_install(&procfs);
     return 0;
@@ -678,10 +717,10 @@ struct fs procfs = {
     .init  = procfs_init,
     .mount = procfs_mount,
 
-    .iops = {
+    .vops = {
         .read    = procfs_read,
         .readdir = procfs_readdir,
-        .vfind   = procfs_vfind,
+        .finddir = procfs_finddir,
         .vget    = procfs_vget,
         .close   = procfs_close,
     },

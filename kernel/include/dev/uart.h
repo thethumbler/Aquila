@@ -11,7 +11,7 @@ struct uart {
     struct ringbuf *out;
 
     struct tty   *tty;
-    struct inode *inode;    /* Inode associated with uart device */
+    struct vnode *vnode;    /* vnode associated with uart device */
 
     void    (*init)    (struct uart *u);
     ssize_t (*transmit)(struct uart *u, char c);

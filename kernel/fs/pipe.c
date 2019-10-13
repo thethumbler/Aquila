@@ -8,13 +8,13 @@
 
 MALLOC_DEFINE(M_PIPE, "pipe", "pipe structure");
 
-static ssize_t pipefs_read(struct inode *node, off_t offset __unused, size_t size, void *buf)
+static ssize_t pipefs_read(struct vnode *node, off_t offset __unused, size_t size, void *buf)
 {
     struct pipe *pipe = node->p;
     return ringbuf_read(pipe->ring, size, buf);
 }
 
-static ssize_t pipefs_write(struct inode *node, off_t offset __unused, size_t size, void *buf)
+static ssize_t pipefs_write(struct vnode *node, off_t offset __unused, size_t size, void *buf)
 {
     struct pipe *pipe = node->p;
     return ringbuf_write(pipe->ring, size, buf);
@@ -22,14 +22,14 @@ static ssize_t pipefs_write(struct inode *node, off_t offset __unused, size_t si
 
 static int pipefs_can_read(struct file *file, size_t size)
 {
-    struct inode *node = file->inode;
+    struct vnode *node = file->vnode;
     struct pipe *pipe = node->p;
     return size <= ringbuf_available(pipe->ring);
 }
 
 static int pipefs_can_write(struct file *file, size_t size)
 {
-    struct inode *node = file->inode;
+    struct vnode *node = file->vnode;
     struct pipe *pipe = node->p;
     return size >= pipe->ring->size - ringbuf_available(pipe->ring);
 }
@@ -38,10 +38,9 @@ static int pipefs_mkpipe(struct pipe **ref)
 {
     struct pipe *pipe;
 
-    pipe = kmalloc(sizeof(struct pipe), &M_PIPE, 0);
+    pipe = kmalloc(sizeof(struct pipe), &M_PIPE, M_ZERO);
     if (!pipe) return -ENOMEM;
 
-    memset(pipe, 0, sizeof(struct pipe));
     pipe->ring = ringbuf_new(PIPE_BUFLEN);
     
     if (!pipe->ring) {
@@ -74,34 +73,34 @@ int pipefs_pipe(struct file *read, struct file *write)
     err = pipefs_mkpipe(&pipe);
     if (err) return err;
 
-    read->inode  = kmalloc(sizeof(struct inode), &M_INODE, 0);
-    if (!read->inode) {
+    read->vnode  = kmalloc(sizeof(struct vnode), &M_VNODE, 0);
+    if (!read->vnode) {
         pipefs_pfree(pipe);
         return -ENOMEM;
     }
 
-    write->inode = kmalloc(sizeof(struct inode), &M_INODE, 0);
-    if (!write->inode) {
-        kfree(read->inode);
+    write->vnode = kmalloc(sizeof(struct vnode), &M_VNODE, 0);
+    if (!write->vnode) {
+        kfree(read->vnode);
         pipefs_pfree(pipe);
         return -ENOMEM;
     }
 
-    read->inode->read_queue   = queue_new();
-    if (!read->inode->read_queue) {
-        kfree(read->inode);
-        kfree(write->inode);
+    read->vnode->read_queue   = queue_new();
+    if (!read->vnode->read_queue) {
+        kfree(read->vnode);
+        kfree(write->vnode);
         pipefs_pfree(pipe);
         return -ENOMEM;
     }
 
-    write->inode->write_queue = read->inode->read_queue;
+    write->vnode->write_queue = read->vnode->read_queue;
 
-    read->inode->fs  = &pipefs;
-    read->inode->p   = pipe;
+    read->vnode->fs  = &pipefs;
+    read->vnode->p   = pipe;
 
-    write->inode->fs = &pipefs;
-    write->inode->p  = pipe;
+    write->vnode->fs = &pipefs;
+    write->vnode->p  = pipe;
     write->flags     = O_WRONLY;
     return 0;
 }
@@ -109,7 +108,7 @@ int pipefs_pipe(struct file *read, struct file *write)
 struct fs pipefs = {
     .name = "pipefs",
 
-    .iops = {
+    .vops = {
         .read  = pipefs_read,
         .write = pipefs_write,
     },

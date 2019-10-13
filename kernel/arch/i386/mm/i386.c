@@ -14,8 +14,11 @@
 #include <core/system.h>
 #include <cpu/cpu.h>
 #include <ds/queue.h>
+
+#include <mm/pmap.h>
 #include <mm/buddy.h>
 #include <mm/vm.h>
+
 #include <sys/sched.h>
 
 #include "i386.h"
@@ -237,13 +240,13 @@ static inline uint32_t __page_get_mapping(vaddr_t vaddr)
 static void table_dump(paddr_t table)
 {
     uintptr_t mnt = frame_mount(table);
-    uint32_t *pages = MOUNT_ADDR;
+    uint32_t *_pages = MOUNT_ADDR;
 
     printk("Table: %p\n", table);
 
     for (int i = 0; i < 1024; ++i) {
-        if (pages[i] & PG_PRESENT) {
-            paddr_t page = PHYSADDR(pages[i]);
+        if (_pages[i] & PG_PRESENT) {
+            paddr_t page = PHYSADDR(_pages[i]);
             size_t ref = mm_page_ref(table);
             printk("  %p: %d\n", page, ref);
         }
@@ -254,7 +257,7 @@ static void table_dump(paddr_t table)
 
 #include "page_utils.h"
 
-struct pmap *arch_pmap_switch(struct pmap *pmap)
+struct pmap *pmap_switch(struct pmap *pmap)
 {
     if (!pmap)
         panic("pmap?");
@@ -333,7 +336,7 @@ static struct pmap *pmap_alloc(void)
 static void pmap_release(struct pmap *pmap)
 {
     if (pmap == cur_pmap) {
-        arch_pmap_switch(&k_pmap);
+        pmap_switch(&k_pmap);
         //cur_pmap = NULL;
     }
 
@@ -343,13 +346,13 @@ static void pmap_release(struct pmap *pmap)
     kfree(pmap);
 }
 
-void arch_pmap_init(void)
+void pmap_init(void)
 {
     setup_i386_paging();
     cur_pmap = &k_pmap;
 }
 
-struct pmap *arch_pmap_create(void)
+struct pmap *pmap_create(void)
 {
     struct pmap *pmap = pmap_alloc();
 
@@ -364,13 +367,13 @@ struct pmap *arch_pmap_create(void)
     return pmap;
 }
 
-void arch_pmap_incref(struct pmap *pmap)
+void pmap_incref(struct pmap *pmap)
 {
     /* XXX Handle overflow */
     pmap->ref++;
 }
 
-void arch_pmap_decref(struct pmap *pmap)
+void pmap_decref(struct pmap *pmap)
 {
     pmap->ref--;
 
@@ -380,14 +383,14 @@ void arch_pmap_decref(struct pmap *pmap)
     }
 }
 
-int arch_pmap_add(struct pmap *pmap, vaddr_t va, paddr_t pa, uint32_t flags)
+int pmap_add(struct pmap *pmap, vaddr_t va, paddr_t pa, uint32_t flags)
 {
-    //printk("arch_pmap_add(pmap=%p, va=%p, pa=%p, flags=0x%x)\n", pmap, va, pa, flags);
+    //printk("pmap_add(pmap=%p, va=%p, pa=%p, flags=0x%x)\n", pmap, va, pa, flags);
 
     if ((va & PAGE_MASK) || (pa & PAGE_MASK))
         return -EINVAL;
 
-    struct pmap *old_map = arch_pmap_switch(pmap);
+    struct pmap *old_map = pmap_switch(pmap);
 
     size_t pdidx = VDIR(va);
     size_t ptidx = VTBL(va);
@@ -395,35 +398,35 @@ int arch_pmap_add(struct pmap *pmap, vaddr_t va, paddr_t pa, uint32_t flags)
     page_map(pa, pdidx, ptidx, flags);
     tlb_invalidate_page(va);
 
-    arch_pmap_switch(old_map);
+    pmap_switch(old_map);
 
     return 0;
 }
 
-void arch_pmap_remove(struct pmap *pmap, vaddr_t sva, vaddr_t eva)
+void pmap_remove(struct pmap *pmap, vaddr_t sva, vaddr_t eva)
 {
     if ((sva & PAGE_MASK) || (eva & PAGE_MASK))
         return;
 
-    struct pmap *old_map = arch_pmap_switch(pmap);
+    struct pmap *old_map = pmap_switch(pmap);
 
     while (sva < eva) {
         page_unmap(sva);
         sva += PAGE_SIZE;
     }
 
-    arch_pmap_switch(old_map);
+    pmap_switch(old_map);
 }
 
 static void table_remove_all(paddr_t table)
 {
     uintptr_t mnt = frame_mount(table);
-    uint32_t *pages = MOUNT_ADDR;
+    uint32_t *_pages = MOUNT_ADDR;
 
     for (int i = 0; i < 1024; ++i) {
-        if (pages[i] & PG_PRESENT) {
-            paddr_t page = PHYSADDR(pages[i]);
-            pages[i] = 0;
+        if (_pages[i] & PG_PRESENT) {
+            paddr_t page = PHYSADDR(_pages[i]);
+            _pages[i] = 0;
 
             mm_page_decref(page);
             size_t ref = mm_page_ref(table);
@@ -434,11 +437,11 @@ static void table_remove_all(paddr_t table)
     frame_mount(mnt);
 }
 
-void arch_pmap_remove_all(struct pmap *pmap)
+void pmap_remove_all(struct pmap *pmap)
 {
-    //printk("arch_pmap_remove_all(pmap=%p)\n", pmap);
+    //printk("pmap_remove_all(pmap=%p)\n", pmap);
 
-    struct pmap *old_map = arch_pmap_switch(&k_pmap);
+    struct pmap *old_map = pmap_switch(&k_pmap);
 
     paddr_t base = pmap->map;
 
@@ -448,19 +451,9 @@ void arch_pmap_remove_all(struct pmap *pmap)
     for (int i = 0; i < 768; ++i) {
         if (tbl[i] & PG_PRESENT) {
             paddr_t table = PHYSADDR(tbl[i]);
-
             table_remove_all(table);
-            //mm_page_decref(table);
-            //
-            //printk("table %p ref %d\n", table, mm_page_ref(table));
-
             tbl[i] = 0;
             table_dealloc(table);
-
-            //if (!mm_page_ref(table)) {
-            //    //printk("should release table %p, %d\n", table, mm_page_ref(table));
-            //    table_dealloc(table);
-            //}
         }
     }
 
@@ -468,19 +461,19 @@ void arch_pmap_remove_all(struct pmap *pmap)
 
     frame_mount(old_mount);
 
-    arch_pmap_switch(old_map);
+    pmap_switch(old_map);
 
 
 
     return;
 }
 
-void arch_pmap_protect(struct pmap *pmap, vaddr_t sva, vaddr_t eva, uint32_t prot)
+void pmap_protect(struct pmap *pmap, vaddr_t sva, vaddr_t eva, uint32_t prot)
 {
     if (sva & PAGE_MASK)
         return;
 
-    struct pmap *old_map = arch_pmap_switch(pmap);
+    struct pmap *old_map = pmap_switch(pmap);
 
     while (sva < eva) {
         size_t pdidx = VDIR(sva);
@@ -492,67 +485,87 @@ void arch_pmap_protect(struct pmap *pmap, vaddr_t sva, vaddr_t eva, uint32_t pro
         sva += PAGE_SIZE;
     }
 
-    arch_pmap_switch(old_map);
+    pmap_switch(old_map);
 }
 
-void arch_pmap_copy(struct pmap *dst_map, struct pmap *src_map, vaddr_t dst_addr, size_t len,
+void pmap_copy(struct pmap *dst_map, struct pmap *src_map, vaddr_t dst_addr, size_t len,
  vaddr_t src_addr)
 {
     return;
 }
 
-void arch_pmap_update(struct pmap *pmap)
+void pmap_update(struct pmap *pmap)
 {
     return;
 }
 
 static char __copy_buf[PAGE_SIZE] __aligned(PAGE_SIZE);
-void arch_pmap_page_copy(paddr_t src, paddr_t dst)
+void pmap_page_copy(paddr_t src, paddr_t dst)
 {
     copy_physical_to_virtual(__copy_buf, (char *) src, PAGE_SIZE);
     copy_virtual_to_physical((char *) dst, __copy_buf, PAGE_SIZE);
     return;
 }
 
-void arch_pmap_page_protect(struct vm_page *pg, uint32_t flags)
+void pmap_page_protect(struct vm_page *pg, uint32_t flags)
 {
     return;
 }
 
-int arch_pmap_clear_modify(struct vm_page *pg)
+int pmap_clear_modify(struct vm_page *pg)
 {
     return -1;
 }
 
-int arch_pmap_clear_reference(struct vm_page *pg)
+int pmap_clear_reference(struct vm_page *pg)
 {
     return -1;
 }
 
-int arch_pmap_is_modified(struct vm_page *pg)
+int pmap_is_modified(struct vm_page *pg)
 {
     return -1;
 }
 
-int arch_pmap_is_referenced(struct vm_page *pg)
+int pmap_is_referenced(struct vm_page *pg)
 {
     return -1;
 }
 
 paddr_t arch_page_get_mapping(struct pmap *pmap, vaddr_t vaddr)
 {
-    struct pmap *old_map = arch_pmap_switch(pmap);
+    struct pmap *old_map = pmap_switch(pmap);
 
     //printk("arch_page_get_mapping(vaddr=%p)\n", vaddr);
     uint32_t page = __page_get_mapping(vaddr);
 
     if (page) {
-        arch_pmap_switch(old_map);
+        pmap_switch(old_map);
 
         return PHYSADDR(page);
     }
 
-    arch_pmap_switch(old_map);
+    pmap_switch(old_map);
 
+    return 0;
+}
+
+int pmap_page_read(paddr_t paddr, off_t off, size_t size, void *buf)
+{
+    size_t sz = MAX(PAGE_SIZE, size - off);
+    uintptr_t old = frame_mount(paddr);
+    char *page = (char *) MOUNT_ADDR;
+    memcpy(buf, page + off, sz);
+    frame_mount(old);
+    return 0;
+}
+
+int pmap_page_write(paddr_t paddr, off_t off, size_t size, void *buf)
+{
+    size_t sz = MAX(PAGE_SIZE, size - off);
+    uintptr_t old = frame_mount(paddr);
+    char *page = (char *) MOUNT_ADDR;
+    memcpy(page + off, buf, sz);
+    frame_mount(old);
     return 0;
 }

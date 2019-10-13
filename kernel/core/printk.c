@@ -6,6 +6,7 @@
 
 #define KMSG_SIZE   8192
 struct ringbuf *kmsg = RINGBUF_NEW(KMSG_SIZE);
+struct queue *kmsg_wait = QUEUE_NEW();
 
 static int use_earlycon = 1;
 void earlycon_disable()

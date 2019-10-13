@@ -92,7 +92,6 @@ struct proc {
     /** Groupd ID */
     gid_t gid;
 
-
     /** Process initial heap pointer */
     uintptr_t heap_start;
 

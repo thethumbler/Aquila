@@ -1,9 +1,14 @@
 #include <core/system.h>
 #include <core/arch.h>
+
+#include <mm/pmap.h>
 #include <mm/vm.h>
+
 #include <ds/queue.h>
 
-/** insert a new vm entry into a vm space
+/**
+ * \ingroup mm
+ * \brief insert a new vm entry into a vm space
  */
 int vm_space_insert(struct vm_space *vm_space, struct vm_entry *vm_entry)
 {
@@ -47,7 +52,11 @@ int vm_space_insert(struct vm_space *vm_space, struct vm_entry *vm_entry)
     if (!cur)
         return -ENOMEM;
 
-    struct qnode *node = kmalloc(sizeof(struct qnode), &M_QNODE, 0);
+    struct qnode *node = kmalloc(sizeof(struct qnode), &M_QNODE, M_ZERO);
+    if (!node) {
+        /* TODO */
+    }
+
     node->value = vm_entry;
     node->next = cur;
     node->prev = cur->prev;
@@ -62,7 +71,9 @@ int vm_space_insert(struct vm_space *vm_space, struct vm_entry *vm_entry)
     return 0;
 }
 
-/* look up the vm entry containing `vaddr` inside a vm space
+/**
+ * \ingroup mm
+ * \brief lookup the vm entry containing `vaddr` inside a vm space
  */
 struct vm_entry *vm_space_find(struct vm_space *vm_space, vaddr_t vaddr)
 {
@@ -83,7 +94,9 @@ struct vm_entry *vm_space_find(struct vm_space *vm_space, vaddr_t vaddr)
     return NULL;
 }
 
-/** destroy all resources associated with a vm space
+/**
+ * \ingroup mm
+ * \brief destroy all resources associated with a vm space
  */
 void vm_space_destroy(struct vm_space *vm_space)
 {
@@ -97,10 +110,12 @@ void vm_space_destroy(struct vm_space *vm_space)
         kfree(vm_entry);
     }
 
-    arch_pmap_remove_all(vm_space->pmap);
+    pmap_remove_all(vm_space->pmap);
 }
 
-/** fork a vm space into another vm space
+/**
+ * \ingroup mm
+ * \brief fork a vm space into another vm space
  */
 int vm_space_fork(struct vm_space *src, struct vm_space *dst)
 {
@@ -111,6 +126,10 @@ int vm_space_fork(struct vm_space *src, struct vm_space *dst)
     queue_for (node, &src->vm_entries) {
         struct vm_entry *s_entry = node->value;
         struct vm_entry *d_entry = kmalloc(sizeof(struct vm_entry), &M_VM_ENTRY, 0);
+
+        if (!d_entry) {
+            /* TODO */
+        }
 
         memcpy(d_entry, s_entry, sizeof(struct vm_entry));
         d_entry->qnode = enqueue(&dst->vm_entries, d_entry);
@@ -130,7 +149,7 @@ int vm_space_fork(struct vm_space *src, struct vm_space *dst)
             vaddr_t sva = s_entry->base;
             vaddr_t eva = sva + s_entry->size;
             unsigned flags = s_entry->flags & ~(VM_UW|VM_KW);
-            arch_pmap_protect(src->pmap, sva, eva, flags);
+            pmap_protect(src->pmap, sva, eva, flags);
         }
     }
 

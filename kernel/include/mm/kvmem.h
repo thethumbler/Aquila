@@ -9,6 +9,8 @@ struct malloc_type {
     struct qnode *qnode;
 };
 
+#define M_ZERO  0x0001
+
 #define MALLOC_DECLARE(type) extern struct malloc_type (type)
 #define MALLOC_DEFINE(type, name, desc) struct malloc_type (type) = {(name), (desc), 0, 0, NULL}
 

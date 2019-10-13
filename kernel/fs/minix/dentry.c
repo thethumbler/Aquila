@@ -12,7 +12,6 @@ uint32_t minix_dentry_find(struct minix *desc, struct minix_inode *m_inode, cons
     char block[bs];
 
     struct minix_dentry *dentry;
-    uint32_t inode_nr;
 
     for (size_t i = 0; i < nr_blocks; ++i) {
         minix_inode_block_read(desc, m_inode, i, block);
@@ -32,22 +31,21 @@ uint32_t minix_dentry_find(struct minix *desc, struct minix_inode *m_inode, cons
         }
     }
     
-    /* Not found */
+    /* not found */
     return 0;
 
 found:
-    inode_nr = dentry->inode;
-    return inode_nr;
+    return dentry->ino;
 }
 
-int minix_dentry_create(struct vnode *dir, const char *name, uint32_t inode, mode_t mode)
+int minix_dentry_create(struct vnode *dir, const char *name, ino_t ino, mode_t mode)
 {
     int err = 0;
 
     if (!S_ISDIR(dir->mode))    /* Not a directory */
         return -ENOTDIR;
 
-    struct minix *desc = dir->super->p;
+    struct minix *desc = dir->p;
 
     size_t len = strlen(name);
 
@@ -62,7 +60,6 @@ int minix_dentry_create(struct vnode *dir, const char *name, uint32_t inode, mod
     char block[bs];
 
     struct minix_dentry *dentry;
-    uint32_t inode_nr;
 
     for (size_t i = 0; i < nr_blocks; ++i) {
         minix_inode_block_read(desc, &m_inode, i, block);
@@ -70,9 +67,9 @@ int minix_dentry_create(struct vnode *dir, const char *name, uint32_t inode, mod
         dentry = (struct minix_dentry *) block;
 
         while ((char *) dentry < (char *) block + bs) {
-            if (!dentry->inode) {
+            if (!dentry->ino) {
                 memset(dentry->name, 0, desc->dentry_size);
-                dentry->inode = inode;
+                dentry->ino = ino;
                 memcpy(dentry->name, name, MIN(len, desc->name_len));
                 minix_inode_block_write(desc, &m_inode, dir->ino, i, block);
 

@@ -1,5 +1,5 @@
-#ifndef _ARCH_H
-#define _ARCH_H
+#ifndef _CORE_ARCH_H
+#define _CORE_ARCH_H
 
 #include <core/types.h>
 #include <sys/proc.h>
@@ -39,18 +39,6 @@ void arch_handle_signal(int sig);
 /* arch/ARCH/mm/mm.c */
 void arch_mm_setup(void);
 
-void arch_pmap_init(void);
-struct pmap *arch_pmap_switch(struct pmap *pmap);
-struct pmap *arch_pmap_create(void);
-void arch_pmap_incref(struct pmap *pmap);
-void arch_pmap_decref(struct pmap *pmap);
-//int  arch_pmap_fork(struct pmap *src_map, struct pmap *dst_map);
-int  arch_pmap_add(struct pmap *pmap, vaddr_t va, paddr_t pa, uint32_t flags);
-void arch_pmap_remove(struct pmap *pmap, vaddr_t sva, vaddr_t eva);
-void arch_pmap_protect(struct pmap *pmap, vaddr_t sva, vaddr_t eva, uint32_t prot);
-void arch_pmap_page_copy(paddr_t src, paddr_t dst);
-void arch_pmap_remove_all(struct pmap *pmap);
-
 paddr_t arch_page_get_mapping(struct pmap *pmap, vaddr_t vaddr);
 
 void arch_disable_interrupts(void);
@@ -61,4 +49,4 @@ int arch_time_get(struct timespec *ts);
 
 void arch_stack_trace(void);
 
-#endif /* ! _ARCH_H */
+#endif /* ! _CORE_ARCH_H */

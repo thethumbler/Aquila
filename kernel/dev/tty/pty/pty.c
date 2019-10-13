@@ -11,12 +11,16 @@
 
 MALLOC_DEFINE(M_PTY, "pseudo-terminal", "pseudo-terminal structure");
 
+/**
+ * \ingroup kdev
+ * \brief psuedo-terminal
+ */
 struct pty {
     size_t id;
     struct tty *tty;
 
-    struct inode *master;
-    struct inode *slave;
+    struct vnode *master;
+    struct vnode *slave;
 
     struct ringbuf *in;  /* Master Input, Slave Output */
     struct ringbuf *out; /* Slave Input, Master Output */
@@ -63,15 +67,13 @@ ssize_t pty_slave_write(struct tty *tty, size_t size, void *buf)
  *
  *************************************/
 
-static int ptm_new(struct pty *pty, struct inode **ref)
+static int ptm_new(struct pty *pty, struct vnode **ref)
 {
-    /* Anonymous file, not populated */
-    struct inode *ptm = NULL;
+    /* anonymous file, not populated */
+    struct vnode *ptm = NULL;
     
-    ptm = kmalloc(sizeof(struct inode), &M_INODE, 0);
+    ptm = kmalloc(sizeof(struct vnode), &M_VNODE, M_ZERO);
     if (ptm == NULL) return -ENOMEM;
-
-    memset(ptm, 0, sizeof(struct inode));
 
     ptm->rdev        = DEV(2, pty->id);
     ptm->mode        = S_IFCHR;
@@ -119,7 +121,7 @@ static int pty_ioctl(struct devid *dd, int request, void *argp)
  *
  *************************************/
 
-static int pts_new(struct pty *pty, struct inode **ref)
+static int pts_new(struct pty *pty, struct vnode **ref)
 {
     char name[12];
     memset(name, 0, 12);
@@ -129,9 +131,9 @@ static int pts_new(struct pty *pty, struct inode **ref)
 
     struct uio uio = {0};
 
-    struct inode *pts = NULL;
+    struct vnode *pts = NULL;
     int err = 0;
-    if ((err = vfs_vmknod(&vdevpts_root, name, S_IFCHR, dev, &uio, &pts)))
+    if ((err = vfs_vmknod(devpts_root, name, S_IFCHR, dev, &uio, &pts)))
         return err;
 
     pts->read_queue = &pty->pts_read_queue;
@@ -157,7 +159,7 @@ ssize_t pts_write(struct devid *dd, off_t offset __unused, size_t size, void *bu
 
 int pts_can_read(struct file *file, size_t size)
 {
-    struct devid *dd = &INODE_DEV(file->inode);
+    struct devid *dd = &VNODE_DEV(file->vnode);
     struct pty *pty = ptys[dd->minor];
     return ringbuf_available(pty->in);
 }
@@ -175,19 +177,13 @@ static inline size_t pty_id_get(void)
     return id++;
 }
 
-int pty_new(struct proc *proc, struct inode **master)
+int pty_new(struct proc *proc, struct vnode **master)
 {
     int err = 0;
     struct pty *pty = NULL;
 
-    pty = kmalloc(sizeof(struct pty), &M_PTY, 0);
-
-    if (!pty) {
-        err = -ENOMEM;
-        goto error;
-    }
-
-    memset(pty, 0, sizeof(struct pty));
+    pty = kmalloc(sizeof(struct pty), &M_PTY, M_ZERO);
+    if (!pty) goto e_nomem;
 
     pty->id = pty_id_get();
 
@@ -217,6 +213,8 @@ int pty_new(struct proc *proc, struct inode **master)
 
     return 0;
 
+e_nomem:
+    err = -ENOMEM;
 error:
     if (pty) {
         if (pty->in)
@@ -234,7 +232,7 @@ error:
 
 int ptmx_open(struct file *file)
 {   
-    return pty_new(cur_thread->owner, &(file->inode));
+    return pty_new(curproc, &(file->vnode));
 }
 
 int pty_init()

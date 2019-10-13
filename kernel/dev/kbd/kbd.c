@@ -74,7 +74,7 @@ static int kbddev_file_open(struct file *file)
     if (proc) /* Only one process can open kbd */
         return -EACCES;
 
-    proc = cur_thread->owner;
+    proc = curproc;
 
     /* This is either really smart or really dumb */
     file->inode->read_queue = keyboards[0].read_queue;    

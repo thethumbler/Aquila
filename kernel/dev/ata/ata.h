@@ -35,7 +35,7 @@
 #define ATA_REG_DEVADDRESS          0x0D
 
 /* ATA commands */
-#define ATA_CMD_RESET               0x08
+#define ATA_CMD_RESET               0x04
 #define ATA_CMD_READ_SECTORS        0x20
 #define ATA_CMD_READ_SECTORS_EXT    0x24
 #define ATA_CMD_WRITE_SECTORS       0x30
@@ -89,8 +89,6 @@
 #define ATA_MODE_LBA28              0x20
 #define ATA_MODE_LBA48              0x40
 
-#include <fs/ubc.h>
-
 struct ata_drive {
     struct ioaddr base;
     struct ioaddr ctrl;
@@ -110,8 +108,6 @@ struct ata_drive {
 
     ssize_t (*read) (struct ata_drive *drive, uint64_t lba, size_t count, void *buf);
     ssize_t (*write)(struct ata_drive *drive, uint64_t lba, size_t count, void *buf);
-
-    struct ubc *ubc;
 };
 
 static const char *ata_error_string(uint8_t err)

@@ -1,11 +1,6 @@
-/**********************************************************************
- *              Temporary Filesystem (tmpfs) handler
- *
- *
- *  This file is part of Aquila OS and is released under the terms of
- *  GNU GPLv3 - See LICENSE.
- *
- *  Copyright (C) Mohamed Anwar 
+/**
+ * \defgroup fs-tmpfs
+ * \brief temporary filesystem (tmpfs) handler
  */
 
 #include <core/system.h>
@@ -17,41 +12,36 @@
 #include <mm/mm.h>
 
 #include <fs/vfs.h>
-#include <fs/virtfs.h>
+#include <fs/pseudofs.h>
 #include <fs/tmpfs.h>
 #include <fs/posix.h>
 
 #include <bits/errno.h>
 #include <bits/dirent.h>
 
-static int tmpfs_vget(struct vnode *vnode, struct inode **inode)
+static int tmpfs_vget(struct vnode *super, ino_t ino, struct vnode **vnode)
 {
-    if (!vnode)
-        return -EINVAL;
-
-    /* Inode is always present in memory */
-    struct inode *node = (struct inode *) vnode->ino;
-
-    if (inode)
-        *inode = node;
+    /* vnode is always present in memory */
+    struct vnode *node = (struct vnode *) ino;
+    if (vnode) *vnode = node;
 
     return 0;
 }
 
-static int tmpfs_close(struct inode *inode)
+static int tmpfs_close(struct vnode *vnode)
 {
     /* Inode is always present in memory */
 
-    if (!inode->ref && !inode->nlink) {
-        /* inode is no longer referenced */
-        kfree(inode->p);
-        virtfs_close(inode);
+    if (!vnode->ref && !vnode->nlink) {
+        /* vnode is no longer referenced */
+        kfree(vnode->p);
+        pseudofs_close(vnode);
     }
 
     return 0;
 }
 
-static ssize_t tmpfs_read(struct inode *node, off_t offset, size_t size, void *buf)
+static ssize_t tmpfs_read(struct vnode *node, off_t offset, size_t size, void *buf)
 {
     if (!node->size)
         return 0;
@@ -61,7 +51,7 @@ static ssize_t tmpfs_read(struct inode *node, off_t offset, size_t size, void *b
     return r;
 }
 
-static ssize_t tmpfs_write(struct inode *node, off_t offset, size_t size, void *buf)
+static ssize_t tmpfs_write(struct vnode *node, off_t offset, size_t size, void *buf)
 {
     if (!node->size) {
         size_t sz = (size_t) offset + size;
@@ -82,34 +72,34 @@ static ssize_t tmpfs_write(struct inode *node, off_t offset, size_t size, void *
     return size;
 }
 
-static int tmpfs_trunc(struct inode *inode, off_t len)
+static int tmpfs_trunc(struct vnode *vnode, off_t len)
 {
-    if (!inode)
+    if (!vnode)
         return -EINVAL;
 
-    if ((size_t) len == inode->size)
+    if ((size_t) len == vnode->size)
         return 0;
 
     if (len == 0) {
-        kfree(inode->p);
-        inode->size = 0;
+        kfree(vnode->p);
+        vnode->size = 0;
         return 0;
     }
 
-    size_t sz = MIN((size_t) len, inode->size);
+    size_t sz = MIN((size_t) len, vnode->size);
     char *buf = kmalloc(len, &M_BUFFER, 0);
 
     if (!buf)
         panic("failed to allocate buffer");
 
-    memcpy(buf, inode->p, sz);
+    memcpy(buf, vnode->p, sz);
 
-    if ((size_t) len > inode->size)
-        memset(buf + inode->size, 0, len - inode->size);
+    if ((size_t) len > vnode->size)
+        memset(buf + vnode->size, 0, len - vnode->size);
 
-    kfree(inode->p);
-    inode->p    = buf;
-    inode->size = len;
+    kfree(vnode->p);
+    vnode->p    = buf;
+    vnode->size = len;
     return 0;
 }
 
@@ -117,7 +107,7 @@ static int tmpfs_trunc(struct inode *inode, off_t len)
 
 static int tmpfs_file_can_read(struct file *file, size_t size)
 {
-    if ((size_t) file->offset + size < file->inode->size)
+    if ((size_t) file->offset + size < file->vnode->size)
         return 1;
 
     return 0;
@@ -131,24 +121,19 @@ static int tmpfs_file_can_write(struct file *file __unused, size_t size __unused
 
 static int tmpfs_file_eof(struct file *file)
 {
-    return (size_t) file->offset == file->inode->size;
+    return (size_t) file->offset == file->vnode->size;
 }
 
 static int tmpfs_init()
 {
-    vfs_install(&tmpfs);
-    return 0;
+    return vfs_install(&tmpfs);
 }
 
 static int tmpfs_mount(const char *dir, int flags __unused, void *data __unused)
 {
     /* Initalize new */
-    struct inode *tmpfs_root = kmalloc(sizeof(struct inode), &M_INODE, 0);
-
-    if (!tmpfs_root)
-        return -ENOMEM;
-
-    memset(tmpfs_root, 0, sizeof(struct inode));
+    struct vnode *tmpfs_root = kmalloc(sizeof(struct vnode), &M_VNODE, M_ZERO);
+    if (!tmpfs_root) return -ENOMEM;
 
     uint32_t mode = 0777;
 
@@ -198,16 +183,17 @@ struct fs tmpfs = {
     .init   = tmpfs_init,
     .mount  = tmpfs_mount,
 
-    .iops = {
+    .vops = {
         .read    = tmpfs_read,
         .write   = tmpfs_write,
-        .readdir = virtfs_readdir,
         .close   = tmpfs_close,
         .trunc   = tmpfs_trunc,
 
-        .vmknod  = virtfs_vmknod,
-        .vunlink = virtfs_vunlink,
-        .vfind   = virtfs_vfind,
+        .readdir = pseudofs_readdir,
+        .finddir = pseudofs_finddir,
+
+        .vmknod  = pseudofs_vmknod,
+        .vunlink = pseudofs_vunlink,
         .vget    = tmpfs_vget,
     },
     

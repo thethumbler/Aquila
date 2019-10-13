@@ -42,16 +42,21 @@ void x86_fpu_trap(void)
 {
     x86_fpu_enable();
 
-    struct x86_thread *arch = cur_thread->arch;
+    struct x86_thread *arch = curthread->arch;
 
     if (!last_fpu_thread) {   /* Initialize */
         x86_fpu_init();
         arch->fpu_enabled = 1;
-    } else if (cur_thread != last_fpu_thread) {
+    } else if (curthread != last_fpu_thread) {
         struct x86_thread *_arch = last_fpu_thread->arch;
 
-        if (!_arch->fpu_context)    /* Lazy allocate */
+        if (!_arch->fpu_context) {  /* Lazy allocate */
             _arch->fpu_context = kmalloc(512, &M_X86_FPU, 0);
+
+            if (!_arch->fpu_context) {
+                /* TODO */
+            }
+        }
 
         fpu_save();
         memcpy(_arch->fpu_context, fpu_context, 512);
@@ -65,5 +70,5 @@ void x86_fpu_trap(void)
         }
     }
 
-    last_fpu_thread = cur_thread;
+    last_fpu_thread = curthread;
 }

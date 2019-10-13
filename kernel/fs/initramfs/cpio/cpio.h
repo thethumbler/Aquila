@@ -6,9 +6,10 @@
 
 #define CPIO_BIN_MAGIC    0070707
 
-#if defined(__TINYC__)
-#pragma pack(1)
-#endif
+/**
+ * \ingroup fs
+ * \brief cpio archive header
+ */
 struct cpio_hdr {
     uint16_t magic;
     uint16_t dev;
@@ -22,19 +23,20 @@ struct cpio_hdr {
     uint16_t namesize;
     uint16_t filesize[2];
 } __packed;
-#if defined(__TINYC__)
-#pragma pack()
-#endif
 
+/**
+ * \ingroup fs
+ * \brief cpio archive
+ */
 struct cpio {
-    struct inode *super;
-    struct inode *parent;
-    struct inode *dir;
+    struct vnode *super;
+    struct vnode *parent;
+    struct vnode *dir;
     size_t count;
     size_t data; /* offset of data in the archive */
 
     const char *name;
-    struct inode *next;  /* For directories */
+    struct vnode *next;  /* For directories */
 };
 
 extern struct fs cpiofs;

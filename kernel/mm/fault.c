@@ -1,7 +1,10 @@
 #include <core/system.h>
 #include <core/panic.h>
 #include <core/arch.h>
+
+#include <mm/pmap.h>
 #include <mm/vm.h>
+
 #include <sys/sched.h>
 
 /**
@@ -32,8 +35,6 @@ static inline int check_violation(int flags, int vm_flags)
  * \ingroup mm
  * \brief handle the page fault if the page is already present
  * in virtual memory mapping
- *
- * \param pf page fault structure
  */
 static inline int pf_present(struct pf *pf)
 {
@@ -43,6 +44,10 @@ static inline int pf_present(struct pf *pf)
 
     struct pmap *pmap = pf->vm_space->pmap;
 
+    /* if there is no anon or the anon is shared
+     * we can't handle it here and have to fallthrough to 
+     * other handlers
+     */
     if (!vm_anon || vm_anon->ref != 1)
         return 0;
 
@@ -60,7 +65,7 @@ static inline int pf_present(struct pf *pf)
         new_page->ref = 1;
         new_page->vm_object = NULL;
 
-        arch_pmap_page_copy(vm_aref->vm_page->paddr, new_page->paddr);
+        pmap_page_copy(vm_aref->vm_page->paddr, new_page->paddr);
 
         mm_page_decref(vm_aref->vm_page->paddr);
 
@@ -70,7 +75,7 @@ static inline int pf_present(struct pf *pf)
         mm_page_map(pmap, pf->addr, new_page->paddr, pf->vm_entry->flags & VM_PERM);
     } else {
         /* we own the aref, just change permissions */
-        arch_pmap_protect(pmap, pf->addr, pf->addr+PAGE_SIZE, pf->vm_entry->flags & VM_PERM);
+        pmap_protect(pmap, pf->addr, pf->addr+PAGE_SIZE, pf->vm_entry->flags & VM_PERM);
     }
 
     return 1;
@@ -83,14 +88,7 @@ static inline int pf_anon(struct pf *pf)
 
     struct pmap *pmap = pf->vm_space->pmap;
 
-    //struct vm_anon *vm_anon = vm_entry->vm_anon;
-
-    //printk("vm_anon %p\n", vm_entry->vm_anon);
-    //printk(" \\---> (ref=%d)\n", vm_entry->vm_anon->ref);
-    
     if (vm_anon->flags & VM_COPY) {
-        /* anon needs copying */
-        //printk("anon needs copying\n");
 
         if (vm_anon->ref > 1) {
             struct vm_anon *new_anon = vm_anon_copy(vm_anon);
@@ -102,10 +100,7 @@ static inline int pf_anon(struct pf *pf)
         vm_anon->flags &= ~VM_COPY;
     }
 
-    //printk("vm_anons %d\n", M_VM_ANON.nr);
-
     struct hashmap_node *aref_node = hashmap_lookup(vm_anon->arefs, pf->hash, &pf->off);
-    //printk("aref_node %p\n", aref_node);
 
     if (!aref_node || !aref_node->entry)
         return 0;
@@ -142,11 +137,12 @@ static inline int pf_anon(struct pf *pf)
     }
 
     /* copy, map read-write */
-    //printk("copy, map read-write\n");
-    //printk("aref->ref %d\n", aref->ref);
 
-    struct vm_aref *new_aref = kmalloc(sizeof(struct vm_aref), &M_VM_AREF, 0);
-    memset(new_aref, 0, sizeof(struct vm_aref));
+    struct vm_aref *new_aref = kmalloc(sizeof(struct vm_aref), &M_VM_AREF, M_ZERO);
+
+    if (!new_aref) {
+        /* TODO */
+    }
 
     new_aref->ref = 1;
     new_aref->flags = aref->flags;
@@ -160,7 +156,7 @@ static inline int pf_anon(struct pf *pf)
     new_page->ref = 1;
     new_page->vm_object = NULL;
 
-    arch_pmap_page_copy(vm_page->paddr, new_page->paddr);
+    pmap_page_copy(vm_page->paddr, new_page->paddr);
 
     new_aref->vm_page = new_page;
 
@@ -204,8 +200,6 @@ static inline int pf_object(struct pf *pf)
     /* look for page in the object pages hashmap */
     vm_page = vm_object_page(vm_object, pf->hash, pf->off);
 
-    //printk("vm_page %p\n", vm_page);
-
     if (!(vm_entry->flags & VM_UW)) {
         /* read only page -- just map */
         mm_page_incref(vm_page->paddr);
@@ -214,9 +208,6 @@ static inline int pf_object(struct pf *pf)
     }
 
     /* read-write page -- promote */
-    //printk("should promote to the anon layer\n");
-
-    //struct vm_anon *vm_anon = vm_entry->vm_anon;
 
     /* allocate a new anon if we don't have one */
     if (!vm_entry->vm_anon) {
@@ -224,10 +215,11 @@ static inline int pf_object(struct pf *pf)
         vm_entry->vm_anon->ref = 1;
     }
 
-    //printk("rw page: vm_entry->vm_anon %p\n", vm_entry->vm_anon);
+    struct vm_aref *vm_aref = kmalloc(sizeof(struct vm_aref), &M_VM_AREF, M_ZERO);
 
-    struct vm_aref *vm_aref = kmalloc(sizeof(struct vm_aref), &M_VM_AREF, 0);
-    memset(vm_aref, 0, sizeof(struct vm_aref));
+    if (!vm_aref) {
+        /* TODO */
+    }
 
     vm_aref->vm_page = vm_page;
     vm_aref->ref = 1;
@@ -247,12 +239,7 @@ static inline int pf_object(struct pf *pf)
     new_page->ref = 1;
     new_page->vm_object = NULL;
 
-    arch_pmap_page_copy(vm_page->paddr, new_page->paddr);
-
-    //if (!mm_page_ref(vm_page->paddr)) {
-    //    printk("should free page here?\n");
-    //    //for (;;);
-    //}
+    pmap_page_copy(vm_page->paddr, new_page->paddr);
 
     vm_aref->vm_page = new_page;
     hashmap_insert(vm_entry->vm_anon->arefs, pf->hash, vm_aref);
@@ -273,10 +260,10 @@ static inline int pf_zero(struct pf *pf)
         vm_entry->vm_anon->ref = 1;
     }
 
-    //printk("zero: vm_entry->vm_anon %p\n", vm_entry->vm_anon);
-
-    struct vm_aref *vm_aref = kmalloc(sizeof(struct vm_aref), &M_VM_AREF, 0);
-    memset(vm_aref, 0, sizeof(struct vm_aref));
+    struct vm_aref *vm_aref = kmalloc(sizeof(struct vm_aref), &M_VM_AREF, M_ZERO);
+    if (!vm_aref) {
+        /* TODO */
+    }
 
     struct vm_page *new_page = mm_page_alloc();
     new_page->off = pf->off;
@@ -290,7 +277,7 @@ static inline int pf_zero(struct pf *pf)
 
     mm_page_map(pmap, pf->addr, new_page->paddr, VM_KW); //vm_entry->flags & VM_PERM);
     memset((void *) pf->addr, 0, PAGE_SIZE);
-    arch_pmap_protect(pmap, pf->addr, pf->addr+PAGE_SIZE, vm_entry->flags & VM_PERM);
+    pmap_protect(pmap, pf->addr, pf->addr+PAGE_SIZE, vm_entry->flags & VM_PERM);
 
     return 1;
 }
@@ -307,24 +294,26 @@ static inline int pf_zero(struct pf *pf)
  */
 void mm_page_fault(vaddr_t vaddr, int flags)
 {
-    //printk("mm_page_fault(vaddr=%p, flags=0x%x)\n", vaddr, flags);
-
     vaddr_t addr = PAGE_ALIGN(vaddr);
 
-    struct vm_space *vm_space = &cur_thread->owner->vm_space;
+    struct vm_space *vm_space = &curproc->vm_space;
     struct pmap *pmap = vm_space->pmap;
     struct vm_entry *vm_entry = NULL;
 
     /* look for vm_entry that contains the page */
     vm_entry = vm_space_find(vm_space, addr);
 
+    /* segfault if there is no entry or the permissions are incorrect */
     if (!vm_entry || check_violation(flags, vm_entry->flags))
         goto sigsegv;
 
-    /* page offset in object */
+    /* get page offset in object */
     size_t off = addr - vm_entry->base + vm_entry->off;
+
+    /* hash the offset */
     hash_t hash = hashmap_digest(&off, sizeof(off));
 
+    /* construct page fault structure */
     struct pf pf = {
         .flags = flags,
         .addr = addr,
@@ -334,24 +323,23 @@ void mm_page_fault(vaddr_t vaddr, int flags)
         .hash = hash,
     };
 
+    /* try to handle page present case */
     if (flags & PF_PRESENT && pf_present(&pf))
         return;
 
-    /* we first check the anon layer for the page */
+    /* check the anon layer for the page and handle if present */
     if (vm_entry->vm_anon && pf_anon(&pf))
         return;
 
-    /* page not found in the anon layer */
+    /* check the backening object for the page and handle if present */
     if (vm_entry->vm_object && pf_object(&pf))
         return;
 
+    /* just zero out the page */
     if (pf_zero(&pf))
         return;
 
 sigsegv:
-    printk("sigsegv\n");
-    for (;;);
-
-    signal_proc_send(cur_thread->owner, SIGSEGV);
+    signal_proc_send(curproc, SIGSEGV);
     return;
 }

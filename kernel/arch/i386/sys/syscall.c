@@ -9,12 +9,12 @@ void arch_syscall(struct x86_regs *r)
 {
 #if ARCH_BITS==32
     if (r->eax >= syscall_cnt) {
-        printk("[%d:%d] %s: undefined syscall %d\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name, r->eax);
+        printk("[%d:%d] %s: undefined syscall %d\n", curproc->pid, curthread->tid, curproc->name, r->eax);
 #else
     if (r->rax >= syscall_cnt) {
-        printk("[%d:%d] %s: undefined syscall %ld\n", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name, r->rax);
+        printk("[%d:%d] %s: undefined syscall %ld\n", curproc->pid, curthread->tid, curproc->name, r->rax);
 #endif
-        arch_syscall_return(cur_thread,-ENOSYS);
+        arch_syscall_return(curthread,-ENOSYS);
         return;
     }
 	

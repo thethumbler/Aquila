@@ -18,12 +18,8 @@ static struct queue *sockets = QUEUE_NEW();  /* Open sockets */
 int socket_unix_create(struct file *file, int domain, int type, int protocol)
 {
     //printk("socket_unix_create(file=%p, domain=%d, type=%d, protocol=%d)\n", file, domain, type, protocol);
-    struct socket *socket = kmalloc(sizeof(struct socket), &M_SOCKET, 0);
-
-    if (!socket)
-        return -ENOMEM;
-
-    memset(socket, 0, sizeof(struct socket));
+    struct socket *socket = kmalloc(sizeof(struct socket), &M_SOCKET, M_ZERO);
+    if (!socket) return -ENOMEM;
 
     socket->domain   = domain;
     socket->type     = type;
@@ -39,7 +35,7 @@ int socket_unix_create(struct file *file, int domain, int type, int protocol)
 
 static int socket_unix_accept(struct file *file, struct file *conn, const struct sockaddr *addr, socklen_t *len)
 {
-    //printk("%d:%d socket_unix_accept(socket=%p, conn=%p, addr=%p, len=%p)\n", cur_thread->tid, cur_thread->owner->pid, file, conn, addr, len);
+    //printk("%d:%d socket_unix_accept(socket=%p, conn=%p, addr=%p, len=%p)\n", curthread->tid, curproc->pid, file, conn, addr, len);
     
     if (!file || !file->socket)
         return -EINVAL;
@@ -60,6 +56,10 @@ static int socket_unix_accept(struct file *file, struct file *conn, const struct
     /* Initialize connection */
     conn->flags  |= FILE_SOCKET;
     conn->socket  = kmalloc(sizeof(struct socket), &M_SOCKET, 0);
+    if (!conn->socket) {
+        /* TODO */
+    }
+
     memcpy(conn->socket, file->socket, sizeof(struct socket));
 
     conn->socket->domain = AF_UNIX_CONN;
@@ -85,9 +85,9 @@ static int socket_unix_bind(struct file *file, const struct sockaddr *addr, sock
 
     /* Get path vnode */
     int err = 0;
-    struct vnode vnode = {0};
-    struct uio uio = PROC_UIO(cur_thread->owner);
+    struct uio uio = PROC_UIO(curproc);
 
+    struct vnode *vnode = NULL;
     err = vfs_lookup(addr_un->sun_path, &uio, &vnode, NULL);
 
     if (err && err != -ENOENT)
@@ -104,15 +104,10 @@ static int socket_unix_bind(struct file *file, const struct sockaddr *addr, sock
     if ((err = vfs_lookup(addr_un->sun_path, &uio, &vnode, NULL)))
         return err;
 
-    struct un_socket *socket = kmalloc(sizeof(struct un_socket), &M_UN_SOCKET, 0);
+    struct un_socket *socket = kmalloc(sizeof(struct un_socket), &M_UN_SOCKET, M_ZERO);
+    if (!socket) return -ENOMEM;
 
-    if (!socket)
-        return -ENOMEM;
-
-    memset(socket, 0, sizeof(struct un_socket));
-
-    memcpy(&socket->vnode, &vnode, sizeof(vnode));
-
+    socket->vnode = vnode;
     enqueue(sockets, socket);
 
     file->socket->p = socket;
@@ -128,8 +123,8 @@ static int socket_unix_connect(struct file *file, const struct sockaddr *addr, s
 
     /* Get path vnode */
     int err = 0;
-    struct vnode vnode = {0};
-    struct uio uio = PROC_UIO(cur_thread->owner);
+    struct vnode *vnode = NULL;
+    struct uio uio = PROC_UIO(curproc);
 
     /* Open socket */
     if ((err = vfs_lookup(addr_un->sun_path, &uio, &vnode, NULL))) {
@@ -140,7 +135,7 @@ static int socket_unix_connect(struct file *file, const struct sockaddr *addr, s
 
     queue_for (node, sockets) {
         struct un_socket *_socket = (struct un_socket *) node->value;
-        if (_socket->vnode.super == vnode.super && _socket->vnode.ino == vnode.ino) {
+        if (_socket->vnode == vnode) {
             socket = _socket;
             break;
         }
@@ -149,12 +144,8 @@ static int socket_unix_connect(struct file *file, const struct sockaddr *addr, s
     if ((!socket->listening) || socket->requests.count > socket->backlog)
         return -ECONNREFUSED;
 
-    struct un_conn *request = kmalloc(sizeof(struct un_conn), &M_UN_CONN, 0);
-
-    if (!request)
-        return -ENOMEM;
-
-    memset(request, 0, sizeof(struct un_conn));
+    struct un_conn *request = kmalloc(sizeof(struct un_conn), &M_UN_CONN, M_ZERO);
+    if (!request) return -ENOMEM;
 
     enqueue(&socket->requests, request);
 

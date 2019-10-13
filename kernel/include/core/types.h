@@ -7,7 +7,7 @@ typedef int       pid_t;
 typedef pid_t     tid_t;
 typedef long int  off_t;
 
-#if !defined(__TINYC__)
+#if !defined(__TINYC__) || !defined(__clang__)
 typedef long int  ssize_t;
 #endif
 
@@ -40,6 +40,11 @@ struct timeval {
 struct timezone {
     int tz_minuteswest;     /* minutes west of Greenwich */
     int tz_dsttime;         /* type of DST correction */
+};
+
+struct utimbuf {
+    time_t actime;
+    time_t modtime;
 };
 
 #endif

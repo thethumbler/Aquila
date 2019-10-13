@@ -1,9 +1,14 @@
+/**
+ * \defgroup fs-minix kernel/fs/minix
+ * \brief minix filesystem
+ */
 #include <core/system.h>
 #include <core/module.h>
 
 #include <fs/vfs.h>
 #include <fs/posix.h>
-#include <fs/icache.h>
+#include <fs/vcache.h>
+#include <fs/bcache.h>
 #include <bits/errno.h>
 #include <ds/bitmap.h>
 
@@ -12,37 +17,33 @@
 MALLOC_DEFINE(M_MINIX, "minix", "minix filesystem structure");
 MALLOC_DEFINE(M_MINIX_SB, "minix-sb", "minix filesystem superblock structure");
 
-int minix_inode_build(struct minix *desc, ino_t ino, struct inode **ref)
+int minix_inode_build(struct minix *desc, ino_t ino, struct vnode **ref)
 {
     int err = 0;
-    struct inode *inode = NULL;
+    struct vnode *inode = NULL;
 
     /* In open inode table? */
-    if ((inode = icache_find(desc->icache, ino)))
+    if ((inode = vcache_find(desc->vcache, ino)))
         goto found;
 
-    inode = kmalloc(sizeof(struct inode), &M_INODE, 0);
+    inode = kmalloc(sizeof(struct vnode), &M_VNODE, M_ZERO);
+    if (!inode) return -ENOMEM;
 
-    if (!inode)
-        return -ENOMEM;
-
-    memset(inode, 0, sizeof(struct inode));
-
-    struct minix_inode m_inode;
+    struct minix_inode minix_inode;
     
-    if ((err = minix_inode_read(desc, ino, &m_inode)))
+    if ((err = minix_inode_read(desc, ino, &minix_inode)))
         goto error;
 
     inode->ino   = ino;
-    inode->size  = m_inode.size;
-    inode->mode  = m_inode.mode;
-    inode->uid   = m_inode.uid;
-    inode->gid   = m_inode.gid;
-    inode->nlink = m_inode.nlinks;
+    inode->size  = minix_inode.size;
+    inode->mode  = minix_inode.mode;
+    inode->uid   = minix_inode.uid;
+    inode->gid   = minix_inode.gid;
+    inode->nlink = minix_inode.nlinks;
 
     //node->atim.tv_sec  = i.last_access_time;
     //node->atim.tv_nsec = 0;
-    inode->mtime.tv_sec  = m_inode.mtime;
+    inode->mtime.tv_sec  = minix_inode.mtime;
     inode->mtime.tv_nsec = 0;
     //node->ctim.tv_sec  = i.creation_time;
     //node->ctim.tv_nsec = 0;
@@ -50,7 +51,7 @@ int minix_inode_build(struct minix *desc, ino_t ino, struct inode **ref)
     inode->fs = &minixfs;
     inode->p  = desc;
 
-    icache_insert(desc->icache, inode);
+    vcache_insert(desc->vcache, inode);
 
 found:
     if (ref)
@@ -65,15 +66,34 @@ error:
     return err;
 }
 
+int minix_inode_sync(struct vnode *inode)
+{
+    int err = 0;
+
+    struct minix *desc = inode->p;
+    struct minix_inode minix_inode;
+    
+    if ((err = minix_inode_read(desc, inode->ino, &minix_inode)))
+        return err;
+
+    minix_inode.size   = inode->size;
+    minix_inode.mode   = inode->mode;
+    minix_inode.uid    = inode->uid;
+    minix_inode.gid    = inode->gid;
+    minix_inode.nlinks = inode->nlink;
+    minix_inode.mtime  = inode->mtime.tv_sec;
+
+    return minix_inode_write(desc, inode->ino, &minix_inode);
+}
+
 /* ================== VFS routines ================== */
 
 static int minix_init()
 {
-    vfs_install(&minixfs);
-    return 0;
+    return vfs_install(&minixfs);
 }
 
-static int minix_load(struct inode *dev, struct inode **super)
+static int minix_load(struct vnode *dev, struct vnode **super)
 {
     int err = 0;
 
@@ -81,8 +101,7 @@ static int minix_load(struct inode *dev, struct inode **super)
     struct minix *desc = NULL;
    
     sb = kmalloc(sizeof(struct minix_superblock), &M_MINIX_SB, 0);
-    if (sb == NULL)
-        return -ENOMEM;
+    if (sb == NULL) return -ENOMEM;
 
     if ((err = vfs_read(dev, 1024, sizeof(*sb), sb)) < 0)
         goto error;
@@ -108,19 +127,19 @@ static int minix_load(struct inode *dev, struct inode **super)
 
     /* Build descriptor structure */
     desc = kmalloc(sizeof(struct minix), &M_MINIX, 0);
-    if (desc == NULL) {
-        err = -ENOMEM;
-        goto error;
-    }
+    if (!desc) goto e_nomem;
 
     desc->supernode   = dev;
     desc->superblock  = sb;
 
     if (version == 1) {
         desc->bs          = 1024UL << sb->block_size;
-        desc->imap        = 1024UL + desc->bs;
-        desc->zmap        = 1024UL + (1 + sb->imap_blocks) * desc->bs;
+
+        desc->imap_off    = 1024UL + desc->bs;
+        desc->zmap_off    = 1024UL + (1 + sb->imap_blocks) * desc->bs;
+
         desc->inode_table = 1024UL + (1 + sb->imap_blocks + sb->zmap_blocks) * desc->bs;
+
         desc->inode_size  = 32;
         desc->name_len    = name_len;
         desc->dentry_size = name_len + 2;
@@ -129,18 +148,32 @@ static int minix_load(struct inode *dev, struct inode **super)
         return -ENOTSUP;
     }
 
-    desc->icache = kmalloc(sizeof(struct icache), &M_ICACHE, 0);
-    
-    if (!desc->icache)
-        return -ENOMEM;
+    /* load inodes bitmap */
+    desc->imap.map = kmalloc(sb->imap_blocks * desc->bs, &M_BUFFER, 0);
+    desc->imap.max_idx = sb->ninodes;
+    vfs_read(desc->supernode, desc->imap_off, sb->imap_blocks * desc->bs, desc->imap.map);
 
-    icache_init(desc->icache);
+    /* load blocks bitmap */
+    desc->zmap.map = kmalloc(sb->zmap_blocks * desc->bs, &M_BUFFER, 0);
+    desc->zmap.max_idx = sb->nzones;
+    vfs_read(desc->supernode, desc->zmap_off, sb->zmap_blocks * desc->bs, desc->zmap.map);
+
+    desc->vcache = kmalloc(sizeof(struct vcache), &M_VCACHE, 0);
+    if (!desc->vcache) goto e_nomem;
+
+    vcache_init(desc->vcache);
+
+    desc->bcache = kmalloc(sizeof(struct bcache), &M_BCACHE, 0);
+    if (!desc->bcache) goto e_nomem;
+    bcache_init(desc->bcache);
 
     if (super)
         minix_inode_build(desc, 1, super);
     
     return 0;
 
+e_nomem:
+    err = -ENOMEM;
 error:
     if (sb)
         kfree(sb);
@@ -155,19 +188,15 @@ static int minix_mount(const char *dir, int flags, void *_args)
         char *opt;
     } *args = _args;
 
-    struct vnode vnode;
-    struct inode *dev;
+    struct vnode *dev = NULL;
     int err;
 
     struct uio uio = {0};   /* FIXME */
 
-    if ((err = vfs_lookup(args->dev, &uio, &vnode, NULL)))
+    if ((err = vfs_lookup(args->dev, &uio, &dev, NULL)))
         goto error;
 
-    if ((err = vfs_vget(&vnode, &dev)))
-        goto error;
-
-    struct inode *fs;
+    struct vnode *fs;
 
     if ((err = minixfs.load(dev, &fs)))
         goto error;
@@ -184,13 +213,14 @@ struct fs minixfs = {
     .load  = minix_load,
     .mount = minix_mount,
 
-    .iops = {
+    .vops = {
         .read    = minix_read,
         .write   = minix_write,
         .readdir = minix_readdir,
+        .finddir = minix_finddir,
+        .trunc   = minix_trunc,
         
         .vmknod  = minix_vmknod,
-        .vfind   = minix_vfind,
         .vget    = minix_vget,
     },
 
@@ -200,6 +230,7 @@ struct fs minixfs = {
         .write   = posix_file_write,
         .readdir = posix_file_readdir,
         .lseek   = posix_file_lseek,
+        .trunc   = posix_file_trunc,
 
         .eof     = posix_file_eof,
     }

@@ -6,7 +6,8 @@
 #include <ds/queue.h>
 
 extern struct queue *ready_queue;
-extern struct thread *cur_thread;
+extern struct thread *curthread;
+#define curproc (curthread->owner)
 
 extern int kidle;
 void kernel_idle(void);

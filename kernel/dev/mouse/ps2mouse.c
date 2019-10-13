@@ -156,8 +156,8 @@ static int ps2mouse_file_open(struct file *file)
     if (proc) /* Only one process can open kbd */
         return -EACCES;
 
-    proc = cur_thread->owner;
-    file->inode->read_queue = mouse_read_queue;    
+    proc = curproc;
+    file->vnode->read_queue = mouse_read_queue;    
 
     return posix_file_open(file);
 }

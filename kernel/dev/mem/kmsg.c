@@ -9,6 +9,7 @@
 
 struct dev kmsgdev;
 extern struct ringbuf *kmsg;
+extern struct queue *kmsg_wait;
 
 static ssize_t kmsgdev_read(struct devid *dd __unused, off_t offset, size_t size, void *buf)
 {
@@ -31,12 +32,18 @@ static ssize_t kmsgdev_write(struct devid *dd __unused, off_t offset, size_t siz
     return size;
 }
 
+static int kmsg_file_open(struct file *file)
+{
+    file->vnode->read_queue = kmsg_wait;
+    return posix_file_open(file);
+}
+
 struct dev kmsgdev = {
     .read  = kmsgdev_read,
     .write = kmsgdev_write,
 
     .fops  = {
-        .open  = posix_file_open,
+        .open  = kmsg_file_open,
         .read  = posix_file_read,
         .write = posix_file_write,
         .close = posix_file_close,

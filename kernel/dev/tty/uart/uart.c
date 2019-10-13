@@ -20,7 +20,7 @@ void uart_recieve_handler(struct uart *u, size_t size)
     }
 
     tty_master_write(u->tty, size, buf);  
-    thread_queue_wakeup(u->inode->read_queue);
+    thread_queue_wakeup(u->vnode->read_queue);
 }
 
 /* Called when data is ready to be transmitted */
@@ -35,7 +35,7 @@ void uart_transmit_handler(struct uart *u, size_t size)
         u->transmit(u, c);
     }
 
-    thread_queue_wakeup(u->inode->write_queue);
+    thread_queue_wakeup(u->vnode->write_queue);
 }
 
 /* TTY Interface */
@@ -76,22 +76,22 @@ int uart_ioctl(struct devid *dd, int request, void *argp)
 
 int uart_file_open(struct file *file)
 {
-    size_t id = (file->inode->rdev & 0xFF) - 64;
+    size_t id = (file->vnode->rdev & 0xFF) - 64;
     struct uart *u = devices[id];
     int err = 0;
 
-    if (u->inode) { /* Already open */
+    if (u->vnode) { /* already open */
         /* XXX */
-        file->inode = u->inode;
+        file->vnode = u->vnode;
     } else {
         u->init(u);
-        u->inode = file->inode;
+        u->vnode = file->vnode;
         /* TODO Error checking */
         u->in = ringbuf_new(UART_BUF);
         u->out = ringbuf_new(UART_BUF);
-        tty_new(cur_thread->owner, 0, uart_master_write, uart_slave_write, u, &u->tty);
-        file->inode->read_queue  = queue_new();
-        file->inode->write_queue = queue_new();
+        tty_new(curproc, 0, uart_master_write, uart_slave_write, u, &u->tty);
+        file->vnode->read_queue  = queue_new();
+        file->vnode->write_queue = queue_new();
     }
 
     return 0;

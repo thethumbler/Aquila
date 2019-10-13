@@ -6,7 +6,7 @@
 #include <ds/queue.h>
 
 struct queue *ready_queue = QUEUE_NEW();   /* Ready threads queue */
-struct thread *cur_thread = NULL;
+struct thread *curthread = NULL;
 
 void sched_thread_ready(struct thread *thread)
 {
@@ -40,9 +40,9 @@ void sched_init_spawn(struct proc *init)
 
     session_new(init);
 
-    cur_thread = (struct thread *) init->threads.head->value;
-    cur_thread->state = RUNNABLE;
-    sched_thread_spawn(cur_thread);
+    curthread = (struct thread *) init->threads.head->value;
+    curthread->state = RUNNABLE;
+    sched_thread_spawn(curthread);
 }
 
 void schedule() /* Called from arch-specific timer event handler */
@@ -51,19 +51,19 @@ void schedule() /* Called from arch-specific timer event handler */
         panic("Threads queue is not initialized");
 
     if (!kidle)
-        sched_thread_ready(cur_thread);
+        sched_thread_ready(curthread);
 
     kidle = 0;
 
     if (!ready_queue->count) /* No ready threads, idle */
         kernel_idle();
 
-    cur_thread = dequeue(ready_queue);
-    cur_thread->sched_node = NULL;
+    curthread = dequeue(ready_queue);
+    curthread->sched_node = NULL;
 
-    if (cur_thread->spawned) {
-        arch_thread_switch(cur_thread);
+    if (curthread->spawned) {
+        arch_thread_switch(curthread);
     } else {
-        sched_thread_spawn(cur_thread);
+        sched_thread_spawn(curthread);
     }
 }

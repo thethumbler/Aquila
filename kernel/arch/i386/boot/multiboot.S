@@ -76,4 +76,4 @@ multiboot_signature: .long 0
 multiboot_info: .long 0
 
 /* vim: ft=gas:
- */
+*/

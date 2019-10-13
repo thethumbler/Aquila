@@ -23,7 +23,7 @@
 #include <ds/queue.h>
 #include <boot/boot.h>
 
-static struct inode *rd_dev = NULL;
+static struct vnode *rd_dev = NULL;
 static struct queue *archivers = QUEUE_NEW();
 
 int initramfs_archiver_register(struct fs *fs)
@@ -40,12 +40,8 @@ int load_ramdisk(module_t *module)
 {
     printk("kernel: loading ramdisk\n");
 
-    rd_dev = kmalloc(sizeof(struct inode), &M_INODE, 0);
-
-    if (!rd_dev)
-        return -ENOMEM;
-
-    memset(rd_dev, 0, sizeof(struct inode));
+    rd_dev = kmalloc(sizeof(struct vnode), &M_VNODE, M_ZERO);
+    if (!rd_dev) return -ENOMEM;
 
     extern size_t rd_size;
 
@@ -54,7 +50,7 @@ int load_ramdisk(module_t *module)
     rd_dev->size = rd_size;
     rd_dev->fs   = &devfs;
 
-    struct inode *root = NULL;
+    struct vnode *root = NULL;
     int err = -1;
 
     queue_for (node, archivers) {
