@@ -16,7 +16,9 @@ ssize_t tty_master_write(struct tty *tty, size_t size, void *buf)
 
         while (size) {
             if (*c == tty->tios.c_cc[VEOF]) {
+                /* TODO */
             } else if (*c == tty->tios.c_cc[VEOL]) {
+                /* TODO */
             } else if (*c == tty->tios.c_cc[VERASE]) {
                 /* The ERASE character shall delete the last character in
                  * the current line, if there is one.
@@ -151,13 +153,22 @@ int tty_ioctl(struct tty *tty, int request, void *argp)
         case TIOCSWINSZ:
             memcpy(&tty->ws, argp, sizeof(struct winsize));
             break;
+        case TIOCSCTTY:
+            /* FIXME */
+            tty->proc = curproc;
+            curproc->pgrp->session->ctty = tty->dev;
+            break;
         default:
-            return -1;
+            return -EINVAL;
     }
     
     return 0;
 }
 
+/**
+ * \ingroup dev-tty
+ * \brief create a new generic tty interface
+ */
 int tty_new(struct proc *proc, size_t buf_size, ttyio master,
         ttyio slave, void *p, struct tty **ref)
 {

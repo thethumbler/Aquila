@@ -12,19 +12,23 @@ struct tty;
 typedef ssize_t (*ttyio)(struct tty *tty, size_t size, void *buf);
 
 struct tty {
-    char   *cook;     /* Cooking buffer */
+    char   *cook;     /* cooking buffer */
     size_t pos;
 
     struct termios tios;
     struct winsize ws;
 
-    struct proc   *proc;   /* Controlling Process */
-    struct pgroup *fg;     /* Foreground Process Group */
+    struct dev    *dev;     /* associated device */
+    struct proc   *proc;    /* controlling process */
+    struct pgroup *fg;      /* foreground process group */
 
-    /* Interface */
-    void    *p;       /* Private data */
+    /* interface */
+    void    *p;       /* private data */
     ttyio   master_write;
     ttyio   slave_write;
+
+    struct queue masterq;
+    struct queue slaveq;
 };
 
 #define TTY_BUF_SIZE 512
