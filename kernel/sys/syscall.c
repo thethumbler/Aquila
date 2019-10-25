@@ -1225,6 +1225,12 @@ static void sys_utime(const char *path, const struct utimbuf *times)
     arch_syscall_return(curthread, -ENOSYS);
 }
 
+static void sys_rmdir(const char *path)
+{
+    syscall_log(LOG_DEBUG, "rmdir(path=%s)\n", path);
+    arch_syscall_return(curthread, -ENOSYS);
+}
+
 void (*syscall_table[])() =  {
     /* 00 */    NULL,
     /* 01 */    sys_exit,
@@ -1261,7 +1267,7 @@ void (*syscall_table[])() =  {
     /* 32 */    sys_setpgid,
     /* 33 */    sys_mknod,
     /* 34 */    sys_lstat,
-    /* 35 */    sys_auth,
+    /* 35 */    sys_auth, /* deprecated */
     /* 36 */    sys_getuid,
     /* 37 */    sys_getgid,
     /* 38 */    sys_mmap,
@@ -1285,6 +1291,7 @@ void (*syscall_table[])() =  {
     /* 56 */    sys_fchown,
     /* 57 */    sys_lchown,
     /* 58 */    sys_utime,
+    /* 59 */    sys_rmdir,
 };
 
 const size_t syscall_cnt = sizeof(syscall_table)/sizeof(syscall_table[0]);
