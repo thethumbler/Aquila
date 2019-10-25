@@ -7,6 +7,7 @@
 #include <core/module.h>
 #include <dev/ttydev.h>
 #include <fs/posix.h>
+#include <sys/sched.h>
 
 struct dev *sttydev_mux(struct devid *dd)
 {
@@ -23,14 +24,11 @@ struct dev *ttydev_mux(struct devid *dd)
 {
     switch (dd->minor) {
         case 0: /* /dev/tty */
-            //return cur_thread->owner->pgrp->session->ttydev;
-            break;
+            return curproc->pgrp->session->ctty;
         case 1: /* /dev/console */
             return &condev;
-            break;
         case 2: /* /dev/ptmx */
             return &ptmdev;
-            break;
     }
 
     return NULL;

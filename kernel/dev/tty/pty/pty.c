@@ -12,7 +12,7 @@
 MALLOC_DEFINE(M_PTY, "pseudo-terminal", "pseudo-terminal structure");
 
 /**
- * \ingroup kdev
+ * \ingroup dev-tty
  * \brief psuedo-terminal
  */
 struct pty {
@@ -22,15 +22,20 @@ struct pty {
     struct vnode *master;
     struct vnode *slave;
 
-    struct ringbuf *in;  /* Master Input, Slave Output */
-    struct ringbuf *out; /* Slave Input, Master Output */
+    /** master input, slave output */
+    struct ringbuf *in;
 
-    struct queue pts_read_queue;  /* Slave read, Master write wait queue */
-    struct queue pts_write_queue; /* Slave write, Master read wait queue */
+    /** slave input, master output */
+    struct ringbuf *out;
+
+    /** slave read, master write wait queue */
+    struct queue pts_read_queue;
+
+    /** slave write, master read wait queue */
+    struct queue pts_write_queue;
 };
 
 #define PTY_BUF 4096
-#define BUF_THR 5
 
 static struct pty *ptys[256] = {0};
 
@@ -41,24 +46,37 @@ struct dev ptsdev;
 ssize_t pty_master_write(struct tty *tty, size_t size, void *buf)
 {
     struct pty *pty = (struct pty *) tty->p;
+    size_t written = 0;
 
-    size_t r = pty->in->size - ringbuf_available(pty->out);
-    if (size <= BUF_THR && r < size)
-        return 0;
+    while (written < size) {
+        written += ringbuf_write(pty->out, size - written, (char *) buf + written);
 
-    return ringbuf_write(pty->out, size, buf);
+        if (written != size) {
+            /* writes must always complete */
+            if (thread_queue_sleep(&pty->pts_read_queue))
+                return -EINTR;
+        }
+    }
+
+    return written;
 }
 
 ssize_t pty_slave_write(struct tty *tty, size_t size, void *buf)
 {
-    //printk("pty_slave_write(tty=%p, size=%d, buf=%p)\n", tty, size, buf);
     struct pty *pty = (struct pty *) tty->p;
+    size_t written = 0;
 
-    size_t r = pty->in->size - ringbuf_available(pty->in);
-    if (size <= BUF_THR && r < size)
-        return 0;
+    while (written < size) {
+        written += ringbuf_write(pty->in, size - written, (char *) buf + written);
 
-    return ringbuf_write(pty->in, size, buf);
+        if (written != size) {
+            /* writes must always complete */
+            if (thread_queue_sleep(&pty->pts_read_queue))
+                return -EINTR;
+        }
+    }
+
+    return written;
 }
 
 /*************************************
@@ -90,7 +108,11 @@ static int ptm_new(struct pty *pty, struct vnode **ref)
 static ssize_t ptm_read(struct devid *dd, off_t offset __unused, size_t size, void *buf)
 {
     struct pty *pty = ptys[dd->minor];
-    return ringbuf_read(pty->out, size, buf);  
+    size_t ret = ringbuf_read(pty->out, size, buf);  
+
+    thread_queue_wakeup(&pty->pts_read_queue);
+
+    return ret;
 }
 
 static ssize_t ptm_write(struct devid *dd, off_t offset __unused, size_t size, void *buf)
@@ -147,12 +169,14 @@ static int pts_new(struct pty *pty, struct vnode **ref)
 
 ssize_t pts_read(struct devid *dd, off_t offset __unused, size_t size, void *buf)
 {
+    /* FIXME check bounds */
     struct pty *pty = ptys[dd->minor];
     return ringbuf_read(pty->in, size, buf);
 }
 
 ssize_t pts_write(struct devid *dd, off_t offset __unused, size_t size, void *buf)
 {
+    /* FIXME check bounds */
     struct pty *pty = ptys[dd->minor];
     return tty_slave_write(pty->tty, size, buf);
 }
@@ -199,6 +223,8 @@ int pty_new(struct proc *proc, struct vnode **master)
 
     if ((err = tty_new(proc, 0, pty_master_write, pty_slave_write, pty, &pty->tty)))
         goto error;
+
+    pty->tty->dev = &ptmdev;
 
     if ((err = ptm_new(pty, &pty->master)))
         goto error;
