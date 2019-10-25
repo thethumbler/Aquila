@@ -29,7 +29,7 @@ struct session {
     struct proc *leader;
 
     /* Controlling Terminal */
-    //struct dev *ttydev;
+    struct dev *ctty;
 
     /** Session node on sessions queue */
     struct qnode *qnode;
