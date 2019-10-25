@@ -22,7 +22,7 @@
 #endif
 
 #define UTSNAME_SYSNAME  "AquilaOS"
-#define UTSNAME_RELEASE  "v0.0.1a"
+#define UTSNAME_RELEASE  "v0.0.2"
 #define UTSNAME_NODENAME "aquila"
 #define UTSNAME_VERSION  (__DATE__ " " __TIME__)
 
