@@ -29,7 +29,7 @@ struct x86_thread {
 
     /* Flags */
     int fpu_enabled;
-    int isr;
+    //int isr;
 };
 
 MALLOC_DECLARE(M_X86_THREAD);
@@ -54,11 +54,6 @@ static inline void arch_interrupts_disable(void)
 
 void x86_jump_user(uintptr_t eax, uintptr_t eip, uintptr_t cs, uintptr_t eflags, uintptr_t esp, uintptr_t ss) __attribute__((noreturn));
 void x86_goto(uintptr_t eip, uintptr_t ebp, uintptr_t esp) __attribute__((noreturn));
-
-struct arch_binfmt {
-    uintptr_t cur_map;
-    uintptr_t new_map;
-};
 
 #include_next <core/arch.h>
 
