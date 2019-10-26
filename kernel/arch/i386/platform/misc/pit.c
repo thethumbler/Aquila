@@ -56,10 +56,6 @@ uint32_t x86_pit_period_set(uint32_t period_ns)
     if (!kargs_get("i8254.div", &arg_div)) {
         div = atou32(arg_div);
     } else {
-        //uint32_t period_ms = period_ns / 1000UL;
-        //uint32_t freq = 1000000000UL/period_ms;
-        //printk("freq = %d Hz\n", freq);
-        //div = FBASE/freq;  
         div = period_ns/838UL;
     }
 
