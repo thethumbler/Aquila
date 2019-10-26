@@ -133,6 +133,10 @@ typedef uint16_t elf32_half;
 #define STT_LOPROC  13
 #define STT_HIPROC  15
 
+/**
+ * \ingroup binfmt
+ * \brief elf32 file header
+ */
 struct elf32_hdr {
     uint8_t     e_ident[EI_NIDENT];
     elf32_half  e_type;
@@ -150,6 +154,10 @@ struct elf32_hdr {
     elf32_half  e_shstrndx;
 };
 
+/**
+ * \ingroup binfmt
+ * \brief elf32 section header
+ */
 struct elf32_shdr {
     elf32_word  sh_name;
     elf32_word  sh_type;
@@ -163,6 +171,10 @@ struct elf32_shdr {
     elf32_word  sh_entsize;
 };
 
+/**
+ * \ingroup binfmt
+ * \brief elf32 symbol
+ */
 struct elf32_sym {
     elf32_word  st_name;
     elf32_word  st_value;
@@ -172,6 +184,10 @@ struct elf32_sym {
     elf32_half  st_shndx;
 };
 
+/**
+ * \ingroup binfmt
+ * \brief elf32 program header
+ */
 struct elf32_phdr {
     elf32_word  p_type;
     elf32_off   p_offset;
@@ -183,6 +199,10 @@ struct elf32_phdr {
     elf32_word  p_align;
 };
 
+/**
+ * \ingroup binfmt
+ * \brief elf32 dynamic entry
+ */
 struct elf32_dyn {
     elf32_sword     d_tag;
     union {
