@@ -1,22 +1,60 @@
 #include <core/arch.h>
 #include <core/platform.h>
+#include <core/time.h>
 #include <mm/mm.h>
 #include <sys/proc.h>
 #include <sys/sched.h>
 
 #include "sys.h"
 
-uint32_t timer_freq = 62;
-uint32_t timer_ticks = 0;
-uint32_t timer_sub_ticks = 0;
+static uint32_t timer_period = 0;
+static uint64_t timer_ticks = 0;
+
+uint64_t arch_rtime_ns(void)
+{
+    return timer_ticks * timer_period;
+}
+
+uint64_t arch_rtime_us(void)
+{
+    return timer_ticks * timer_period / 1000ULL;
+}
+
+uint64_t arch_rtime_ms(void)
+{
+    return timer_ticks * timer_period / 1000000ULL;
+}
+
+static uint64_t first_measured_time = 0;
 
 static void x86_sched_handler(struct x86_regs *r) 
 {
-    ++timer_sub_ticks;
-    if (timer_sub_ticks == timer_freq) {
-        timer_ticks++;
-        timer_sub_ticks = 0;
+    /* we check time every 2^16 ticks */
+    if (!(timer_ticks & 0xFFFF)) {
+        if (!timer_ticks) {
+            struct timespec ts = {0};
+            gettime(&ts);
+            first_measured_time = ts.tv_sec;
+        } else {
+            struct timespec ts = {0};
+            gettime(&ts);
+
+            uint64_t measured_time = ts.tv_sec - first_measured_time;
+            uint64_t calculated_time = arch_rtime_ms() / 1000;
+
+            int32_t delta = calculated_time - measured_time;
+
+            if (ABS(delta) > 1) {
+                printk("warning: calculated time differs from measured time by %c%d seconds\n", delta < 0? '-' : '+', ABS(delta));
+                printk("calculated time: %d seconds\n", calculated_time);
+                printk("measured time: %d seconds\n", measured_time);
+
+                /* TODO: attempt to correct time */
+            }
+        }
     }
+
+    ++timer_ticks;
 
     if (!kidle) {
         struct x86_thread *arch = (struct x86_thread *) curthread->arch;
@@ -53,7 +91,7 @@ static void x86_sched_handler(struct x86_regs *r)
 
 void arch_sched_init(void)
 {
-    platform_timer_setup(20000, x86_sched_handler);
+    timer_period = platform_timer_setup(2000000, x86_sched_handler);
 }
 
 static void __arch_idle(void)
@@ -97,4 +135,3 @@ void arch_sleep(void)
     extern void x86_sleep(void);
     x86_sleep();
 }
-

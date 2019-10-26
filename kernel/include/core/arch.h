@@ -6,8 +6,6 @@
 
 /* arch/ARCH/sys/proc.c */
 void arch_proc_init(struct proc *proc);
-void arch_proc_spawn(struct proc *init);
-void arch_proc_switch(struct proc *proc) __attribute__((noreturn));
 void arch_proc_kill(struct proc *proc);
 void arch_init_execve(struct proc *proc, int argc, char * const _argp[], int envc, char * const _envp[]);
 void arch_sleep(void);
@@ -44,6 +42,10 @@ paddr_t arch_page_get_mapping(struct pmap *pmap, vaddr_t vaddr);
 void arch_disable_interrupts(void);
 
 void arch_reboot(void);
+
+uint64_t arch_rtime_ns(void);
+uint64_t arch_rtime_us(void);
+uint64_t arch_rtime_ms(void);
 
 int arch_time_get(struct timespec *ts);
 

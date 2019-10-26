@@ -78,10 +78,7 @@ static int x86_pc_cmos_init(void)
 uint32_t platform_timer_setup(size_t period_ns, void (*handler)())
 {
     uint32_t period = x86_pit_period_set(period_ns);
-    //hpet_timer_setup(1, handler);
-    
     x86_irq_handler_install(PIT_IRQ, handler);
-
     return period;
 }
 

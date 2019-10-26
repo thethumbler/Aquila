@@ -4,6 +4,7 @@
 #define _BV(b) (1 << (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define ABS(a) ((a) < 0? -(a) : (a))
 
 #define MEMBER_SIZE(type, member) (sizeof(((type *)0)->member))
 

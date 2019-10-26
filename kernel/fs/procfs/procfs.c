@@ -1,4 +1,5 @@
 #include <core/system.h>
+#include <core/arch.h>
 #include <core/module.h>
 #include <core/string.h>
 #include <core/time.h>
@@ -109,8 +110,7 @@ static ssize_t procfs_uptime(off_t off, size_t size, char *buf)
 {
     char uptime_buf[64];
 
-    extern uint32_t timer_ticks;
-    int sz = snprintf(uptime_buf, 64, "%d\n", timer_ticks);
+    int sz = snprintf(uptime_buf, 64, "%ld\n", arch_rtime_ms() / 1000);
 
     if (off < sz) {
         ssize_t ret = MIN(size, (size_t)(sz - off));
