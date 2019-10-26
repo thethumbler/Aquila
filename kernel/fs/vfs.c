@@ -180,7 +180,10 @@ next:;
     return path;
 }
 
-/*  Bind VFS path to node */
+/**
+ * \ingroup vfs
+ * \brief  bind a vfs path to a vnode
+ */
 int vfs_bind(const char *path, struct vnode *target)
 {
     /* if path is NULL pointer, or path is empty string, or no target return EINVAL */
@@ -245,6 +248,10 @@ void vfs_init(void)
     vfs_log(LOG_INFO, "initializing\n");
 }
 
+/**
+ * \ingroup vfs
+ * \brief register a new filesystem handler
+ */
 int vfs_install(struct fs *fs)
 {
     struct fs_list *node = kmalloc(sizeof(struct fs_list), &M_FS_LIST, 0);

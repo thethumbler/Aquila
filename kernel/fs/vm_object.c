@@ -13,7 +13,7 @@ static int vm_page_eq(void *_a, void *_b)
 
 /**
  * \ingroup vfs
- * \brief create a new `struct vm_object` associated with a `struct vnode`
+ * \brief create a new `vm_object` associated with a `vnode`
  */
 struct vm_object *vm_object_vnode(struct vnode *vnode)
 {

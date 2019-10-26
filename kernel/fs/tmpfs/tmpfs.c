@@ -1,5 +1,5 @@
 /**
- * \defgroup fs-tmpfs
+ * \defgroup fs-tmpfs kernel/fs/tmpfs
  * \brief temporary filesystem (tmpfs) handler
  */
 
