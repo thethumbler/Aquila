@@ -31,6 +31,10 @@ struct queue {
     int flags;
 };
 
+/**
+ * \ingroup ds
+ * \brief iterate over queue elements
+ */
 #define queue_for(n, q) for (struct qnode *(n) = (q)->head; (n); (n) = (n)->next)
 
 /**
