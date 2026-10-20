@@ -50,6 +50,10 @@ char uart_8250_receive(struct uart *u __unused)
 
 ssize_t uart_8250_transmit(struct uart *u __unused, char c)
 {
+    /* wait (bounded) for the transmit holding register to be empty */
+    for (size_t i = 0; i < 100000 && !serial_empty(); ++i)
+        ;
+
     io_out8(&io8250, 0, c);
     return 1;
 }

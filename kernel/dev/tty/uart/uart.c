@@ -53,32 +53,44 @@ ssize_t uart_slave_write(struct tty *tty, size_t size, void *buf)
     return ringbuf_write(u->in, size, buf);
 }
 
+#define UART_MAX 192
+
+/* uart minors start at 64 */
+static struct uart *uart_get(devid_t minor)
+{
+    if (minor < 64 || minor - 64 >= UART_MAX)
+        return NULL;
+
+    return devices[minor - 64];
+}
+
 ssize_t uart_read(struct devid *dd, off_t offset __unused, size_t size, void *buf)
 {
-    struct uart *u = devices[dd->minor - 64];
+    struct uart *u = uart_get(dd->minor);
     if (!u) return -EIO;
     return ringbuf_read(u->in, size, buf);
 }
 
 ssize_t uart_write(struct devid *dd, off_t offset __unused, size_t size, void *buf)
 {
-    struct uart *u = devices[dd->minor - 64];
+    struct uart *u = uart_get(dd->minor);
     if (!u) return -EIO;
     return tty_slave_write(u->tty, size, buf);
 }
 
 int uart_ioctl(struct devid *dd, int request, void *argp)
 {
-    struct uart *u = devices[dd->minor - 64];
+    struct uart *u = uart_get(dd->minor);
     if (!u) return -EIO;
     return tty_ioctl(u->tty, request, argp);  
 }
 
 int uart_file_open(struct file *file)
 {
-    size_t id = (file->vnode->rdev & 0xFF) - 64;
-    struct uart *u = devices[id];
-    int err = 0;
+    struct uart *u = uart_get(DEV_MINOR(file->vnode->rdev));
+
+    if (!u) /* no uart registered for this minor */
+        return -ENXIO;
 
     if (u->vnode) { /* already open */
         /* XXX */
