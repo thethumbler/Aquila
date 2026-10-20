@@ -59,12 +59,20 @@ void arch_thread_switch(struct thread *thread)
 
 void arch_thread_create(struct thread *thread, uintptr_t stack, uintptr_t entry, uintptr_t uentry, uintptr_t arg)
 {
+    /* thread->arch is left NULL on failure */
+    thread->arch = NULL;
+
     struct x86_thread *arch = kmalloc(sizeof(struct x86_thread), &M_X86_THREAD, M_ZERO);
-    if (!arch) {
-        /* TODO */
+    if (!arch)
+        return;
+
+    void *kstack = kmalloc(KERN_STACK_SIZE, &M_KERN_STACK, 0);
+    if (!kstack) {
+        kfree(arch);
+        return;
     }
 
-    arch->kstack = (uintptr_t) kmalloc(KERN_STACK_SIZE, &M_KERN_STACK, 0) + KERN_STACK_SIZE;
+    arch->kstack = (uintptr_t) kstack + KERN_STACK_SIZE;
 
     /* dummy return address */
     PUSH(arch->kstack, void *, 0);
@@ -101,6 +109,10 @@ void arch_thread_kill(struct thread *thread)
 {
     struct x86_thread *arch = (struct x86_thread *) thread->arch;
 
+    /* already killed */
+    if (!arch)
+        return;
+
     if (thread == curthread) {
         /* We don't wanna die here */
         uintptr_t esp = VMA(0x100000); /* XXX */
@@ -118,6 +130,7 @@ void arch_thread_kill(struct thread *thread)
         last_fpu_thread = NULL;
 
     kfree(arch);
+    thread->arch = NULL;
 }
 
 void internal_arch_sleep()

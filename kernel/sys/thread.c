@@ -87,10 +87,19 @@ int thread_queue_wakeup(struct queue *queue)
 
 int thread_create(struct thread *thread, uintptr_t stack, uintptr_t entry, uintptr_t uentry, uintptr_t arg, uintptr_t attr __unused, struct thread **new_thread)
 {
+    int err = 0;
     struct thread *t = NULL;
-    thread_new(thread->owner, &t);
+
+    if ((err = thread_new(thread->owner, &t)))
+        return err;
 
     arch_thread_create(t, stack, entry, uentry, arg);
+
+    if (!t->arch) {
+        queue_remove(&thread->owner->threads, t);
+        kfree(t);
+        return -ENOMEM;
+    }
 
     if (new_thread)
         *new_thread = t;

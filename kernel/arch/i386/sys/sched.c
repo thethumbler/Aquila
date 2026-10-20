@@ -46,8 +46,8 @@ static void x86_sched_handler(struct x86_regs *r)
 
             if (ABS(delta) > 1) {
                 printk("warning: calculated time differs from measured time by %c%d seconds\n", delta < 0? '-' : '+', ABS(delta));
-                printk("calculated time: %d seconds\n", calculated_time);
-                printk("measured time: %d seconds\n", measured_time);
+                printk("calculated time: %ld seconds\n", calculated_time);
+                printk("measured time: %ld seconds\n", measured_time);
 
                 /* TODO: attempt to correct time */
             }
@@ -116,8 +116,17 @@ void arch_idle(void)
 
 static void __arch_cur_thread_kill(void)
 {
+    /* a thread that called thread_exit is already marked as zombie, it
+     * stays on its owner's thread list (for thread_join) and is freed
+     * when the process exits; otherwise the process is exiting and the
+     * thread was already removed from the list by proc_kill */
+    int keep = curthread->state == ZOMBIE;
+
     thread_kill(curthread);    /* Will set the stack to VMA(0x100000) */
-    kfree(curthread);
+
+    if (!keep)
+        kfree(curthread);
+
     curthread = NULL;
     kernel_idle();
 }

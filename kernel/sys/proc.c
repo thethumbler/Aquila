@@ -109,6 +109,11 @@ int proc_new(struct proc **ref)
     return 0;
 
 error:
+    if (thread) {
+        queue_remove(&proc->threads, thread);
+        kfree(thread);
+    }
+
     if (proc)
         kfree(proc);
 
@@ -192,7 +197,10 @@ void proc_kill(struct proc *proc)
             continue;
         }
 
-        thread_kill(thread);
+        /* zombie threads (thread_exit) already released their resources */
+        if (thread->state != ZOMBIE)
+            thread_kill(thread);
+
         kfree(thread);
     }
 
@@ -218,12 +226,19 @@ void proc_kill(struct proc *proc)
 
     kfree(proc->sig_queue);
 
-    /* Mark all children as orphans */
-    queue_for (node, procs) {
+    /* Mark all children as orphans, nobody will wait for them anymore so
+     * reap the ones that already exited (live ones are reaped on exit) */
+    struct qnode *node = procs->head;
+    while (node) {
         struct proc *_proc = node->value;
+        node = node->next;  /* proc_reap removes the current node */
 
-        if (_proc->parent == proc)
+        if (_proc->parent == proc) {
             _proc->parent = NULL;
+
+            if (!_proc->running)
+                proc_reap(_proc);
+        }
     }
 
     kfree(proc->name);
@@ -260,6 +275,8 @@ int proc_fd_get(struct proc *proc)
 {
     for (int i = 0; i < FDS_COUNT; ++i) {
         if (!proc->fds[i].vnode) {
+            /* start from a clean slot, no stale offset/flags */
+            proc->fds[i] = (struct file) {0};
             proc->fds[i].vnode = (void *) -1;    
             return i;
         }
@@ -270,7 +287,7 @@ int proc_fd_get(struct proc *proc)
 
 void proc_fd_release(struct proc *proc, int fd)
 {
-    if (fd < FDS_COUNT) {
+    if (fd >= 0 && fd < FDS_COUNT) {
         proc->fds[fd].vnode = NULL;
     }
 }
