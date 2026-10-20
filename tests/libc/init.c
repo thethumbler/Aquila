@@ -9,6 +9,7 @@
  * Reports in the aqtest format on the serial port.
  */
 
+#include <arpa/inet.h>
 #include <crypt.h>
 #include <dirent.h>
 #include <errno.h>
@@ -162,6 +163,62 @@ int main(void)
         _exit(setgid(100) || setuid(1000) || getuid() != 1000 || setuid(0) == 0 ||
               getspnam("tester") != NULL);
     check("privilege drop", waitpid(pid, &status, 0) == pid && WEXITSTATUS(status) == 0, 1);
+
+    /* truncate (tmpfs mounted above) */
+    f = fopen("/tmp/trunc", "w");
+    fputs("0123456789", f);
+    fclose(f);
+    check("truncate", truncate("/tmp/trunc", 4), 0);
+    check("truncated size", stat("/tmp/trunc", &st) == 0 ? (long) st.st_size : -1, 4);
+    int tfd = open("/tmp/trunc", O_RDWR);
+    check("ftruncate grow", ftruncate(tfd, 8), 0);
+    char tbuf[8] = {1, 1, 1, 1, 1, 1, 1, 1};
+    check("read grown file", read(tfd, tbuf, 8), 8);
+    check("grown part zeroed", memcmp(tbuf, "0123\0\0\0\0", 8), 0);
+    close(tfd);
+
+    /* wait3, getppid */
+    pid_t self = getpid();
+    pid = fork();
+    if (pid == 0)
+        _exit(getppid() == self ? 3 : 4);
+    check("wait3", wait3(&status, 0, NULL), pid);
+    check("wait3 status", WEXITSTATUS(status), 3);
+
+    /* killpg: the child makes its own group, then waits to be killed */
+    pipe(p);
+    pid = fork();
+    if (pid == 0) {
+        setpgid(0, 0);
+        write(p[1], "x", 1);
+        for (;;)
+            getpid();
+    }
+    read(p[0], buf, 1);
+    close(p[0]);
+    close(p[1]);
+    check("killpg", killpg(pid, SIGTERM), 0);
+    check("killpg wait", waitpid(pid, &status, 0), pid);
+    check("killed by SIGTERM", WIFSIGNALED(status) ? WTERMSIG(status) : 0, SIGTERM);
+
+    /* signal mask: a blocked signal stays pending until sigsuspend */
+    sigset_t block, old, none;
+    sigemptyset(&block);
+    sigaddset(&block, SIGUSR2);
+    sigemptyset(&none);
+    signal(SIGUSR2, handler);
+    got_signal = 0;
+    check("sigprocmask block", sigprocmask(SIG_BLOCK, &block, &old), 0);
+    kill(getpid(), SIGUSR2);
+    check("blocked signal not delivered", got_signal, 0);
+    errno = 0;
+    check("sigsuspend -> EINTR", sigsuspend(&none) == -1 ? errno : 0, EINTR);
+    check("delivered in sigsuspend", got_signal, SIGUSR2);
+    sigprocmask(SIG_SETMASK, &old, NULL);
+
+    /* byte order */
+    check("htonl", htonl(0x01020304) == 0x04030201, 1);
+    check("ntohs", ntohs(htons(0xabcd)), 0xabcd);
 
     fprintf(out, "aqtest: done, fails=%d\n", fails);
 
