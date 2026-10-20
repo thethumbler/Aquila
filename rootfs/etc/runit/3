@@ -1,0 +1,12 @@
+#!/bin/sh
+# runit stage 3: the services stop, then runit restarts or powers off
+exec 2>&1
+
+PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/libexec:/usr/local/bin:/usr/local/sbin
+
+echo 'Waiting for services to stop...'
+sv -w10 force-stop /etc/service/*
+sv exit /etc/service/*
+
+echo 'Shutdown...'
+sync

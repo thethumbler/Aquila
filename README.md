@@ -25,14 +25,16 @@ make run-iso        # build the ISO and boot it in QEMU
 ```
 
 As on the BSDs, some third-party software is part of the base system:
-[contrib/](contrib/) (dash as `/bin/sh`, sbase for the core utilities)
-is fetched from upstream and built by `make`. [ports/](ports/) is
+[contrib/](contrib/) (dash as `/bin/sh`, sbase for the core utilities,
+runit as init) is fetched from upstream and built by `make`. [ports/](ports/) is
 optional software, built with `make ports`.
 
 `make run` boots the kernel directly with the console on the serial port
 (log in as `root`, no password). On the screen (`make run-iso`), the
 kernel's virtual terminals have logins on `/dev/tty1` to `/dev/tty3`,
-Alt+F1 to Alt+F6 switch between them. `make iso` only builds
+Alt+F1 to Alt+F6 switch between them. runit supervises the logins as
+services (`/etc/sv`, enabled in `/etc/service`, see `sv`); `poweroff` and
+`reboot` shut down through it, as does Ctrl+Alt+Del. `make iso` only builds
 `build/aquila.iso`. See the top of the [Makefile](Makefile) for all
 targets.
 
@@ -53,7 +55,7 @@ from source, see [tests/](tests/README.md).
 | [include/uapi/](include/uapi/aquila) | user/kernel ABI: syscall numbers, errno, structures shared by the kernel and libc |
 | [libc/](libc/aquila)         | AquilaOS port of newlib                            |
 | [toolchain/](toolchain/)     | cross toolchain build script and patches           |
-| [userland/](userland/)       | init, aqbox (system tools: login, ps, mount, ...)  |
+| [userland/](userland/)       | aqbox (system tools: login, ps, mount, ...)        |
 | [contrib/](contrib/)         | third-party software of the base system (recipes)  |
 | [ports/](ports/)             | optional third-party software (recipes)            |
 | [mk/](mk/)                   | build script for contrib/ and ports/ recipes       |
@@ -102,6 +104,7 @@ from source, see [tests/](tests/README.md).
 - [X] newlib 4.6 C library
 - [X] dash    (shell, contrib)
 - [X] sbase   (core utilities, contrib)
+- [X] runit   (init and service supervision, contrib)
 - [X] aqbox   (system tools)
 - [X] kilo    (text editor, port)
 - [X] vis     (vi-like editor, port) on ncurses (port)

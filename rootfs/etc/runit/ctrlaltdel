@@ -1,0 +1,8 @@
+#!/bin/sh
+# Ctrl+Alt+Del: restart (runit-init 6)
+
+PATH=/bin:/sbin
+
+touch /run/runit/stopit /run/runit/reboot
+chmod 100 /run/runit/stopit /run/runit/reboot
+echo 'System is going down...'

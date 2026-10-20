@@ -1,0 +1,7 @@
+#!/bin/sh
+# runit stage 2: the services in /etc/service, supervised until shutdown
+
+PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/libexec:/usr/local/bin:/usr/local/sbin
+
+exec env -i PATH=$PATH \
+runsvdir -P /etc/service 'log: ..........................................................................................'

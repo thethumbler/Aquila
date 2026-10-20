@@ -331,6 +331,8 @@ test_system()
         "1 ln -s d/f l; cat l; rm -r d e; ls -l l"
         "1 seq 3 | sort -r | paste -sd, -" "1 yes | head -n 2 | wc -l"
         "1 sleep 30" "1 "$'\x1a' "1 jobs" "1 kill -9 %1"
+        "1 flock /tmp/lk sh -c 'flock -n /tmp/lk true || echo lock-busy'"
+        "1 sv status /etc/service/getty-ttyS0" "1 poweroff"
     )
 
     {
@@ -339,7 +341,7 @@ test_system()
             printf '%s\r' "${step#* }"
         done
         sleep 2
-    } | timeout 90 qemu-system-i386 -kernel "$KERNEL" -initrd "$initrd --serial" \
+    } | timeout 90 qemu-system-i386 -kernel "$KERNEL" -initrd "$initrd" \
         -append earlycon=ttyS0 -m 256 -display none -no-reboot -serial stdio \
         2>/dev/null | tr -d '\r' > "$log"
 
@@ -354,15 +356,16 @@ test_system()
                 'user=root' 'AquilaOS aquila' 'aqbox' '/bin/ps' 'MemTotal' \
                 '(^| )f( |$)' 'guest:\$6\$' 'pipe-42' 'subst=inner' \
                 "long:root:$long:end" 'status=130' 'guest +guest .* /tmp/g' \
-                '^g$' '^sbase$' 'l -> d/f' '^3,2,1$' '^2$' '^via-2-tty$' \
-                'Stopped +sleep 30'; do
+                '^g$' '(^|# )sbase$' 'l -> d/f' '^3,2,1$' '^2$' '^via-2-tty$' \
+                'Stopped +sleep 30' '^lock-busy$' 'run: /etc/service/getty-ttyS0: \(pid [0-9]+\)' \
+                'kernel: power down'; do
         if ! grep -a -q -E -- "$want" "$log"; then
             echo "missing output: $want"
             missing=1
         fi
     done
 
-    [ $missing = 0 ] && echo "wrong password rejected, guest denied /etc/shadow, root ran uname, ls, ps, cat, touch, pipelines, \$(...), a long line, ^C, ^Z, /dev/tty and sbase"
+    [ $missing = 0 ] && echo "wrong password rejected, guest denied /etc/shadow, root ran uname, ls, ps, cat, touch, pipelines, \$(...), a long line, ^C, ^Z, /dev/tty, sbase, flock, sv and poweroff"
 }
 
 #

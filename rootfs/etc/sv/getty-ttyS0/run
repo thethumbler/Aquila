@@ -1,0 +1,2 @@
+#!/bin/sh
+exec getty /dev/ttyS0 vt100

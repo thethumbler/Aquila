@@ -12,7 +12,7 @@ UCC     := i686-aquila-gcc
 UCFLAGS := -O2 -std=gnu11 -Wall -Wno-unused -Wno-unused-parameter -MMD -MP
 ULDLIBS := -lm
 
-PROGS := init aqbox
+PROGS := aqbox
 
 aqbox_CFLAGS  := -I$(USRC)/aqbox/include
 

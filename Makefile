@@ -104,17 +104,18 @@ ports: check-toolchain
 
 # what the base system has besides contrib/ (sbase, dash)
 AQBOX_BIN  := clear ps stat truncate vmstat
-AQBOX_SBIN := getty login mount readmbr reboot
+AQBOX_SBIN := getty login mount poweroff readmbr reboot
 
 # contrib/ is built unless it comes from elsewhere
 initrd: userland $(if $(filter $(BUILDDIR)/contrib/root,$(CONTRIB_ROOT)),contrib)
 	@$(ECHO) "  ROOTFS  " $(patsubst $(BUILDDIR)/%,build/%,$(ROOTFS))
 	@$(RM) -r $(ROOTFS)
 	@$(MKDIR) $(ROOTFS)
-	@cd $(ROOTFS) && $(MKDIR) bin sbin dev mnt proc tmp root home/live
+	@cd $(ROOTFS) && $(MKDIR) bin sbin dev mnt proc run tmp root home/live
 	@$(CP) -r $(SRCDIR)/rootfs/. $(ROOTFS)/
 	@if [ -n "$(ROOTFS_OVERLAY)" ]; then $(CP) -r $(ROOTFS_OVERLAY)/. $(ROOTFS)/; fi
-	@$(CP) $(BUILDDIR)/userland/bin/init $(ROOTFS)/init
+	@# runit is init (contrib/runit)
+	@$(LN) -s /sbin/runit-init $(ROOTFS)/init
 	@$(CP) $(BUILDDIR)/userland/bin/aqbox $(ROOTFS)/bin/
 	@chmod 600 $(ROOTFS)/etc/shadow
 	@for a in $(AQBOX_BIN); do $(LN) -s /bin/aqbox $(ROOTFS)/bin/$$a; done
@@ -149,7 +150,7 @@ iso: kernel initrd
 		$(BUILDDIR)/iso -o $(ISO) 2>/dev/null
 
 run: kernel initrd
-	$(QEMU) -kernel $(KERNEL) -initrd "$(INITRD) --serial" -append earlycon=ttyS0 \
+	$(QEMU) -kernel $(KERNEL) -initrd "$(INITRD)" -append earlycon=ttyS0 \
 		-m 256 -serial mon:stdio -display none
 
 run-iso: iso

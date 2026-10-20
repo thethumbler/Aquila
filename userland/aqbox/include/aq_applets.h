@@ -5,6 +5,7 @@ int cmd_clear(int, char**);
 int cmd_getty(int, char**);
 int cmd_login(int, char**);
 int cmd_mount(int, char**);
+int cmd_poweroff(int, char**);
 int cmd_ps(int, char**);
 int cmd_readmbr(int, char**);
 int cmd_stat(int, char**);
@@ -22,6 +23,7 @@ struct applet {
     APPLET(getty),
     APPLET(login),
     APPLET(mount),
+    APPLET(poweroff),
     APPLET(ps),
     APPLET(readmbr),
     APPLET(reboot),
