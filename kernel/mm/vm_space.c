@@ -38,6 +38,8 @@ int vm_space_insert(struct vm_space *vm_space, struct vm_entry *vm_entry)
         }
     }
 
+    prev_end = 0;
+
     queue_for (node, queue) {
         struct vm_entry *cur_vm_entry = (struct vm_entry *) node->value;
 
@@ -63,6 +65,8 @@ int vm_space_insert(struct vm_space *vm_space, struct vm_entry *vm_entry)
 
     if (cur->prev)
         cur->prev->next = node;
+    else
+        queue->head = node;
 
     cur->prev  = node;
     vm_entry->qnode = node;
