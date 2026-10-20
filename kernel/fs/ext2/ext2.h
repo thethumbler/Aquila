@@ -219,6 +219,11 @@ int ext2_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, struc
 
 int ext2_vget(struct vnode *super, ino_t ino, struct vnode **ref);
 int ext2_setattr(struct vnode *vnode);
+int ext2_close(struct vnode *vnode);
+int ext2_vunlink(struct vnode *dir, const char *fn, struct uio *uio);
+int ext2_vlink(struct vnode *dir, const char *fn, struct vnode *vnode, struct uio *uio);
+int ext2_vrename(struct vnode *odir, const char *ofn, struct vnode *ndir, const char *nfn, struct uio *uio);
+void ext2_blocks_free(struct ext2 *desc, struct ext2_inode *inode, size_t from);
 
 int ext2_inode_build(struct ext2 *desc, ino_t ino, struct vnode **ref_inode);  /* XXX */
 int ext2_inode_sync(struct vnode *inode);

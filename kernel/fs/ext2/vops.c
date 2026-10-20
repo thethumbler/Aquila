@@ -18,6 +18,12 @@ ssize_t ext2_read(struct vnode *node, off_t offset, size_t size, void *buf)
         return 0;
 
     size = MIN(size, (size_t) (inode.size - offset));
+
+    /* a fast symbolic link keeps its target in the block pointers */
+    if (S_ISLNK(inode.mode) && !inode.blocks) {
+        memcpy(buf, (char *) inode.direct_pointer + offset, size);
+        return size;
+    }
     
     char *read_buf = NULL;
 
@@ -78,7 +84,7 @@ free_resources:
 
 ssize_t ext2_write(struct vnode *node, off_t offset, size_t size, void *buf)
 {
-    printk("ext2_write(inode=%p, offset=%d, size=%d, buf=%p)\n", node, offset, size, buf);
+    vfs_log(LOG_DEBUG, "ext2_write(inode=%p, offset=%d, size=%d, buf=%p)\n", node, offset, size, buf);
 
     int err = 0;
     struct ext2 *desc = node->p;
@@ -88,6 +94,18 @@ ssize_t ext2_write(struct vnode *node, off_t offset, size_t size, void *buf)
     
     if ((err = ext2_inode_read(desc, node->ino, &ext2_inode)))
         return err;
+
+    /* a short symbolic link keeps its target in the block pointers (a
+     * "fast" link, e2fsck expects those under 60 bytes) */
+    if (S_ISLNK(node->mode) && !ext2_inode.blocks &&
+        (size_t) offset + size < sizeof(ext2_inode.direct_pointer) + 12) {
+        memcpy((char *) ext2_inode.direct_pointer + offset, buf, size);
+
+        if ((size_t) offset + size > ext2_inode.size)
+            ext2_inode.size = node->size = (size_t) offset + size;
+
+        return ext2_inode_write(desc, node->ino, &ext2_inode) < 0 ? -EIO : (ssize_t) size;
+    }
 
     if ((size_t) offset + size > ext2_inode.size) {
         ext2_inode.size = (size_t) offset + size;
@@ -199,6 +217,12 @@ ssize_t ext2_readdir(struct vnode *dir, off_t offset, struct dirent *dirent)
             if (!dentry->size)  /* corrupted entry */
                 break;
 
+            /* unused entry */
+            if (!dentry->ino) {
+                dentry = (struct ext2_dentry *) ((char *) dentry + dentry->size);
+                continue;
+            }
+
             if (idx == offset) {
                 dirent->d_ino = dentry->ino;
                 memcpy(dirent->d_name, (char *) dentry->name, dentry->length);
@@ -231,12 +255,29 @@ int ext2_trunc(struct vnode *inode, off_t len)
         return 0;
     }
 
-    /* otherwise the new size is smaller, we need to free the extra blocks */
-    /* TODO */
+    /* otherwise free the blocks past the new end */
+    struct ext2 *desc = inode->p;
+    struct ext2_inode einode;
+    size_t bs = desc->bs;
+    int err;
 
+    if ((err = ext2_inode_read(desc, inode->ino, &einode)))
+        return err;
+
+    ext2_blocks_free(desc, &einode, (len + bs - 1) / bs);
+
+    /* the rest of the last block reads as zeros if the file grows again */
+    if (len % bs) {
+        char *buf = kmalloc(bs, &M_BUFFER, 0);
+        ext2_inode_block_read(desc, &einode, len / bs, buf);
+        memset(buf + len % bs, 0, bs - len % bs);
+        ext2_inode_block_write(desc, &einode, inode->ino, len / bs, buf);
+        kfree(buf);
+    }
+
+    einode.size = len;
     inode->size = len;
-    ext2_inode_sync(inode);
-    return 0;
+    return ext2_inode_write(desc, inode->ino, &einode) < 0 ? -EIO : 0;
 }
 
 int ext2_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, struct uio *uio, struct vnode **ref)
@@ -284,7 +325,8 @@ int ext2_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, struc
         inode.nlink = 2;
         inode.size = desc->bs;
         
-        char *buf = kmalloc(desc->bs, &M_BUFFER, 0);
+        /* zeroed: the names are padded with NULs */
+        char *buf = kmalloc(desc->bs, &M_BUFFER, M_ZERO);
         struct ext2_dentry *d = (struct ext2_dentry *) buf;
         d->ino = ino;
         d->size = 12;
@@ -305,6 +347,15 @@ int ext2_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, struc
     }
 
     ext2_dentry_create(dir, fn, ino, inode.mode);
+
+    if (S_ISDIR(mode)) {
+        /* the new directory's .. */
+        dir->nlink++;
+        ext2_inode_sync(dir);
+
+        desc->groups[(ino - 1) / desc->superblock->ginodes].directories_count++;
+        ext2_bgd_table_rewrite(desc);
+    }
 
     if (ref)
         ext2_inode_build(desc, ino, ref);

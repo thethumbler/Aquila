@@ -42,6 +42,17 @@ static inline void *memset(void *s, int c, size_t n)
     return _s;
 }
 
+static inline int memcmp(const void *s1, const void *s2, size_t n)
+{
+    const unsigned char *a = s1, *b = s2;
+
+    for (; n; --n, ++a, ++b)
+        if (*a != *b)
+            return *a - *b;
+
+    return 0;
+}
+
 static inline int strcmp(const char *s1, const char *s2)
 {
     if (s1 == NULL || s2 == NULL)

@@ -4,3 +4,4 @@ obj-y += inode.o
 obj-y += dentry.o
 obj-y += vops.o
 obj-y += ext2.o
+obj-y += remove.o

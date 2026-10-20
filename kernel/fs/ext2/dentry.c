@@ -15,11 +15,9 @@ ino_t ext2_dentry_find(struct ext2 *desc, struct ext2_inode *inode, const char *
     for (size_t i = 0; i < blocks_nr; ++i) {
         ext2_inode_block_read(desc, inode, i, buf);
         d = (struct ext2_dentry *) buf;
-        while ((char *) d < (char *) buf + bs) {
-            char _name[d->length+1];
-            memcpy(_name, d->name, d->length);
-            _name[d->length] = 0;
-            if (!strcmp((char *) _name, name))
+        while ((char *) d < (char *) buf + bs && d->size) {
+            /* entries with no inode are unused */
+            if (d->ino && d->length == strlen(name) && !memcmp(d->name, name, d->length))
                 goto found;
             d = (struct ext2_dentry *) ((char *) d + d->size);
         }
@@ -81,7 +79,7 @@ int ext2_dentry_create(struct vnode *dir, const char *name, ino_t ino, mode_t mo
         ext2_inode_block_read(desc, &dir_inode, block, buf);
         cur = (struct ext2_dentry *) buf;
 
-        while ((char *) cur < (char *) buf + bs) {
+        while ((char *) cur < (char *) buf + bs && cur->size) {
             if ((!cur->ino) && cur->size >= size) {   /* unused entry */
                 flag = 1;   /* Replace */
                 goto done;
@@ -122,8 +120,25 @@ done:
         /* Update block */
         ext2_inode_block_write(desc, &dir_inode, dir->ino, block, buf);
     } else {
-        /* allocate */
-        panic("Not impelemented\n");
+        /* no room left: the entry gets a new block of its own */
+        memset(buf, 0, bs);
+        cur = (struct ext2_dentry *) buf;
+        cur->ino    = ino;
+        cur->size   = bs;
+        cur->length = length;
+        cur->type   = type;
+        memcpy(cur->name, name, length);
+
+        ssize_t ret = ext2_inode_block_write(desc, &dir_inode, dir->ino, blocks_nr, buf);
+
+        if (ret < 0) {
+            kfree(buf);
+            return ret;
+        }
+
+        dir_inode.size += bs;
+        ext2_inode_write(desc, dir->ino, &dir_inode);
+        dir->size = dir_inode.size;
     }
 
     kfree(buf);

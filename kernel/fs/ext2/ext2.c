@@ -25,7 +25,7 @@ int ext2_inode_build(struct ext2 *desc, ino_t ino, struct vnode **ref_inode)
     if ((inode = vcache_find(desc->vcache, ino)))
         goto found;
 
-    printk("ext2_inode_build(desc=%p, ino=%d, ref_inode=%p)\n", desc, ino, ref_inode);
+    vfs_log(LOG_DEBUG, "ext2_inode_build(desc=%p, ino=%d, ref_inode=%p)\n", desc, ino, ref_inode);
     
     inode = kmalloc(sizeof(struct vnode), &M_VNODE, M_ZERO);
     if (!inode) {
@@ -66,7 +66,7 @@ found:
 
 int ext2_inode_sync(struct vnode *inode)
 {
-    printk("ext2_inode_sync(inode=%p)\n", inode);
+    vfs_log(LOG_DEBUG, "ext2_inode_sync(inode=%p)\n", inode);
 
     int err = 0;
     
@@ -206,8 +206,12 @@ struct fs ext2fs = {
         .trunc   = ext2_trunc,
         
         .vmknod  = ext2_vmknod,
+        .vunlink = ext2_vunlink,
+        .vlink   = ext2_vlink,
+        .vrename = ext2_vrename,
         .vget    = ext2_vget,
         .setattr = ext2_setattr,
+        .close   = ext2_close,
     },
 
     .fops = {

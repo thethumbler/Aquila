@@ -208,7 +208,7 @@ ssize_t ext2_inode_block_write(struct ext2 *desc, struct ext2_inode *inode, uint
 
 ino_t ext2_inode_alloc(struct ext2 *desc)
 {
-    printk("ext2_inode_alloc(desc=%p)\n", desc);
+    vfs_log(LOG_DEBUG, "ext2_inode_alloc(desc=%p)\n", desc);
 
     uint32_t *buf = kmalloc(desc->bs, &M_BUFFER, 0);
     uint32_t inode = 0, real_inode = 0, group = 0;
