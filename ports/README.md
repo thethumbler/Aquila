@@ -49,4 +49,4 @@ against go into `$STAGING`, which `CPPFLAGS` and `LDFLAGS` point at.
 | dash  | 0.5.13.5 | `/bin/dash`, also `/bin/sh`                            |
 | kilo  | 323d93b  | `kilo` in `/usr/bin`                                   |
 | lua   | 5.5.1    | `lua` and `luac` in `/usr/bin`                         |
-| sbase | 0.1      | `/bin/sbase-box`, linked as `ls`, `cp`, `sed`, `grep`, ... in place of aqbox's applets; without `chroot`, `cron`, `flock`, `logger`, `mkfifo`, `nice`, `renice` and `tftp`, which need what the kernel doesn't have yet |
+| sbase | 0.1      | `/bin/sbase-box`, linked as `ls`, `cp`, `sed`, `grep`, ... in place of aqbox's applets; without `chroot`, `cron`, `flock`, `logger`, `nice`, `renice` and `tftp`, which need what the kernel doesn't have yet |
