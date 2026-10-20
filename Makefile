@@ -125,7 +125,7 @@ initrd: userland $(if $(filter $(BUILDDIR)/contrib/root,$(CONTRIB_ROOT)),contrib
 	@if [ -d $(PORTS_ROOT) ]; then \
 		$(CP) -r --remove-destination $(PORTS_ROOT)/. $(ROOTFS)/; fi
 	@find $(ROOTFS) -type f -exec sh -c \
-		'for f; do head -c 4 "$$f" | grep -q ELF && $(STRIP) "$$f"; done' _ {} +
+		'for f; do if head -c 4 "$$f" | grep -q ELF; then $(STRIP) "$$f"; fi; done' _ {} +
 	@$(ECHO) "  CPIO    " $(patsubst $(BUILDDIR)/%,build/%,$(INITRD))
 	@# the kernel's initramfs reads old binary cpio archives
 	@cd $(ROOTFS) && find . | cpio -o -H bin -R 0:0 --quiet > $(INITRD)
