@@ -1,0 +1,4 @@
+#!/bin/sh
+# what is written stays in memory a while (the kernel's block cache),
+# every 30 seconds it goes to the disks, as the BSDs' update did
+exec sh -c 'while sleep 30; do sync; done'
