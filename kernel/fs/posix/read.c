@@ -65,6 +65,9 @@ ssize_t posix_file_read(struct file *file, void *buf, size_t size)
         } else if (file->flags & O_NONBLOCK) {
             /* Can not satisfy read operation, would block */
             return -EAGAIN;
+        } else if (!file->vnode->read_queue) {
+            /* nothing would wake a reader up, there is no more to read */
+            return 0;
         } else {
             /* Block until some data is available, or the time is up */
             if (sched_wait(file->vnode->read_queue, until))

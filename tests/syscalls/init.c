@@ -539,6 +539,16 @@ void aq_main(void)
     check("execve without execute permission", SC(SYS_execve, "/tmp/bad", 0, 0), -EACCES);
     check("execve directory", SC(SYS_execve, "/tmp", 0, 0), -EACCES);
 
+    /* directories are read with readdir, not read */
+    const char *dirs[] = {"/", "/tmp", "/dev"};
+    for (int i = 0; i < 3; ++i) {
+        char dbuf[16];
+        int dfd = SC(SYS_open, dirs[i], O_RDONLY, 0);
+        check("read directory", SC(SYS_read, dfd, dbuf, sizeof(dbuf)), -EISDIR);
+        SC(SYS_close, dfd, 0, 0);
+    }
+    check("open directory for writing", SC(SYS_open, "/tmp", O_WRONLY, 0), -EISDIR);
+
     /* scripts: "#!interpreter argument", this program is the interpreter */
     fd = SC(SYS_open, "/tmp/script", O_CREAT | O_RDWR, 0755);
     SC(SYS_write, fd, "#! /init -x y \nignored\n", 23);

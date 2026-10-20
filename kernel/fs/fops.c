@@ -44,6 +44,10 @@ ssize_t vfs_file_read(struct file *file, void *buf, size_t nbytes)
     if (!file || !file->vnode)
         return -EINVAL;
 
+    /* directories are read with readdir */
+    if (S_ISDIR(file->vnode->mode))
+        return -EISDIR;
+
     if (ISDEV(file->vnode))
         return kdev_file_read(&VNODE_DEV(file->vnode), file, buf, nbytes);
 
