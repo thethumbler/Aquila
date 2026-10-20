@@ -34,7 +34,8 @@ EOF
     aquila_config_sub
 
     # no Xvesa (it runs the video BIOS in vm86 mode), no XDMCP, no DPMS
-    # (the framebuffer has no power modes); clients connect through a Unix
+    # (the framebuffer has no power modes), no BigFont (fonts through shared
+    # memory, there is none); clients connect through a Unix
     # socket (TCP is built, it doesn't build without, but the kernel has no
     # TCP/IP yet)
     # C17 and -fpermissive: the code is old (old-style definitions, which
@@ -44,6 +45,7 @@ EOF
     AR=i686-aquila-gcc-ar RANLIB=i686-aquila-gcc-ranlib \
     CFLAGS="-O2 -std=gnu17 -fpermissive" CPPFLAGS="-I$PWD/aquila $CPPFLAGS" ./configure --host=i686-aquila --prefix=/usr \
         --disable-xvesa --enable-xfbdev --disable-xdmcp --disable-xdm-auth-1 --disable-dpms \
+        --disable-xf86bigfont \
         --disable-ipv6 --disable-local-transport \
         --with-fontdir=/usr/share/fonts/X11 \
         --with-default-font-path=/usr/share/fonts/X11/misc
