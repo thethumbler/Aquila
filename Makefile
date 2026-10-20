@@ -24,8 +24,11 @@
 #                     mtools, mke2fs and fakeroot). Replaces an existing one.
 #   make run          boot the kernel and initrd in QEMU, console on stdio
 #   make run-iso      boot the ISO in QEMU (framebuffer console)
-#   make run-hdd      boot the hard disk in QEMU, made by make hdd if there
-#                     is none (what was written to it is kept)
+#   make hdd-kernel   put the kernel (and Limine's configuration) on
+#                     build/aquila.img, its root filesystem is kept as it is
+#   make run-hdd      boot the hard disk in QEMU with the kernel just built
+#                     (make hdd-kernel), made by make hdd if there is none;
+#                     what was written to it is kept
 #
 #   QEMU uses KVM when /dev/kvm can be used, KVM=0 turns it off (also for
 #   make test).
@@ -74,7 +77,7 @@ MAKEFLAGS += --no-print-directory
 
 export
 
-.PHONY: all toolchain kernel userland contrib ports initrd iso hdd run run-iso run-hdd test clean distclean check-toolchain
+.PHONY: all toolchain kernel userland contrib ports initrd iso hdd hdd-kernel run run-iso run-hdd test clean distclean check-toolchain
 
 all: kernel userland contrib initrd
 
@@ -171,6 +174,12 @@ hdd: kernel initrd
 	@$(SRCDIR)/mk/hdd.sh $(HDD) $(HDD_SIZE) $(ROOTFS) $(KERNEL) \
 		$(SRCDIR)/boot/limine-hdd.conf $(LIMINE) $(TOOLCHAIN)/bin/limine
 
+hdd-kernel: kernel
+	@test -f $(HDD) || { \
+		echo "error: $(patsubst $(BUILDDIR)/%,build/%,$(HDD)) not found, run 'make hdd'" >&2; exit 1; }
+	@$(ECHO) "  KERNEL  " $(patsubst $(BUILDDIR)/%,build/%,$(HDD))
+	@$(SRCDIR)/mk/hdd-kernel.sh $(HDD) $(KERNEL) $(SRCDIR)/boot/limine-hdd.conf
+
 run: kernel initrd
 	$(QEMU) -kernel $(KERNEL) -initrd "$(INITRD)" -append earlycon=ttyS0 \
 		-m 256 -serial mon:stdio -display none
@@ -179,7 +188,7 @@ run-iso: iso
 	$(QEMU) -cdrom $(ISO) -m 256 -serial stdio
 
 run-hdd:
-	@test -f $(HDD) || $(MAKE) hdd
+	@if [ -f $(HDD) ]; then $(MAKE) hdd-kernel; else $(MAKE) hdd; fi
 	$(QEMU) -hda $(HDD) -m 256 -serial stdio
 
 test:

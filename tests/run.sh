@@ -379,8 +379,9 @@ test_system()
 }
 
 # the system installed on a hard disk (make hdd): booted from it with
-# Limine, a file written on the first boot is there on the second, and the
-# root filesystem is clean afterwards
+# Limine, a file written on the first boot is there on the second (after
+# make hdd-kernel's update of the kernel), and the root filesystem is clean
+# afterwards
 test_disk()
 {
     local img=$OUT/disk/aquila.img
@@ -448,6 +449,14 @@ test_disk()
     }
 
     boot "$OUT/disk/serial.log" 'echo disk-$((6 * 7)) > /root/kept; sync'
+
+    # a new kernel leaves the root filesystem alone (make hdd-kernel)
+    "$ROOT/mk/hdd-kernel.sh" "$img" "$KERNEL" "$ROOT/boot/limine-hdd.conf" \
+        >> "$OUT/disk/build.log" 2>&1 || {
+        tail -5 "$OUT/disk/build.log"
+        return 1
+    }
+
     boot "$OUT/disk/serial2.log" 'cat /root/kept'
 
     local root_start
@@ -466,7 +475,7 @@ test_disk()
         return 1
     fi
 
-    echo "booted from the disk twice, the file written on the first boot kept, e2fsck clean"
+    echo "booted from the disk twice, the file written on the first boot kept (a kernel update between), e2fsck clean"
 }
 
 #
