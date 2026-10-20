@@ -37,7 +37,6 @@ struct queue *procs = QUEUE_NEW();
 struct queue *sessions = QUEUE_NEW();
 
 /* all process groups */
-struct queue *pgroups = QUEUE_NEW();
 
 struct bitmap *pid_bitmap = BITMAP_NEW(4096);
 static int ff_pid = 1;
@@ -339,45 +338,63 @@ error:
     return err;
 }
 
-int pgrp_new(struct proc *proc, struct pgroup **ref)
+/**
+ * \ingroup sys
+ * \brief move `proc' into the process group `pgid' of its session
+ *
+ * Joining a group requires it to exist (and have members), only a process
+ * can start a group with its own pid as the id. Empty groups are reused
+ * rather than freed, a terminal may still have one as its foreground group.
+ */
+int proc_setpgid(struct proc *proc, pid_t pgid)
 {
-    int err = 0;
+    struct session *session = proc->pgrp->session;
     struct pgroup *pgrp = NULL;
-    
-    pgrp = kmalloc(sizeof(struct pgroup), &M_PGROUP, M_ZERO);
-    if (!pgrp) goto e_nomem;
 
-    pgrp->pgid = proc->pid;
-    pgrp->session = proc->pgrp->session;
+    if (proc->pgrp->pgid == pgid)
+        return 0;
 
-    /* remove the process from the old process group */
-    queue_node_remove(proc->pgrp->procs, proc->pgrp_node);
+    queue_for (node, session->pgps) {
+        struct pgroup *pg = node->value;
 
-    pgrp->procs = queue_new();
-    if (!pgrp->procs) goto e_nomem;
-
-    proc->pgrp_node = enqueue(pgrp->procs, proc);
-    if (!proc->pgrp_node) goto e_nomem;
-
-    pgrp->session_node = enqueue(proc->pgrp->session->pgps, pgrp);
-    if (!pgrp->session_node) goto e_nomem;
-
-    if (!proc->pgrp->procs->count) {
-        /* TODO */
+        if (pg->pgid == pgid) {
+            pgrp = pg;
+            break;
+        }
     }
 
+    if ((!pgrp || !pgrp->procs->count) && pgid != proc->pid)
+        return -EPERM;
+
+    if (!pgrp) {
+        if (!(pgrp = kmalloc(sizeof(struct pgroup), &M_PGROUP, M_ZERO)))
+            return -ENOMEM;
+
+        pgrp->pgid    = pgid;
+        pgrp->session = session;
+
+        if (!(pgrp->procs = queue_new())) {
+            kfree(pgrp);
+            return -ENOMEM;
+        }
+
+        if (!(pgrp->session_node = enqueue(session->pgps, pgrp))) {
+            kfree(pgrp->procs);
+            kfree(pgrp);
+            return -ENOMEM;
+        }
+    }
+
+    struct qnode *node = enqueue(pgrp->procs, proc);
+    if (!node)
+        return -ENOMEM;
+
+    if (pgid == proc->pid)
+        pgrp->leader = proc;
+
+    queue_node_remove(proc->pgrp->procs, proc->pgrp_node);
+    proc->pgrp_node = node;
     proc->pgrp = pgrp;
 
-    if (ref) *ref = pgrp;
-
     return 0;
-
-e_nomem:
-    err = -ENOMEM;
-
-error:
-    if (pgrp)
-        kfree(pgrp);
-
-    return err;
 }

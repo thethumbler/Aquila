@@ -277,9 +277,10 @@ static void sys_open(const char *path, int oflags, mode_t mode)
 
 o_creat:
     curproc->fds[fd] = (struct file) {
-        .vnode  = vnode,
-        .offset = 0,
-        .flags  = oflags,
+        .vnode   = vnode,
+        .offset  = 0,
+        .flags   = oflags & ~O_CLOEXEC,
+        .fdflags = (oflags & O_CLOEXEC) ? FD_CLOEXEC : 0,
     };
 
     if ((ret = vfs_perms_check(&curproc->fds[fd], &uio)))
@@ -592,6 +593,11 @@ static void sys_readdir(int fd, struct dirent *dirent)
     }
 
     int ret = vfs_file_readdir(file, dirent);
+
+    /* filesystems don't report entry types yet */
+    if (ret > 0)
+        dirent->d_type = DT_UNKNOWN;
+
     arch_syscall_return(curthread, ret);
     return;
 }
@@ -720,10 +726,13 @@ static void sys_fcntl(int fd, int cmd, uintptr_t arg)
         return;
     }
 
+    /* file status flags that F_SETFL may change */
+    const int setfl = O_APPEND | O_NONBLOCK;
     int dupfd = 0;
 
     switch (cmd) {
         case F_DUPFD:
+        case F_DUPFD_CLOEXEC:
             if (arg >= FDS_COUNT) {
                 arch_syscall_return(curthread, -EINVAL);
                 return;
@@ -741,6 +750,7 @@ static void sys_fcntl(int fd, int cmd, uintptr_t arg)
             }
 
             curproc->fds[dupfd] = *file;
+            curproc->fds[dupfd].fdflags = cmd == F_DUPFD_CLOEXEC ? FD_CLOEXEC : 0;
 
             /* the new descriptor holds its own reference (as in fork) */
             if (file->flags & FILE_SOCKET)
@@ -751,12 +761,17 @@ static void sys_fcntl(int fd, int cmd, uintptr_t arg)
             arch_syscall_return(curthread, dupfd);
             return;
         case F_GETFD:
-            arch_syscall_return(curthread, file->flags);
+            arch_syscall_return(curthread, file->fdflags);
             return;
         case F_SETFD:
-            /* never let user space toggle the socket marker, it decides
-             * whether the vnode/socket union is a vnode or a socket */
-            file->flags = (file->flags & FILE_SOCKET) | ((int) arg & ~FILE_SOCKET); /* XXX */
+            file->fdflags = arg & FD_CLOEXEC;
+            arch_syscall_return(curthread, 0);
+            return;
+        case F_GETFL:
+            arch_syscall_return(curthread, file->flags & ~FILE_SOCKET);
+            return;
+        case F_SETFL:
+            file->flags = (file->flags & ~setfl) | ((int) arg & setfl);
             arch_syscall_return(curthread, 0);
             return;
     }
@@ -944,12 +959,29 @@ static void sys_setpgid(pid_t pid, pid_t pgid)
 {
     syscall_log(LOG_DEBUG, "setpgid(pid=%d, pgid=%d)\n", pid, pgid);
 
-    //if (pid == 0 && pgid == 0) {
-        int ret = pgrp_new(curproc, NULL);
-        arch_syscall_return(curthread, ret);
-    //} else {
-    //    panic("Unsupported");
-    //}
+    if (pgid < 0) {
+        arch_syscall_return(curthread, -EINVAL);
+        return;
+    }
+
+    /* the caller or one of its children */
+    struct proc *proc = pid ? proc_pid_find(pid) : curproc;
+
+    if (!proc || (proc != curproc && proc->parent != curproc)) {
+        arch_syscall_return(curthread, -ESRCH);
+        return;
+    }
+
+    struct session *session = proc->pgrp->session;
+
+    /* a session leader can't change its group, nor can a process outside
+     * the caller's session */
+    if (session != curproc->pgrp->session || session->leader == proc) {
+        arch_syscall_return(curthread, -EPERM);
+        return;
+    }
+
+    arch_syscall_return(curthread, proc_setpgid(proc, pgid ? pgid : proc->pid));
 }
 
 static void sys_mknod(const char *path, uint32_t mode, uint32_t dev)
@@ -1004,6 +1036,26 @@ static void sys_setuid(uid_t uid)
 
     curproc->uid = uid;
     arch_syscall_return(curthread, 0);
+}
+
+static void sys_ftruncate(int fildes, off_t len)
+{
+    syscall_log(LOG_DEBUG, "ftruncate(fildes=%d, len=%d)\n", fildes, len);
+
+    struct file *file = fd_file(fildes);
+
+    if (!file) {
+        arch_syscall_return(curthread, -EBADF);
+        return;
+    }
+
+    /* must be open for writing */
+    if (len < 0 || (file->flags & O_ACCMODE) == O_RDONLY) {
+        arch_syscall_return(curthread, -EINVAL);
+        return;
+    }
+
+    arch_syscall_return(curthread, vfs_file_trunc(file, len));
 }
 
 static void sys_setgid(gid_t gid)
@@ -1432,10 +1484,86 @@ static void sys_gettimeofday(struct timeval *tv, struct timezone *tz)
     return;
 }
 
-static void sys_sigmask(int how, void *set, void *oldset)
+static void sys_sigmask(int how, const sigset_t *set, sigset_t *oldset)
 {
     syscall_log(LOG_DEBUG, "sigmask(how=%d, set=%p, oldset=%p)\n", how, set, oldset);
-    arch_syscall_return(curthread, -ENOTSUP);
+
+    if ((set && uaccess_check(set, sizeof(sigset_t))) ||
+        (oldset && uaccess_check(oldset, sizeof(sigset_t)))) {
+        arch_syscall_return(curthread, -EFAULT);
+        return;
+    }
+
+    sigset_t mask = curproc->sigmask;
+
+    if (set) {
+        switch (how) {
+            case SIG_BLOCK:   mask |= *set;  break;
+            case SIG_UNBLOCK: mask &= ~*set; break;
+            case SIG_SETMASK: mask = *set;   break;
+            default:
+                arch_syscall_return(curthread, -EINVAL);
+                return;
+        }
+    }
+
+    if (oldset)
+        *oldset = curproc->sigmask;
+
+    curproc->sigmask = mask & ~SIG_UNMASKABLE;
+    arch_syscall_return(curthread, 0);
+
+    /* a signal that is no longer blocked is delivered before returning */
+    int signal = signal_next(curproc);
+    if (signal)
+        arch_handle_signal(signal);
+}
+
+static void sys_sigsuspend(const sigset_t *set)
+{
+    syscall_log(LOG_DEBUG, "sigsuspend(set=%p)\n", set);
+
+    if (uaccess_check(set, sizeof(sigset_t))) {
+        arch_syscall_return(curthread, -EFAULT);
+        return;
+    }
+
+    struct queue wait = {0};
+
+    /* returns when a signal handler ran, with the old mask; a signal can
+     * also be delivered when the thread is switched to (arch_thread_switch),
+     * which restores the mask from sigsuspend_mask */
+    arch_syscall_return(curthread, -EINTR);
+
+    curthread->sigsuspend      = 1;
+    curthread->sigsuspend_mask = curproc->sigmask;
+
+    for (;;) {
+        curproc->sigmask = *set & ~SIG_UNMASKABLE;
+
+        int signal = signal_next(curproc);
+
+        if (signal) {
+            curproc->sigmask = curthread->sigsuspend_mask;
+            curthread->sigsuspend = 0;
+            arch_handle_signal(signal);
+
+            /* the signal was ignored, keep waiting */
+            curthread->sigsuspend = 1;
+            continue;
+        }
+
+        /* signal_proc_send() wakes up the sleeping thread */
+        thread_queue_sleep(&wait);
+    }
+}
+
+static void sys_getppid(void)
+{
+    syscall_log(LOG_DEBUG, "getppid()\n");
+
+    /* orphans are as if reparented to init */
+    arch_syscall_return(curthread, curproc->parent ? curproc->parent->pid : 1);
 }
 
 typedef unsigned long fd_mask;
@@ -1601,6 +1729,9 @@ void (*syscall_table[])() = {
     [SYS_rmdir]         = sys_rmdir,
     [SYS_setuid]        = sys_setuid,
     [SYS_setgid]        = sys_setgid,
+    [SYS_ftruncate]     = sys_ftruncate,
+    [SYS_sigsuspend]    = sys_sigsuspend,
+    [SYS_getppid]       = sys_getppid,
 };
 
 const size_t syscall_cnt = sizeof(syscall_table)/sizeof(syscall_table[0]);

@@ -5,6 +5,7 @@
 #include <sys/binfmt.h>
 #include <sys/uaccess.h>
 #include <mm/mm.h>
+#include <aquila/fcntl.h>
 
 /* maximum total size of arguments and environment (strings + pointers) */
 #define EXEC_ARG_MAX    (128 * 1024)
@@ -126,6 +127,16 @@ int proc_execve(struct thread *thread, const char *fn, char * const _argp[], cha
     }
 
     thread->spawned = 0;
+
+    /* close descriptors marked close-on-exec */
+    for (int fd = 0; fd < FDS_COUNT; ++fd) {
+        struct file *file = &proc->fds[fd];
+
+        if (file->vnode && file->vnode != (void *) -1 && (file->fdflags & FD_CLOEXEC)) {
+            vfs_file_close(file);
+            *file = (struct file) {0};
+        }
+    }
 
     arch_sys_execve(proc, argc + 1, argp, envc + 1, envp);
     memset(proc->sigaction, 0, sizeof(proc->sigaction));

@@ -28,5 +28,9 @@ extern int sig_default_action[SIG_MAX+1];
 int signal_send(int pid, int sig);
 int signal_proc_send(struct proc *proc, int signal);
 int signal_pgrp_send(struct pgroup *pg, int signal);
+int signal_next(struct proc *proc);
+
+/* signals that can't be blocked */
+#define SIG_UNMASKABLE  ((1UL << SIGKILL) | (1UL << SIGSTOP))
 
 #endif /* ! _SYS_SIGNAL_H */

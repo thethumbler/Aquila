@@ -35,6 +35,13 @@ struct thread {
 
     /** Current sleep queue */
     struct queue *sleep_queue;
+
+    /** Executing a system call (it may be sleeping in it) */
+    int in_syscall;
+
+    /** In sigsuspend(): the signal mask to restore when a signal is delivered */
+    int      sigsuspend;
+    sigset_t sigsuspend_mask;
     struct qnode *sleep_node;
 
     /** Scheduler queue */

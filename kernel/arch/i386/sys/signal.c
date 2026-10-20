@@ -31,6 +31,9 @@ static void signal_terminate(int sig)
 
 void arch_handle_signal(int sig)
 {
+    /* delivering a signal abandons the system call being executed */
+    curthread->in_syscall = 0;
+
     if (sig < 1 || sig > SIG_MAX)
         return;
 

@@ -41,6 +41,7 @@ static int fork_proc_copy(struct proc *parent, struct proc *fork)
 
     fork->mask = parent->mask;
     fork->uid  = parent->uid;
+    fork->sigmask = parent->sigmask;
     fork->gid  = parent->gid;
 
     fork->heap_start = parent->heap_start;

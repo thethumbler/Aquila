@@ -55,8 +55,6 @@ struct pgroup {
     /** Process Group Leader */
     struct proc *leader;
 
-    /** Group node on pgroups queue */
-    struct qnode *qnode;
 };
 
 /**
@@ -116,6 +114,9 @@ struct proc {
     /** Recieved signals queue */
     struct queue *sig_queue;
 
+    /** Blocked signals, (1 << sig) */
+    sigset_t sigmask;
+
     /** Dummy queue for children wait */
     struct queue wait_queue;
 
@@ -142,7 +143,7 @@ struct proc *proc_pid_find(pid_t pid);
 
 int proc_new(struct proc **ref);
 int session_new(struct proc *proc);
-int pgrp_new(struct proc *proc, struct pgroup **ref_pgrp);
+int proc_setpgid(struct proc *proc, pid_t pgid);
 
 void proc_kill(struct proc *proc);
 int  proc_reap(struct proc *proc);
@@ -156,7 +157,6 @@ int  proc_init(struct proc *proc);
 #define PROC_UIO(proc) ((struct uio){.cwd = (proc)->cwd, .uid = (proc)->uid, .gid = (proc)->gid, .mask = (proc)->mask})
 
 extern struct queue *procs;
-extern struct queue *pgroups;
 extern struct queue *sessions;
 
 #endif /* ! _SYS_PROC_H */

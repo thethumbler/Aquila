@@ -43,6 +43,11 @@
 
 #define NSIG        32  /* signal 0 implied */
 
+/* signal sets are bit masks, signal n is bit (1 << n) */
+#define SIG_SETMASK 0   /* set mask with sigprocmask() */
+#define SIG_BLOCK   1   /* set of signals to block */
+#define SIG_UNBLOCK 2   /* set of signals to unblock */
+
 /* sigaction(2) argument, same layout as newlib's struct sigaction */
 struct aquila_sigaction {
     unsigned long sa_handler;

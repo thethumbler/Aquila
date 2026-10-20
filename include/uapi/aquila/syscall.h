@@ -72,8 +72,11 @@
 #define SYS_rmdir           59
 #define SYS_setuid          60
 #define SYS_setgid          61
+#define SYS_ftruncate       62
+#define SYS_sigsuspend      63
+#define SYS_getppid         64
 
-#define SYS_MAX             61
+#define SYS_MAX             64
 
 /*
  * Arguments of system calls that take more than three, passed as a

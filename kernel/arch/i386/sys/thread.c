@@ -44,8 +44,20 @@ void arch_thread_switch(struct thread *thread)
     x86_kernel_stack_set(arch->kstack);
     x86_fpu_disable();
 
-    if (thread->owner->sig_queue->count) {
-        int sig = (int)(intptr_t) dequeue(thread->owner->sig_queue);
+    int sig = signal_next(thread->owner);
+
+    if (sig) {
+        /* interrupting sigsuspend(), the handler runs with the old mask */
+        if (thread->sigsuspend) {
+            thread->owner->sigmask = thread->sigsuspend_mask;
+            thread->sigsuspend = 0;
+        }
+
+        /* a system call blocked in the kernel fails with EINTR, otherwise
+         * the handler would return to it with the syscall number in eax */
+        if (thread->in_syscall)
+            arch_syscall_return(thread, -EINTR);
+
         arch_handle_signal(sig);
         /* if we get back here, the signal was ignored */
     }

@@ -144,8 +144,8 @@ struct file {
     };
 
     off_t offset;
-    int flags;
-    //int ref;
+    int flags;      /* open flags (O_*) */
+    int fdflags;    /* descriptor flags (FD_CLOEXEC) */
 };
 
 /**
