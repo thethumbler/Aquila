@@ -198,8 +198,16 @@ static void sys_isatty(int fildes)
 static void sys_kill(pid_t pid, int sig)
 {
     syscall_log(LOG_DEBUG, "kill(pid=%d, sig=%d)\n", pid, sig);
+
+    /* a signal sent to ourselves may be delivered right away and the
+     * handler returns to the saved user context, so set the return value
+     * before sending it */
+    arch_syscall_return(curthread, 0);
+
     int ret = signal_send(pid, sig);
-    arch_syscall_return(curthread, ret);
+
+    if (ret)
+        arch_syscall_return(curthread, ret);
 }
 
 static void sys_link(const char *oldpath, const char *newpath)
