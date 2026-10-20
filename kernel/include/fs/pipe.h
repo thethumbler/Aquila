@@ -21,6 +21,9 @@ struct pipe {
     /** writers reference count */
     unsigned w_ref;
 
+    /** write end vnode, used to tell the two ends apart on close */
+    struct vnode *w_node;
+
     /** ring buffer */
     struct ringbuf *ring;
 };
