@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/mount.h>
 #include <sys/select.h>
 #include <sys/stat.h>
@@ -59,6 +60,104 @@ static void fault_handler(int sig, siginfo_t *info, void *ctx)
 static void handler(int sig)
 {
     got_signal = sig;
+}
+
+/* virtual terminal 2 (VGA text mode, 80x25 under QEMU -kernel) */
+static int vt, vcs;
+
+static void vt_write(const char *s)
+{
+    write(vt, s, strlen(s));
+}
+
+/* a row of the screen, without trailing blanks */
+static const char *vt_row(int row)
+{
+    static char buf[81];
+
+    lseek(vcs, row * 80, SEEK_SET);
+    buf[read(vcs, buf, 80) < 80 ? 0 : 80] = '\0';
+
+    for (int i = 79; i >= 0 && buf[i] == ' '; --i)
+        buf[i] = '\0';
+
+    return buf;
+}
+
+static void test_vt(void)
+{
+    mknod("/dev/tty2", S_IFCHR | 0600, (4 << 8) | 2);
+    mknod("/dev/vcs2", S_IFCHR | 0600, (7 << 8) | 2);
+    mknod("/dev/vcsa2", S_IFCHR | 0600, (7 << 8) | 130);
+
+    vt = open("/dev/tty2", O_RDWR | O_NOCTTY);
+    vcs = open("/dev/vcs2", O_RDONLY);
+    check("vt open", vt >= 0 && vcs >= 0, 1);
+
+    struct winsize ws = {0};
+    ioctl(vt, TIOCGWINSZ, &ws);
+    check("vt size", ws.ws_row * 1000 + ws.ws_col, 25080);
+
+    /* cursor addressing, colors */
+    vt_write("\033[H\033[2Jhello\n\033[3;5Hab\033[1;31mc\033[0m");
+    check("vt text", strcmp(vt_row(0), "hello"), 0);
+    check("vt cup", strcmp(vt_row(2), "    abc"), 0);
+
+    /* vcsa: rows, columns, cursor column and row, then characters with
+     * VGA attributes (bold red is light red, 12) */
+    unsigned char vcsa[4 + 2 * 80 * 3];
+    int fd = open("/dev/vcsa2", O_RDONLY);
+    check("vcsa read", read(fd, vcsa, sizeof(vcsa)), sizeof(vcsa));
+    close(fd);
+    check("vcsa header", vcsa[0] << 24 | vcsa[1] << 16 | vcsa[2] << 8 | vcsa[3], 25 << 24 | 80 << 16 | 7 << 8 | 2);
+    check("vcsa attr", vcsa[4 + 2 * (2 * 80 + 6) + 1], 0x0c);
+
+    /* insert and erase characters, erase to the end of the line */
+    vt_write("\033[5;1Habcdef\033[3D\033[1@X\033[K|");
+    check("vt ich el", strcmp(vt_row(4), "abcX|"), 0);
+    vt_write("\033[6;1Habcdef\033[1;3H\033[6;2H\033[2P\033[1X");
+    check("vt dch ech", strcmp(vt_row(5), "a ef"), 0);
+
+    /* DEC line drawing, UTF-8 to code page 437, REP */
+    vt_write("\033[7;1H\033(0lqk\033(B caf\303\251 \342\224\200x\033[2b");
+    check("vt charsets", strcmp(vt_row(6), "\xda\xc4\xbf caf\x82 \xc4xxx"), 0);
+
+    /* lines scroll within the scrolling region */
+    vt_write("\033[9;1Htop\033[10;12r\033[10;1HA\033[11;1HB\033[12;1HC\n\033[r");
+    check("vt region", strcmp(vt_row(9), "B") || strcmp(vt_row(10), "C") ||
+                       *vt_row(11) || strcmp(vt_row(8), "top"), 0);
+
+    /* inserting and deleting lines */
+    vt_write("\033[10;1H\033[L");
+    check("vt il", *vt_row(9) || strcmp(vt_row(10), "B"), 0);
+    vt_write("\033[M\033[M");
+    check("vt dl", strcmp(vt_row(9), "C"), 0);
+
+    /* the last column wraps on the next character */
+    vt_write("\033[15;78H12345");
+    check("vt wrap", strcmp(vt_row(14) + 77, "123") || strcmp(vt_row(15), "45"), 0);
+
+    /* the alternate screen, the main one comes back */
+    vt_write("\033[?1049h\033[Halt");
+    check("vt alt screen", strcmp(vt_row(0), "alt"), 0);
+    vt_write("\033[?1049l");
+    check("vt main screen", strcmp(vt_row(0), "hello"), 0);
+
+    /* a cursor position report is input */
+    struct termios tios;
+    tcgetattr(vt, &tios);
+    cfmakeraw(&tios);
+    tios.c_cc[VMIN] = 0;
+    tios.c_cc[VTIME] = 10;
+    tcsetattr(vt, TCSANOW, &tios);
+
+    char reply[16] = {0};
+    vt_write("\033[3;5H\033[6n");
+    read(vt, reply, sizeof(reply) - 1);
+    check("vt dsr", strcmp(reply, "\033[3;5R"), 0);
+
+    close(vcs);
+    close(vt);
 }
 
 int main(void)
@@ -409,6 +508,9 @@ int main(void)
     char fmt[32];
     snprintf(fmt, sizeof(fmt), "%zu %jd %hhu", (size_t) 42, (intmax_t) -7, (unsigned char) 300);
     check("printf %zu %jd %hhu", strcmp(fmt, "42 -7 44"), 0);
+
+    /* virtual terminals */
+    test_vt();
 
     fprintf(out, "aqtest: done, fails=%d\n", fails);
 

@@ -14,9 +14,18 @@ void earlycon_disable()
     use_earlycon = 0;
 }
 
+static void (*console_write)(const char *s, size_t len);
+void printk_console(void (*write)(const char *s, size_t len))
+{
+    console_write = write;
+}
+
 static int putc(char c)
 {
     ringbuf_write_overwrite(kmsg, 1, &c);
+
+    if (console_write)
+        console_write(&c, 1);
 
     if (use_earlycon)
         return earlycon_putc(c);
@@ -29,6 +38,9 @@ static int puts(char *s)
 
     int len = strlen(s);
     ringbuf_write_overwrite(kmsg, len, s);
+
+    if (console_write)
+        console_write(s, len);
 
     if (use_earlycon)
         return earlycon_puts(s);

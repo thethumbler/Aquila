@@ -68,8 +68,6 @@ int     kdev_file_eof(struct devid *dd, struct file *file);
 
 /* Devices -- XXX */
 extern struct dev i8042dev;
-extern struct dev ps2kbddev;
-extern struct dev condev;
 extern struct dev ttydev;
 extern struct dev pcidev;
 extern struct dev atadev;

@@ -9,15 +9,17 @@
 #include <fs/posix.h>
 #include <sys/sched.h>
 #include <dev/tty.h>
+#include <dev/vt.h>
 #include <fs/vfs.h>
 
+/* /dev/tty1 to /dev/tty6 are virtual terminals, /dev/ttyS0 and up uarts */
 struct dev *sttydev_mux(struct devid *dd)
 {
-    if (dd->minor < 64) {
-        //return &vtty;
-    } else {
+    if (dd->minor >= 64)
         return &uart;
-    }
+
+    if (dd->minor >= 1 && dd->minor <= VT_COUNT)
+        return &vtdev;
 
     return NULL;
 }
@@ -58,8 +60,8 @@ struct dev *ttydev_mux(struct devid *dd)
     switch (dd->minor) {
         case 0: /* /dev/tty */
             return &cttydev;
-        case 1: /* /dev/console */
-            return &condev;
+        case 1: /* /dev/console, the first virtual terminal */
+            return &vtdev;
         case 2: /* /dev/ptmx */
             return &ptmdev;
     }

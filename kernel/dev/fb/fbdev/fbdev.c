@@ -33,6 +33,15 @@ static struct fbdev *fbdev_get(struct devid *dd)
     return &registered_fbs[dd->minor];
 }
 
+/* the first framebuffer, once probed, NULL if there is none */
+struct fbdev *fbdev_primary(void)
+{
+    if (!fbdev_cnt || !registered_fbs[0].fix_screeninfo)
+        return NULL;
+
+    return &registered_fbs[0];
+}
+
 static ssize_t fbdev_read(struct devid *dd, off_t offset, size_t size, void *buf)
 {
     struct fbdev *fb = fbdev_get(dd);

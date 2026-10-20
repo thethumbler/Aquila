@@ -48,7 +48,7 @@ CHIPSET_X86_MISC_PIT=y
 
 # Generic framebuffer (fbdev) support
 #DEV_FRAMEBUFFER=y
-# Generic console (condev) support
+# Virtual terminals (vt) on the framebuffer or VGA text mode
 DEV_CONSOLE=y
 #DEV_KEYBOARD=y
 #DEV_MOUSE=y

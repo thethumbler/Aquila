@@ -2,6 +2,7 @@
 #define _DEV_FB_H
 
 int fbdev_register(int, void*);
+struct fbdev *fbdev_primary(void);
 
 #define FBDEV_TYPE_VESA 1
 extern struct fbdev fbdev_vesa;
