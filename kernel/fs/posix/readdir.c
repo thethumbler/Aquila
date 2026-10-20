@@ -33,6 +33,9 @@ ssize_t posix_file_readdir(struct file *file, struct dirent *dirent)
     
     int retval = vfs_readdir(file->vnode, file->offset, dirent);
 
+    if (retval < 0) /* Error */
+        return retval;
+
     /* Update file offset */
     file->offset += retval;
         

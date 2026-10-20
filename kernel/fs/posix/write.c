@@ -36,6 +36,9 @@ ssize_t posix_file_write(struct file *file, void *buf, size_t size)
             /* write up to `size' from `buf' into file */
             ssize_t retval = vfs_write(file->vnode, file->offset, size, buf);
 
+            if (retval < 0) /* Error */
+                return retval;
+
             /* Update file offset */
             file->offset += retval;
             
@@ -51,9 +54,20 @@ ssize_t posix_file_write(struct file *file, void *buf, size_t size)
         }
     } else {    /* Blocking I/O */
         ssize_t retval = size;
+        char *_buf = buf;
         
         while (size) {
-            size -= vfs_write(file->vnode, file->offset, size, buf);
+            ssize_t r = vfs_write(file->vnode, file->offset + (retval - size), size, _buf);
+
+            if (r < 0) {    /* Error */
+                /* report the error only if nothing was written */
+                if ((size_t) retval == size)
+                    return r;
+                break;
+            }
+
+            size -= r;
+            _buf += r;
 
             /* No bytes left to be written, or reached END-OF-FILE */
             if (!size || vfs_file_eof(file))    /* Done writting */
