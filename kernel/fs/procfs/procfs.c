@@ -301,7 +301,7 @@ static ssize_t procfs_proc_status(int pid, off_t off, size_t size, void *buf)
     struct proc *proc = proc_pid_find(pid);
 
     if (!proc)
-        return -ENONET;
+        return -ESRCH;
 
     char status_buf[512];
 
@@ -340,7 +340,7 @@ static ssize_t procfs_proc_maps(int pid, off_t off, size_t size, void *buf)
     struct proc *proc = proc_pid_find(pid);
 
     if (!proc)
-        return -ENONET;
+        return -ESRCH;
 
     char maps_buf[4096];
 
@@ -394,7 +394,7 @@ static ssize_t procfs_proc_vmstats(int pid, off_t off, size_t size, void *buf)
     struct proc *proc = proc_pid_find(pid);
 
     if (!proc)
-        return -ENONET;
+        return -ESRCH;
 
     char vmstats_buf[4096];
 
@@ -412,10 +412,12 @@ static ssize_t procfs_proc_vmstats(int pid, off_t off, size_t size, void *buf)
         perm[3] = vm_entry->flags & VM_SHARED? 's' : 'p';
 
         const char *type = "";
-        switch (vm_entry->vm_object->type) {
-            case VMOBJ_FILE: type = "file"; break;
-            case VMOBJ_ZERO: type = "anon"; break;
-            //case VMOBJ_SHADOW: type = "shadow"; break;
+        if (vm_entry->vm_object) {
+            switch (vm_entry->vm_object->type) {
+                case VMOBJ_FILE: type = "file"; break;
+                case VMOBJ_ZERO: type = "anon"; break;
+                //case VMOBJ_SHADOW: type = "shadow"; break;
+            }
         }
 
         /*
@@ -598,7 +600,7 @@ static int procfs_vget(struct vnode *super, ino_t ino, struct vnode **vnode)
 
         if ((size_t) id < PROCFS_ENTRIES) {
             struct vnode *node = NULL;
-            if (!(node = vcache_find(&procfs_vcache, id))) { /* Not in open vnode table? */
+            if (!(node = vcache_find(&procfs_vcache, ino))) { /* Not in open vnode table? */
                 node = kmalloc(sizeof(struct vnode), &M_VNODE, M_ZERO);
                 if (!node) goto e_nomem;
 
@@ -620,7 +622,7 @@ static int procfs_vget(struct vnode *super, ino_t ino, struct vnode **vnode)
             if (vnode) *vnode = node;
             return 0;
         } else {
-            return -ENONET;
+            return -ENOENT;
         }
     } else {
         size_t pid = ino / (PROCFS_PROC_ENTRIES + 1);
