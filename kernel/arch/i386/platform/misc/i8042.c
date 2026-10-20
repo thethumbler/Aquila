@@ -89,6 +89,32 @@ void x86_i8042_handler_register(int channel, void (*fun)(int))
     }
 }
 
+/* the controller takes a byte, -1 if it doesn't in time */
+static int write_wait(void)
+{
+    for (int i = 0; i < 100000; ++i)
+        if (!(read_status() & STATUS_IBUF_FULL))
+            return 0;
+
+    return -1;
+}
+
+/* a byte to the second port's device (the mouse), its replies come as
+ * its interrupts */
+int x86_i8042_aux_write(uint8_t byte)
+{
+    if (write_wait())
+        return -1;
+
+    io_out8(&i8042_ioaddr, COMMAND_PORT, 0xD4);
+
+    if (write_wait())
+        return -1;
+
+    io_out8(&i8042_ioaddr, DATA_PORT, byte);
+    return 0;
+}
+
 void x86_i8042_reboot(void)
 {
     io_out8(&i8042_ioaddr, COMMAND_PORT, 0xFE);

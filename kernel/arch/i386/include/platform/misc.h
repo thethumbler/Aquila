@@ -14,6 +14,7 @@ void x86_irq_handler_uninstall(unsigned irq);
 int x86_i8042_setup(struct ioaddr *io);
 void x86_i8042_handler_register(int channel, void (*fun)(int));
 void x86_i8042_reboot(void);
+int  x86_i8042_aux_write(uint8_t byte);
 
 void x86_acpi_poweroff(void) __attribute__((weak));
 

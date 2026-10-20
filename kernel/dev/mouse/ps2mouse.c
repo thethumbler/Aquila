@@ -1,5 +1,11 @@
 /*
  *          PS/2 Mouse driver
+ *
+ * /dev/mouse (c 10 1) is the mouse's bytes as they come, as Linux's
+ * /dev/psaux: its packets (3 bytes, 4 with a wheel), and its replies (ACK,
+ * IDs) to what is written, which goes to the mouse. Readers find where
+ * packets start (bit 3 of the first byte); opening it resets the mouse to
+ * a plain PS/2 mouse, from the start of a packet.
  */
 
 
@@ -39,50 +45,31 @@ struct ioaddr mouse = {
 #define SET_COMPAQ_STATUS   0x60
 #define USE_DEFAULTS        0xF6
 #define ENABLE_MOUSE        0xF4
+#define RESET               0xFF
 
-#define BUF_SIZE    128
+#define BUF_SIZE    1024
 
 static struct ringbuf *mouse_ring = RINGBUF_NEW(BUF_SIZE);   /* Mouse ring Buffer */
 static struct proc *proc = NULL; /* Current process using mouse */
 static struct queue *mouse_read_queue = QUEUE_NEW(); /* Mouse read queue */
 
-struct mouse_packet {
-    uint8_t left    : 1;
-    uint8_t right   : 1;
-    uint8_t mid     : 1;
-    uint8_t _1      : 1;
-    uint8_t x_sign  : 1;
-    uint8_t y_sign  : 1;
-    uint8_t x_over  : 1;
-    uint8_t y_over  : 1;
-} __packed;
+/* replies of the reset at open, nobody reads them */
+static int skip = 0;
 
 void ps2mouse_handler(int byte)
 {
-    static uint8_t cycle = 0;
-    static uint8_t mouse_data[3];
-    mouse_data[cycle++] = byte & 0xFF;
+    char b = byte;
 
-    if (cycle == 1 && !(mouse_data[0] & 0x8))
-        cycle = 0;
-
-    if (cycle == 3) {
-        cycle = 0;  /* We are done .. reset */
-        struct mouse_packet *packet = (struct mouse_packet *) mouse_data;
-
-        if (packet->x_over || packet->y_over)
-            return;
-
-        /* Only queue whole packets, a partial write would misalign the
-         * stream. The ring holds at most size - 1 bytes. */
-        if (mouse_ring->size - 1 - ringbuf_available(mouse_ring) < 3)
-            return;
-
-        ringbuf_write(mouse_ring, 3, (char *) mouse_data);
-        
-        if (mouse_read_queue->count)
-            thread_queue_wakeup(mouse_read_queue);
+    if (skip) {
+        skip--;
+        return;
     }
+
+    /* lost if nobody reads (the ring is full) */
+    ringbuf_write(mouse_ring, 1, &b);
+
+    /* readers, and select() and poll() (which don't sleep on the queue) */
+    thread_queue_wakeup(mouse_read_queue);
 }
 
 void ps2mouse_register(void)
@@ -93,6 +80,18 @@ void ps2mouse_register(void)
 static ssize_t ps2mouse_read(struct devid *dd __unused, off_t offset __unused, size_t size, void *buf)
 {
     return ringbuf_read(mouse_ring, size, buf);
+}
+
+/* commands to the mouse, it replies (an ACK to each byte, more to some) */
+static ssize_t ps2mouse_write(struct devid *dd __unused, off_t offset __unused, size_t size, void *_buf)
+{
+    uint8_t *buf = _buf;
+
+    for (size_t i = 0; i < size; ++i)
+        if (x86_i8042_aux_write(buf[i]))
+            return i ? (ssize_t) i : -EIO;
+
+    return size;
 }
 
 static void __mouse_wait(uint32_t i)
@@ -158,6 +157,15 @@ static int ps2mouse_file_open(struct file *file)
     proc = curproc;
     file->vnode->read_queue = mouse_read_queue;    
 
+    /* a plain PS/2 mouse, whatever the last opener made it (its replies,
+     * ACK AA 00 and ACK, aren't read), and nothing left of before */
+    char c;
+    while (ringbuf_read(mouse_ring, 1, &c))
+        ;
+    skip = 4;
+    x86_i8042_aux_write(RESET);
+    x86_i8042_aux_write(ENABLE_MOUSE);
+
     return posix_file_open(file);
 }
 
@@ -179,14 +187,16 @@ struct dev ps2mousedev = {
 
     .probe = ps2mouse_probe,
     .read  = ps2mouse_read,
+    .write = ps2mouse_write,
 
     .fops  = {
         .open  = ps2mouse_file_open,
         .read  = posix_file_read,
+        .write = posix_file_write,
         .close = ps2mouse_file_close,
 
         .can_read  = ps2mouse_file_can_read,
-        .can_write = __vfs_can_never,
+        .can_write = __vfs_can_always,
         .eof       = __vfs_eof_never,
     },
 };
