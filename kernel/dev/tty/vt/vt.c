@@ -348,7 +348,11 @@ static int vt_file_open(struct file *file)
     file->vnode->read_queue  = &vt->read_queue;
     file->vnode->write_queue = &vt->write_queue;
 
-    tty_open(vt->tty, file);
+    /* /dev/console never becomes a controlling terminal (as on Linux):
+     * init writes to it, logins on the terminal get it */
+    if (DEV_MAJOR(file->vnode->rdev) != 5)
+        tty_open(vt->tty, file);
+
     return 0;
 }
 
