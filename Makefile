@@ -79,7 +79,7 @@ ports: check-toolchain
 # Root filesystem and initrd
 #
 
-AQBOX_BIN  := bim cat clear date echo env kill ls mkdir mknod mktemp ps pwd \
+AQBOX_BIN  := cat clear date echo env kill ls mkdir mknod mktemp ps pwd \
               sh stat touch truncate uname unlink vmstat
 AQBOX_SBIN := getty login mount readmbr reboot
 
@@ -91,15 +91,15 @@ initrd: userland
 	@$(CP) -r $(SRCDIR)/rootfs/. $(ROOTFS)/
 	@if [ -n "$(ROOTFS_OVERLAY)" ]; then $(CP) -r $(ROOTFS_OVERLAY)/. $(ROOTFS)/; fi
 	@$(CP) $(BUILDDIR)/userland/bin/init $(ROOTFS)/init
-	@$(CP) $(BUILDDIR)/userland/bin/aqbox $(BUILDDIR)/userland/bin/fbterm \
-		$(BUILDDIR)/userland/bin/kilo $(ROOTFS)/bin/
-	@if [ -d $(BUILDDIR)/ports/root ]; then \
-		$(CP) -r $(BUILDDIR)/ports/root/. $(ROOTFS)/; \
-		$(STRIP) $(ROOTFS)/usr/bin/*; fi
-	@$(STRIP) $(ROOTFS)/init $(ROOTFS)/bin/*
+	@$(CP) $(BUILDDIR)/userland/bin/aqbox $(BUILDDIR)/userland/bin/fbterm $(ROOTFS)/bin/
 	@chmod 600 $(ROOTFS)/etc/shadow
 	@for a in $(AQBOX_BIN); do $(LN) -s /bin/aqbox $(ROOTFS)/bin/$$a; done
 	@for a in $(AQBOX_SBIN); do $(LN) -s /bin/aqbox $(ROOTFS)/sbin/$$a; done
+	@# ports go last and may replace aqbox applets (e.g. /bin/sh)
+	@if [ -d $(BUILDDIR)/ports/root ]; then \
+		$(CP) -r --remove-destination $(BUILDDIR)/ports/root/. $(ROOTFS)/; fi
+	@find $(ROOTFS) -type f -exec sh -c \
+		'for f; do head -c 4 "$$f" | grep -q ELF && $(STRIP) "$$f"; done' _ {} +
 	@$(ECHO) "  CPIO    " $(patsubst $(BUILDDIR)/%,build/%,$(INITRD))
 	@# the kernel's initramfs reads old binary cpio archives
 	@cd $(ROOTFS) && find . | cpio -o -H bin -R 0:0 --quiet > $(INITRD)

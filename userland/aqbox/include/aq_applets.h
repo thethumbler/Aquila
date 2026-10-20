@@ -21,7 +21,6 @@ int cmd_uname(int, char**);
 int cmd_unlink(int, char**);
 int cmd_kill(int, char**);
 int cmd_reboot(int, char**);
-int cmd_bim(int, char**);
 int cmd_truncate(int, char**);
 int cmd_mktemp(int, char**);
 int cmd_vmstat(int, char**);
@@ -33,7 +32,6 @@ struct applet {
     char *name;
     int (*f)(int, char **);
 } applets[] = {
-    APPLET(bim),
     APPLET(cat),
     APPLET(clear),
     APPLET(date),

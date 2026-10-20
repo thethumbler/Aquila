@@ -5,10 +5,17 @@
 # usage: ports/build.sh [port...]   (default: all ports)
 #
 # Each port is ports/<name>/recipe.sh, which sets NAME, VERSION, URL and
-# SHA256 and defines a build() function. build() runs in the extracted
-# source directory (after applying ports/<name>/*.patch) with CC, AR,
-# RANLIB, STRIP set for the i686-aquila toolchain, and installs into
-# $DESTDIR, which the initrd includes (make initrd).
+# SHA256 and defines a build() function, and optionally:
+#
+#   DEPENDS     ports to build first
+#   FILE        name of the downloaded archive (default: basename of URL)
+#
+# build() runs in the extracted source directory (after applying
+# ports/<name>/*.patch) with CC, AR, RANLIB, STRIP set for the i686-aquila
+# toolchain, and AQUILA_UAPI pointing at the kernel ABI headers (for host
+# tools that generate target tables). Programs are installed into $DESTDIR, which the initrd
+# includes (make initrd); libraries and headers other ports build against
+# into $STAGING (CPPFLAGS and LDFLAGS point there).
 #
 # environment:
 #   BUILDDIR    output directory (default: <repo>/build)
@@ -30,32 +37,45 @@ TARGET=i686-aquila
 DOWNLOADS=$BUILDDIR/downloads
 SRC=$BUILDDIR/ports/src
 export DESTDIR=$BUILDDIR/ports/root
+export STAGING=$BUILDDIR/ports/staging
 
 export PATH=$TOOLCHAIN/bin:$PATH
 export CC=$TARGET-gcc AR=$TARGET-ar RANLIB=$TARGET-ranlib STRIP=$TARGET-strip
 export JOBS
+export AQUILA_UAPI=$ROOT/include/uapi
+export CPPFLAGS="-I$STAGING/usr/include" LDFLAGS="-L$STAGING/usr/lib"
 
 if ! command -v $CC >/dev/null; then
     echo "error: $CC not found, run 'make toolchain' first" >&2
     exit 1
 fi
 
+declare -A built
+
 build_port()
 {
     local recipe=$ROOT/ports/$1/recipe.sh
+
+    [ -n "${built[$1]:-}" ] && return
 
     if [ ! -f "$recipe" ]; then
         echo "unknown port: $1" >&2
         exit 2
     fi
 
+    # dependencies first
+    local dep
+    for dep in $(DEPENDS=; source "$recipe"; echo "$DEPENDS"); do
+        build_port "$dep"
+    done
+
     (
         # shellcheck source=/dev/null
         source "$recipe"
 
-        local archive=$DOWNLOADS/$(basename "$URL")
+        local archive=$DOWNLOADS/${FILE:-$(basename "$URL")}
 
-        mkdir -p "$DOWNLOADS" "$SRC" "$DESTDIR"
+        mkdir -p "$DOWNLOADS" "$SRC" "$DESTDIR" "$STAGING"
 
         if [ ! -f "$archive" ]; then
             echo "==> downloading $NAME-$VERSION"
@@ -76,6 +96,8 @@ build_port()
 
         build
     )
+
+    built[$1]=1
 }
 
 for port in ${*:-$(cd "$ROOT/ports" && ls -d */ | tr -d /)}; do
