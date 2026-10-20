@@ -1,28 +1,15 @@
-*.o
-*.iso
-*.elf
-*.img
-
-tools/
-graph.sh
-tags
-mnt/
-
-build-tools/*
-!build-tools/build.sh
-!build-tools/aquila/
-!build-tools/patches/
-
-ramdisk/sysroot
-ramdisk/out
-
-system/usr
-system/nuklear/nuklear
-system/nuklear/libnk.a
-system/fbterm/fbterm
-system/aqbox/aqbox
-
-kernel/arch/*/kernel-*
+# build output: toolchain, sysroot, kernel, userland, images
+/build/
 
 # test suite build output
-tests/out/
+/tests/out/
+
+# stray build artifacts and images
+*.o
+*.d
+*.iso
+*.img
+*.elf
+
+tags
+mnt/

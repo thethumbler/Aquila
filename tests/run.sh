@@ -51,16 +51,14 @@ mkdir -p "$OUT"
 
 if [ $build = 1 ]; then
     echo "building kernel (CONFIG=$CONFIG)"
-    # the kernel makefiles don't track header dependencies, always rebuild
-    make -C "$ROOT" clean-kernel CONFIG=$CONFIG SRCDIR="$ROOT" >/dev/null 2>&1
-    if ! make -C "$ROOT" build-kernel CONFIG=$CONFIG SRCDIR="$ROOT" > "$OUT/build.log" 2>&1; then
+    if ! make -C "$ROOT" kernel CONFIG=$CONFIG BUILDDIR="$OUT/build" > "$OUT/build.log" 2>&1; then
         grep -E -B2 -A6 'error|Error' "$OUT/build.log" | head -40
         echo "error: kernel build failed, see $OUT/build.log" >&2
         exit 1
     fi
 fi
 
-KERNEL=$(ls "$ROOT"/kernel/arch/i386/kernel-*.i386 2>/dev/null | head -1)
+KERNEL=$(ls "$OUT"/build/kernel/kernel-*.i386 2>/dev/null | head -1)
 
 if [ -z "$KERNEL" ]; then
     echo "error: no kernel image, run without -n" >&2

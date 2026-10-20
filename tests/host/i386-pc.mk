@@ -2,7 +2,7 @@
 # i386-pc configuration built with the host gcc/binutils instead of the
 # i686-aquila cross toolchain, used by tests/run.sh:
 #
-#   make build-kernel CONFIG=../tests/host/i386-pc
+#   make kernel CONFIG=../tests/host/i386-pc
 #
 # Only the kernel can be built this way, the system components need the
 # aquila toolchain and newlib.

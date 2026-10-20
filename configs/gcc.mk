@@ -9,7 +9,6 @@ CFLAGS += \
 AS := $(CC)
 ASFLAGS := $(CFLAGS)
 LD := i686-aquila-ld
-LDFLAGS := -nostdlib -melf_i386
+# the kernel is mapped as a single RWX segment
+LDFLAGS := -nostdlib -melf_i386 --no-warn-rwx-segments
 
-SYSCC := i686-aquila-gcc
-SYSLD := i686-aquila-ld
