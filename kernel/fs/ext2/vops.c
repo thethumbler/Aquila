@@ -190,6 +190,9 @@ ssize_t ext2_readdir(struct vnode *dir, off_t offset, struct dirent *dirent)
         dentry = (struct ext2_dentry *) buf;
 
         while ((char *) dentry < (char *) buf + bs) {
+            if (!dentry->size)  /* corrupted entry */
+                break;
+
             if (idx == offset) {
                 dirent->d_ino = dentry->ino;
                 memcpy(dirent->d_name, (char *) dentry->name, dentry->length);
@@ -201,6 +204,9 @@ ssize_t ext2_readdir(struct vnode *dir, off_t offset, struct dirent *dirent)
             dentry = (struct ext2_dentry *) ((char *) dentry + dentry->size);
             ++idx;
         }
+
+        if (found)
+            break;
     }
 
     return found;
@@ -246,6 +252,9 @@ int ext2_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, struc
         return -EEXIST;
 
     ino_t ino = ext2_inode_alloc(desc);
+    if (!ino)   /* out of inodes */
+        return -ENOSPC;
+
     struct ext2_inode inode;
     
     if ((err = ext2_inode_read(desc, ino, &inode))) {

@@ -25,8 +25,11 @@ uint32_t ext2_block_alloc(struct ext2 *desc)
     uint32_t *buf = kmalloc(desc->bs, &M_BUFFER, 0);
     uint32_t block = 0, real_block = 0, group = 0;
     struct bitmap bm = {0};
+    int found = 0;
 
     for (unsigned i = 0; i < desc->ngroups; ++i) {
+        block = 0;
+
         if (desc->groups[i].free_blocks) {
             ext2_block_read(desc, desc->groups[i].bmap, buf);
 
@@ -34,14 +37,21 @@ uint32_t ext2_block_alloc(struct ext2 *desc)
             bm.max_idx = desc->superblock->gblocks;
             
             /* Look for a free block */
-            for (; bitmap_check(&bm, block); ++block);
+            for (; block < bm.max_idx && bitmap_check(&bm, block); ++block);
+
+            if (block == bm.max_idx)
+                continue;
+
             group = i;
-            real_block = block + group * desc->superblock->gblocks;
+
+            /* block bitmaps start at the first data block (1 for 1K blocks) */
+            real_block = desc->superblock->dblock + block + group * desc->superblock->gblocks;
+            found = 1;
             break;
         }
     }
 
-    if (!block) {
+    if (!found) {
         /* Out of space */
         kfree(buf);
         return 0;
@@ -70,7 +80,12 @@ uint32_t ext2_block_alloc(struct ext2 *desc)
 
 void ext2_block_free(struct ext2 *desc, uint32_t block)
 {
-    uint32_t group = block % desc->superblock->gblocks;
+    /* block bitmaps start at the first data block (1 for 1K blocks) */
+    if (block < desc->superblock->dblock || block >= desc->superblock->nblocks)
+        return;
+
+    uint32_t rel   = block - desc->superblock->dblock;
+    uint32_t group = rel / desc->superblock->gblocks;
 
     uint32_t *buf = kmalloc(desc->bs, &M_BUFFER, 0);
     struct bitmap bm = {0};
@@ -78,7 +93,7 @@ void ext2_block_free(struct ext2 *desc, uint32_t block)
     ext2_block_read(desc, desc->groups[group].bmap, buf);
 
     bm.map = buf;
-    uint32_t block_idx = block - group * desc->superblock->gblocks;
+    uint32_t block_idx = rel % desc->superblock->gblocks;
 
     /* Update bitmap */
     bitmap_clear(&bm, block_idx);

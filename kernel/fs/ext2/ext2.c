@@ -72,12 +72,13 @@ int ext2_inode_sync(struct vnode *inode)
     
     struct ext2 *desc = (struct ext2 *) inode->p;
     struct ext2_inode ext2_inode;
-    memset(&ext2_inode, 0, sizeof(struct ext2_inode));
 
-    size_t bs = desc->bs;
+    /* read the on-disk inode first so that fields we don't track in the
+     * vnode (block pointers, flags, ...) are preserved */
+    if ((err = ext2_inode_read(desc, inode->ino, &ext2_inode)))
+        return err;
 
     ext2_inode.size   = inode->size;
-    ext2_inode.blocks = (inode->size + bs)/bs;
     ext2_inode.mode   = inode->mode;
     ext2_inode.uid    = inode->uid;
     ext2_inode.gid    = inode->gid;
@@ -87,9 +88,8 @@ int ext2_inode_sync(struct vnode *inode)
     ext2_inode.mtime = inode->mtime.tv_sec;
     ext2_inode.ctime = inode->ctime.tv_sec;
 
-    if ((err = ext2_inode_write(desc, inode->ino, &ext2_inode))) {
-
-    }
+    if ((err = ext2_inode_write(desc, inode->ino, &ext2_inode)) < 0)
+        return err;
 
     return 0;
 }
@@ -173,6 +173,9 @@ int ext2_mount(const char *dir, int flags, void *_args)
     int err;
 
     struct uio uio = {0};   /* FIXME */
+
+    if (!args || !args->dev)
+        return -EINVAL;
 
     if ((err = vfs_lookup(args->dev, &uio, &dev, NULL)))
         goto error;
