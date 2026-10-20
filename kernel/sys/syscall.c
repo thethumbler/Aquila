@@ -25,6 +25,7 @@
 #include <aquila/mman.h>
 #include <aquila/time.h>
 #include <aquila/wait.h>
+#include <aquila/poll.h>
 
 #include <fs/devpts.h>
 #include <fs/pipe.h>
@@ -1773,6 +1774,21 @@ typedef struct {
     fd_mask fds_bits[_howmany(FD_SETSIZE, NFDBITS)];
 } fd_set;
 
+/* whether `file' can be read (or written) without waiting; a file
+ * that can't tell is ready, the read or write reports the error */
+static int fd_ready(struct file *file, int write)
+{
+    int ret = write ? vfs_file_can_write(file, 1) : vfs_file_can_read(file, 1);
+    return ret != 0;
+}
+
+/* deadline of a select()/poll() timeout of `ns' nanoseconds, -1 for
+ * none; 0 means don't wait */
+static uint64_t poll_deadline(int64_t ns)
+{
+    return ns < 0 ? 0 : arch_rtime_ns() + ns;
+}
+
 static void sys_select(struct aquila_select_args *args)
 {
     syscall_log(LOG_DEBUG, "select(args=%p)\n", args);
@@ -1788,42 +1804,134 @@ static void sys_select(struct aquila_select_args *args)
     fd_set *exceptfds = args->exceptfds;
     struct timeval *timeout = args->timeout;
 
-    if (nfds < 0) {
+    if (nfds < 0 || nfds > FD_SETSIZE) {
         arch_syscall_return(curthread, -EINVAL);
         return;
     }
 
-    /* we can only look at descriptors that exist and fit in an fd_set */
-    nfds = MIN(nfds, MIN(FDS_COUNT, FD_SETSIZE));
-
     if ((readfds && uaccess_check(readfds, sizeof(fd_set))) ||
-        (writefds && uaccess_check(writefds, sizeof(fd_set)))) {
+        (writefds && uaccess_check(writefds, sizeof(fd_set))) ||
+        (exceptfds && uaccess_check(exceptfds, sizeof(fd_set))) ||
+        (timeout && uaccess_check(timeout, sizeof(struct timeval)))) {
         arch_syscall_return(curthread, -EFAULT);
         return;
     }
 
-    int count = 0;
+    if (timeout && ((int64_t) timeout->tv_sec < 0 || timeout->tv_usec < 0 || timeout->tv_usec >= 1000000)) {
+        arch_syscall_return(curthread, -EINVAL);
+        return;
+    }
 
-    for (int i = 0; i < nfds; ++i) {
-        if (readfds && readfds->fds_bits[i/NFDBITS] & (1 << (i % NFDBITS))) {
+    /* what was asked, the sets are overwritten with the result */
+    fd_set want_read = {0}, want_write = {0}, out_read, out_write;
+
+    if (readfds)
+        want_read = *readfds;
+    if (writefds)
+        want_write = *writefds;
+
+    int64_t ns = timeout ? (int64_t) timeout->tv_sec * 1000000000 + timeout->tv_usec * 1000 : -1;
+    uint64_t until = poll_deadline(ns);
+    int count, timed_out = 0;
+
+#define FD_BIT(set, i) ((set).fds_bits[(i) / NFDBITS] & (1UL << ((i) % NFDBITS)))
+#define FD_ADD(set, i) ((set).fds_bits[(i) / NFDBITS] |= (1UL << ((i) % NFDBITS)))
+
+    for (;;) {
+        out_read  = (fd_set) {0};
+        out_write = (fd_set) {0};
+        count = 0;
+
+        for (int i = 0; i < nfds; ++i) {
+            if (!FD_BIT(want_read, i) && !FD_BIT(want_write, i))
+                continue;
+
             struct file *file = fd_file(i);
-            if (file && vfs_file_can_read(file, 1) > 0) {
-                readfds->fds_bits[i/NFDBITS] |= (1 << (i % NFDBITS));
+
+            if (!file) {
+                arch_syscall_return(curthread, -EBADF);
+                return;
+            }
+
+            if (FD_BIT(want_read, i) && fd_ready(file, 0)) {
+                FD_ADD(out_read, i);
                 ++count;
-            } else {
-                readfds->fds_bits[i/NFDBITS] &= ~(1 << (i % NFDBITS));
+            }
+
+            if (FD_BIT(want_write, i) && fd_ready(file, 1)) {
+                FD_ADD(out_write, i);
+                ++count;
             }
         }
 
-        if (writefds && writefds->fds_bits[i/NFDBITS] & (1 << (i % NFDBITS))) {
-            struct file *file = fd_file(i);
-            if (file && vfs_file_can_write(file, 1) > 0) {
-                writefds->fds_bits[i/NFDBITS] |= (1 << (i % NFDBITS));
-                ++count;
+        if (count || ns == 0 || timed_out)
+            break;
+
+        /* any wakeup in the system makes us look again */
+        timed_out = sched_wait(&poll_queue, until);
+    }
+
+#undef FD_BIT
+#undef FD_ADD
+
+    if (readfds)
+        *readfds = out_read;
+    if (writefds)
+        *writefds = out_write;
+    if (exceptfds)
+        *exceptfds = (fd_set) {0};
+
+    arch_syscall_return(curthread, count);
+}
+
+static void sys_poll(struct pollfd *fds, nfds_t nfds, int timeout_ms)
+{
+    syscall_log(LOG_DEBUG, "poll(fds=%p, nfds=%d, timeout=%d)\n", fds, nfds, timeout_ms);
+
+    if (nfds > FDS_COUNT * 2) {
+        arch_syscall_return(curthread, -EINVAL);
+        return;
+    }
+
+    if (nfds && uaccess_check(fds, nfds * sizeof(struct pollfd))) {
+        arch_syscall_return(curthread, -EFAULT);
+        return;
+    }
+
+    int64_t ns = timeout_ms < 0 ? -1 : (int64_t) timeout_ms * 1000000;
+    uint64_t until = poll_deadline(ns);
+    int count, timed_out = 0;
+
+    for (;;) {
+        count = 0;
+
+        for (nfds_t i = 0; i < nfds; ++i) {
+            struct pollfd *p = &fds[i];
+            struct file *file;
+
+            p->revents = 0;
+
+            /* negative descriptors are skipped */
+            if (p->fd < 0)
+                continue;
+
+            if (!(file = fd_file(p->fd))) {
+                p->revents = POLLNVAL;
             } else {
-                writefds->fds_bits[i/NFDBITS] &= ~(1 << (i % NFDBITS));
+                if ((p->events & POLLIN) && fd_ready(file, 0))
+                    p->revents |= POLLIN;
+
+                if ((p->events & POLLOUT) && fd_ready(file, 1))
+                    p->revents |= POLLOUT;
             }
+
+            count += !!p->revents;
         }
+
+        if (count || ns == 0 || timed_out)
+            break;
+
+        timed_out = sched_wait(&poll_queue, until);
     }
 
     arch_syscall_return(curthread, count);
@@ -2192,6 +2300,7 @@ void (*syscall_table[])() = {
     [SYS_nanosleep]     = sys_nanosleep,
     [SYS_clock_gettime] = sys_clock_gettime,
     [SYS_sethostname]   = sys_sethostname,
+    [SYS_poll]          = sys_poll,
 };
 
 const size_t syscall_cnt = sizeof(syscall_table)/sizeof(syscall_table[0]);

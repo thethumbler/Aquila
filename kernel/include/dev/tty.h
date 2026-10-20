@@ -65,6 +65,8 @@ int     tty_ioctl(struct tty *tty, int request, void *argp);
 void    tty_open(struct tty *tty, struct file *file);
 void    tty_hangup(struct tty *tty);
 int     tty_eof(struct tty *tty);
+uint64_t tty_read_timeout(struct tty *tty);
+int     tty_can_read(struct tty *tty, size_t buffered);
 int     tty_background(struct tty *tty, int sig);
 
 #endif /* ! _DEV_TTY_H */

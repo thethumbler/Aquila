@@ -96,6 +96,18 @@ static int uart_file_eof(struct file *file)
     return !u || tty_eof(u->tty);
 }
 
+static uint64_t uart_read_timeout(struct file *file)
+{
+    struct uart *u = uart_get(DEV_MINOR(file->vnode->rdev));
+    return u ? tty_read_timeout(u->tty) : 0;
+}
+
+static int uart_can_read(struct file *file, size_t size)
+{
+    struct uart *u = uart_get(DEV_MINOR(file->vnode->rdev));
+    return !u || tty_can_read(u->tty, ringbuf_available(u->in));
+}
+
 int uart_ioctl(struct devid *dd, int request, void *argp)
 {
     struct uart *u = uart_get(dd->minor);
@@ -163,7 +175,9 @@ struct dev uart = {
         .write = posix_file_write,
         .ioctl = posix_file_ioctl,
 
+        .can_read  = uart_can_read,
         .can_write = __vfs_can_always,  /* XXX */
         .eof       = uart_file_eof,
+        .read_timeout = uart_read_timeout,
     },
 };

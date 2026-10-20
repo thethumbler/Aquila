@@ -93,8 +93,9 @@
 #define SYS_nanosleep       80
 #define SYS_clock_gettime   81
 #define SYS_sethostname     82
+#define SYS_poll            83
 
-#define SYS_MAX             82
+#define SYS_MAX             83
 
 /*
  * Arguments of the older system calls that take more than three, passed

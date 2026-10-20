@@ -16,6 +16,7 @@
 #include <fcntl.h>
 #include <grp.h>
 #include <limits.h>
+#include <poll.h>
 #include <pwd.h>
 #include <shadow.h>
 #include <signal.h>
@@ -24,6 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mount.h>
+#include <sys/select.h>
 #include <sys/stat.h>
 #include <sys/utsname.h>
 #include <sys/wait.h>
@@ -313,6 +315,24 @@ int main(void)
     }
     close(p[1]);
     check("SIGPIPE", waitpid(pid, &status, 0) == pid && WIFSIGNALED(status) ? WTERMSIG(status) : 0, SIGPIPE);
+
+    /* select and poll through libc */
+    int sp2[2];
+    pipe(sp2);
+    fd_set rfds;
+    FD_ZERO(&rfds);
+    FD_SET(sp2[0], &rfds);
+    struct timeval tv = {0, 100000};
+    check("select timeout", select(sp2[0] + 1, &rfds, NULL, NULL, &tv), 0);
+    write(sp2[1], "s", 1);
+    FD_ZERO(&rfds);
+    FD_SET(sp2[0], &rfds);
+    check("select readable", select(sp2[0] + 1, &rfds, NULL, NULL, NULL), 1);
+    check("FD_ISSET", FD_ISSET(sp2[0], &rfds) != 0, 1);
+    struct pollfd pfd = {sp2[0], POLLIN, 0};
+    check("poll", poll(&pfd, 1, -1) == 1 && pfd.revents == POLLIN, 1);
+    close(sp2[0]);
+    close(sp2[1]);
 
     /* C99 printf formats */
     char fmt[32];

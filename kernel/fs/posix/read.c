@@ -5,6 +5,9 @@
 #include <core/system.h>
 
 #include <fs/vfs.h>
+#include <core/arch.h>
+#include <dev/dev.h>
+#include <sys/sched.h>
 
 #include <aquila/fcntl.h>
 #include <aquila/errno.h>
@@ -30,6 +33,18 @@ ssize_t posix_file_read(struct file *file, void *buf, size_t size)
     if (!size)
         return 0;
     
+    /* a device may limit the wait (a terminal's VTIME) */
+    uint64_t until = 0;
+    struct fops *fops = ISDEV(file->vnode) ? kdev_fops(&VNODE_DEV(file->vnode)) :
+                        file->vnode->fs ? &file->vnode->fs->fops : NULL;
+
+    if (fops && fops->read_timeout) {
+        uint64_t timeout = fops->read_timeout(file);
+
+        if (timeout)
+            until = arch_rtime_ns() + timeout;
+    }
+
     int retval;
     for (;;) {
         if ((retval = vfs_read(file->vnode, file->offset, size, buf)) > 0) {
@@ -51,10 +66,9 @@ ssize_t posix_file_read(struct file *file, void *buf, size_t size)
             /* Can not satisfy read operation, would block */
             return -EAGAIN;
         } else {
-            /* Block until some data is available */
-            /* Sleep on the file readers queue */
-            if (thread_queue_sleep(file->vnode->read_queue))
-                return -EINTR;
+            /* Block until some data is available, or the time is up */
+            if (sched_wait(file->vnode->read_queue, until))
+                return 0;
         }
     }
 }

@@ -9,6 +9,7 @@
  * - FIFOs
  * - sessions and controlling terminals, on a pty
  * - stopping and continuing processes, the terminal line discipline
+ * - select, poll and terminal read timeouts (VTIME)
  */
 
 #include "../lib/aqtest.h"
@@ -17,6 +18,7 @@
 #include <aquila/un.h>
 #include <aquila/termios.h>
 #include <aquila/wait.h>
+#include <aquila/poll.h>
 
 static volatile int got_sig = 0;
 static void handler(int sig) { got_sig = sig; }
@@ -178,6 +180,64 @@ static void line_discipline(void)
     SC(SYS_waitpid, c, &st, 0);
     if ((st & 0x7f) != SIGINT) SC(SYS_exit, 11, 0, 0);
     SC(SYS_ioctl, slave, TIOCSPGRP, &me);
+
+    SC(SYS_exit, 0, 0, 0);
+}
+
+/* select() sets, as the kernel takes them (FD_SETSIZE 64) */
+struct fdset { unsigned long bits[2]; };
+
+static int do_select(int nfds, struct fdset *r, struct fdset *w, long usec)
+{
+    struct { u32 sec_lo, sec_hi; long usec; } tv = {usec / 1000000, 0, usec % 1000000};
+    struct aquila_select_args a = {nfds, r, w, 0, usec < 0 ? 0 : &tv};
+    return SC(SYS_select, &a, 0, 0);
+}
+
+static int now_ms(void);
+
+/* a raw read on a pty with VMIN 0 and VTIME 3 waits 300ms for input;
+ * exits with the failed step */
+static void read_timeout(void)
+{
+    int n = -1;
+    char buf[8];
+
+    SC(SYS_setsid, 0, 0, 0);
+    int master = SC(SYS_open, "/dev/ptmx", O_RDWR, 0);
+    SC(SYS_ioctl, master, TIOCGPTN, &n);
+    int slave = SC(SYS_open, pts_path(n), O_RDWR, 0);
+
+    struct termios t;
+    SC(SYS_ioctl, slave, TCGETS, &t);
+    t.c_lflag &= ~(ICANON | ECHO);
+    t.c_cc[VMIN] = 0;
+    t.c_cc[VTIME] = 3;
+    SC(SYS_ioctl, slave, TCSETS, &t);
+
+    int t0 = now_ms();
+    if (SC(SYS_read, slave, buf, sizeof(buf)) != 0) SC(SYS_exit, 1, 0, 0);
+    int waited = now_ms() - t0;
+    if (waited < 280 || waited > 1000) SC(SYS_exit, 2, 0, 0);
+
+    /* input before the time is up ends the wait */
+    int c = SC(SYS_fork, 0, 0, 0);
+    if (!c) {
+        struct aquila_timespec d = {0, 100000000};
+        SC(SYS_nanosleep, &d, 0, 0);
+        SC(SYS_write, master, "z", 1);
+        SC(SYS_exit, 0, 0, 0);
+    }
+    t0 = now_ms();
+    if (SC(SYS_read, slave, buf, sizeof(buf)) != 1 || buf[0] != 'z') SC(SYS_exit, 3, 0, 0);
+    if (now_ms() - t0 >= 280) SC(SYS_exit, 4, 0, 0);
+
+    /* select sees the master readable once the terminal writes */
+    struct fdset r = {{1UL << master, 0}};
+    if (do_select(master + 1, &r, 0, 0) != 0) SC(SYS_exit, 5, 0, 0);
+    SC(SYS_write, slave, "out", 3);
+    r.bits[0] = 1UL << master;
+    if (do_select(master + 1, &r, 0, 0) != 1) SC(SYS_exit, 6, 0, 0);
 
     SC(SYS_exit, 0, 0, 0);
 }
@@ -373,8 +433,8 @@ void aq_main(void)
     /* select */
     u32 rset[2] = {~0u, ~0u};
     struct aquila_select_args sel = {100000, rset, 0, 0, 0};
-    /* nfds is clamped to the descriptor table size */
-    check("select huge nfds", SC(SYS_select, &sel, 0, 0) >= 0, 1);
+    /* more than FD_SETSIZE */
+    check("select huge nfds", SC(SYS_select, &sel, 0, 0), -EINVAL);
     check("select kargs", SC(SYS_select, KADDR, 0, 0), -EFAULT);
 
     /* mmap */
@@ -797,6 +857,53 @@ void aq_main(void)
 
     /* the terminal's line discipline and job control, on a pty */
     check("line discipline (failed step)", aq_child_status(line_discipline) >> 8, 0);
+
+    /* --- select and poll --- */
+    int pp[2];
+    SC(SYS_pipe, pp, 0, 0);
+    struct fdset rs = {{1UL << pp[0], 0}}, ws = {{1UL << pp[1], 0}};
+    check("select pipe writable", do_select(pp[1] + 1, 0, &ws, 0), 1);
+    int t1 = now_ms();
+    check("select times out", do_select(pp[0] + 1, &rs, 0, 200000), 0);
+    int waited = now_ms() - t1;
+    check("waited 200ms", waited >= 190 && waited < 1000, 1);
+    check("nothing ready", rs.bits[0], 0);
+    c = SC(SYS_fork, 0, 0, 0);
+    if (!c) {
+        struct aquila_timespec d = {0, 100000000};
+        SC(SYS_nanosleep, &d, 0, 0);
+        SC(SYS_write, pp[1], "w", 1);
+        SC(SYS_exit, 0, 0, 0);
+    }
+    rs.bits[0] = 1UL << pp[0];
+    t1 = now_ms();
+    check("select wakes up for data", do_select(pp[0] + 1, &rs, 0, -1), 1);
+    check("woke before a second", now_ms() - t1 < 1000, 1);
+    check("read end set", rs.bits[0], 1UL << pp[0]);
+    SC(SYS_waitpid, c, &st, 0);
+    struct fdset bad = {{0, 1UL << (40 - 32)}};  /* descriptor 40 */
+    check("select closed fd", do_select(41, &bad, 0, 0), -EBADF);
+    fd = SC(SYS_open, "/tmp/other", O_RDONLY, 0);
+    rs.bits[0] = 1UL << fd;
+    check("regular file always ready", do_select(fd + 1, &rs, 0, -1), 1);
+    SC(SYS_close, fd, 0, 0);
+
+    struct pollfd pfd[3] = {{pp[0], POLLIN, 0}, {pp[1], POLLOUT, 0}, {45, POLLIN, 0}};
+    check("poll", SC(SYS_poll, pfd, 3, 0), 3);
+    check("poll POLLIN", pfd[0].revents, POLLIN);
+    check("poll POLLOUT", pfd[1].revents, POLLOUT);
+    check("poll POLLNVAL", pfd[2].revents, POLLNVAL);
+    char pc;
+    SC(SYS_read, pp[0], &pc, 1);
+    pfd[1].fd = -1;
+    t1 = now_ms();
+    check("poll times out", SC(SYS_poll, pfd, 2, 150), 0);
+    check("waited 150ms", now_ms() - t1 >= 140, 1);
+    SC(SYS_close, pp[1], 0, 0);
+    check("poll end of pipe", SC(SYS_poll, pfd, 1, -1) == 1 && (pfd[0].revents & POLLIN), 1);
+    SC(SYS_close, pp[0], 0, 0);
+
+    check("terminal read timeout (failed step)", aq_child_status(read_timeout) >> 8, 0);
 
     /* --- clocks and nanosleep --- */
     struct aquila_timespec ts = {0, 0}, left = {0, 0};

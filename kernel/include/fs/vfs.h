@@ -31,6 +31,9 @@ struct fops {
     int         (*can_read)  (struct file *file, size_t size);
     int         (*can_write) (struct file *file, size_t size);
     int         (*eof)       (struct file *);
+
+    /* how long a read with nothing to return waits (ns), 0: until data */
+    uint64_t    (*read_timeout) (struct file *);
 };
 
 #include <aquila/errno.h>

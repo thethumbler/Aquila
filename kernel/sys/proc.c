@@ -183,6 +183,8 @@ void proc_kill(struct proc *proc)
         if (thread->sleep_node) /* Thread is sleeping on some queue */
             queue_node_remove(thread->sleep_queue, thread->sleep_node);
 
+        sched_timer_cancel(thread);
+
         if (thread->sched_node) /* Thread is in the scheduler queue */
             queue_node_remove(thread->sched_queue, thread->sched_node);
 

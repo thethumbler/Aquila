@@ -72,10 +72,16 @@ int thread_queue_sleep(struct queue *queue)
     }
 }
 
+/* threads in select() and poll(): any wakeup makes them check again */
+struct queue poll_queue = {0};
+
 int thread_queue_wakeup(struct queue *queue)
 {
     if (!queue)
         return -EINVAL;
+
+    if (queue != &poll_queue && poll_queue.count)
+        thread_queue_wakeup(&poll_queue);
 
     while (queue->count) {
         struct thread *thread = dequeue(queue);

@@ -153,8 +153,9 @@ ssize_t tty_master_write(struct tty *tty, size_t size, void *buf)
  */
 int tty_eof(struct tty *tty)
 {
+    /* VMIN 0 with VTIME: the read waits (tty_read_timeout()) */
     if (!(tty->tios.c_lflag & ICANON))
-        return !tty->tios.c_cc[VMIN];
+        return !tty->tios.c_cc[VMIN] && !tty->tios.c_cc[VTIME];
 
     if (tty->eof) {
         tty->eof--;
@@ -162,6 +163,23 @@ int tty_eof(struct tty *tty)
     }
 
     return 0;
+}
+
+/* how long a read waits for input: VTIME tenths of a second with VMIN 0
+ * in non-canonical mode, otherwise until there is some */
+uint64_t tty_read_timeout(struct tty *tty)
+{
+    if ((tty->tios.c_lflag & ICANON) || tty->tios.c_cc[VMIN] || !tty->tios.c_cc[VTIME])
+        return 0;
+
+    return tty->tios.c_cc[VTIME] * 100000000ULL;
+}
+
+/* whether a read wouldn't wait, given what is buffered */
+int tty_can_read(struct tty *tty, size_t buffered)
+{
+    return buffered || tty->eof ||
+           (!(tty->tios.c_lflag & ICANON) && !tty->tios.c_cc[VMIN] && !tty->tios.c_cc[VTIME]);
 }
 
 /*

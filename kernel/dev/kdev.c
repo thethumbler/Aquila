@@ -33,6 +33,13 @@ static inline struct dev *kdev_get(struct devid *dd)
     return dev;
 }
 
+/* the file operations of a device, NULL if there is none */
+struct fops *kdev_fops(struct devid *dd)
+{
+    struct dev *dev = kdev_get(dd);
+    return dev ? &dev->fops : NULL;
+}
+
 int kdev_close(struct devid *dev __unused)
 {
     return 0;

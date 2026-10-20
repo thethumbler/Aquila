@@ -228,7 +228,20 @@ int pts_can_read(struct file *file, size_t size)
     struct pty *pty = pty_get(dd);
     if (!pty) return 1; /* let read report the error */
 
-    return ringbuf_available(pty->in);
+    return tty_can_read(pty->tty, ringbuf_available(pty->in));
+}
+
+/* the master can be read when the terminal wrote something */
+static int ptm_can_read(struct file *file, size_t size)
+{
+    struct pty *pty = pty_get(&VNODE_DEV(file->vnode));
+    return !pty || ringbuf_available(pty->out);
+}
+
+static uint64_t pts_read_timeout(struct file *file)
+{
+    struct pty *pty = pty_get(&VNODE_DEV(file->vnode));
+    return pty ? tty_read_timeout(pty->tty) : 0;
 }
 
 /*************************************
@@ -401,6 +414,7 @@ struct dev ptsdev = {
         .can_read  = pts_can_read,
         .can_write = __vfs_can_always,
         .eof       = pts_eof,
+        .read_timeout = pts_read_timeout,
     }
 };
 
@@ -417,7 +431,7 @@ struct dev ptmdev = {
         .write = posix_file_write,
         .ioctl = posix_file_ioctl,
 
-        .can_read  = __vfs_can_always,
+        .can_read  = ptm_can_read,
         .can_write = __vfs_can_always,
         .eof       = __vfs_eof_never,
     },

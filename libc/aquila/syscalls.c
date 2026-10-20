@@ -19,6 +19,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <limits.h>
 #include <signal.h>
 #include <stdarg.h>
@@ -568,6 +569,11 @@ long fpathconf(int fildes, int name)
         return -1;
 
     return file_limit(name);
+}
+
+int poll(struct pollfd *fds, nfds_t nfds, int timeout)
+{
+    return SYSCALL(SYS_poll, fds, nfds, timeout);
 }
 
 int gettimeofday(struct timeval *__restrict tv, void *__restrict tz)

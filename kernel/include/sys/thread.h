@@ -54,6 +54,9 @@ struct thread {
     uint64_t sleep_until;
     void    *sleep_left;
 
+    /** In the timer's list while waiting with a deadline (sched_wait) */
+    struct qnode *timer_node;
+
     /** Scheduler queue */
     struct queue *sched_queue;
     struct qnode *sched_node;
@@ -67,6 +70,9 @@ struct thread {
 
 int thread_queue_sleep(struct queue *queue);
 int thread_queue_wakeup(struct queue *queue);
+
+/* threads in select() and poll(), woken by every thread_queue_wakeup() */
+extern struct queue poll_queue;
 void thread_wakeup(struct thread *thread);
 int thread_new(struct proc *proc, struct thread **rthread);
 int thread_create(struct thread *thread, uintptr_t stack, uintptr_t entry, uintptr_t uentry, uintptr_t arg, uintptr_t attr, struct thread **new_thread);

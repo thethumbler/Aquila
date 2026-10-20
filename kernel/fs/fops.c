@@ -203,6 +203,10 @@ int vfs_file_can_read(struct file *file, size_t size)
     if (!file || !file->vnode)
         return -EINVAL;
 
+    /* reading a file never waits */
+    if (S_ISREG(file->vnode->mode) || S_ISDIR(file->vnode->mode))
+        return 1;
+
     if (ISDEV(file->vnode))
         return kdev_file_can_read(&VNODE_DEV(file->vnode), file, size);
 
@@ -222,6 +226,9 @@ int vfs_file_can_write(struct file *file, size_t size)
 
     if (!file || !file->vnode)
         return -EINVAL;
+
+    if (S_ISREG(file->vnode->mode))
+        return 1;
 
     if (ISDEV(file->vnode))
         return kdev_file_can_write(&VNODE_DEV(file->vnode), file, size);

@@ -10,8 +10,11 @@
 struct queue *ready_queue = QUEUE_NEW();   /* Ready threads queue */
 struct thread *curthread = NULL;
 
-/* threads in sched_sleep(), woken by the timer */
-static struct queue *sleepers = QUEUE_NEW();
+/* threads waiting with a deadline (thread->sleep_until), on any queue */
+static struct queue *timed = QUEUE_NEW();
+
+/* nanosleep() sleeps here, only the timer wakes it */
+static struct queue *naps = QUEUE_NEW();
 
 /*
  * called on every timer tick, `period' ns after the last one, which
@@ -30,17 +33,48 @@ void sched_timer_tick(uint32_t period, int user)
             curproc->stime += period;
     }
 
-    struct qnode *node = sleepers->head;
+    struct qnode *node = timed->head;
 
     while (node) {
         struct qnode *next = node->next;
         struct thread *thread = node->value;
 
-        if (now >= thread->sleep_until)
+        if (now >= thread->sleep_until) {
+            sched_timer_cancel(thread);
             thread_wakeup(thread);
+        }
 
         node = next;
     }
+}
+
+/* the thread no longer waits with a deadline (woken, or killed) */
+void sched_timer_cancel(struct thread *thread)
+{
+    if (thread->timer_node) {
+        queue_node_remove(timed, thread->timer_node);
+        thread->timer_node = NULL;
+    }
+}
+
+/*
+ * Sleep on `queue' until woken up, or until arch_rtime_ns() reaches
+ * `until' (0: no limit). Returns 1 if the time is up.
+ */
+int sched_wait(struct queue *queue, uint64_t until)
+{
+    if (until) {
+        if (arch_rtime_ns() >= until)
+            return 1;
+
+        curthread->sleep_until = until;
+        curthread->timer_node  = enqueue(timed, curthread);
+    }
+
+    thread_queue_sleep(queue);
+    sched_timer_cancel(curthread);
+
+    return until && arch_rtime_ns() >= until;
 }
 
 /*
@@ -50,11 +84,9 @@ void sched_timer_tick(uint32_t period, int user)
  */
 void sched_sleep(uint64_t until)
 {
-    curthread->sleep_until = until;
-
     /* woken early by an ignored signal: keep sleeping */
-    while (arch_rtime_ns() < until)
-        thread_queue_sleep(sleepers);
+    while (!sched_wait(naps, until))
+        ;
 
     curthread->sleep_left = NULL;
 }

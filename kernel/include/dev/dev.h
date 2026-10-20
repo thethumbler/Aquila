@@ -49,6 +49,7 @@ ssize_t kdev_write(struct devid *dd, off_t offset, size_t size, void *buf);
 int     kdev_ioctl(struct devid *dd, int request, void *argp);
 int     kdev_map(struct devid *dd, struct vm_space *vm_space, struct vm_entry *vm_entry);
 
+struct fops *kdev_fops(struct devid *dd);
 int     kdev_file_open(struct devid *dd, struct file *file);
 ssize_t kdev_file_read(struct devid *dd, struct file *file, void *buf, size_t size);    
 ssize_t kdev_file_write(struct devid *dd, struct file *file, void *buf, size_t size);
