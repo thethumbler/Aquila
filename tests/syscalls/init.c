@@ -286,8 +286,31 @@ static void unprivileged_files(void)
     SC(SYS_exit, 0, 0, 0);
 }
 
+static int str_eq(const char *a, const char *b)
+{
+    while (*a && *a == *b)
+        ++a, ++b;
+
+    return *a == *b;
+}
+
+/* run as the interpreter of /tmp/script (see the execve tests): argc,
+ * argv and envp are on the entry stack */
+static void script_interpreter(void)
+{
+    u32 *entry = (u32 *) aq_entry_esp;
+    char **argv = (char **) entry[1];
+
+    if (entry[0] != 4 || !str_eq(argv[1], "-x y"))
+        return;
+
+    SC(SYS_exit, str_eq(argv[0], "/init") && str_eq(argv[2], "/tmp/script") &&
+                 str_eq(argv[3], "arg") ? 42 : 1, 0, 0);
+}
+
 void aq_main(void)
 {
+    script_interpreter();
     aq_begin("syscalls");
 
     char buf[512];
@@ -510,6 +533,31 @@ void aq_main(void)
     if (!c) { SC(SYS_execve, "/tmp/bad", 0, 0); SC(SYS_exit, 99, 0, 0); }
     check("bad elf wait", SC(SYS_waitpid, c, &st, 0), c);
     check("bad elf status", st, (SIGSEGV << 8) | SIGSEGV);
+
+    /* execute permission */
+    SC(SYS_chmod, "/tmp/bad", 0644, 0);
+    check("execve without execute permission", SC(SYS_execve, "/tmp/bad", 0, 0), -EACCES);
+    check("execve directory", SC(SYS_execve, "/tmp", 0, 0), -EACCES);
+
+    /* scripts: "#!interpreter argument", this program is the interpreter */
+    fd = SC(SYS_open, "/tmp/script", O_CREAT | O_RDWR, 0755);
+    SC(SYS_write, fd, "#! /init -x y \nignored\n", 23);
+    SC(SYS_close, fd, 0, 0);
+    char *script_argv[] = {"script", "arg", 0};
+    c = SC(SYS_fork, 0, 0, 0);
+    if (!c) { SC(SYS_execve, "/tmp/script", script_argv, 0); SC(SYS_exit, 99, 0, 0); }
+    SC(SYS_waitpid, c, &st, 0);
+    check("execve script", st >> 8, 42);
+    SC(SYS_chmod, "/tmp/script", 0644, 0);
+    check("execve script without execute permission", SC(SYS_execve, "/tmp/script", script_argv, 0), -EACCES);
+    fd = SC(SYS_open, "/tmp/loop", O_CREAT | O_RDWR, 0755);
+    SC(SYS_write, fd, "#!/tmp/loop\n", 12);
+    SC(SYS_close, fd, 0, 0);
+    check("execve script loop", SC(SYS_execve, "/tmp/loop", script_argv, 0), -ELOOP);
+    fd = SC(SYS_open, "/tmp/noint", O_CREAT | O_RDWR, 0755);
+    SC(SYS_write, fd, "#!  \n", 5);
+    SC(SYS_close, fd, 0, 0);
+    check("execve script without interpreter", SC(SYS_execve, "/tmp/noint", script_argv, 0), -ENOEXEC);
 
     /* user ids: the removed auth syscall, setuid/setgid rules */
     check("auth syscall removed", SC(35, 0, 0, 0), -ENOSYS);

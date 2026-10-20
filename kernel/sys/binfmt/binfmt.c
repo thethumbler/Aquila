@@ -91,6 +91,13 @@ int binfmt_load(struct proc *proc, const char *path, struct proc **ref)
     if (!vnode)
         return -ENOENT;
 
+    /* a regular file the process may execute */
+    if (!S_ISREG(vnode->mode))
+        return -EACCES;
+
+    if ((err = vfs_access(vnode, &uio, VFS_X)))
+        return err;
+
     for (size_t i = 0; i < NR_BINFMT; ++i) {
         if (!binfmt_list[i].check(vnode)) {
             err = binfmt_fmt_load(proc, path, vnode, &binfmt_list[i], ref);

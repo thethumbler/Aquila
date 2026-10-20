@@ -76,6 +76,120 @@ static int exec_strings_copy(char * const u_strs[], int count, char ***ref)
     return 0;
 }
 
+/* how many interpreters may be scripts themselves */
+#define EXEC_SCRIPT_DEPTH   4
+
+/*
+ * The interpreter of a script, "#!interpreter [argument]" on its first
+ * line, and the argument (the rest of the line), NULL if it isn't one.
+ */
+static int exec_script(struct proc *proc, const char *path, char **interp, char **arg)
+{
+    struct uio uio = PROC_UIO(proc);
+    struct vnode *vnode = NULL;
+    char buf[128];
+    int err;
+
+    *interp = *arg = NULL;
+
+    if ((err = vfs_lookup(path, &uio, &vnode, NULL)))
+        return err;
+
+    /* a regular file the process may execute, as any program */
+    if (!S_ISREG(vnode->mode))
+        err = -EACCES;
+    else
+        err = vfs_access(vnode, &uio, VFS_X);
+
+    ssize_t len = err ? 0 : vfs_read(vnode, 0, sizeof(buf) - 1, buf);
+    vfs_close(vnode);
+
+    if (err)
+        return err;
+
+    if (len < 2 || buf[0] != '#' || buf[1] != '!')
+        return 0;
+
+    buf[len] = '\0';
+
+    char *end = buf + 2;
+    while (*end && *end != '\n')
+        ++end;
+
+    /* the whole line has to fit */
+    if (!*end)
+        return -ENOEXEC;
+
+    *end = '\0';
+
+    char *p = buf + 2;
+    while (*p == ' ' || *p == '\t')
+        ++p;
+
+    char *name = p;
+    while (*p && *p != ' ' && *p != '\t')
+        ++p;
+
+    if (p == name)
+        return -ENOEXEC;
+
+    if (*p)
+        *p++ = '\0';
+
+    while (*p == ' ' || *p == '\t')
+        ++p;
+
+    /* trailing blanks aren't part of the argument */
+    while (end > p && (end[-1] == ' ' || end[-1] == '\t'))
+        *--end = '\0';
+
+    if (!(*interp = strdup(name)))
+        return -ENOMEM;
+
+    if (*p && !(*arg = strdup(p))) {
+        kfree(*interp);
+        *interp = NULL;
+        return -ENOMEM;
+    }
+
+    return 0;
+}
+
+/*
+ * A script runs as its interpreter, with the arguments: the interpreter,
+ * its argument from the script if any, the script's path, and those of
+ * the script but the first (argv[0]).
+ */
+static int exec_script_args(char *interp, char *arg, const char *path, char ***argp, int *argc)
+{
+    int count = 1 + !!arg + 1 + (*argc > 1 ? *argc - 1 : 0);
+    char **args = kmalloc((count + 1) * sizeof(char *), &M_BUFFER, M_ZERO);
+    char *script = strdup(path);
+
+    if (!args || !script) {
+        kfree(args);
+        kfree(script);
+        return -ENOMEM;
+    }
+
+    int i = 0;
+    args[i++] = interp;
+    if (arg)
+        args[i++] = arg;
+    args[i++] = script;
+
+    for (int j = 1; j < *argc; ++j)
+        args[i++] = (*argp)[j];
+
+    if (*argc)
+        kfree((*argp)[0]);
+    kfree(*argp);
+
+    *argp = args;
+    *argc = count;
+    return 0;
+}
+
 int proc_execve(struct thread *thread, const char *fn, char * const _argp[], char * const _envp[])
 {
     int err = 0;
@@ -109,6 +223,27 @@ int proc_execve(struct thread *thread, const char *fn, char * const _argp[], cha
     if (total > EXEC_ARG_MAX) {
         err = -E2BIG;
         goto free_resources;
+    }
+
+    /* scripts run as their interpreters */
+    for (int depth = 0;; ++depth) {
+        char *interp, *arg;
+
+        if ((err = exec_script(proc, fn, &interp, &arg)))
+            goto free_resources;
+
+        if (!interp)
+            break;
+
+        if (depth == EXEC_SCRIPT_DEPTH ||
+            (err = exec_script_args(interp, arg, fn, &argp, &argc))) {
+            kfree(interp);
+            kfree(arg);
+            err = err ? err : -ELOOP;
+            goto free_resources;
+        }
+
+        fn = interp;
     }
 
     if ((err = binfmt_load(proc, fn, NULL))) {
