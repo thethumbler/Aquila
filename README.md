@@ -35,8 +35,14 @@ kernel's virtual terminals have logins on `/dev/tty1` to `/dev/tty3`,
 Alt+F1 to Alt+F6 switch between them. runit supervises the logins as
 services (`/etc/sv`, enabled in `/etc/service`, see `sv`); `poweroff` and
 `reboot` shut down through it, as does Ctrl+Alt+Del. `make iso` only builds
-`build/aquila.iso`. See the top of the [Makefile](Makefile) for all
-targets.
+`build/aquila.iso`.
+
+The ISO and `make run` boot the ramdisk, read-only and the same on every
+boot. `make hdd` makes `build/aquila.img`, a hard disk with AquilaOS
+installed: Limine on a FAT32 `/boot`, the root filesystem on ext2
+(`root=/dev/hda2`), where what is written is kept. `make run-hdd` boots
+it (making it the first time). See the top of the [Makefile](Makefile)
+for all targets.
 
 ## Testing
 

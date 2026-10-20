@@ -18,10 +18,17 @@
 #   make initrd       build/rootfs/ and build/initrd.img, ROOTFS_OVERLAY=<dir>
 #                     is copied over rootfs/ (e.g. etc/passwd and etc/shadow)
 #   make iso          build/aquila.iso, boots with Limine (needs xorriso)
+#   make hdd          build/aquila.img, a hard disk with AquilaOS installed:
+#                     Limine on a FAT32 /boot, the root filesystem on ext2
+#                     (HDD_SIZE=<MiB>, default 512; needs sfdisk, mkfs.fat,
+#                     mtools, mke2fs and fakeroot). Replaces an existing one.
 #   make run          boot the kernel and initrd in QEMU, console on stdio
 #   make run-iso      boot the ISO in QEMU (framebuffer console)
+#   make run-hdd      boot the hard disk in QEMU, made by make hdd if there
+#                     is none (what was written to it is kept)
 #   make test         kernel test suite (tests/run.sh, uses the host gcc)
-#   make clean        remove build output except the toolchain and downloads
+#   make clean        remove build output except the toolchain, downloads
+#                     and the hard disk (it has what was saved on it)
 #   make distclean    remove build/
 #
 # CONFIG selects the kernel configuration in configs/ (default: i386-pc).
@@ -40,6 +47,8 @@ SYSROOT   := $(BUILDDIR)/sysroot
 ROOTFS    := $(BUILDDIR)/rootfs
 INITRD    := $(BUILDDIR)/initrd.img
 ISO       := $(BUILDDIR)/aquila.iso
+HDD       := $(BUILDDIR)/aquila.img
+HDD_SIZE  ?= 512
 KERNEL    := $(BUILDDIR)/kernel/kernel-$(VERSION).$(ARCH)
 CONTRIB_ROOT ?= $(BUILDDIR)/contrib/root
 PORTS_ROOT   ?= $(BUILDDIR)/ports/root
@@ -59,7 +68,7 @@ MAKEFLAGS += --no-print-directory
 
 export
 
-.PHONY: all toolchain kernel userland contrib ports initrd iso run run-iso test clean distclean check-toolchain
+.PHONY: all toolchain kernel userland contrib ports initrd iso hdd run run-iso run-hdd test clean distclean check-toolchain
 
 all: kernel userland contrib initrd
 
@@ -149,12 +158,23 @@ iso: kernel initrd
 		-no-emul-boot -boot-load-size 4 -boot-info-table \
 		$(BUILDDIR)/iso -o $(ISO) 2>/dev/null
 
+hdd: kernel initrd
+	@test -x $(TOOLCHAIN)/bin/limine || { \
+		echo "error: Limine not found, run 'make toolchain'" >&2; exit 1; }
+	@$(ECHO) "  HDD     " $(patsubst $(BUILDDIR)/%,build/%,$(HDD))
+	@$(SRCDIR)/mk/hdd.sh $(HDD) $(HDD_SIZE) $(ROOTFS) $(KERNEL) \
+		$(SRCDIR)/boot/limine-hdd.conf $(LIMINE) $(TOOLCHAIN)/bin/limine
+
 run: kernel initrd
 	$(QEMU) -kernel $(KERNEL) -initrd "$(INITRD)" -append earlycon=ttyS0 \
 		-m 256 -serial mon:stdio -display none
 
 run-iso: iso
 	$(QEMU) -cdrom $(ISO) -m 256 -serial stdio
+
+run-hdd:
+	@test -f $(HDD) || $(MAKE) hdd
+	$(QEMU) -hda $(HDD) -m 256 -serial stdio
 
 test:
 	@$(SRCDIR)/tests/run.sh

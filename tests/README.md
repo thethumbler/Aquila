@@ -16,7 +16,8 @@ with `gcc`/`ld` instead of the `i686-aquila` cross toolchain. Any gcc with
 32-bit support works.
 
 Requirements: `gcc`, `ld`, `cpio`, `qemu-system-i386`, and for the ext2
-test `mke2fs`, `e2fsck`, `debugfs` and `python3` (skipped if missing).
+test `mke2fs`, `e2fsck`, `debugfs` and `python3`, for the disk test
+`sfdisk`, `mkfs.fat`, mtools and `fakeroot` (skipped if missing).
 Build output goes to `tests/out/`.
 
 ## Tests
@@ -29,6 +30,7 @@ Build output goes to `tests/out/`.
 | `ext2`     | writes through singly and doubly indirect blocks and appends on an ext2 image, then `e2fsck` and a byte compare on the host |
 | `libc`     | errno and signal numbers, stdio, directories, fork/wait, crypt, passwd/shadow and group, truncate, signal masks, the `*at()` calls, `realpath`, `ttyname`, sleeping, `SIGPIPE` and C99 `printf` formats through newlib (needs `make toolchain`) |
 | `system`   | the initrd built from source (with contrib/, without ports/): logins on the serial console, then dash runs commands, pipelines, `$(...)`, a long line, `^C`, `/dev/tty` and sbase tools (needs `make toolchain` and `make`) |
+| `disk`     | the system installed on a hard disk image (`mk/hdd.sh`): booted from it with Limine twice, a file written on the first boot is read on the second, `e2fsck` is clean (needs `make toolchain` and `make`) |
 
 A test fails on a `FAIL` line, a kernel panic, a guest reset (QEMU runs
 with `-no-reboot`) or if it doesn't finish in time.

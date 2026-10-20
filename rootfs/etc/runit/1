@@ -33,12 +33,20 @@ mount -t devpts /dev/pts
 echo mounting procfs on /proc
 mount -t procfs /proc
 
-# The initramfs is read-only, use tmpfs for writable directories: /run
-# has runit's state and the services' supervise directories
-echo mounting tmpfs on /run /tmp /root /home/live
+# /run has runit's state and the services' supervise directories, /tmp
+# is cleared at boot
+echo mounting tmpfs on /run /tmp
 mount -t tmpfs /run
 mount -t tmpfs /tmp
-mount -t tmpfs /root
-mount -t tmpfs /home/live
 chmod 755 /run
 mkdir /run/runit
+
+# The ramdisk is read-only, its home directories are tmpfs too; on a disk
+# they are kept
+if ! touch /.writable 2>/dev/null; then
+    echo mounting tmpfs on /root /home/live
+    mount -t tmpfs /root
+    mount -t tmpfs /home/live
+else
+    rm /.writable
+fi

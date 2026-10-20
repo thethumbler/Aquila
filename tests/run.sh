@@ -7,12 +7,13 @@
 #   -n      don't rebuild the kernel, use the existing image
 #   -v      print the serial log of failed tests
 #
-# tests: ata cpu syscalls ext2 libc system (default: all)
+# tests: ata cpu syscalls ext2 libc system disk (default: all)
 #
 # Requires gcc with 32-bit support, ld, cpio and qemu-system-i386. The ext2
-# test also needs e2fsprogs (mke2fs, e2fsck, debugfs) and python3. The libc
-# and system tests need the i686-aquila toolchain (make toolchain) and are
-# skipped without it.
+# test also needs e2fsprogs (mke2fs, e2fsck, debugfs) and python3. The libc,
+# system and disk tests need the i686-aquila toolchain (make toolchain) and
+# are skipped without it, the disk test also sfdisk, mkfs.fat, mtools and
+# fakeroot (mk/hdd.sh).
 #
 
 set -u
@@ -22,7 +23,7 @@ TESTS=$ROOT/tests
 OUT=$TESTS/out
 CONFIG=../tests/host/i386-pc
 
-ALL_TESTS="ata cpu syscalls ext2 libc system"
+ALL_TESTS="ata cpu syscalls ext2 libc system disk"
 
 CROSS_CC=$ROOT/build/toolchain/bin/i686-aquila-gcc
 
@@ -366,6 +367,72 @@ test_system()
     done
 
     [ $missing = 0 ] && echo "wrong password rejected, guest denied /etc/shadow, root ran uname, ls, ps, cat, touch, pipelines, \$(...), a long line, ^C, ^Z, /dev/tty, sbase, flock, sv and poweroff"
+}
+
+# the system installed on a hard disk (make hdd): booted from it with
+# Limine, a file written on the first boot is there on the second, and the
+# root filesystem is clean afterwards
+test_disk()
+{
+    local img=$OUT/disk/aquila.img
+
+    if [ ! -x "$CROSS_CC" ] || [ ! -x "$ROOT/build/toolchain/bin/limine" ]; then
+        echo "SKIP: no i686-aquila toolchain, run make toolchain"
+        return 0
+    fi
+
+    local contrib=$ROOT/build/contrib/root
+    if [ ! -x "$contrib/bin/dash" ]; then
+        echo "SKIP: contrib not built, run make"
+        return 0
+    fi
+
+    for tool in sfdisk mkfs.fat mcopy mke2fs fakeroot e2fsck; do
+        if ! command -v $tool >/dev/null; then
+            echo "SKIP: $tool not found"
+            return 0
+        fi
+    done
+
+    mkdir -p "$OUT/disk"
+    make -C "$ROOT" initrd BUILDDIR="$OUT/disk/build" TOOLCHAIN="$ROOT/build/toolchain" \
+        CONTRIB_ROOT="$contrib" PORTS_ROOT=/nonexistent > "$OUT/disk/build.log" 2>&1 &&
+    "$ROOT/mk/hdd.sh" "$img" 128 "$OUT/disk/build/rootfs" "$KERNEL" \
+        "$ROOT/boot/limine-hdd.conf" "$ROOT/build/toolchain/share/limine" \
+        "$ROOT/build/toolchain/bin/limine" >> "$OUT/disk/build.log" 2>&1 || {
+        tail -20 "$OUT/disk/build.log"
+        return 1
+    }
+
+    # boot <log> <command>: log in as root on the serial port (Limine waits
+    # 3 seconds), run the command and power off
+    boot()
+    {
+        { sleep 12; printf 'root\r'; sleep 4; printf '%s\r' "$2"; sleep 2; printf 'poweroff\r'; sleep 10; } |
+            timeout 60 qemu-system-i386 -hda "$img" -m 256 -display none -no-reboot \
+                -serial stdio 2>/dev/null | tr -d '\r' > "$1"
+    }
+
+    boot "$OUT/disk/serial.log" 'echo disk-$((6 * 7)) > /root/kept; sync'
+    boot "$OUT/disk/serial2.log" 'cat /root/kept'
+
+    local root_start
+    root_start=$(sfdisk -d "$img" | sed -n 's/.*img2 : start= *\([0-9]*\).*/\1/p')
+    dd if="$img" of="$OUT/disk/root.img" bs=512 skip="$root_start" status=none
+
+    if ! grep -a -q '^disk-42$' "$OUT/disk/serial2.log"; then
+        echo "the file written on the first boot is missing"
+        tail -5 "$OUT/disk/serial2.log" | sed 's/^/    /'
+        return 1
+    fi
+
+    if ! e2fsck -fn "$OUT/disk/root.img" > "$OUT/disk/e2fsck.log" 2>&1; then
+        echo "e2fsck found errors:"
+        sed 's/^/    /' "$OUT/disk/e2fsck.log" | head -20
+        return 1
+    fi
+
+    echo "booted from the disk twice, the file written on the first boot kept, e2fsck clean"
 }
 
 #
