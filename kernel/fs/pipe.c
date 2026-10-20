@@ -31,7 +31,13 @@ static int pipefs_can_write(struct file *file, size_t size)
 {
     struct vnode *node = file->vnode;
     struct pipe *pipe = node->p;
-    return size >= pipe->ring->size - ringbuf_available(pipe->ring);
+    size_t avail = ringbuf_available(pipe->ring);
+
+    /* ring buffer holds at most size - 1 bytes */
+    if (avail >= pipe->ring->size - 1)
+        return 0;
+
+    return size <= pipe->ring->size - 1 - avail;
 }
 
 static int pipefs_mkpipe(struct pipe **ref)
@@ -73,13 +79,13 @@ int pipefs_pipe(struct file *read, struct file *write)
     err = pipefs_mkpipe(&pipe);
     if (err) return err;
 
-    read->vnode  = kmalloc(sizeof(struct vnode), &M_VNODE, 0);
+    read->vnode  = kmalloc(sizeof(struct vnode), &M_VNODE, M_ZERO);
     if (!read->vnode) {
         pipefs_pfree(pipe);
         return -ENOMEM;
     }
 
-    write->vnode = kmalloc(sizeof(struct vnode), &M_VNODE, 0);
+    write->vnode = kmalloc(sizeof(struct vnode), &M_VNODE, M_ZERO);
     if (!write->vnode) {
         kfree(read->vnode);
         pipefs_pfree(pipe);
@@ -94,6 +100,10 @@ int pipefs_pipe(struct file *read, struct file *write)
         return -ENOMEM;
     }
 
+    /* readers and writers share a single wait queue: readers sleep on
+     * read_queue and wake write_queue, writers do the opposite */
+    read->vnode->write_queue  = read->vnode->read_queue;
+    write->vnode->read_queue  = read->vnode->read_queue;
     write->vnode->write_queue = read->vnode->read_queue;
 
     read->vnode->fs  = &pipefs;
