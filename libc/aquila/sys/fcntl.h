@@ -13,6 +13,10 @@
 extern "C" {
 #endif
 
+#if __BSD_VISIBLE
+#define O_NDELAY    O_NONBLOCK
+#endif
+
 #define F_RDLCK     1   /* read lock */
 #define F_WRLCK     2   /* write lock */
 #define F_UNLCK     3   /* remove lock(s) */

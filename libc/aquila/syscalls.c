@@ -389,6 +389,56 @@ int getgroups(int size, gid_t list[])
     return 0;
 }
 
+int setgroups(int size, const gid_t *list)
+{
+    /* there are no supplementary groups to set, a process only has its
+     * group id, as if the list were empty */
+    if (getuid()) {
+        errno = EPERM;
+        return -1;
+    }
+
+    return 0;
+}
+
+int getrlimit(int resource, struct rlimit *rlp)
+{
+    if (resource < 0 || resource >= RLIM_NLIMITS) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    /* only the number of descriptors is limited */
+    rlp->rlim_cur = rlp->rlim_max = resource == RLIMIT_NOFILE ? OPEN_MAX : RLIM_INFINITY;
+    return 0;
+}
+
+int setrlimit(int resource, const struct rlimit *rlp)
+{
+    if (resource < 0 || resource >= RLIM_NLIMITS) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    /* the kernel can't change or enforce limits */
+    errno = ENOSYS;
+    return -1;
+}
+
+int nice(int incr)
+{
+    /* processes have no priorities */
+    errno = ENOSYS;
+    return -1;
+}
+
+int chroot(const char *path)
+{
+    /* processes have no root directory of their own */
+    errno = ENOSYS;
+    return -1;
+}
+
 /* there are no separate effective ids */
 int setuid(uid_t uid)
 {
