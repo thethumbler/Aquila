@@ -11,6 +11,7 @@
 #
 #   DEPENDS     recipes to build first (of the same tree, or of contrib)
 #   FILE        name of the downloaded archive (default: basename of URL)
+#   ARCHIVE_DIR directory the archive extracts to (default: NAME-VERSION)
 #
 # Sources that have no usable release archive come from git instead: GIT
 # (repository) and COMMIT (full hash, which pins the contents) replace URL
@@ -129,6 +130,9 @@ build_port()
     done
 
     (
+        # optional settings start unset
+        unset ARCHIVE_DIR FILE
+
         # shellcheck source=/dev/null
         source "$recipe"
 
@@ -166,9 +170,10 @@ build_port()
         fi
 
         echo "==> building $NAME-$VERSION"
-        rm -rf "${SRC:?}/$NAME-$VERSION"
+        local srcdir=${ARCHIVE_DIR:-$NAME-$VERSION}
+        rm -rf "${SRC:?}/$srcdir"
         tar -xf "$archive" -C "$SRC"
-        cd "$SRC/$NAME-$VERSION"
+        cd "$SRC/$srcdir"
 
         for p in "$ROOT/$tree/$1"/*.patch; do
             [ -f "$p" ] && patch -p1 -s < "$p"

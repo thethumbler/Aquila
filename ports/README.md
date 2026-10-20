@@ -38,7 +38,8 @@ when its recipe or libc changed since it was last built.
 `build()` runs in the extracted source directory, after applying any
 `<name>/*.patch` (`patch -p1`), with `CC`, `AR`, `RANLIB` and
 `STRIP` set for the `i686-aquila` toolchain and `JOBS` for parallel
-builds. The archive must extract to `<name>-<version>/`.
+builds. The archive must extract to `<name>-<version>/`, or to the
+directory `ARCHIVE_DIR` names.
 
 A port without a usable release archive comes from git: `GIT` (the
 repository) and `COMMIT` (a full commit hash, which pins the contents)
