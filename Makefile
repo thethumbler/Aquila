@@ -146,7 +146,8 @@ initrd: userland $(if $(filter $(BUILDDIR)/contrib/root,$(CONTRIB_ROOT)),contrib
 	@$(CP) -r --remove-destination $(CONTRIB_ROOT)/. $(ROOTFS)/
 	@if [ -d $(PORTS_ROOT) ]; then \
 		$(CP) -r --remove-destination $(PORTS_ROOT)/. $(ROOTFS)/; fi
-	@find $(ROOTFS) -type f -exec sh -c \
+	@# programs, not object files (crt*.o), whose symbols linking needs
+	@find $(ROOTFS) -type f ! -name '*.o' -exec sh -c \
 		'for f; do if head -c 4 "$$f" | grep -q ELF; then $(STRIP) "$$f"; fi; done' _ {} +
 	@$(ECHO) "  CPIO    " $(patsubst $(BUILDDIR)/%,build/%,$(INITRD))
 	@# the kernel's initramfs reads old binary cpio archives
