@@ -85,6 +85,17 @@ int thread_queue_wakeup(struct queue *queue)
     return 0;
 }
 
+/* wake up `thread' only, if it is sleeping on a queue */
+void thread_wakeup(struct thread *thread)
+{
+    if (!thread->sleep_node)
+        return;
+
+    queue_node_remove(thread->sleep_queue, thread->sleep_node);
+    thread->sleep_node = NULL;
+    sched_thread_ready(thread);
+}
+
 int thread_create(struct thread *thread, uintptr_t stack, uintptr_t entry, uintptr_t uentry, uintptr_t arg, uintptr_t attr __unused, struct thread **new_thread)
 {
     int err = 0;

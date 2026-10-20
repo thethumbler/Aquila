@@ -6,7 +6,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
-/* O_* flags and F_* commands, shared with the kernel */
+/* O_*, F_* and AT_* values, shared with the kernel */
 #include <aquila/fcntl.h>
 
 #ifdef __cplusplus
@@ -16,14 +16,6 @@ extern "C" {
 #define F_RDLCK     1   /* read lock */
 #define F_WRLCK     2   /* write lock */
 #define F_UNLCK     3   /* remove lock(s) */
-
-#if __ATFILE_VISIBLE
-#define AT_FDCWD            -2
-#define AT_EACCESS          0x0001
-#define AT_SYMLINK_NOFOLLOW 0x0002
-#define AT_SYMLINK_FOLLOW   0x0004
-#define AT_REMOVEDIR        0x0008
-#endif
 
 #if __BSD_VISIBLE
 #define LOCK_SH     0x01    /* shared file lock */

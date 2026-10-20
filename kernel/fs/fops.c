@@ -14,7 +14,8 @@ int vfs_file_open(struct file *file)
     if (!file || !file->vnode || !file->vnode->fs)
         return -EINVAL;
 
-    if (S_ISDIR(file->vnode->mode) && !(file->flags & O_SEARCH))
+    /* directories are only read (with readdir) */
+    if (S_ISDIR(file->vnode->mode) && (file->flags & (O_WRONLY | O_RDWR)))
         return -EISDIR;
 
     if (ISDEV(file->vnode))
@@ -143,6 +144,11 @@ ssize_t vfs_file_close(struct file *file)
 {
     if (!file || !file->vnode)
         return -EINVAL;
+
+    if (file->path) {
+        kfree(file->path);
+        file->path = NULL;
+    }
 
     if (file->flags & FILE_SOCKET)
         return socket_shutdown(file, SHUT_RDWR);

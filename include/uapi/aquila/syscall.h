@@ -7,8 +7,8 @@
 /*
  * System call numbers.
  *
- * i386: number in %eax, arguments in %ebx, %ecx, %edx, `int $0x80',
- * result (or negated errno) in %eax.
+ * i386: number in %eax, arguments in %ebx, %ecx, %edx, %esi, %edi,
+ * `int $0x80', result (or negated errno) in %eax.
  */
 
 #define SYS_exit            1
@@ -68,19 +68,37 @@
 #define SYS_chown           55
 #define SYS_fchown          56
 #define SYS_lchown          57
-#define SYS_utime           58
+/* 58 was utime, replaced by utimensat */
 #define SYS_rmdir           59
 #define SYS_setuid          60
 #define SYS_setgid          61
 #define SYS_ftruncate       62
 #define SYS_sigsuspend      63
 #define SYS_getppid         64
+#define SYS_openat          65
+#define SYS_fstatat         66
+#define SYS_unlinkat        67
+#define SYS_mknodat         68
+#define SYS_linkat          69
+#define SYS_symlinkat       70
+#define SYS_readlinkat      71
+#define SYS_renameat        72
+#define SYS_faccessat       73
+#define SYS_fchmodat        74
+#define SYS_fchownat        75
+#define SYS_utimensat       76
+#define SYS_fchmod          77
+#define SYS_fchdir          78
+#define SYS_setsid          79
+#define SYS_nanosleep       80
+#define SYS_clock_gettime   81
+#define SYS_sethostname     82
 
-#define SYS_MAX             64
+#define SYS_MAX             82
 
 /*
- * Arguments of system calls that take more than three, passed as a
- * pointer to one of these structures.
+ * Arguments of the older system calls that take more than three, passed
+ * as a pointer to one of these structures.
  */
 
 /* SYS_mount */

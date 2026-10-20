@@ -24,7 +24,7 @@ diff -ruN a/newlib/configure.host b/newlib/configure.host
 +	# syscalls are provided without the leading underscore
 +	newlib_cflags="${newlib_cflags} -DMISSING_SYSCALL_NAMES"
 +	# provided by libc/sys/aquila
-+	newlib_cflags="${newlib_cflags} -DSIGNAL_PROVIDED -DHAVE_OPENDIR -D_NO_GETCWD"
++	newlib_cflags="${newlib_cflags} -DSIGNAL_PROVIDED -DHAVE_OPENDIR -D_NO_GETCWD -DHAVE_RENAME -DHAVE_NANOSLEEP"
 +	newlib_cflags="${newlib_cflags} -DHAVE_FCNTL -D_NO_GETLOGIN -D_NO_GETUT -D_NO_GETPASS -D_NO_TTYNAME"
 +	# no scheduling API (sched_setparam, ...)
 +	newlib_cflags="${newlib_cflags} -D_NO_POSIX_SPAWN"
@@ -48,7 +48,7 @@ diff -ruN a/newlib/libc/acinclude.m4 b/newlib/libc/acinclude.m4
 diff -ruN a/newlib/libc/include/limits.h b/newlib/libc/include/limits.h
 --- a/newlib/libc/include/limits.h
 +++ b/newlib/libc/include/limits.h
-@@ -145,3 +145,8 @@
+@@ -145,3 +145,61 @@
  #ifndef PATH_MAX
  #define PATH_MAX	4096
  #endif
@@ -57,6 +57,70 @@ diff -ruN a/newlib/libc/include/limits.h b/newlib/libc/include/limits.h
 +/* ssize_t is the signed type of the size of size_t, as is ptrdiff_t */
 +#define SSIZE_MAX	__PTRDIFF_MAX__
 +#endif
++
++#if defined(__aquila__) && !defined(_POSIX_ARG_MAX)
++/* minimum values POSIX requires of the limits */
++#define _POSIX_AIO_LISTIO_MAX	2
++#define _POSIX_AIO_MAX		1
++#define _POSIX_ARG_MAX		4096
++#define _POSIX_CHILD_MAX	25
++#define _POSIX_DELAYTIMER_MAX	32
++#define _POSIX_HOST_NAME_MAX	255
++#define _POSIX_LINK_MAX		8
++#define _POSIX_LOGIN_NAME_MAX	9
++#define _POSIX_MAX_CANON	255
++#define _POSIX_MAX_INPUT	255
++#define _POSIX_MQ_OPEN_MAX	8
++#define _POSIX_MQ_PRIO_MAX	32
++#define _POSIX_NAME_MAX		14
++#define _POSIX_NGROUPS_MAX	8
++#define _POSIX_OPEN_MAX		20
++#define _POSIX_PATH_MAX		256
++#define _POSIX_PIPE_BUF		512
++#define _POSIX_RE_DUP_MAX	255
++#define _POSIX_RTSIG_MAX	8
++#define _POSIX_SEM_NSEMS_MAX	256
++#define _POSIX_SEM_VALUE_MAX	32767
++#define _POSIX_SIGQUEUE_MAX	32
++#define _POSIX_SSIZE_MAX	32767
++#define _POSIX_STREAM_MAX	8
++#define _POSIX_SYMLINK_MAX	255
++#define _POSIX_SYMLOOP_MAX	8
++#define _POSIX_THREAD_DESTRUCTOR_ITERATIONS 4
++#define _POSIX_THREAD_KEYS_MAX	128
++#define _POSIX_THREAD_THREADS_MAX 64
++#define _POSIX_TIMER_MAX	32
++#define _POSIX_TTY_NAME_MAX	9
++#define _POSIX_TZNAME_MAX	6
++#define _POSIX2_BC_BASE_MAX	99
++#define _POSIX2_BC_DIM_MAX	2048
++#define _POSIX2_BC_SCALE_MAX	99
++#define _POSIX2_BC_STRING_MAX	1000
++#define _POSIX2_CHARCLASS_NAME_MAX 14
++#define _POSIX2_COLL_WEIGHTS_MAX 2
++#define _POSIX2_EXPR_NEST_MAX	32
++#define _POSIX2_LINE_MAX	2048
++#define _XOPEN_IOV_MAX		16
++#define _XOPEN_NAME_MAX		255
++#define _XOPEN_PATH_MAX		1024
++
++/* the kernel's limit on symbolic links followed in a lookup */
++#define SYMLOOP_MAX		8
++
++/* default process priority (nice value 0) */
++#define NZERO			20
++#endif
+diff -ruN a/newlib/libc/include/regex.h b/newlib/libc/include/regex.h
+--- a/newlib/libc/include/regex.h
++++ b/newlib/libc/include/regex.h
+@@ -38,6 +38,7 @@
+ #define	_REGEX_H_
+ 
+ #include <sys/cdefs.h>
++#include <sys/types.h>	/* off_t, size_t */
+ 
+ /* types */
+ typedef off_t regoff_t;
 diff -ruN a/newlib/libc/include/stdio.h b/newlib/libc/include/stdio.h
 --- a/newlib/libc/include/stdio.h
 +++ b/newlib/libc/include/stdio.h
@@ -71,6 +135,21 @@ diff -ruN a/newlib/libc/include/stdio.h b/newlib/libc/include/stdio.h
  
  #if __MISC_VISIBLE
  void	clearerr_unlocked (FILE *);
+diff -ruN a/newlib/libc/include/sys/features.h b/newlib/libc/include/sys/features.h
+--- a/newlib/libc/include/sys/features.h
++++ b/newlib/libc/include/sys/features.h
+@@ -440,6 +440,11 @@
+ #endif
+ 
+ 
++#ifdef __aquila__
++/* clock_gettime(CLOCK_MONOTONIC) */
++#define _POSIX_MONOTONIC_CLOCK	200809L
++#endif
++
+ #ifdef __svr4__
+ # define _POSIX_JOB_CONTROL     1
+ # define _POSIX_SAVED_IDS       1
 diff -ruN a/newlib/libc/include/sys/stat.h b/newlib/libc/include/sys/stat.h
 --- a/newlib/libc/include/sys/stat.h
 +++ b/newlib/libc/include/sys/stat.h
@@ -83,6 +162,15 @@ diff -ruN a/newlib/libc/include/sys/stat.h b/newlib/libc/include/sys/stat.h
    long		st_spare4[2];
  #endif
  #endif
+@@ -139,7 +139,7 @@
+ #define	S_ISLNK(m)	(((m)&_IFMT) == _IFLNK)
+ #define	S_ISSOCK(m)	(((m)&_IFMT) == _IFSOCK)
+ 
+-#if defined(__CYGWIN__) || defined(__rtems__)
++#if defined(__CYGWIN__) || defined(__rtems__) || defined(__aquila__)
+ /* Special tv_nsec values for futimens(2) and utimensat(2). */
+ #define UTIME_NOW	-2L
+ #define UTIME_OMIT	-1L
 @@ -157,7 +157,7 @@
  int	stat (const char *__restrict __path, struct stat *__restrict __sbuf );
  mode_t	umask (mode_t __mask );
@@ -106,6 +194,19 @@ diff -ruN a/newlib/libc/include/sys/wait.h b/newlib/libc/include/sys/wait.h
  
  #ifdef _LIBC
  pid_t _wait (int *);
+diff -ruN a/newlib/libc/include/time.h b/newlib/libc/include/time.h
+--- a/newlib/libc/include/time.h
++++ b/newlib/libc/include/time.h
+@@ -158,7 +158,8 @@
+ #include <cygwin/time.h>
+ #endif /*__CYGWIN__*/
+ 
+-#if defined(_POSIX_TIMERS)
++/* aquila has the clocks and nanosleep(), but no timers */
++#if defined(_POSIX_TIMERS) || defined(__aquila__)
+ 
+ #include <signal.h>
+ 
 diff -ruN a/newlib/libc/sys/Makefile.inc b/newlib/libc/sys/Makefile.inc
 --- a/newlib/libc/sys/Makefile.inc
 +++ b/newlib/libc/sys/Makefile.inc

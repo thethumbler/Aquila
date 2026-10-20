@@ -256,6 +256,12 @@ void proc_kill(struct proc *proc)
 
 int proc_reap(struct proc *proc)
 {
+    /* the parent waited for it: its times count as the parent's children's */
+    if (proc->parent) {
+        proc->parent->cutime += proc->utime + proc->cutime;
+        proc->parent->cstime += proc->stime + proc->cstime;
+    }
+
     proc_pid_free(proc->pid);
 
     queue_remove(procs, proc);

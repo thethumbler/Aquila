@@ -12,10 +12,13 @@
 #include <stddef.h>
 #include <sys/stat.h>
 #include <sys/time.h>
+#include <sys/times.h>
+#include <time.h>
 
 #include <aquila/errno.h>
 #include <aquila/signal.h>
 #include <aquila/stat.h>
+#include <aquila/time.h>
 
 #define SAME_FIELD(a, b, f) \
     _Static_assert(offsetof(struct a, f) == offsetof(struct b, f) && \
@@ -50,3 +53,18 @@ SAME_FIELD(sigaction, aquila_sigaction, sa_flags);
 _Static_assert(sizeof(struct timeval) == 12 &&
                offsetof(struct timeval, tv_usec) == 8,
                "struct timeval does not match the kernel");
+
+/* utimensat(2), nanosleep(2) and clock_gettime(2) take a struct aquila_timespec */
+SAME_SIZE(timespec, aquila_timespec);
+SAME_FIELD(timespec, aquila_timespec, tv_sec);
+SAME_FIELD(timespec, aquila_timespec, tv_nsec);
+
+/* defined by the kernel in <aquila/stat.h> and <aquila/time.h>, which skip
+ * them when the C library's headers came first */
+_Static_assert(UTIME_NOW == -2 && UTIME_OMIT == -1, "UTIME_NOW/UTIME_OMIT do not match the kernel");
+_Static_assert(CLOCK_REALTIME == 1 && CLOCK_MONOTONIC == 4, "clock ids do not match the kernel");
+
+/* times(2) */
+SAME_SIZE(tms, aquila_tms);
+SAME_FIELD(tms, aquila_tms, tms_utime);
+SAME_FIELD(tms, aquila_tms, tms_cstime);

@@ -40,4 +40,11 @@
 
 #define FD_CLOEXEC      1
 
+/* the *at() system calls: the working directory as dirfd, and flags */
+#define AT_FDCWD            -2
+#define AT_EACCESS          0x0001
+#define AT_SYMLINK_NOFOLLOW 0x0002
+#define AT_SYMLINK_FOLLOW   0x0004
+#define AT_REMOVEDIR        0x0008
+
 #endif /* ! _AQUILA_FCNTL_H */

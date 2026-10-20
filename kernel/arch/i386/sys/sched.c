@@ -55,6 +55,7 @@ static void x86_sched_handler(struct x86_regs *r)
     }
 
     ++timer_ticks;
+    sched_timer_tick(timer_period, (r->cs & 3) == 3);
 
     if (!kidle) {
         struct x86_thread *arch = (struct x86_thread *) curthread->arch;

@@ -84,6 +84,11 @@ struct proc {
     /** File mode creation mask */
     mode_t mask;
 
+    /** CPU time in user mode and in the kernel (ns), and that of the
+     *  children it waited for */
+    uint64_t utime, stime;
+    uint64_t cutime, cstime;
+
     /** User ID */
     uid_t uid;
 

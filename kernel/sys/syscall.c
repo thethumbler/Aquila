@@ -23,6 +23,7 @@
 #include <aquila/utsname.h>
 #include <aquila/fcntl.h>
 #include <aquila/mman.h>
+#include <aquila/time.h>
 
 #include <fs/devpts.h>
 #include <fs/pipe.h>
@@ -46,6 +47,62 @@ static struct file *fd_file(int fd)
         return NULL;
 
     return file;
+}
+
+/*
+ * uio to resolve `path' from the directory `dirfd' refers to, AT_FDCWD
+ * for the working directory (absolute paths ignore dirfd)
+ */
+static int at_uio(int dirfd, const char *path, struct uio *uio)
+{
+    *uio = PROC_UIO(curproc);
+
+    if (dirfd == AT_FDCWD || *path == '/')
+        return 0;
+
+    struct file *file = fd_file(dirfd);
+
+    if (!file)
+        return -EBADF;
+
+    /* only directories opened by path know where they are */
+    if ((file->flags & FILE_SOCKET) || !S_ISDIR(file->vnode->mode) || !file->path)
+        return -ENOTDIR;
+
+    uio->cwd = file->path;
+    return 0;
+}
+
+/* absolute path of `path' from directory `dirfd', for calls taking two paths */
+static int at_path(int dirfd, const char *path, char **abs_path)
+{
+    struct uio uio;
+    int ret;
+
+    if (uaccess_str_check(path))
+        return -EFAULT;
+
+    if ((ret = at_uio(dirfd, path, &uio)))
+        return ret;
+
+    return vfs_parse_path(path, &uio, abs_path);
+}
+
+/* look up `path' from `dirfd', AT_SYMLINK_NOFOLLOW in flags: don't follow a final link */
+static int at_lookup(int dirfd, const char *path, int flags, struct uio *uio, struct vnode **vnode)
+{
+    int ret;
+
+    if (uaccess_str_check(path))
+        return -EFAULT;
+
+    if ((ret = at_uio(dirfd, path, uio)))
+        return ret;
+
+    if (flags & AT_SYMLINK_NOFOLLOW)
+        uio->flags |= O_NOFOLLOW;
+
+    return vfs_lookup(path, uio, vnode, NULL);
 }
 
 static void sys_exit(int code)
@@ -206,14 +263,41 @@ static void sys_kill(pid_t pid, int sig)
         arch_syscall_return(curthread, ret);
 }
 
+static int do_linkat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, int flags)
+{
+    char *oabs = NULL, *nabs = NULL;
+    int ret;
+
+    if (flags & ~AT_SYMLINK_FOLLOW)
+        return -EINVAL;
+
+    if (!(ret = at_path(olddirfd, oldpath, &oabs)) &&
+        !(ret = at_path(newdirfd, newpath, &nabs))) {
+        struct uio uio = PROC_UIO(curproc);
+
+        /* a link to a symbolic link, not to what it points to */
+        if (!(flags & AT_SYMLINK_FOLLOW))
+            uio.flags = O_NOFOLLOW;
+
+        ret = vfs_link(oabs, nabs, &uio);
+    }
+
+    kfree(oabs);
+    kfree(nabs);
+    return ret;
+}
+
 static void sys_link(const char *oldpath, const char *newpath)
 {
-    syscall_log(LOG_DEBUG, "link(oldpath=%s, newpath=%s)\n",
-            oldpath, newpath);
+    syscall_log(LOG_DEBUG, "link(oldpath=%s, newpath=%s)\n", oldpath, newpath);
+    arch_syscall_return(curthread, do_linkat(AT_FDCWD, oldpath, AT_FDCWD, newpath, 0));
+}
 
-    /* TODO */
-
-    arch_syscall_return(curthread, -ENOSYS);
+static void sys_linkat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, int flags)
+{
+    syscall_log(LOG_DEBUG, "linkat(olddirfd=%d, oldpath=%s, newdirfd=%d, newpath=%s, flags=%x)\n",
+            olddirfd, oldpath, newdirfd, newpath, flags);
+    arch_syscall_return(curthread, do_linkat(olddirfd, oldpath, newdirfd, newpath, flags));
 }
 
 static void sys_lseek(int fildes, off_t offset, int whence)
@@ -237,46 +321,61 @@ static void sys_lseek(int fildes, off_t offset, int whence)
     arch_syscall_return(curthread, ret);
 }
 
-static void sys_open(const char *path, int oflags, mode_t mode)
+static int do_openat(int dirfd, const char *path, int oflags, mode_t mode)
 {
-    syscall_log(LOG_DEBUG, "open(path=%s, oflags=0x%x, mode=0x%x)\n", path, oflags, mode);
+    struct uio uio;
+    int ret;
 
-    if (uaccess_str_check(path)) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
-    }
+    if (uaccess_str_check(path))
+        return -EFAULT;
+
+    if ((ret = at_uio(dirfd, path, &uio)))
+        return ret;
 
     int fd = proc_fd_get(curproc);  /* Find a free file descriptor */
 
-    if (fd == -1) {
-        /* Reached maximum number of open file descriptors */
-        arch_syscall_return(curthread, -EMFILE);
-        return;
-    }
+    if (fd == -1)   /* Reached maximum number of open file descriptors */
+        return -EMFILE;
 
-    /* Look up the file */
     struct vnode *vnode = NULL;
-    struct uio uio = PROC_UIO(curproc);
+    char *abs_path = NULL;
+    int excl = (oflags & (O_CREAT | O_EXCL)) == (O_CREAT | O_EXCL);
+    int created = 0;
+
     uio.flags = oflags;
 
-    int ret = vfs_lookup(path, &uio, &vnode, NULL);
+    /* O_EXCL never creates through a symbolic link */
+    if (excl)
+        uio.flags |= O_NOFOLLOW;
 
-    if (ret) {   /* Lookup failed */
-        if ((ret == -ENOENT) && (oflags & O_CREAT)) {
-            if ((ret = vfs_creat(path, mode, &uio, &vnode))) {
-                goto done;
-            }
+    ret = vfs_lookup(path, &uio, &vnode, &abs_path);
 
-            goto o_creat;
-        }
-
+    if (!ret && excl) {
+        ret = -EEXIST;
         goto done;
+    }
+
+    if (ret == -ENOENT && (oflags & O_CREAT)) {
+        if ((ret = vfs_creat(path, mode & 07777, &uio, &vnode)))
+            goto done;
+
+        created = 1;
     }
 
     if (ret)
         goto done;
 
-o_creat:
+    /* with O_NOFOLLOW the lookup stops at a final symbolic link */
+    if (S_ISLNK(vnode->mode)) {
+        ret = -ELOOP;
+        goto done;
+    }
+
+    if ((oflags & O_DIRECTORY) && !S_ISDIR(vnode->mode)) {
+        ret = -ENOTDIR;
+        goto done;
+    }
+
     curproc->fds[fd] = (struct file) {
         .vnode   = vnode,
         .offset  = 0,
@@ -284,21 +383,43 @@ o_creat:
         .fdflags = (oflags & O_CLOEXEC) ? FD_CLOEXEC : 0,
     };
 
-    if ((ret = vfs_perms_check(&curproc->fds[fd], &uio)))
+    /* the creator may open the file whatever mode it was given */
+    if (!created && (ret = vfs_perms_check(&curproc->fds[fd], &uio)))
         goto done;
 
-    ret = vfs_file_open(&curproc->fds[fd]);
+    if ((ret = vfs_file_open(&curproc->fds[fd])))
+        goto done;
 
-done:
-    if (ret < 0) { /* open returned an error code */
-        proc_fd_release(curproc, fd);
-        vfs_close(vnode);
-    } else {
-        ret = fd;
+    /* directories remember their path, for the *at() calls */
+    if (S_ISDIR(vnode->mode)) {
+        curproc->fds[fd].path = abs_path;
+        abs_path = NULL;
     }
 
-    arch_syscall_return(curthread, ret);
-    return;
+    ret = fd;
+
+done:
+    if (ret < 0) {
+        proc_fd_release(curproc, fd);
+
+        if (vnode)
+            vfs_close(vnode);
+    }
+
+    kfree(abs_path);
+    return ret;
+}
+
+static void sys_open(const char *path, int oflags, mode_t mode)
+{
+    syscall_log(LOG_DEBUG, "open(path=%s, oflags=0x%x, mode=0x%x)\n", path, oflags, mode);
+    arch_syscall_return(curthread, do_openat(AT_FDCWD, path, oflags, mode));
+}
+
+static void sys_openat(int dirfd, const char *path, int oflags, mode_t mode)
+{
+    syscall_log(LOG_DEBUG, "openat(dirfd=%d, path=%s, oflags=0x%x, mode=0x%x)\n", dirfd, path, oflags, mode);
+    arch_syscall_return(curthread, do_openat(dirfd, path, oflags, mode));
 }
 
 static void sys_read(int fildes, void *buf, size_t nbytes)
@@ -351,46 +472,85 @@ static void sys_sbrk(ptrdiff_t incr)
     return;
 }
 
+static int do_fstatat(int dirfd, const char *path, struct aquila_stat *buf, int flags)
+{
+    struct vnode *vnode = NULL;
+    struct uio uio;
+    int ret;
+
+    if (flags & ~AT_SYMLINK_NOFOLLOW)
+        return -EINVAL;
+
+    if (uaccess_check(buf, sizeof(struct aquila_stat)))
+        return -EFAULT;
+
+    if ((ret = at_lookup(dirfd, path, flags, &uio, &vnode)))
+        return ret;
+
+    ret = vfs_stat(vnode, buf);
+    vfs_close(vnode);
+    return ret;
+}
+
 static void sys_stat(const char *path, struct aquila_stat *buf)
 {
     syscall_log(LOG_DEBUG, "stat(path=%s, buf=%p)\n", path, buf);
+    arch_syscall_return(curthread, do_fstatat(AT_FDCWD, path, buf, 0));
+}
 
-    struct vnode *vnode = NULL;
-    int ret = 0;
-    struct uio uio = PROC_UIO(curproc);
+static void sys_fstatat(int dirfd, const char *path, struct aquila_stat *buf, int flags)
+{
+    syscall_log(LOG_DEBUG, "fstatat(dirfd=%d, path=%s, buf=%p, flags=%x)\n", dirfd, path, buf, flags);
+    arch_syscall_return(curthread, do_fstatat(dirfd, path, buf, flags));
+}
 
-    if (uaccess_str_check(path) || uaccess_check(buf, sizeof(struct aquila_stat))) {
+static void sys_times(struct aquila_tms *buf)
+{
+    syscall_log(LOG_DEBUG, "times(buf=%p)\n", buf);
+
+    const uint64_t tick = 1000000000ULL / AQUILA_CLK_TCK;   /* ns */
+
+    if (uaccess_check(buf, sizeof(struct aquila_tms))) {
         arch_syscall_return(curthread, -EFAULT);
         return;
     }
 
-    if ((ret = vfs_lookup(path, &uio, &vnode, NULL))) {
-        arch_syscall_return(curthread, ret);
-        return;
-    }
+    buf->tms_utime  = curproc->utime / tick;
+    buf->tms_stime  = curproc->stime / tick;
+    buf->tms_cutime = curproc->cutime / tick;
+    buf->tms_cstime = curproc->cstime / tick;
 
-    ret = vfs_stat(vnode, buf);
-    vfs_close(vnode);
-    arch_syscall_return(curthread, ret);
+    /* elapsed real time, since boot */
+    arch_syscall_return(curthread, (uint32_t) (arch_rtime_ns() / tick));
 }
 
-static void sys_times()
+static int do_unlinkat(int dirfd, const char *path, int flags)
 {
+    struct uio uio;
+    int ret;
 
+    if (flags & ~AT_REMOVEDIR)
+        return -EINVAL;
+
+    if (uaccess_str_check(path))
+        return -EFAULT;
+
+    if ((ret = at_uio(dirfd, path, &uio)))
+        return ret;
+
+    return (flags & AT_REMOVEDIR) ? vfs_rmdir(path, &uio) : vfs_unlink(path, &uio);
 }
 
 static void sys_unlink(const char *path)
 {
     syscall_log(LOG_DEBUG, "unlink(path=%p)\n", path);
+    arch_syscall_return(curthread, do_unlinkat(AT_FDCWD, path, 0));
+}
 
-    if (uaccess_str_check(path)) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
-    }
-
-    struct uio uio = PROC_UIO(curproc);
-    int ret = vfs_unlink(path, &uio);
-    arch_syscall_return(curthread, ret);
+static void sys_unlinkat(int dirfd, const char *path, int flags)
+{
+    syscall_log(LOG_DEBUG, "unlinkat(dirfd=%d, path=%p, flags=%x)\n", dirfd, path, flags);
+    arch_syscall_return(curthread, do_unlinkat(dirfd, path, flags));
 }
 
 #define WNOHANG 1
@@ -650,21 +810,49 @@ static void sys_mount(struct aquila_mount_args *args)
     return;
 }
 
+static int do_mknodat(int dirfd, const char *path, mode_t mode, dev_t dev)
+{
+    struct uio uio;
+    int ret;
+
+    if (uaccess_str_check(path))
+        return -EFAULT;
+
+    /* type 0 is a regular file */
+    if (!(mode & S_IFMT))
+        mode |= S_IFREG;
+
+    switch (mode & S_IFMT) {
+        case S_IFREG:
+        case S_IFDIR:
+            break;
+        case S_IFIFO:
+            /* opening one wouldn't make a pipe */
+            return -ENOSYS;
+        case S_IFCHR:
+        case S_IFBLK:
+            /* device files give access to the device */
+            if (curproc->uid != 0)
+                return -EPERM;
+            break;
+        default:
+            return -EINVAL;
+    }
+
+    if ((ret = at_uio(dirfd, path, &uio)))
+        return ret;
+
+    return vfs_mknod(path, mode, dev, &uio, NULL);
+}
+
 static void sys_mkdir(const char *path, mode_t mode)
 {
     syscall_log(LOG_DEBUG, "mkdir(path=%s, mode=%x)\n", path, mode);
-
-    if (uaccess_str_check(path)) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
-    }
-
-    struct uio uio = PROC_UIO(curproc);
-
-    int ret = vfs_mkdir(path, mode, &uio, NULL);
-    arch_syscall_return(curthread, ret);
-    return;
+    arch_syscall_return(curthread, do_mknodat(AT_FDCWD, path, S_IFDIR | (mode & 07777), 0));
 }
+
+/* set by sethostname(), shown by uname() */
+static char nodename[sizeof(((struct utsname *) 0)->nodename)] = UTSNAME_NODENAME;
 
 static void sys_uname(struct utsname *name)
 {
@@ -676,7 +864,7 @@ static void sys_uname(struct utsname *name)
     }
 
     strcpy(name->sysname,  UTSNAME_SYSNAME);
-    strcpy(name->nodename, UTSNAME_NODENAME);
+    strcpy(name->nodename, nodename);
     strcpy(name->release,  UTSNAME_RELEASE);
     strcpy(name->version,  UTSNAME_VERSION);
     strcpy(name->machine,  UTSNAME_MACHINE);
@@ -757,6 +945,9 @@ static void sys_fcntl(int fd, int cmd, uintptr_t arg)
 
             curproc->fds[dupfd] = *file;
             curproc->fds[dupfd].fdflags = cmd == F_DUPFD_CLOEXEC ? FD_CLOEXEC : 0;
+
+            if (file->path)
+                curproc->fds[dupfd].path = strdup(file->path);
 
             /* the new descriptor holds its own reference (as in fork) */
             if (file->flags & FILE_SOCKET)
@@ -993,38 +1184,19 @@ static void sys_setpgid(pid_t pid, pid_t pgid)
 static void sys_mknod(const char *path, uint32_t mode, uint32_t dev)
 {
     syscall_log(LOG_DEBUG, "mknod(path=%s, mode=%x, dev=%x)\n", path, mode, dev);
+    arch_syscall_return(curthread, do_mknodat(AT_FDCWD, path, mode, dev));
+}
 
-    if (uaccess_str_check(path)) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
-    }
-
-    int ret = vfs_mknod(path, mode, dev, &PROC_UIO(curproc), NULL);
-    arch_syscall_return(curthread, ret);
+static void sys_mknodat(int dirfd, const char *path, uint32_t mode, uint32_t dev)
+{
+    syscall_log(LOG_DEBUG, "mknodat(dirfd=%d, path=%s, mode=%x, dev=%x)\n", dirfd, path, mode, dev);
+    arch_syscall_return(curthread, do_mknodat(dirfd, path, mode, dev));
 }
 
 static void sys_lstat(const char *path, struct aquila_stat *buf)
 {
     syscall_log(LOG_DEBUG, "lstat(path=%s, buf=%p)\n", path, buf);
-
-    struct vnode *vnode = NULL;
-    int ret = 0;
-    struct uio uio = PROC_UIO(curproc);
-    uio.flags = O_NOFOLLOW;
-
-    if (uaccess_str_check(path) || uaccess_check(buf, sizeof(struct aquila_stat))) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
-    }
-
-    if ((ret = vfs_lookup(path, &uio, &vnode, NULL))) {
-        arch_syscall_return(curthread, ret);
-        return;
-    }
-
-    ret = vfs_stat(vnode, buf);
-    vfs_close(vnode);
-    arch_syscall_return(curthread, ret);
+    arch_syscall_return(curthread, do_fstatat(AT_FDCWD, path, buf, AT_SYMLINK_NOFOLLOW));
 }
 
 /*
@@ -1416,10 +1588,63 @@ static void sys_umask(mode_t mask)
     return;
 }
 
+static int do_fchmodat(int dirfd, const char *path, mode_t mode, int flags)
+{
+    struct vnode *vnode = NULL;
+    struct uio uio;
+    int ret;
+
+    /* symbolic links have no mode of their own */
+    if (flags & AT_SYMLINK_NOFOLLOW)
+        return -EOPNOTSUPP;
+
+    if (flags)
+        return -EINVAL;
+
+    if ((ret = at_lookup(dirfd, path, flags, &uio, &vnode)))
+        return ret;
+
+    ret = vfs_chmod(vnode, mode, &uio);
+    vfs_close(vnode);
+    return ret;
+}
+
 static void sys_chmod(const char *path, mode_t mode)
 {
-    syscall_log(LOG_DEBUG, "chmod(path=%s, mode=%d)\n", path, mode);
-    arch_syscall_return(curthread, -ENOSYS);
+    syscall_log(LOG_DEBUG, "chmod(path=%s, mode=%o)\n", path, mode);
+    arch_syscall_return(curthread, do_fchmodat(AT_FDCWD, path, mode, 0));
+}
+
+static void sys_fchmodat(int dirfd, const char *path, mode_t mode, int flags)
+{
+    syscall_log(LOG_DEBUG, "fchmodat(dirfd=%d, path=%s, mode=%o, flags=%x)\n", dirfd, path, mode, flags);
+    arch_syscall_return(curthread, do_fchmodat(dirfd, path, mode, flags));
+}
+
+/* the vnode of an open file, NULL for sockets */
+static struct vnode *fd_vnode(int fd, int *err)
+{
+    struct file *file = fd_file(fd);
+
+    if (!file || (file->flags & FILE_SOCKET)) {
+        *err = file ? -EINVAL : -EBADF;
+        return NULL;
+    }
+
+    return file->vnode;
+}
+
+static void sys_fchmod(int fd, mode_t mode)
+{
+    syscall_log(LOG_DEBUG, "fchmod(fd=%d, mode=%o)\n", fd, mode);
+
+    int ret = 0;
+    struct vnode *vnode = fd_vnode(fd, &ret);
+
+    if (vnode)
+        ret = vfs_chmod(vnode, mode, &PROC_UIO(curproc));
+
+    arch_syscall_return(curthread, ret);
 }
 
 static void sys_sysconf(int name)
@@ -1433,47 +1658,36 @@ static void sys_sysconf(int name)
 #define W_OK    2
 #define R_OK    4
 
+static int do_faccessat(int dirfd, const char *path, int mode, int flags)
+{
+    struct vnode *vnode = NULL;
+    struct uio uio;
+    int ret;
+
+    /* there are no separate effective ids, AT_EACCESS changes nothing */
+    if ((flags & ~(AT_EACCESS | AT_SYMLINK_NOFOLLOW)) || (mode & ~(R_OK | W_OK | X_OK)))
+        return -EINVAL;
+
+    if ((ret = at_lookup(dirfd, path, flags, &uio, &vnode)))
+        return ret;
+
+    int vmode = (mode & R_OK ? VFS_R : 0) | (mode & W_OK ? VFS_W : 0) | (mode & X_OK ? VFS_X : 0);
+
+    ret = vfs_access(vnode, &uio, vmode);
+    vfs_close(vnode);
+    return ret;
+}
+
 static void sys_access(const char *path, int mode)
 {
     syscall_log(LOG_DEBUG, "access(path=%s, mode=%d)\n", path, mode);
+    arch_syscall_return(curthread, do_faccessat(AT_FDCWD, path, mode, 0));
+}
 
-    if (uaccess_str_check(path)) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
-    }
-
-    int err = 0;
-
-    /* Look up the file */
-    struct vnode *vnode = NULL;
-    struct file  file;
-
-    struct uio uio = PROC_UIO(curproc);
-
-    uio.flags |= mode & R_OK? O_RDONLY : 0;
-    uio.flags |= mode & W_OK? O_WRONLY : 0;
-    uio.flags |= mode & X_OK? O_EXEC   : 0;
-
-    err = vfs_lookup(path, &uio, &vnode, NULL);
-
-    if (err) goto done;
-
-    file = (struct file) {
-        .vnode  = vnode,
-        .offset = 0,
-        .flags  = uio.flags,
-    };
-
-    if ((err = vfs_perms_check(&file, &uio)))
-        goto done;
-
-done:
-    if (vnode)
-        vfs_close(vnode);
-
-    arch_syscall_return(curthread, err);
-
-    return;
+static void sys_faccessat(int dirfd, const char *path, int mode, int flags)
+{
+    syscall_log(LOG_DEBUG, "faccessat(dirfd=%d, path=%s, mode=%d, flags=%x)\n", dirfd, path, mode, flags);
+    arch_syscall_return(curthread, do_faccessat(dirfd, path, mode, flags));
 }
 
 static void sys_gettimeofday(struct timeval *tv, struct timezone *tz)
@@ -1644,34 +1858,279 @@ static void sys_getpgrp(void)
     arch_syscall_return(curthread, curproc->pgrp->pgid);
 }
 
+static int do_fchownat(int dirfd, const char *path, uid_t owner, gid_t group, int flags)
+{
+    struct vnode *vnode = NULL;
+    struct uio uio;
+    int ret;
+
+    if (flags & ~AT_SYMLINK_NOFOLLOW)
+        return -EINVAL;
+
+    if ((ret = at_lookup(dirfd, path, flags, &uio, &vnode)))
+        return ret;
+
+    ret = vfs_chown(vnode, owner, group, &uio);
+    vfs_close(vnode);
+    return ret;
+}
+
 static void sys_chown(const char *path, uid_t owner, gid_t group)
 {
-    syscall_log(LOG_DEBUG, "chown(path=%s, ownder=%d, group=%d)\n", path, owner, group);
-    arch_syscall_return(curthread, -ENOSYS);
+    syscall_log(LOG_DEBUG, "chown(path=%s, owner=%d, group=%d)\n", path, owner, group);
+    arch_syscall_return(curthread, do_fchownat(AT_FDCWD, path, owner, group, 0));
+}
+
+static void sys_fchownat(int dirfd, const char *path, uid_t owner, gid_t group, int flags)
+{
+    syscall_log(LOG_DEBUG, "fchownat(dirfd=%d, path=%s, owner=%d, group=%d, flags=%x)\n",
+            dirfd, path, owner, group, flags);
+    arch_syscall_return(curthread, do_fchownat(dirfd, path, owner, group, flags));
 }
 
 static void sys_fchown(int fd, uid_t owner, gid_t group)
 {
     syscall_log(LOG_DEBUG, "fchown(fd=%d, owner=%d, group=%d)\n", fd, owner, group);
-    arch_syscall_return(curthread, -ENOSYS);
+
+    int ret = 0;
+    struct vnode *vnode = fd_vnode(fd, &ret);
+
+    if (vnode)
+        ret = vfs_chown(vnode, owner, group, &PROC_UIO(curproc));
+
+    arch_syscall_return(curthread, ret);
 }
 
 static void sys_lchown(const char *path, uid_t owner, gid_t group)
 {
     syscall_log(LOG_DEBUG, "lchown(path=%s, owner=%d, group=%d)\n", path, owner, group);
-    arch_syscall_return(curthread, -ENOSYS);
+    arch_syscall_return(curthread, do_fchownat(AT_FDCWD, path, owner, group, AT_SYMLINK_NOFOLLOW));
 }
 
-static void sys_utime(const char *path, const struct utimbuf *times)
+/* `path' NULL: the file `dirfd' refers to (futimens) */
+static void sys_utimensat(int dirfd, const char *path, const struct aquila_timespec times[2], int flags)
 {
-    syscall_log(LOG_DEBUG, "utime(path=%s, times=%p)\n", path, times);
-    arch_syscall_return(curthread, -ENOSYS);
+    syscall_log(LOG_DEBUG, "utimensat(dirfd=%d, path=%s, times=%p, flags=%x)\n", dirfd, path, times, flags);
+
+    struct vnode *vnode = NULL;
+    struct uio uio = PROC_UIO(curproc);
+    int ret = 0;
+
+    if (flags & ~AT_SYMLINK_NOFOLLOW) {
+        ret = -EINVAL;
+        goto done;
+    }
+
+    if (times && uaccess_check(times, 2 * sizeof(struct aquila_timespec))) {
+        ret = -EFAULT;
+        goto done;
+    }
+
+    if (!path) {
+        if ((vnode = fd_vnode(dirfd, &ret)))
+            ret = vfs_utimens(vnode, times, &uio);
+
+        goto done;
+    }
+
+    if ((ret = at_lookup(dirfd, path, flags, &uio, &vnode)))
+        goto done;
+
+    ret = vfs_utimens(vnode, times, &uio);
+    vfs_close(vnode);
+
+done:
+    arch_syscall_return(curthread, ret);
 }
 
 static void sys_rmdir(const char *path)
 {
     syscall_log(LOG_DEBUG, "rmdir(path=%s)\n", path);
-    arch_syscall_return(curthread, -ENOSYS);
+    arch_syscall_return(curthread, do_unlinkat(AT_FDCWD, path, AT_REMOVEDIR));
+}
+
+static void sys_symlinkat(const char *target, int dirfd, const char *path)
+{
+    syscall_log(LOG_DEBUG, "symlinkat(target=%s, dirfd=%d, path=%s)\n", target, dirfd, path);
+
+    struct uio uio;
+    int ret;
+
+    if (uaccess_str_check(target) || uaccess_str_check(path)) {
+        arch_syscall_return(curthread, -EFAULT);
+        return;
+    }
+
+    if (!(ret = at_uio(dirfd, path, &uio)))
+        ret = vfs_symlink(target, path, &uio);
+
+    arch_syscall_return(curthread, ret);
+}
+
+static void sys_readlinkat(int dirfd, const char *path, char *buf, size_t size)
+{
+    syscall_log(LOG_DEBUG, "readlinkat(dirfd=%d, path=%s, buf=%p, size=%d)\n", dirfd, path, buf, size);
+
+    struct uio uio;
+    int ret;
+
+    if (uaccess_str_check(path) || uaccess_check(buf, size)) {
+        arch_syscall_return(curthread, -EFAULT);
+        return;
+    }
+
+    if (!(ret = at_uio(dirfd, path, &uio)))
+        ret = vfs_readlink(path, &uio, buf, size);
+
+    arch_syscall_return(curthread, ret);
+}
+
+static void sys_renameat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath)
+{
+    syscall_log(LOG_DEBUG, "renameat(olddirfd=%d, oldpath=%s, newdirfd=%d, newpath=%s)\n",
+            olddirfd, oldpath, newdirfd, newpath);
+
+    char *oabs = NULL, *nabs = NULL;
+    int ret;
+
+    if (!(ret = at_path(olddirfd, oldpath, &oabs)) &&
+        !(ret = at_path(newdirfd, newpath, &nabs)))
+        ret = vfs_rename(oabs, nabs, &PROC_UIO(curproc));
+
+    kfree(oabs);
+    kfree(nabs);
+    arch_syscall_return(curthread, ret);
+}
+
+static void sys_fchdir(int fd)
+{
+    syscall_log(LOG_DEBUG, "fchdir(fd=%d)\n", fd);
+
+    struct file *file = fd_file(fd);
+    int ret = 0;
+
+    if (!file) {
+        ret = -EBADF;
+    } else if ((file->flags & FILE_SOCKET) || !S_ISDIR(file->vnode->mode) || !file->path) {
+        ret = -ENOTDIR;
+    } else if (vfs_access(file->vnode, &PROC_UIO(curproc), VFS_X)) {
+        ret = -EACCES;
+    } else {
+        char *cwd = strdup(file->path);
+
+        if (cwd) {
+            kfree(curproc->cwd);
+            curproc->cwd = cwd;
+        } else {
+            ret = -ENOMEM;
+        }
+    }
+
+    arch_syscall_return(curthread, ret);
+}
+
+static void sys_setsid(void)
+{
+    syscall_log(LOG_DEBUG, "setsid()\n");
+
+    struct proc *proc = curproc;
+    struct pgroup *pgrp = proc->pgrp;
+    struct qnode *pgrp_node = proc->pgrp_node;
+
+    /* a group leader can't leave its group, the group would be in two sessions */
+    if (pgrp->pgid == proc->pid) {
+        arch_syscall_return(curthread, -EPERM);
+        return;
+    }
+
+    int ret = session_new(proc);
+
+    if (ret) {
+        proc->pgrp = pgrp;
+        proc->pgrp_node = pgrp_node;
+        arch_syscall_return(curthread, ret);
+        return;
+    }
+
+    queue_node_remove(pgrp->procs, pgrp_node);
+    arch_syscall_return(curthread, proc->pid);
+}
+
+static void sys_nanosleep(const struct aquila_timespec *req, struct aquila_timespec *rem)
+{
+    syscall_log(LOG_DEBUG, "nanosleep(req=%p, rem=%p)\n", req, rem);
+
+    if (uaccess_check(req, sizeof(struct aquila_timespec)) ||
+        (rem && uaccess_check(rem, sizeof(struct aquila_timespec)))) {
+        arch_syscall_return(curthread, -EFAULT);
+        return;
+    }
+
+    if (req->tv_nsec >= 1000000000) {
+        arch_syscall_return(curthread, -EINVAL);
+        return;
+    }
+
+    uint64_t ns = req->tv_sec * 1000000000ULL + req->tv_nsec;
+
+    curthread->sleep_left = rem;
+    sched_sleep(arch_rtime_ns() + ns);
+    arch_syscall_return(curthread, 0);
+}
+
+static void sys_clock_gettime(int clock, struct aquila_timespec *ts)
+{
+    syscall_log(LOG_DEBUG, "clock_gettime(clock=%d, ts=%p)\n", clock, ts);
+
+    if (uaccess_check(ts, sizeof(struct aquila_timespec))) {
+        arch_syscall_return(curthread, -EFAULT);
+        return;
+    }
+
+    struct timespec now;
+    uint64_t ns;
+
+    switch (clock) {
+        case CLOCK_REALTIME:
+            gettime(&now);
+            ts->tv_sec  = now.tv_sec;
+            ts->tv_nsec = now.tv_nsec;
+            break;
+        case CLOCK_MONOTONIC:
+            ns = arch_rtime_ns();
+            ts->tv_sec  = ns / 1000000000ULL;
+            ts->tv_nsec = ns % 1000000000ULL;
+            break;
+        default:
+            arch_syscall_return(curthread, -EINVAL);
+            return;
+    }
+
+    arch_syscall_return(curthread, 0);
+}
+
+static void sys_sethostname(const char *name, size_t len)
+{
+    syscall_log(LOG_DEBUG, "sethostname(name=%p, len=%d)\n", name, len);
+
+    if (curproc->uid != 0) {
+        arch_syscall_return(curthread, -EPERM);
+        return;
+    }
+
+    if (len >= sizeof(nodename)) {
+        arch_syscall_return(curthread, -EINVAL);
+        return;
+    }
+
+    if (uaccess_check(name, len)) {
+        arch_syscall_return(curthread, -EFAULT);
+        return;
+    }
+
+    memcpy(nodename, name, len);
+    nodename[len] = '\0';
+    arch_syscall_return(curthread, 0);
 }
 
 void (*syscall_table[])() = {
@@ -1731,13 +2190,30 @@ void (*syscall_table[])() = {
     [SYS_chown]         = sys_chown,
     [SYS_fchown]        = sys_fchown,
     [SYS_lchown]        = sys_lchown,
-    [SYS_utime]         = sys_utime,
     [SYS_rmdir]         = sys_rmdir,
     [SYS_setuid]        = sys_setuid,
     [SYS_setgid]        = sys_setgid,
     [SYS_ftruncate]     = sys_ftruncate,
     [SYS_sigsuspend]    = sys_sigsuspend,
     [SYS_getppid]       = sys_getppid,
+    [SYS_openat]        = sys_openat,
+    [SYS_fstatat]       = sys_fstatat,
+    [SYS_unlinkat]      = sys_unlinkat,
+    [SYS_mknodat]       = sys_mknodat,
+    [SYS_linkat]        = sys_linkat,
+    [SYS_symlinkat]     = sys_symlinkat,
+    [SYS_readlinkat]    = sys_readlinkat,
+    [SYS_renameat]      = sys_renameat,
+    [SYS_faccessat]     = sys_faccessat,
+    [SYS_fchmodat]      = sys_fchmodat,
+    [SYS_fchownat]      = sys_fchownat,
+    [SYS_utimensat]     = sys_utimensat,
+    [SYS_fchmod]        = sys_fchmod,
+    [SYS_fchdir]        = sys_fchdir,
+    [SYS_setsid]        = sys_setsid,
+    [SYS_nanosleep]     = sys_nanosleep,
+    [SYS_clock_gettime] = sys_clock_gettime,
+    [SYS_sethostname]   = sys_sethostname,
 };
 
 const size_t syscall_cnt = sizeof(syscall_table)/sizeof(syscall_table[0]);

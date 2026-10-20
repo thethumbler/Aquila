@@ -55,8 +55,10 @@ void arch_thread_switch(struct thread *thread)
 
         /* a system call blocked in the kernel fails with EINTR, otherwise
          * the handler would return to it with the syscall number in eax */
-        if (thread->in_syscall)
+        if (thread->in_syscall) {
+            sched_sleep_interrupted(thread);
             arch_syscall_return(thread, -EINTR);
+        }
 
         arch_handle_signal(sig);
         /* if we get back here, the signal was ignored */

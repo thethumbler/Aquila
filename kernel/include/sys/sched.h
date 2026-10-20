@@ -18,4 +18,8 @@ void schedule(void);
 
 void sched_thread_ready(struct thread *thread);
 
+void sched_timer_tick(uint32_t period, int user);
+void sched_sleep(uint64_t until);
+void sched_sleep_interrupted(struct thread *thread);
+
 #endif /* ! _SYS_SCHED_H */

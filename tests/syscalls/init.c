@@ -4,6 +4,8 @@
  * - pointers into kernel space must be rejected with EFAULT
  * - descriptors, signal numbers and sizes must be range checked
  * - signals, wait, threads, pipes, unix sockets, exec of bad ELF files
+ * - files: the *at() calls, links, rename, permissions and attributes
+ * - nanosleep and clocks
  */
 
 #include "../lib/aqtest.h"
@@ -21,6 +23,46 @@ static void thr(void *u, void *a) { (void) u; (void) a; thread_ran = 1; SC(SYS_t
 static char tstack[8192] __attribute__((aligned(16)));
 
 static unsigned char bad_elf[52 + 32];
+
+/* CLOCK_MONOTONIC in milliseconds */
+static int now_ms(void)
+{
+    struct aquila_timespec ts;
+    SC(SYS_clock_gettime, CLOCK_MONOTONIC, &ts, 0);
+    return ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+#define ST(buf) ((struct aquila_stat *) (buf))
+
+/* as an unprivileged user (uid 1000) in /tmp, exits with the failed step */
+static void unprivileged_files(void)
+{
+    char st[128];
+
+    if (SC(SYS_setgid, 100, 0, 0) || SC(SYS_setuid, 1000, 0, 0)) SC(SYS_exit, 1, 0, 0);
+
+    /* /tmp/rootdir is root's, 0755 */
+    if (SC(SYS_open, "/tmp/rootdir/new", O_CREAT | O_WRONLY, 0644) != -EACCES) SC(SYS_exit, 2, 0, 0);
+    if (SC(SYS_unlink, "/tmp/rootdir/file", 0, 0) != -EACCES) SC(SYS_exit, 3, 0, 0);
+    if (SC(SYS_chmod, "/tmp/rootdir/file", 0777, 0) != -EPERM) SC(SYS_exit, 4, 0, 0);
+    if (SC5(SYS_utimensat, AT_FDCWD, "/tmp/rootdir/file", 0, 0, 0) != -EACCES) SC(SYS_exit, 5, 0, 0);
+    if (SC(SYS_mknod, "/tmp/dev", S_IFCHR | 0666, DEV(4, 64)) != -EPERM) SC(SYS_exit, 6, 0, 0);
+
+    /* own files */
+    int fd = SC(SYS_open, "/tmp/mine", O_CREAT | O_WRONLY, 0644);
+    if (fd < 0) SC(SYS_exit, 7, 0, 0);
+    SC(SYS_fstat, fd, st, 0);
+    if (ST(st)->st_uid != 1000 || ST(st)->st_gid != 100) SC(SYS_exit, 8, 0, 0);
+    if (SC(SYS_fchmod, fd, 0600, 0)) SC(SYS_exit, 9, 0, 0);
+    /* giving it away */
+    if (SC(SYS_chown, "/tmp/mine", 0, -1) != -EPERM) SC(SYS_exit, 10, 0, 0);
+    if (SC(SYS_chown, "/tmp/mine", -1, 100)) SC(SYS_exit, 11, 0, 0);
+    if (SC(SYS_chown, "/tmp/mine", -1, 0) != -EPERM) SC(SYS_exit, 12, 0, 0);
+    SC(SYS_close, fd, 0, 0);
+    if (SC(SYS_unlink, "/tmp/mine", 0, 0)) SC(SYS_exit, 13, 0, 0);
+
+    SC(SYS_exit, 0, 0, 0);
+}
 
 void aq_main(void)
 {
@@ -306,6 +348,228 @@ void aq_main(void)
     check("absolute symlink", fd >= 0, 1);
     SC(SYS_close, fd, 0, 0);
     check("symlink loop", SC(SYS_open, "/lnk/loop", O_RDONLY, 0), -ELOOP);
+
+    /* --- files (on the tmpfs mounted at /tmp) --- */
+    char sb[128];
+    check("umask", SC(SYS_umask, 022, 0, 0), 022);
+    fd = SC(SYS_open, "/tmp/a", O_CREAT | O_WRONLY, 0666);
+    check("create", fd >= 0, 1);
+    SC(SYS_write, fd, "hello", 5);
+    SC(SYS_fstat, fd, sb, 0);
+    check("umask applied", ST(sb)->st_mode & 07777, 0644);
+    SC(SYS_close, fd, 0, 0);
+    check("O_EXCL existing", SC(SYS_open, "/tmp/a", O_CREAT | O_EXCL | O_WRONLY, 0644), -EEXIST);
+    check("O_DIRECTORY on a file", SC(SYS_open, "/tmp/a", O_RDONLY | O_DIRECTORY, 0), -ENOTDIR);
+
+    check("mkdir", SC(SYS_mkdir, "/tmp/d", 0755, 0), 0);
+    check("mkdir existing", SC(SYS_mkdir, "/tmp/d", 0755, 0), -EEXIST);
+    check("mkdir mountpoint", SC(SYS_mkdir, "/tmp", 0755, 0), -EEXIST);
+    check("open directory for writing", SC(SYS_open, "/tmp/d", O_WRONLY, 0), -EISDIR);
+    int dirfd = SC(SYS_open, "/tmp/d", O_RDONLY | O_DIRECTORY, 0);
+    check("open directory", dirfd >= 0, 1);
+    fd = SC5(SYS_openat, dirfd, "f", O_CREAT | O_WRONLY, 0644, 0);
+    check("openat", fd >= 0, 1);
+    SC(SYS_close, fd, 0, 0);
+    check("created in the directory", SC(SYS_stat, "/tmp/d/f", sb, 0), 0);
+    check("fstatat", SC5(SYS_fstatat, dirfd, "f", sb, 0, 0), 0);
+    check("fstatat regular", ST(sb)->st_mode & S_IFMT, S_IFREG);
+    check("fstatat AT_FDCWD", SC5(SYS_fstatat, AT_FDCWD, "/tmp/d/f", sb, 0, 0), 0);
+    check("openat bad dirfd", SC5(SYS_openat, 50, "f", O_RDONLY, 0, 0), -EBADF);
+    fd = SC(SYS_open, "/tmp/a", O_RDONLY, 0);
+    check("openat file as dirfd", SC5(SYS_openat, fd, "f", O_RDONLY, 0, 0), -ENOTDIR);
+    SC(SYS_close, fd, 0, 0);
+    check("openat absolute ignores dirfd", SC5(SYS_fstatat, 50, "/tmp/a", sb, 0, 0), 0);
+    check("mknodat", SC5(SYS_mknodat, dirfd, "sub", S_IFDIR | 0755, 0, 0), 0);
+    check("faccessat", SC5(SYS_faccessat, dirfd, "f", 4 | 2 /* R_OK | W_OK */, 0, 0), 0);
+    check("root X_OK without x bits", SC5(SYS_faccessat, dirfd, "f", 1 /* X_OK */, 0, 0), -EACCES);
+
+    /* the directory descriptor survives fork and dup */
+    c = SC(SYS_fork, 0, 0, 0);
+    if (!c) {
+        int dup = SC(SYS_fcntl, dirfd, F_DUPFD, 30);
+        SC(SYS_close, dirfd, 0, 0);
+        SC(SYS_exit, SC5(SYS_fstatat, dup, "f", sb, 0, 0) == 0 ? 3 : 4, 0, 0);
+    }
+    SC(SYS_waitpid, c, &st, 0);
+    check("dirfd after fork and dup", st >> 8, 3);
+
+    char cwd[64];
+    check("fchdir", SC(SYS_fchdir, dirfd, 0, 0), 0);
+    SC(SYS_getcwd, cwd, sizeof(cwd), 0);
+    check("cwd after fchdir", cwd[0] == '/' && cwd[5] == 'd' && cwd[6] == 0, 1);
+    check("relative open in new cwd", SC(SYS_stat, "f", sb, 0), 0);
+    SC(SYS_chdir, "/", 0, 0);
+
+    check("unlink a directory", SC(SYS_unlink, "/tmp/d", 0, 0), -EISDIR);
+    check("rmdir not empty", SC(SYS_rmdir, "/tmp/d", 0, 0), -ENOTEMPTY);
+    check("rmdir a file", SC(SYS_rmdir, "/tmp/d/f", 0, 0), -ENOTDIR);
+    check("rmdir mountpoint", SC(SYS_rmdir, "/tmp", 0, 0), -EBUSY);
+    check("unlinkat AT_REMOVEDIR", SC(SYS_unlinkat, dirfd, "sub", AT_REMOVEDIR), 0);
+
+    /* hard links */
+    check("link", SC(SYS_link, "/tmp/a", "/tmp/d/b", 0), 0);
+    SC(SYS_stat, "/tmp/a", sb, 0);
+    check("nlink 2", ST(sb)->st_nlink, 2);
+    check("link existing", SC(SYS_link, "/tmp/a", "/tmp/d/b", 0), -EEXIST);
+    check("link a directory", SC(SYS_link, "/tmp/d", "/tmp/e", 0), -EPERM);
+    check("link across filesystems", SC(SYS_link, "/tmp/a", "/a", 0), -EXDEV);
+    check("unlink first name", SC(SYS_unlink, "/tmp/a", 0, 0), 0);
+    fd = SC(SYS_open, "/tmp/d/b", O_RDONLY, 0);
+    char data[8] = {0};
+    check("other name still reads", SC(SYS_read, fd, data, 8), 5);
+    SC(SYS_close, fd, 0, 0);
+
+    /* symbolic links */
+    check("symlinkat", SC(SYS_symlinkat, "b", dirfd, "s"), 0);
+    check("symlink absolute", SC(SYS_symlinkat, "/tmp/d", AT_FDCWD, "/tmp/dl"), 0);
+    char link[16] = {0};
+    check("readlinkat", SC5(SYS_readlinkat, dirfd, "s", link, sizeof(link), 0), 1);
+    check("readlinkat contents", link[0], 'b');
+    check("readlink not a link", SC5(SYS_readlinkat, dirfd, "b", link, sizeof(link), 0), -EINVAL);
+    check("symlink existing", SC(SYS_symlinkat, "x", dirfd, "s"), -EEXIST);
+    SC5(SYS_fstatat, dirfd, "s", sb, AT_SYMLINK_NOFOLLOW, 0);
+    check("lstat link", ST(sb)->st_mode & S_IFMT, S_IFLNK);
+    SC5(SYS_fstatat, dirfd, "s", sb, 0, 0);
+    check("stat through link", ST(sb)->st_mode & S_IFMT, S_IFREG);
+    check("O_NOFOLLOW", SC5(SYS_openat, dirfd, "s", O_RDONLY | O_NOFOLLOW, 0, 0), -ELOOP);
+    check("link in the middle of a path", SC(SYS_stat, "/tmp/dl/b", sb, 0), 0);
+    check("link to a link's directory", SC(SYS_stat, "/tmp/dl/s", sb, 0), 0);
+    check("create through a link", SC(SYS_mkdir, "/tmp/dl/viadl", 0755, 0), 0);
+    check("made in the target", SC(SYS_rmdir, "/tmp/d/viadl", 0, 0), 0);
+
+    /* rename */
+    check("rename", SC5(SYS_renameat, dirfd, "b", AT_FDCWD, "/tmp/c", 0), 0);
+    check("old name gone", SC(SYS_stat, "/tmp/d/b", sb, 0), -ENOENT);
+    check("new name there", SC(SYS_stat, "/tmp/c", sb, 0), 0);
+    fd = SC(SYS_open, "/tmp/other", O_CREAT | O_WRONLY, 0644);
+    SC(SYS_close, fd, 0, 0);
+    check("rename over a file", SC5(SYS_renameat, AT_FDCWD, "/tmp/c", AT_FDCWD, "/tmp/other", 0), 0);
+    SC(SYS_stat, "/tmp/other", sb, 0);
+    check("replaced", ST(sb)->st_size, 5);
+    check("rename a file over a directory", SC5(SYS_renameat, AT_FDCWD, "/tmp/other", AT_FDCWD, "/tmp/d", 0), -EISDIR);
+    SC(SYS_mkdir, "/tmp/e", 0755, 0);
+    check("rename a directory into itself", SC5(SYS_renameat, AT_FDCWD, "/tmp/d", AT_FDCWD, "/tmp/d/x", 0), -EINVAL);
+    check("rename over a non-empty directory", SC5(SYS_renameat, AT_FDCWD, "/tmp/e", AT_FDCWD, "/tmp/d", 0), -ENOTEMPTY);
+    check("rename a directory", SC5(SYS_renameat, AT_FDCWD, "/tmp/d", AT_FDCWD, "/tmp/e", 0), 0);
+    check("moved with its contents", SC(SYS_stat, "/tmp/e/f", sb, 0), 0);
+    check("rename across filesystems", SC5(SYS_renameat, AT_FDCWD, "/tmp/other", AT_FDCWD, "/other", 0), -EXDEV);
+    check("rename missing", SC5(SYS_renameat, AT_FDCWD, "/tmp/nothing", AT_FDCWD, "/tmp/x", 0), -ENOENT);
+
+    /* attributes */
+    check("chmod", SC(SYS_chmod, "/tmp/other", 04751, 0), 0);
+    SC(SYS_stat, "/tmp/other", sb, 0);
+    check("mode changed", ST(sb)->st_mode, S_IFREG | 04751);
+    check("chmod read-only fs", SC(SYS_chmod, "/init", 0700, 0), -EROFS);
+    SC(SYS_symlinkat, "other", AT_FDCWD, "/tmp/ol");
+    check("chmod a link's target", SC5(SYS_fchmodat, AT_FDCWD, "/tmp/ol", 04751, 0, 0), 0);
+    check("fchmodat AT_SYMLINK_NOFOLLOW", SC5(SYS_fchmodat, AT_FDCWD, "/tmp/ol", 0700, AT_SYMLINK_NOFOLLOW, 0), -EOPNOTSUPP);
+    check("chown", SC(SYS_chown, "/tmp/other", 1000, 100), 0);
+    SC(SYS_stat, "/tmp/other", sb, 0);
+    check("owner changed", ST(sb)->st_uid == 1000 && ST(sb)->st_gid == 100, 1);
+    check("lchown", SC(SYS_lchown, "/tmp/ol", 2000, -1), 0);
+    SC5(SYS_fstatat, AT_FDCWD, "/tmp/ol", sb, AT_SYMLINK_NOFOLLOW, 0);
+    check("link owner changed", ST(sb)->st_uid, 2000);
+    SC(SYS_stat, "/tmp/ol", sb, 0);
+    check("target owner unchanged", ST(sb)->st_uid, 1000);
+
+    struct aquila_timespec times[2] = {{100, 0}, {200, 0}};
+    check("utimensat", SC5(SYS_utimensat, AT_FDCWD, "/tmp/other", times, 0, 0), 0);
+    SC(SYS_stat, "/tmp/other", sb, 0);
+    check("times set", ST(sb)->st_atim.tv_sec == 100 && ST(sb)->st_mtim.tv_sec == 200, 1);
+    times[0].tv_nsec = UTIME_OMIT;
+    times[1].tv_nsec = UTIME_NOW;
+    SC5(SYS_utimensat, AT_FDCWD, "/tmp/other", times, 0, 0);
+    SC(SYS_stat, "/tmp/other", sb, 0);
+    check("UTIME_OMIT and UTIME_NOW", ST(sb)->st_atim.tv_sec == 100 && ST(sb)->st_mtim.tv_sec > 200, 1);
+    times[1].tv_nsec = 1000000000;
+    check("utimensat bad nsec", SC5(SYS_utimensat, AT_FDCWD, "/tmp/other", times, 0, 0), -EINVAL);
+    fd = SC(SYS_open, "/tmp/other", O_RDONLY, 0);
+    times[1].tv_nsec = 0;
+    check("futimens", SC5(SYS_utimensat, fd, 0, times, 0, 0), 0);
+    SC(SYS_close, fd, 0, 0);
+    SC(SYS_close, dirfd, 0, 0);
+
+    /* permissions of an unprivileged user */
+    SC(SYS_mkdir, "/tmp/rootdir", 0755, 0);
+    fd = SC(SYS_open, "/tmp/rootdir/file", O_CREAT | O_WRONLY, 0644);
+    SC(SYS_close, fd, 0, 0);
+    check("unprivileged file rules (failed step)", aq_child_status(unprivileged_files) >> 8, 0);
+
+    /* setsid: not as a group leader */
+    c = SC(SYS_fork, 0, 0, 0);
+    if (!c) {
+        int me = SC(SYS_getpid, 0, 0, 0);
+        if (SC(SYS_setsid, 0, 0, 0) != me) SC(SYS_exit, 1, 0, 0);
+        if (SC(SYS_getpgrp, 0, 0, 0) != me) SC(SYS_exit, 2, 0, 0);
+        if (SC(SYS_setsid, 0, 0, 0) != -EPERM) SC(SYS_exit, 3, 0, 0);
+        SC(SYS_exit, 0, 0, 0);
+    }
+    SC(SYS_waitpid, c, &st, 0);
+    check("setsid (failed step)", st >> 8, 0);
+    check("setsid as a group leader", SC(SYS_setsid, 0, 0, 0), -EPERM);
+
+    /* --- clocks and nanosleep --- */
+    struct aquila_timespec ts = {0, 0}, left = {0, 0};
+    check("clock_gettime realtime", SC(SYS_clock_gettime, CLOCK_REALTIME, &ts, 0), 0);
+    check("realtime is recent", ts.tv_sec > 1500000000, 1);
+    check("clock_gettime bad clock", SC(SYS_clock_gettime, 99, &ts, 0), -EINVAL);
+    check("clock_gettime EFAULT", SC(SYS_clock_gettime, CLOCK_MONOTONIC, KADDR, 0), -EFAULT);
+
+    int t0 = now_ms();
+    ts = (struct aquila_timespec) {0, 200000000};
+    check("nanosleep", SC(SYS_nanosleep, &ts, 0, 0), 0);
+    int slept = now_ms() - t0;
+    check("slept 200ms", slept >= 200 && slept < 1000, 1);
+    ts.tv_nsec = 1000000000;
+    check("nanosleep bad nsec", SC(SYS_nanosleep, &ts, 0, 0), -EINVAL);
+
+    /* two sleepers wake up at their own times */
+    t0 = now_ms();
+    c = SC(SYS_fork, 0, 0, 0);
+    if (!c) {
+        struct aquila_timespec d = {0, 100000000};
+        SC(SYS_nanosleep, &d, 0, 0);
+        SC(SYS_exit, now_ms() - t0 < 300 ? 0 : 1, 0, 0);
+    }
+    ts = (struct aquila_timespec) {0, 400000000};
+    SC(SYS_nanosleep, &ts, 0, 0);
+    SC(SYS_waitpid, c, &st, 0);
+    check("child woke first", st >> 8, 0);
+
+    /* CPU time: our own, then a child's once waited for */
+    struct aquila_tms tms;
+    aq_spin(50000000);
+    check("times", SC(SYS_times, &tms, 0, 0) > 0, 1);
+    check("user time counted", tms.tms_utime > 0, 1);
+    u32 cutime = tms.tms_cutime;
+    c = SC(SYS_fork, 0, 0, 0);
+    if (!c) {
+        aq_spin(50000000);
+        SC(SYS_exit, 0, 0, 0);
+    }
+    SC(SYS_waitpid, c, &st, 0);
+    SC(SYS_times, &tms, 0, 0);
+    check("child's time added", tms.tms_cutime > cutime, 1);
+    check("times EFAULT", SC(SYS_times, KADDR, 0, 0), -EFAULT);
+
+    /* interrupted by a signal: EINTR and the time left */
+    sa.sa_handler = (u32) handler;
+    SC(SYS_sigaction, SIGUSR1, &sa, 0);
+    c = SC(SYS_fork, 0, 0, 0);
+    if (!c) {
+        struct aquila_timespec d = {0, 100000000};
+        SC(SYS_nanosleep, &d, 0, 0);
+        SC(SYS_kill, SC(SYS_getppid, 0, 0, 0), SIGUSR1, 0);
+        SC(SYS_exit, 0, 0, 0);
+    }
+    got_sig = 0;
+    ts = (struct aquila_timespec) {10, 0};
+    t0 = now_ms();
+    check("nanosleep interrupted", SC(SYS_nanosleep, &ts, &left, 0), -EINTR);
+    check("handler ran", got_sig, SIGUSR1);
+    check("woke early", now_ms() - t0 < 2000, 1);
+    check("time left", left.tv_sec >= 8 && left.tv_sec <= 9, 1);
+    SC(SYS_waitpid, c, &st, 0);
 
     /* --- signal masks --- */
     unsigned long set = 1UL << SIGUSR1, old = 0;

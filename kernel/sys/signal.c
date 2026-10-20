@@ -63,10 +63,11 @@ int signal_proc_send(struct proc *proc, int signal)
     } else {
         enqueue(proc->sig_queue, (void *)(intptr_t) signal);
 
-        /* wake up main thread if sleeping - XXX */
+        /* wake up main thread if sleeping - XXX; only that thread, not
+         * everything sleeping on the same queue */
         struct thread *thread = (struct thread *) proc->threads.head->value;
         if (thread->state == ISLEEP)
-            thread_queue_wakeup(thread->sleep_queue);
+            thread_wakeup(thread);
     }
 
     return 0;

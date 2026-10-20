@@ -191,7 +191,8 @@ stage_libc()
     cd "$OBJ/newlib"
 
     "$SRC/$NEWLIB/configure" --target=$TARGET --prefix=/usr \
-        --disable-multilib --enable-newlib-io-long-long
+        --disable-multilib --enable-newlib-io-long-long \
+        --enable-newlib-io-c99-formats
     make -j"$JOBS" all
     # install into /usr of the sysroot, not /usr/$TARGET
     make DESTDIR="$SYSROOT" tooldir=/usr install

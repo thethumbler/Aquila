@@ -28,6 +28,7 @@ typedef uint32_t u32;
 #include <aquila/signal.h>
 #include <aquila/stat.h>
 #include <aquila/syscall.h>
+#include <aquila/time.h>
 
 #define DEV(major, minor)   (((major) << 8) | (minor))
 
@@ -42,6 +43,15 @@ static inline int sc3(int n, u32 a, u32 b, u32 c)
 }
 
 #define SC(n, a, b, c) sc3(n, (u32)(a), (u32)(b), (u32)(c))
+
+static inline int sc5(int n, u32 a, u32 b, u32 c, u32 d, u32 e)
+{
+    int r;
+    asm volatile("int $0x80" : "=a"(r) : "a"(n), "b"(a), "c"(b), "d"(c), "S"(d), "D"(e) : "memory");
+    return r;
+}
+
+#define SC5(n, a, b, c, d, e) sc5(n, (u32)(a), (u32)(b), (u32)(c), (u32)(d), (u32)(e))
 
 static inline int aq_mount(const char *type, const char *dir, void *data)
 {

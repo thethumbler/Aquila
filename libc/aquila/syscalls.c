@@ -16,17 +16,20 @@
 #include <sys/utsname.h>
 #include <sys/wait.h>
 #include <sys/resource.h>
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <termios.h>
 #include <unistd.h>
-#include <utime.h>
 
 #include <aquila/syscall.h>
+#include <aquila/time.h>
 
 #include "syscall.h"
 
@@ -84,17 +87,19 @@ pid_t getppid(void)
     return SYSCALL(SYS_getppid, 0, 0, 0);
 }
 
-/* newlib's posix/ provides isatty() on top of this */
+/* newlib's posix/ provides isatty() on top of this: a terminal is what
+ * answers terminal ioctls */
 int _isatty(int fildes)
 {
-    long ret = __syscall(SYS_isatty, fildes, 0, 0);
+    struct termios tios;
 
-    if (ret < 0) {
-        errno = ret == -EBADF ? EBADF : ENOTTY;
+    if (tcgetattr(fildes, &tios)) {
+        if (errno != EBADF)
+            errno = ENOTTY;
         return 0;
     }
 
-    return ret;
+    return 1;
 }
 
 int kill(pid_t pid, int sig)
@@ -164,9 +169,15 @@ void *sbrk(ptrdiff_t incr)
 
 clock_t times(struct tms *buf)
 {
-    /* not implemented by the kernel */
-    errno = ENOSYS;
-    return (clock_t) -1;
+    /* the result is a time, any value is valid */
+    long ret = __syscall(SYS_times, (long) buf, 0, 0);
+
+    if (ret < 0 && ret >= -4095) {
+        errno = -ret;
+        return (clock_t) -1;
+    }
+
+    return ret;
 }
 
 pid_t waitpid(pid_t pid, int *stat_loc, int options)
@@ -242,6 +253,27 @@ int rmdir(const char *path)
     return SYSCALL(SYS_rmdir, path, 0, 0);
 }
 
+int gethostname(char *name, size_t len)
+{
+    struct utsname uts;
+
+    if (uname(&uts))
+        return -1;
+
+    if (strlen(uts.nodename) >= len) {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+
+    strcpy(name, uts.nodename);
+    return 0;
+}
+
+int sethostname(const char *name, size_t len)
+{
+    return SYSCALL(SYS_sethostname, name, len, 0);
+}
+
 int uname(struct utsname *name)
 {
     return SYSCALL(SYS_uname, name, 0, 0);
@@ -286,6 +318,11 @@ int dup2(int fildes, int fildes2)
     return fd;
 }
 
+int fchdir(int fildes)
+{
+    return SYSCALL(SYS_fchdir, fildes, 0, 0);
+}
+
 int chdir(const char *path)
 {
     return SYSCALL(SYS_chdir, path, 0, 0);
@@ -302,6 +339,11 @@ char *getcwd(char *buf, size_t size)
 int setpgid(pid_t pid, pid_t pgid)
 {
     return SYSCALL(SYS_setpgid, pid, pgid, 0);
+}
+
+pid_t setsid(void)
+{
+    return SYSCALL(SYS_setsid, 0, 0, 0);
 }
 
 pid_t getpgrp(void)
@@ -429,6 +471,11 @@ int chmod(const char *path, mode_t mode)
     return SYSCALL(SYS_chmod, path, mode, 0);
 }
 
+int fchmod(int fildes, mode_t mode)
+{
+    return SYSCALL(SYS_fchmod, fildes, mode, 0);
+}
+
 int chown(const char *path, uid_t owner, gid_t group)
 {
     return SYSCALL(SYS_chown, path, owner, group);
@@ -444,11 +491,6 @@ int lchown(const char *path, uid_t owner, gid_t group)
     return SYSCALL(SYS_lchown, path, owner, group);
 }
 
-int utime(const char *path, const struct utimbuf *times)
-{
-    return SYSCALL(SYS_utime, path, times, 0);
-}
-
 int access(const char *path, int mode)
 {
     return SYSCALL(SYS_access, path, mode, 0);
@@ -457,27 +499,75 @@ int access(const char *path, int mode)
 long sysconf(int name)
 {
     switch (name) {
-        case _SC_PAGESIZE:
-            return 4096;
-        case _SC_CLK_TCK:
-            return 100;
-        case _SC_OPEN_MAX:
-            return 64;
+        case _SC_ARG_MAX:           return ARG_MAX;     /* the kernel takes 128K */
+        case _SC_CHILD_MAX:         return CHILD_MAX;
+        case _SC_CLK_TCK:           return AQUILA_CLK_TCK;
+        case _SC_NGROUPS_MAX:       return NGROUPS_MAX;
+        case _SC_OPEN_MAX:          return 64;          /* FDS_COUNT */
+        case _SC_PAGESIZE:          return 4096;
+        case _SC_NPROCESSORS_CONF:
+        case _SC_NPROCESSORS_ONLN:  return 1;
+        case _SC_HOST_NAME_MAX:     return 63;          /* utsname nodename */
+        case _SC_LOGIN_NAME_MAX:    return 32;
+        case _SC_TTY_NAME_MAX:      return 32;
+        case _SC_SYMLOOP_MAX:       return SYMLOOP_MAX;
+        case _SC_LINE_MAX:          return LINE_MAX;
+        case _SC_RE_DUP_MAX:        return RE_DUP_MAX;
+        case _SC_EXPR_NEST_MAX:     return EXPR_NEST_MAX;
+        case _SC_BC_BASE_MAX:       return BC_BASE_MAX;
+        case _SC_BC_DIM_MAX:        return BC_DIM_MAX;
+        case _SC_BC_SCALE_MAX:      return BC_SCALE_MAX;
+        case _SC_BC_STRING_MAX:     return BC_STRING_MAX;
+        case _SC_COLL_WEIGHTS_MAX:  return COLL_WEIGHTS_MAX;
+        case _SC_IOV_MAX:           return IOV_MAX;
+        case _SC_GETPW_R_SIZE_MAX:
+        case _SC_GETGR_R_SIZE_MAX:  return 1024;
+        case _SC_JOB_CONTROL:       return 1;
+        case _SC_MONOTONIC_CLOCK:   return _POSIX_MONOTONIC_CLOCK;
     }
 
-    return SYSCALL(SYS_sysconf, name, 0, 0);
+    errno = EINVAL;
+    return -1;
+}
+
+/* the same for every file */
+static long file_limit(int name)
+{
+    switch (name) {
+        case _PC_LINK_MAX:          return LINK_MAX;
+        case _PC_MAX_CANON:         return MAX_CANON;
+        case _PC_MAX_INPUT:         return MAX_INPUT;
+        case _PC_NAME_MAX:          return MAXNAMELEN - 1;
+        case _PC_PATH_MAX:          return PATH_MAX;
+        case _PC_PIPE_BUF:          return PIPE_BUF;
+        case _PC_SYMLINK_MAX:       return 1023;        /* lookup reads 1K */
+        case _PC_CHOWN_RESTRICTED:  return 1;
+        case _PC_NO_TRUNC:          return 1;
+        case _PC_VDISABLE:          return 0;
+    }
+
+    errno = EINVAL;
+    return -1;
 }
 
 long pathconf(const char *path, int name)
 {
-    errno = ENOSYS;
-    return -1;
+    struct stat st;
+
+    if (stat(path, &st))
+        return -1;
+
+    return file_limit(name);
 }
 
 long fpathconf(int fildes, int name)
 {
-    errno = ENOSYS;
-    return -1;
+    struct stat st;
+
+    if (fstat(fildes, &st))
+        return -1;
+
+    return file_limit(name);
 }
 
 int gettimeofday(struct timeval *__restrict tv, void *__restrict tz)
@@ -490,24 +580,6 @@ int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
 {
     struct aquila_select_args args = {nfds, readfds, writefds, exceptfds, timeout};
     return SYSCALL(SYS_select, &args, 0, 0);
-}
-
-unsigned sleep(unsigned seconds)
-{
-    struct timeval start, now;
-
-    if (gettimeofday(&start, NULL) == -1)
-        return seconds;
-
-    /* no timer syscall yet, yield the CPU until the time has passed */
-    do {
-        getpid();
-
-        if (gettimeofday(&now, NULL) == -1)
-            return seconds;
-    } while ((unsigned) (now.tv_sec - start.tv_sec) < seconds);
-
-    return 0;
 }
 
 unsigned alarm(unsigned seconds)

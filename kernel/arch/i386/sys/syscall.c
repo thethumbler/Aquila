@@ -22,11 +22,11 @@ void arch_syscall(struct x86_regs *r)
     curthread->in_syscall = 1;
 
 #if ARCH_BITS==32
-    void (*syscall)(uintptr_t, uintptr_t, uintptr_t) = syscall_table[r->eax];
-    syscall(r->ebx, r->ecx, r->edx);
+    void (*syscall)(uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t) = syscall_table[r->eax];
+    syscall(r->ebx, r->ecx, r->edx, r->esi, r->edi);
 #else
     void (*syscall)() = syscall_table[r->rax];
-    syscall(r->rbx, r->rcx, r->rdx);
+    syscall(r->rbx, r->rcx, r->rdx, r->rsi, r->rdi);
 #endif
 
     curthread->in_syscall = 0;

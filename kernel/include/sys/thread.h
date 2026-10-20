@@ -44,6 +44,11 @@ struct thread {
     sigset_t sigsuspend_mask;
     struct qnode *sleep_node;
 
+    /** In nanosleep(): when to wake up (arch_rtime_ns()) and where to
+     *  store the time left if a signal interrupts it */
+    uint64_t sleep_until;
+    void    *sleep_left;
+
     /** Scheduler queue */
     struct queue *sched_queue;
     struct qnode *sched_node;
@@ -57,6 +62,7 @@ struct thread {
 
 int thread_queue_sleep(struct queue *queue);
 int thread_queue_wakeup(struct queue *queue);
+void thread_wakeup(struct thread *thread);
 int thread_new(struct proc *proc, struct thread **rthread);
 int thread_create(struct thread *thread, uintptr_t stack, uintptr_t entry, uintptr_t uentry, uintptr_t arg, uintptr_t attr, struct thread **new_thread);
 int thread_kill(struct thread *thread);

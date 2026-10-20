@@ -14,9 +14,12 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <grp.h>
+#include <limits.h>
 #include <pwd.h>
 #include <shadow.h>
 #include <signal.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -58,7 +61,7 @@ int main(void)
     errno = 0;
     check("open missing -> ENOENT", open("/nonexistent", O_RDONLY) == -1 ? errno : 0, ENOENT);
     errno = 0;
-    check("rmdir -> ENOSYS", rmdir("/tmp") == -1 ? errno : 0, ENOSYS);
+    check("rmdir read-only fs -> EROFS", rmdir("/tmp") == -1 ? errno : 0, EROFS);
     errno = 0;
     check("close bad fd -> EBADF", close(99) == -1 ? errno : 0, EBADF);
 
@@ -219,6 +222,102 @@ int main(void)
     /* byte order */
     check("htonl", htonl(0x01020304) == 0x04030201, 1);
     check("ntohs", ntohs(htons(0xabcd)), 0xabcd);
+
+    /* files through the *at() calls and the functions built on them */
+    check("mkdir", mkdir("/tmp/dir", 0755), 0);
+    int dfd = open("/tmp/dir", O_RDONLY | O_DIRECTORY);
+    check("open directory", dfd >= 0, 1);
+    tfd = openat(dfd, "f", O_CREAT | O_WRONLY, 0644);
+    check("openat", tfd >= 0, 1);
+    write(tfd, "data", 4);
+    close(tfd);
+    check("fstatat", fstatat(dfd, "f", &st, 0) == 0 && st.st_size == 4, 1);
+    check("symlink", symlink("dir/f", "/tmp/link"), 0);
+    char lbuf[32] = {0};
+    check("readlink", readlink("/tmp/link", lbuf, sizeof(lbuf)), 5);
+    check("readlink contents", strcmp(lbuf, "dir/f"), 0);
+    char *rp = realpath("/tmp/./link", NULL);
+    check("realpath through a link", rp && !strcmp(rp, "/tmp/dir/f"), 1);
+    free(rp);
+    symlink("/tmp/dir", "/tmp/dl");
+    check("realpath .. after a link", realpath("/tmp/dl/../dir/f", lbuf) && !strcmp(lbuf, "/tmp/dir/f"), 1);
+    chdir("/tmp/dir");
+    check("realpath relative", realpath("../dl/./f", lbuf) && !strcmp(lbuf, "/tmp/dir/f"), 1);
+    chdir("/");
+    errno = 0;
+    check("realpath file as directory", realpath("/tmp/dir/f/x", lbuf) == NULL ? errno : 0, ENOTDIR);
+    errno = 0;
+    check("realpath missing", realpath("/tmp/nothing/x", lbuf) == NULL ? errno : 0, ENOENT);
+    check("rename a directory", rename("/tmp/dir", "/tmp/dir2"), 0);
+    check("renamed", stat("/tmp/dir2/f", &st), 0);
+    DIR *dp = fdopendir(openat(AT_FDCWD, "/tmp/dir2", O_RDONLY | O_DIRECTORY));
+    int entries = 0;
+    struct dirent *de;
+    while (dp && (de = readdir(dp)))
+        entries += !strcmp(de->d_name, "f");
+    check("fdopendir", entries, 1);
+    if (dp)
+        closedir(dp);
+    errno = 0;
+    check("rmdir not empty", rmdir("/tmp/dir2") == -1 ? errno : 0, ENOTEMPTY);
+    check("unlinkat", unlinkat(AT_FDCWD, "/tmp/dir2/f", 0), 0);
+    check("rmdir", rmdir("/tmp/dir2"), 0);
+    close(dfd);
+    check("chmod", chmod("/tmp/trunc", 0600) == 0 && stat("/tmp/trunc", &st) == 0 && (st.st_mode & 0777) == 0600, 1);
+    struct timespec times[2] = {{1000, 0}, {2000, 0}};
+    check("utimensat", utimensat(AT_FDCWD, "/tmp/trunc", times, 0), 0);
+    check("mtime set", stat("/tmp/trunc", &st) == 0 && st.st_mtime == 2000, 1);
+
+    /* /etc/group (tests/libc/rootfs) */
+    struct group *gr = getgrnam("users");
+    check("getgrnam", gr && gr->gr_gid == 100, 1);
+    check("group members", gr && gr->gr_mem[0] && !strcmp(gr->gr_mem[1], "other") && !gr->gr_mem[2], 1);
+    gr = getgrgid(0);
+    check("getgrgid", gr && !strcmp(gr->gr_name, "root"), 1);
+    check("getgrnam unknown", getgrnam("nobody") == NULL, 1);
+
+    /* host name */
+    char host[64];
+    check("sethostname", sethostname("testhost", 8), 0);
+    check("gethostname", gethostname(host, sizeof(host)) == 0 && !strcmp(host, "testhost"), 1);
+
+    /* sleeping and clocks */
+    struct timespec t0, t1;
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    check("usleep", usleep(100000), 0);
+    check("sleep", sleep(1), 0);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    long ms = (t1.tv_sec - t0.tv_sec) * 1000 + (t1.tv_nsec - t0.tv_nsec) / 1000000;
+    check("slept 1.1s", ms >= 1100 && ms < 2000, 1);
+
+    /* terminals: the serial port is one, a pipe isn't */
+    check("isatty tty", isatty(fileno(out)), 1);
+    char *tty = ttyname(fileno(out));
+    check("ttyname", tty && !strcmp(tty, "/dev/ttyS0"), 1);
+    pipe(p);
+    errno = 0;
+    check("isatty pipe", isatty(p[0]) == 0 && errno == ENOTTY, 1);
+    errno = 0;
+    check("lseek pipe -> ESPIPE", lseek(p[0], 0, SEEK_CUR) == -1 ? errno : 0, ESPIPE);
+
+    /* writing to a pipe without readers */
+    close(p[0]);
+    signal(SIGPIPE, SIG_IGN);
+    errno = 0;
+    check("EPIPE", write(p[1], "x", 1) == -1 ? errno : 0, EPIPE);
+    signal(SIGPIPE, SIG_DFL);
+    pid = fork();
+    if (pid == 0) {
+        write(p[1], "x", 1);
+        _exit(0);
+    }
+    close(p[1]);
+    check("SIGPIPE", waitpid(pid, &status, 0) == pid && WIFSIGNALED(status) ? WTERMSIG(status) : 0, SIGPIPE);
+
+    /* C99 printf formats */
+    char fmt[32];
+    snprintf(fmt, sizeof(fmt), "%zu %jd %hhu", (size_t) 42, (intmax_t) -7, (unsigned char) 300);
+    check("printf %zu %jd %hhu", strcmp(fmt, "42 -7 44"), 0);
 
     fprintf(out, "aqtest: done, fails=%d\n", fails);
 
