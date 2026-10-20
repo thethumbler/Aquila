@@ -17,7 +17,8 @@
 
 extern char _VMA; /* Must be defined in linker script */
 #define VMA(obj)  ((typeof((obj)))((uintptr_t)(void*)&_VMA + (uintptr_t)(void*)(obj)))
-#define LMA(obj)  ((typeof((obj)))((uintptr_t)(void*)(obj)) - (uintptr_t)(void*)&_VMA)
+/* the subtraction before the cast, on a pointer it would scale by its type */
+#define LMA(obj)  ((typeof((obj)))((uintptr_t)(void*)(obj) - (uintptr_t)(void*)&_VMA))
 
 static inline void tlb_flush(void)
 {
