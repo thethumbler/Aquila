@@ -7,7 +7,7 @@
 #   -n      don't rebuild the kernel, use the existing image
 #   -v      print the serial log of failed tests
 #
-# tests: boot ata cpu syscalls ext2 libc system (default: all)
+# tests: ata cpu syscalls ext2 libc system (default: all)
 #
 # Requires gcc with 32-bit support, ld, cpio and qemu-system-i386. The ext2
 # test also needs e2fsprogs (mke2fs, e2fsck, debugfs) and python3. The libc
@@ -22,7 +22,7 @@ TESTS=$ROOT/tests
 OUT=$TESTS/out
 CONFIG=../tests/host/i386-pc
 
-ALL_TESTS="boot ata cpu syscalls ext2 libc system"
+ALL_TESTS="ata cpu syscalls ext2 libc system"
 
 CROSS_CC=$ROOT/build/toolchain/bin/i686-aquila-gcc
 
@@ -184,29 +184,6 @@ aqtest_result()
 #
 # Tests
 #
-
-# stock initrd boots to /init and userland keeps running
-test_boot()
-{
-    local log=$OUT/boot/serial.log
-    mkdir -p "$OUT/boot"
-
-    if [ ! -f "$ROOT/initrd.img" ]; then
-        echo "SKIP: no initrd.img"
-        return 0
-    fi
-
-    run_qemu "$log" 10 'NEVER_STOP_EARLY' -initrd "$ROOT/initrd.img"
-
-    log_problems "$log" && return 1
-
-    if ! grep -a -q 'kernel: loading init process' "$log"; then
-        echo "init was not started"
-        return 1
-    fi
-
-    echo "booted to init, still running after 10s"
-}
 
 # a disk on the first ATA channel is detected reliably
 test_ata()

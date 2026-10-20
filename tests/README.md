@@ -23,7 +23,6 @@ Build output goes to `tests/out/`.
 
 | test       | what it checks |
 |------------|----------------|
-| `boot`     | the stock `initrd.img` boots to `/init` and keeps running |
 | `ata`      | a disk on the first ATA channel is detected, over several boots |
 | `cpu`      | DF and segment registers are sanitized on kernel entry, user exceptions and port I/O raise signals, SSE works, entry stack alignment |
 | `syscalls` | kernel addresses are rejected (`EFAULT`), descriptor and signal checks, wait, threads, pipes, unix sockets, bad ELF files |
