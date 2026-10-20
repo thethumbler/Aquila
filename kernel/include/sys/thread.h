@@ -54,6 +54,9 @@ struct thread {
     uint64_t sleep_until;
     void    *sleep_left;
 
+    /** Address of the last fault, the si_addr of the signal it raised */
+    uintptr_t fault_addr;
+
     /** In the timer's list while waiting with a deadline (sched_wait) */
     struct qnode *timer_node;
 

@@ -110,6 +110,29 @@ diff -ruN a/newlib/libc/include/limits.h b/newlib/libc/include/limits.h
 +/* default process priority (nice value 0) */
 +#define NZERO			20
 +#endif
+diff -ruN a/newlib/libc/include/machine/setjmp.h b/newlib/libc/include/machine/setjmp.h
+--- a/newlib/libc/include/machine/setjmp.h
++++ b/newlib/libc/include/machine/setjmp.h
+@@ -458,7 +458,7 @@
+ 
+ _END_STD_C
+ 
+-#if (defined(__CYGWIN__) || defined(__rtems__)) && __POSIX_VISIBLE
++#if (defined(__CYGWIN__) || defined(__rtems__) || defined(__aquila__)) && __POSIX_VISIBLE
+ #include <signal.h>
+ 
+ #ifdef __cplusplus
+@@ -532,6 +532,10 @@
+ #ifdef __CYGWIN__
+ extern void _longjmp (jmp_buf, int) __attribute__ ((__noreturn__));
+ extern int _setjmp (jmp_buf);
++#elif defined(__aquila__)
++/* setjmp() doesn't save the signal mask, which is _setjmp() */
++#define _setjmp(env)		setjmp (env)
++#define _longjmp(env, val)	longjmp ((env), (val))
+ #else
+ #define _setjmp(env)		sigsetjmp ((env), 0)
+ #define _longjmp(env, val)	siglongjmp ((env), (val))
 diff -ruN a/newlib/libc/include/regex.h b/newlib/libc/include/regex.h
 --- a/newlib/libc/include/regex.h
 +++ b/newlib/libc/include/regex.h
@@ -138,7 +161,22 @@ diff -ruN a/newlib/libc/include/stdio.h b/newlib/libc/include/stdio.h
 diff -ruN a/newlib/libc/include/sys/features.h b/newlib/libc/include/sys/features.h
 --- a/newlib/libc/include/sys/features.h
 +++ b/newlib/libc/include/sys/features.h
-@@ -440,6 +440,11 @@
+@@ -154,6 +154,14 @@
+ #define	_POSIX_C_SOURCE		202405L
+ #endif
+ 
++/* aquila: the X/Open System Interfaces are visible by default too (as
++ * with glibc), portable programs expect them (wcwidth, ...); not for
++ * newlib itself, some of its definitions don't match those declarations */
++#if defined(_DEFAULT_SOURCE) && defined(__aquila__) && !defined(_XOPEN_SOURCE) && !defined(_LIBC)
++#define	_XOPEN_SOURCE		700
++#define	_XOPEN_SOURCE_EXTENDED	1
++#endif
++
+ #if !defined(_POSIX_SOURCE) && !defined(_POSIX_C_SOURCE) && \
+   ((!defined(__STRICT_ANSI__) && !defined(_ANSI_SOURCE)) || \
+   (defined(_XOPEN_SOURCE) && (_XOPEN_SOURCE - 0) >= 500))
+@@ -440,6 +448,11 @@
  #endif
  
  
@@ -150,6 +188,47 @@ diff -ruN a/newlib/libc/include/sys/features.h b/newlib/libc/include/sys/feature
  #ifdef __svr4__
  # define _POSIX_JOB_CONTROL     1
  # define _POSIX_SAVED_IDS       1
+diff -ruN a/newlib/libc/include/sys/signal.h b/newlib/libc/include/sys/signal.h
+--- a/newlib/libc/include/sys/signal.h
++++ b/newlib/libc/include/sys/signal.h
+@@ -70,6 +70,9 @@
+   int          si_signo;    /* Signal number */
+   int          si_code;     /* Cause of the signal */
+   union sigval si_value;    /* Signal value */
++#ifdef __aquila__
++  void        *si_addr;     /* Faulting address (SIGSEGV, SIGBUS, ...) */
++#endif
+ } siginfo_t;
+ #endif /* defined(_POSIX_REALTIME_SIGNALS) || __POSIX_VISIBLE >= 199309 */
+ 
+@@ -113,6 +116,27 @@
+ #define sa_sigaction  _signal_handlers._sigaction
+ #endif
+ 
++#elif defined(__aquila__)
++
++#define SA_NOCLDSTOP 0x1   /* Do not generate SIGCHLD when children stop */
++#define SA_SIGINFO   0x2   /* The handler is sa_sigaction (aquila passes */
++                           /*   the siginfo to every handler) */
++
++typedef void (*_sig_func_ptr)(int);
++
++/* the layout of the kernel's struct aquila_sigaction */
++struct sigaction {
++  union {
++    _sig_func_ptr _handler;  /* SIG_DFL, SIG_IGN, or pointer to a function */
++    void      (*_sigaction)( int, siginfo_t *, void * );
++  } _signal_handlers;
++  sigset_t    sa_mask;
++  int         sa_flags;
++};
++
++#define sa_handler    _signal_handlers._handler
++#define sa_sigaction  _signal_handlers._sigaction
++
+ #else /* defined(__rtems__) */
+ 
+ #define SA_NOCLDSTOP 1  /* only value supported now for sa_flags */
 diff -ruN a/newlib/libc/include/sys/stat.h b/newlib/libc/include/sys/stat.h
 --- a/newlib/libc/include/sys/stat.h
 +++ b/newlib/libc/include/sys/stat.h

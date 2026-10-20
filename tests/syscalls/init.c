@@ -807,10 +807,12 @@ void aq_main(void)
     check("closed pty removed", SC(SYS_stat, "/dev/pts/0", sb, 0), -ENOENT);
 
     /* --- stopping and continuing --- */
+    /* the child runs on after being continued, until it is killed (an
+     * exit would be reported before the continue) */
     c = SC(SYS_fork, 0, 0, 0);
     if (!c) {
         SC(SYS_kill, SC(SYS_getpid, 0, 0, 0), SIGSTOP, 0);
-        SC(SYS_exit, 3, 0, 0);
+        spin_forever();
     }
     check("waitpid stopped", SC(SYS_waitpid, c, &st, WUNTRACED), c);
     check("stopped by SIGSTOP", st, (SIGSTOP << 8) | 0x7f);
@@ -818,8 +820,9 @@ void aq_main(void)
     check("SIGCONT", SC(SYS_kill, c, SIGCONT, 0), 0);
     check("waitpid continued", SC(SYS_waitpid, c, &st, WCONTINUED), c);
     check("continued status", st, 0xffff);
+    SC(SYS_kill, c, SIGKILL, 0);
     SC(SYS_waitpid, c, &st, 0);
-    check("ran on after continuing", st >> 8, 3);
+    check("ran on after continuing", st & 0x7f, SIGKILL);
 
     /* signals to a stopped process wait until it continues */
     c = SC(SYS_fork, 0, 0, 0);

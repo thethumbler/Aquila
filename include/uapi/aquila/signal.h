@@ -48,9 +48,22 @@
 #define SIG_BLOCK   1   /* set of signals to block */
 #define SIG_UNBLOCK 2   /* set of signals to unblock */
 
+/*
+ * What a signal handler gets as its second argument (the C library's
+ * siginfo_t), the third (ucontext) is NULL. si_addr is the faulting
+ * address for SIGSEGV, SIGBUS, SIGILL and SIGFPE.
+ */
+struct aquila_siginfo {
+    int           si_signo;
+    int           si_code;      /* 0 */
+    int           si_value;
+    unsigned long si_addr;
+};
+
 /* sigaction(2) flags */
 #ifndef SA_NOCLDSTOP
 #define SA_NOCLDSTOP 0x1    /* no SIGCHLD when a child stops or continues */
+#define SA_SIGINFO   0x2    /* every handler gets the siginfo anyway */
 #endif
 
 /* sigaction(2) argument, same layout as newlib's struct sigaction */

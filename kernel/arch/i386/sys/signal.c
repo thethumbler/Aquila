@@ -79,8 +79,10 @@ void arch_handle_signal(int sig)
     uintptr_t sig_sp = regs->rsp;
 #endif
 
-    /* signal number and return address */
-    size_t frame_size = sizeof(int) + sizeof(uintptr_t);
+    /* the siginfo, then the handler's arguments (signal number, siginfo,
+     * NULL ucontext) and return address, kept 4-byte aligned */
+    size_t info_size  = (sizeof(struct aquila_siginfo) + 3) & ~3;
+    size_t frame_size = info_size + sizeof(int) + 2 * sizeof(uintptr_t) + sizeof(uintptr_t);
 
     if (sig_sp < frame_size || !signal_frame_ok(sig_sp - frame_size, frame_size)) {
         /* can't deliver, the user stack is unusable */
@@ -91,7 +93,21 @@ void arch_handle_signal(int sig)
 
     x86_kernel_stack_set(arch->kstack);
 
-    /* Push signal number */
+    /* siginfo */
+    sig_sp -= info_size;
+    struct aquila_siginfo *info = (struct aquila_siginfo *) sig_sp;
+    int fault = sig == SIGSEGV || sig == SIGBUS || sig == SIGILL || sig == SIGFPE;
+
+    *info = (struct aquila_siginfo) {
+        .si_signo = sig,
+        .si_addr  = fault ? curthread->fault_addr : 0,
+    };
+
+    /* Push the arguments: ucontext (none), siginfo, signal number */
+    sig_sp -= sizeof(uintptr_t);
+    *(uintptr_t *) sig_sp = 0;
+    sig_sp -= sizeof(uintptr_t);
+    *(uintptr_t *) sig_sp = (uintptr_t) info;
     sig_sp -= sizeof(int);
     *(int *) sig_sp = sig;
 

@@ -14,7 +14,7 @@ build()
     {
         echo '#include_next <signal.h>'
         echo '#include <signal.h>' | cc -dM -E -x c - |
-            awk '/^#define SIG[A-Z0-9]+ / { print "#undef", $2 }'
+            awk '/^#define (SIG[A-Z0-9]+|si_[a-z_]+) / { print "#undef", $2 }'
         echo '#undef NSIG'
         echo '#undef sa_handler'
         echo '#undef sa_sigaction'

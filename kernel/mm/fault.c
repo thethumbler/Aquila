@@ -340,6 +340,7 @@ void mm_page_fault(vaddr_t vaddr, int flags)
         return;
 
 sigsegv:
+    curthread->fault_addr = vaddr;
     signal_proc_send(curproc, SIGSEGV);
     return;
 }

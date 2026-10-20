@@ -584,7 +584,34 @@ int gettimeofday(struct timeval *__restrict tv, void *__restrict tz)
 int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
         struct timeval *timeout)
 {
-    struct aquila_select_args args = {nfds, readfds, writefds, exceptfds, timeout};
+    struct aquila_select_args args = {nfds, readfds, writefds, exceptfds, timeout, NULL};
+    return SYSCALL(SYS_select, &args, 0, 0);
+}
+
+int pselect(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
+        const struct timespec *timeout, const sigset_t *sigmask)
+{
+    struct timeval tv;
+
+    if (timeout) {
+        if (timeout->tv_nsec < 0 || timeout->tv_nsec >= 1000000000) {
+            errno = EINVAL;
+            return -1;
+        }
+
+        /* rounded up, waiting at least that long */
+        tv.tv_sec  = timeout->tv_sec;
+        tv.tv_usec = (timeout->tv_nsec + 999) / 1000;
+
+        if (tv.tv_usec == 1000000) {
+            tv.tv_sec++;
+            tv.tv_usec = 0;
+        }
+    }
+
+    /* the kernel swaps the signal mask for the wait */
+    struct aquila_select_args args = {nfds, readfds, writefds, exceptfds,
+        timeout ? &tv : NULL, (void *) sigmask};
     return SYSCALL(SYS_select, &args, 0, 0);
 }
 
@@ -596,6 +623,18 @@ unsigned alarm(unsigned seconds)
 
 void sync(void)
 {
+    /* nothing to do: writes reach the device before write() returns */
+}
+
+int fsync(int fildes)
+{
+    /* as for sync(), only check the descriptor */
+    return fcntl(fildes, F_GETFD) == -1 ? -1 : 0;
+}
+
+int fdatasync(int fildes)
+{
+    return fsync(fildes);
 }
 
 int issetugid(void)

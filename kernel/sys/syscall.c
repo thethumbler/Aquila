@@ -1822,6 +1822,21 @@ static void sys_select(struct aquila_select_args *args)
         return;
     }
 
+    sigset_t *sigmask = args->sigmask;
+
+    if (sigmask && uaccess_check(sigmask, sizeof(sigset_t))) {
+        arch_syscall_return(curthread, -EFAULT);
+        return;
+    }
+
+    /* pselect(): the mask while waiting, the old one is back after a
+     * handler ran (as in sigsuspend) or when this returns */
+    if (sigmask) {
+        curthread->sigsuspend      = 1;
+        curthread->sigsuspend_mask = curproc->sigmask;
+        curproc->sigmask = *sigmask & ~SIG_UNMASKABLE;
+    }
+
     /* what was asked, the sets are overwritten with the result */
     fd_set want_read = {0}, want_write = {0}, out_read, out_write;
 
@@ -1867,8 +1882,29 @@ static void sys_select(struct aquila_select_args *args)
         if (count || ns == 0 || timed_out)
             break;
 
+        /* a signal the new mask lets through ends the wait: its handler
+         * runs with the old mask and returns to user mode with EINTR */
+        int sig = sigmask ? signal_next(curproc) : 0;
+
+        if (sig) {
+            curproc->sigmask = curthread->sigsuspend_mask;
+            curthread->sigsuspend = 0;
+            arch_syscall_return(curthread, -EINTR);
+            arch_handle_signal(sig);
+
+            /* the signal was ignored, keep waiting */
+            curthread->sigsuspend = 1;
+            curproc->sigmask = *sigmask & ~SIG_UNMASKABLE;
+            continue;
+        }
+
         /* any wakeup in the system makes us look again */
         timed_out = sched_wait(&poll_queue, until);
+    }
+
+    if (sigmask) {
+        curproc->sigmask = curthread->sigsuspend_mask;
+        curthread->sigsuspend = 0;
     }
 
 #undef FD_BIT

@@ -128,13 +128,14 @@ struct aquila_socket_io_args {
     int     flags;
 } __attribute__((packed));
 
-/* SYS_select */
+/* SYS_select, also pselect(): the signal mask while waiting, if sigmask */
 struct aquila_select_args {
     int     nfds;
     void   *readfds;
     void   *writefds;
     void   *exceptfds;
     void   *timeout;
+    void   *sigmask;
 };
 
 /* SYS_thread_create */

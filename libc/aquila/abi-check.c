@@ -17,6 +17,11 @@
 #include <time.h>
 
 #include <aquila/errno.h>
+
+/* newlib's struct sigaction has sa_handler and sa_sigaction in a union,
+ * the macros would rename the kernel's field */
+#undef sa_handler
+#undef sa_sigaction
 #include <aquila/signal.h>
 #include <aquila/stat.h>
 #include <aquila/time.h>
@@ -47,7 +52,9 @@ SAME_FIELD(stat, aquila_stat, st_blksize);
 SAME_FIELD(stat, aquila_stat, st_blocks);
 
 SAME_SIZE(sigaction, aquila_sigaction);
-SAME_FIELD(sigaction, aquila_sigaction, sa_handler);
+_Static_assert(offsetof(struct sigaction, _signal_handlers) == offsetof(struct aquila_sigaction, sa_handler) &&
+               sizeof(((struct sigaction *) 0)->_signal_handlers) == sizeof(((struct aquila_sigaction *) 0)->sa_handler),
+               "struct sigaction .sa_handler does not match the kernel");
 SAME_FIELD(sigaction, aquila_sigaction, sa_mask);
 SAME_FIELD(sigaction, aquila_sigaction, sa_flags);
 
@@ -76,3 +83,9 @@ SAME_FIELD(tms, aquila_tms, tms_cstime);
 _Static_assert(WNOHANG == 1 && WUNTRACED == 2 && WCONTINUED == 8, "waitpid options do not match the kernel");
 _Static_assert(WIFCONTINUED(0xffff) && WIFSTOPPED((SIGTSTP << 8) | 0x7f) &&
                WSTOPSIG((SIGTSTP << 8) | 0x7f) == SIGTSTP, "wait status does not match the kernel");
+
+/* what signal handlers get as their second argument */
+_Static_assert(sizeof(siginfo_t) == sizeof(struct aquila_siginfo) &&
+               offsetof(siginfo_t, si_signo) == offsetof(struct aquila_siginfo, si_signo) &&
+               offsetof(siginfo_t, si_addr) == offsetof(struct aquila_siginfo, si_addr),
+               "siginfo_t does not match the kernel");

@@ -19,6 +19,7 @@
 #include <poll.h>
 #include <pwd.h>
 #include <shadow.h>
+#include <setjmp.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -29,6 +30,7 @@
 #include <sys/stat.h>
 #include <sys/utsname.h>
 #include <sys/wait.h>
+#include <termios.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -43,6 +45,15 @@ static void check(const char *name, long got, long want)
 }
 
 static volatile sig_atomic_t got_signal;
+static sigjmp_buf fault_jmp;
+static void *volatile fault_addr;
+
+/* SA_SIGINFO: the faulting address, then back to the test */
+static void fault_handler(int sig, siginfo_t *info, void *ctx)
+{
+    fault_addr = info->si_addr;
+    siglongjmp(fault_jmp, sig);
+}
 
 static void handler(int sig)
 {
@@ -333,6 +344,59 @@ int main(void)
     check("poll", poll(&pfd, 1, -1) == 1 && pfd.revents == POLLIN, 1);
     close(sp2[0]);
     close(sp2[1]);
+
+    /* siginfo and sigsetjmp: a fault reports its address */
+    struct sigaction fsa = {0};
+    fsa.sa_sigaction = fault_handler;
+    fsa.sa_flags = SA_SIGINFO;
+    sigaction(SIGSEGV, &fsa, NULL);
+    int jumped = sigsetjmp(fault_jmp, 1);
+    if (!jumped)
+        *(volatile int *) 0x1234 = 1;
+    check("SIGSEGV handler ran", jumped, SIGSEGV);
+    check("si_addr", (long) fault_addr, 0x1234);
+    signal(SIGSEGV, SIG_DFL);
+
+    /* pselect: the signal blocked outside is let through while waiting */
+    sigset_t blk, empty, cur;
+    sigemptyset(&blk);
+    sigaddset(&blk, SIGUSR1);
+    sigemptyset(&empty);
+    sigprocmask(SIG_BLOCK, &blk, NULL);
+    signal(SIGUSR1, handler);
+    got_signal = 0;
+    pipe(sp2);
+    pid = fork();
+    if (pid == 0) {
+        usleep(100000);
+        kill(getppid(), SIGUSR1);
+        _exit(0);
+    }
+    FD_ZERO(&rfds);
+    FD_SET(sp2[0], &rfds);
+    struct timespec pts = {2, 0};
+    errno = 0;
+    check("pselect -> EINTR", pselect(sp2[0] + 1, &rfds, NULL, NULL, &pts, &empty) == -1 ? errno : 0, EINTR);
+    check("signal delivered in pselect", got_signal, SIGUSR1);
+    sigprocmask(SIG_SETMASK, NULL, &cur);
+    check("mask restored", sigismember(&cur, SIGUSR1), 1);
+    sigprocmask(SIG_UNBLOCK, &blk, NULL);
+    waitpid(pid, &status, 0);
+    close(sp2[0]);
+    close(sp2[1]);
+
+    /* descriptors */
+    tfd = open("/tmp/trunc", O_RDONLY);
+    errno = 0;
+    check("write read-only -> EBADF", write(tfd, "x", 1) == -1 ? errno : 0, EBADF);
+    check("fsync", fsync(tfd), 0);
+    close(tfd);
+    errno = 0;
+    check("fsync closed -> EBADF", fsync(tfd) == -1 ? errno : 0, EBADF);
+
+    /* the serial port is init's controlling terminal */
+    check("tcgetsid", tcgetsid(fileno(out)), getpid());
+    check("tcflush", tcflush(fileno(out), TCIFLUSH), 0);
 
     /* C99 printf formats */
     char fmt[32];

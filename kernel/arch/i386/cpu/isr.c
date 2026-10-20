@@ -172,6 +172,13 @@ void __x86_isr(struct x86_regs *regs)
             && int_sig[__x86_isr_int_num]) {
         struct x86_thread *arch = curthread->arch;
         arch->regs = regs;
+
+        /* the faulting instruction */
+#if ARCH_BITS==32
+        curthread->fault_addr = regs->eip;
+#else
+        curthread->fault_addr = regs->rip;
+#endif
         signal_proc_send(curproc, int_sig[__x86_isr_int_num]);
         return;
     }
