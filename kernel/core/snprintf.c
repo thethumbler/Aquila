@@ -20,9 +20,6 @@ static int snputs(char *s, size_t n, char *str)
 
 static int snputx(char *s, size_t n, uint32_t val)
 {
-    if (n < 8)
-        return n;
-
     char *enc = "0123456789ABCDEF";
     char buf[9];
     buf[8] = '\0';
@@ -33,14 +30,11 @@ static int snputx(char *s, size_t n, uint32_t val)
         val >>= 4;
     }
 
-    return snputs(s, 8, buf);
+    return snputs(s, n, buf);
 }
 
 static int snputlx(char *s, size_t n, uint64_t val)
 {
-    if (n < 16)
-        return n;
-
     char *enc = "0123456789ABCDEF";
     char buf[17];
     buf[16] = '\0';
@@ -49,7 +43,7 @@ static int snputlx(char *s, size_t n, uint64_t val)
         buf[--i] = enc[val&0xF];
         val >>= 4;
     }
-    return snputs(s, 16, buf);
+    return snputs(s, n, buf);
 }
 
 static int snputud(char *s, size_t n, uint32_t val)
@@ -58,7 +52,7 @@ static int snputud(char *s, size_t n, uint32_t val)
     buf[10] = '\0';
 
     if (!val)
-        return snputc(s, 1, '0');
+        return snputc(s, n, '0');
 
     uint8_t i = 10;
 
@@ -66,11 +60,8 @@ static int snputud(char *s, size_t n, uint32_t val)
         buf[--i] = val%10 + '0';
         val = (val-val%10)/10;
     }
-    
-    if (n < 10U-i)
-        return n;
 
-    return snputs(s, 10-i, buf+i);
+    return snputs(s, n, buf+i);
 }
 
 static int snputul(char *s, size_t n, uint64_t val)
@@ -79,22 +70,19 @@ static int snputul(char *s, size_t n, uint64_t val)
     buf[20] = '\0';
     uint8_t i = 20;
 
+    if (!val)
+        return snputc(s, n, '0');
+
     while (val) {
         buf[--i] = val%10 + '0';
         val = (val-val%10)/10;
     }
 
-    if (n < 20U-i)
-        return n;
-
-    return snputs(s, 20-i, buf+i);
+    return snputs(s, n, buf+i);
 }
 
 static int snputb(char *s, size_t n, uint8_t val)
 {
-    if (n < 8)
-        return n;
-
     char buf[9];
     buf[8] = '\0';
     uint8_t i = 8;
@@ -104,12 +92,23 @@ static int snputb(char *s, size_t n, uint8_t val)
         val >>= 1;
     }
 
-    return snputs(s, 8, buf);
+    return snputs(s, n, buf);
 }
 
+/**
+ * Formats at most n - 1 characters into s and always NUL terminates it
+ * (when n > 0), returns the number of characters written to s excluding
+ * the terminating NUL.
+ */
 int vsnprintf(char *s, size_t n, const char *fmt, va_list args)
 {
-    int ret = 0;
+    if (!n)
+        return 0;
+
+    /* Reserve space for the NUL terminator */
+    n -= 1;
+
+    size_t ret = 0;
 
     while (*fmt) {
         switch (*fmt) {
@@ -155,7 +154,7 @@ int vsnprintf(char *s, size_t n, const char *fmt, va_list args)
         }
     }
 
-    ret += snputc(s + ret, n - ret, '\0');
+    s[ret] = '\0';
 
     return ret;
 }

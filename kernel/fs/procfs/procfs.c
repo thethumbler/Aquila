@@ -68,7 +68,7 @@ static ssize_t procfs_kvmem(off_t off, size_t size, char *buf)
     queue_for (node, malloc_types) {
         struct malloc_type *type = (struct malloc_type *) node->value;
         sz += snprintf(kvmem_buf + sz, sizeof(kvmem_buf) - sz,
-                "%s %d %d\n", type->name, type->nr, type->total) - 1;
+                "%s %d %d\n", type->name, type->nr, type->total);
 
         if ((size_t) sz >= sizeof(kvmem_buf))
             break;

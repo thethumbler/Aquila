@@ -119,7 +119,18 @@ int vprintk(const char *fmt, va_list args)
                 case 's':   /* char * */
                     ret += puts((char*)va_arg(args, char*));
                     break;
-                case 'd': /* decimal */
+                case 'd': /* signed decimal */
+                    {
+                        int32_t val = va_arg(args, int32_t);
+                        if (val < 0) {
+                            ret += putc('-');
+                            ret += putud(-(uint32_t) val);
+                        } else {
+                            ret += putud((uint32_t) val);
+                        }
+                    }
+                    break;
+                case 'u': /* unsigned decimal */
                     ret += putud((uint32_t)va_arg(args, uint32_t));
                     break;
                 case 'l':   /* long */
