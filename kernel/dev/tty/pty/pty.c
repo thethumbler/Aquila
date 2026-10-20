@@ -36,11 +36,25 @@ struct pty {
 };
 
 #define PTY_BUF 4096
+#define PTY_MAX 256
 
-static struct pty *ptys[256] = {0};
+static struct pty *ptys[PTY_MAX] = {0};
+
+/** reserved pty ids (allocated, possibly not yet fully initialized) */
+static char pty_ids[PTY_MAX] = {0};
 
 struct dev ptmdev;
 struct dev ptsdev;
+
+/** lookup the pty associated with a master (major 2) or slave (major 136) device */
+static struct pty *pty_get(struct devid *dd)
+{
+    if (dd->major != 2 && dd->major != 136)
+        return NULL;
+
+    /* minor is devid_t (uint8_t), always < PTY_MAX */
+    return ptys[dd->minor];
+}
 
 /* TTY Interface */
 ssize_t pty_master_write(struct tty *tty, size_t size, void *buf)
@@ -107,7 +121,9 @@ static int ptm_new(struct pty *pty, struct vnode **ref)
 
 static ssize_t ptm_read(struct devid *dd, off_t offset __unused, size_t size, void *buf)
 {
-    struct pty *pty = ptys[dd->minor];
+    struct pty *pty = pty_get(dd);
+    if (!pty) return -ENXIO;
+
     size_t ret = ringbuf_read(pty->out, size, buf);  
 
     thread_queue_wakeup(&pty->pts_read_queue);
@@ -117,13 +133,16 @@ static ssize_t ptm_read(struct devid *dd, off_t offset __unused, size_t size, vo
 
 static ssize_t ptm_write(struct devid *dd, off_t offset __unused, size_t size, void *buf)
 {
-    struct pty *pty = ptys[dd->minor];
+    struct pty *pty = pty_get(dd);
+    if (!pty) return -ENXIO;
+
     return tty_master_write(pty->tty, size, buf);  
 }
 
 static int pty_ioctl(struct devid *dd, int request, void *argp)
 {
-    struct pty *pty = ptys[dd->minor];
+    struct pty *pty = pty_get(dd);
+    if (!pty) return -ENXIO;
 
     switch (request) {
         case TIOCGPTN:
@@ -169,22 +188,26 @@ static int pts_new(struct pty *pty, struct vnode **ref)
 
 ssize_t pts_read(struct devid *dd, off_t offset __unused, size_t size, void *buf)
 {
-    /* FIXME check bounds */
-    struct pty *pty = ptys[dd->minor];
+    struct pty *pty = pty_get(dd);
+    if (!pty) return -ENXIO;
+
     return ringbuf_read(pty->in, size, buf);
 }
 
 ssize_t pts_write(struct devid *dd, off_t offset __unused, size_t size, void *buf)
 {
-    /* FIXME check bounds */
-    struct pty *pty = ptys[dd->minor];
+    struct pty *pty = pty_get(dd);
+    if (!pty) return -ENXIO;
+
     return tty_slave_write(pty->tty, size, buf);
 }
 
 int pts_can_read(struct file *file, size_t size)
 {
     struct devid *dd = &VNODE_DEV(file->vnode);
-    struct pty *pty = ptys[dd->minor];
+    struct pty *pty = pty_get(dd);
+    if (!pty) return 1; /* let read report the error */
+
     return ringbuf_available(pty->in);
 }
 
@@ -194,22 +217,31 @@ int pts_can_read(struct file *file, size_t size)
  *
  *************************************/
 
-static inline size_t pty_id_get(void)
+/** reserve the first free pty id, returns -ENOSPC if all are in use */
+static inline int pty_id_get(void)
 {
-    /* XXX */
-    static size_t id = 0;
-    return id++;
+    for (int id = 0; id < PTY_MAX; ++id) {
+        if (!pty_ids[id]) {
+            pty_ids[id] = 1;
+            return id;
+        }
+    }
+
+    return -ENOSPC;
 }
 
 int pty_new(struct proc *proc, struct vnode **master)
 {
-    int err = 0;
+    int err = 0, id = -1;
     struct pty *pty = NULL;
+
+    if ((id = pty_id_get()) < 0)
+        return id;
 
     pty = kmalloc(sizeof(struct pty), &M_PTY, M_ZERO);
     if (!pty) goto e_nomem;
 
-    pty->id = pty_id_get();
+    pty->id = id;
 
     if (!(pty->in = ringbuf_new(PTY_BUF))) {
         err = -ENOMEM;
@@ -229,13 +261,13 @@ int pty_new(struct proc *proc, struct vnode **master)
     if ((err = ptm_new(pty, &pty->master)))
         goto error;
 
-    if (master)
-        *master = pty->master;
-    
     if ((err = pts_new(pty, &pty->slave)))
         goto error;
 
     ptys[pty->id] = pty;
+
+    if (master)
+        *master = pty->master;
 
     return 0;
 
@@ -246,12 +278,16 @@ error:
         if (pty->in)
             ringbuf_free(pty->in);
         if (pty->out)
-            ringbuf_free(pty->in);
+            ringbuf_free(pty->out);
         if (pty->tty)
             tty_free(pty->tty);
+        if (pty->master)
+            kfree(pty->master);
 
         kfree(pty);
     }
+
+    pty_ids[id] = 0;
 
     return err;
 }
