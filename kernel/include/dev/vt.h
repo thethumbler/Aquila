@@ -149,5 +149,6 @@ struct vt *vt_foreground(void);
 /* keyboard.c: PS/2 scancodes (set 1), from the keyboard driver */
 void vt_scancode(int scancode);
 void vt_keyboard_reset(void);
+int  vt_keymap(int table, int keycode);
 
 #endif /* ! _DEV_VT_H */

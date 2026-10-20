@@ -10,16 +10,35 @@
 #define FBIOGET_VSCREENINFO 0x4600
 #define FBIOPUT_VSCREENINFO 0x4601
 #define FBIOGET_FSCREENINFO 0x4602
+#define FBIOGETCMAP         0x4604  /* color maps: none in true color */
+#define FBIOPUTCMAP         0x4605
 #define FBIOPAN_DISPLAY     0x4606
 
 /* fb_fix_screeninfo.type and visual */
 #define FB_TYPE_PACKED_PIXELS   0
 #define FB_VISUAL_TRUECOLOR     2
+#define FB_VISUAL_PSEUDOCOLOR   3
+#define FB_VISUAL_DIRECTCOLOR   4
+#define FB_VISUAL_STATIC_PSEUDOCOLOR 5
 
 /* fb_var_screeninfo.activate */
 #define FB_ACTIVATE_NOW     0
 #define FB_ACTIVATE_TEST    2
 #define FB_ACTIVATE_MASK    15
+#define FB_CHANGE_CMAP_VBL  32
+
+/* fb_var_screeninfo.sync */
+#define FB_SYNC_HOR_HIGH_ACT    1
+#define FB_SYNC_VERT_HIGH_ACT   2
+
+struct fb_cmap {
+    uint32_t start;     /* the first entry */
+    uint32_t len;       /* the number of entries */
+    uint16_t *red;
+    uint16_t *green;
+    uint16_t *blue;
+    uint16_t *transp;   /* NULL if none */
+};
 
 struct fb_fix_screeninfo {
     char id[16];            /* identification string eg "TT Builtin" */

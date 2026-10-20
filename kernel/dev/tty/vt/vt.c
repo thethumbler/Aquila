@@ -433,6 +433,8 @@ static size_t vt_ioctl_argsize(int request)
             return sizeof(struct vt_mode);
         case VT_GETSTATE:
             return sizeof(struct vt_stat);
+        case KDGKBENT:
+            return sizeof(struct kbentry);
     }
 
     return 0;
@@ -474,6 +476,18 @@ static int vt_kd_ioctl(struct vt *vt, int request, void *argp)
 
         case KDGKBMODE:
             *(int *) argp = vt->kb_mode;
+            return 0;
+
+        case KDGKBENT: {
+            struct kbentry *kbe = argp;
+            kbe->kb_value = vt_keymap(kbe->kb_table, kbe->kb_index);
+            return 0;
+        }
+
+        /* no lights or speaker, no terminal is ever freed */
+        case KDSETLED:
+        case KDMKTONE:
+        case VT_DISALLOCATE:
             return 0;
 
         case KDSKBMODE:

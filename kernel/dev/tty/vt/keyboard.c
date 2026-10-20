@@ -13,6 +13,7 @@
 #include <core/string.h>
 #include <dev/vt.h>
 #include <sys/reboot.h>
+#include <aquila/keyboard.h>
 
 /* scancodes */
 #define SC_ESC      0x01
@@ -105,6 +106,76 @@ static void send_byte(int c)
 {
     char b = c;
     vt_input(&b, 1);
+}
+
+/*
+ * KDGKBENT: what a key (its Linux key code) is, in the table of Shift and
+ * AltGr (the same as without: the US layout has no AltGr), for programs
+ * that read key codes (K_MEDIUMRAW)
+ */
+int vt_keymap(int table, int keycode)
+{
+    int shifted_table = table & (1 << KG_SHIFT);
+
+    if (table & ~((1 << KG_SHIFT) | (1 << KG_ALTGR)))
+        return K_HOLE;
+
+    switch (keycode) {
+        case SC_ESC: return K(KT_LATIN, 0x1b);
+        case SC_BS: return K(KT_LATIN, 0x7f);
+        case SC_TAB: return K(KT_LATIN, '\t');
+        case SC_ENTER: return K_ENTER;
+        case SC_CTRL: return K_CTRL;
+        case SC_LSHIFT: case SC_RSHIFT: return K_SHIFT;
+        case SC_ALT: return K_ALT;
+        case SC_CAPS: return K_CAPS;
+        case SC_NUM: return K_NUM;
+        case 0x46: return K_HOLD;
+        case SC_KP_MUL: return K_PSTAR;
+        case SC_F11: return K(KT_FN, 10);
+        case SC_F12: return K(KT_FN, 11);
+
+        /* the keys with an E0 prefix (e0_keycodes) */
+        case 96: return K_PENTER;
+        case 97: return K_CTRL;
+        case 98: return K_PSLASH;
+        case 100: return K_ALT;
+        case 102: return K_FIND;
+        case 103: return K_UP;
+        case 104: return K_PGUP;
+        case 105: return K_LEFT;
+        case 106: return K_RIGHT;
+        case 107: return K_SELECT;
+        case 108: return K_DOWN;
+        case 109: return K_PGDN;
+        case 110: return K_INSERT;
+        case 111: return K_REMOVE;
+        case KEY_PAUSE: return K_PAUSE;
+    }
+
+    if (keycode >= SC_F1 && keycode <= SC_F10)
+        return K(KT_FN, keycode - SC_F1);
+
+    if (keycode >= SC_KP7 && keycode <= SC_KP_DEL) {
+        static const uint16_t keypad[13] = {
+            K_P0 + 7, K_P0 + 8, K_P0 + 9, K_PMINUS, K_P0 + 4, K_P0 + 5, K_P0 + 6,
+            K_PPLUS, K_P0 + 1, K_P0 + 2, K_P0 + 3, K_P0, K_PDOT,
+        };
+        return keypad[keycode - SC_KP7];
+    }
+
+    if (keycode < 0 || keycode >= 128)
+        return K_HOLE;
+
+    char c = shifted_table ? shifted[keycode] : keys[keycode];
+
+    if (!c)
+        return K_HOLE;
+
+    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'))
+        return K(KT_LETTER, c);
+
+    return K(KT_LATIN, (unsigned char) c);
 }
 
 /* a sequence was cut by a change of mode */

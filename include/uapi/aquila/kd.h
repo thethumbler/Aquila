@@ -4,6 +4,8 @@
 /* console (virtual terminal) display and keyboard modes, the ioctl
  * numbers and values of Linux's <linux/kd.h> */
 
+#define KDMKTONE    0x4B30  /* a tone (no speaker: nothing) */
+#define KDSETLED    0x4B32  /* the keyboard's lights (none: nothing) */
 #define KDGKBTYPE   0x4B33  /* keyboard type (char) */
 #define KB_101      0x02
 
@@ -19,5 +21,14 @@
 #define K_MEDIUMRAW 0x02    /* key codes */
 #define K_UNICODE   0x03    /* characters (UTF-8) */
 #define K_OFF       0x04    /* nothing */
+
+/* what a key maps to, with the modifiers of the table (see <sys/keyboard.h>) */
+struct kbentry {
+    unsigned char  kb_table;
+    unsigned char  kb_index;    /* the key code */
+    unsigned short kb_value;
+};
+
+#define KDGKBENT    0x4B46  /* (struct kbentry) */
 
 #endif /* ! _AQUILA_KD_H */

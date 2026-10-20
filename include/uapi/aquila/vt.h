@@ -30,5 +30,6 @@ struct vt_stat {
 #define VT_RELDISP      0x5605  /* 1: release, 0: refuse, VT_ACKACQ */
 #define VT_ACTIVATE     0x5606  /* switch to the terminal (its number) */
 #define VT_WAITACTIVE   0x5607  /* wait until it is active */
+#define VT_DISALLOCATE  0x5608  /* free a terminal (they are kept: nothing) */
 
 #endif /* ! _AQUILA_VT_H */

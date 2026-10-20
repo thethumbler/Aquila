@@ -25,6 +25,7 @@
 #include <aquila/reboot.h>
 #include <aquila/kd.h>
 #include <aquila/vt.h>
+#include <aquila/keyboard.h>
 #include <aquila/time.h>
 
 static volatile int got_sig = 0;
@@ -1351,6 +1352,28 @@ void aq_main(void)
     check("VT_GETSTATE kaddr", SC(SYS_ioctl, vt0, VT_GETSTATE, KADDR), -EFAULT);
     check("VT_GETSTATE active", vt_active(vt0), 1);
     check("VT_ACTIVATE 0", SC(SYS_ioctl, vt0, VT_ACTIVATE, 0), -ENXIO);
+    check("VT_DISALLOCATE", SC(SYS_ioctl, vt0, VT_DISALLOCATE, 4), 0);
+
+    /* the keymap, as Linux's key tables */
+    struct kbentry kbe = {0, 30, 0};
+    check("KDGKBENT kaddr", SC(SYS_ioctl, vt0, KDGKBENT, KADDR), -EFAULT);
+    check("KDGKBENT", SC(SYS_ioctl, vt0, KDGKBENT, &kbe), 0);
+    check("KDGKBENT a", kbe.kb_value, K(KT_LETTER, 'a'));
+    kbe = (struct kbentry) {1 << KG_SHIFT, 2, 0};
+    SC(SYS_ioctl, vt0, KDGKBENT, &kbe);
+    check("KDGKBENT shift 1", kbe.kb_value, K(KT_LATIN, '!'));
+    kbe = (struct kbentry) {0, 59, 0};
+    SC(SYS_ioctl, vt0, KDGKBENT, &kbe);
+    check("KDGKBENT F1", kbe.kb_value, K_F1);
+    kbe = (struct kbentry) {0, 103, 0};
+    SC(SYS_ioctl, vt0, KDGKBENT, &kbe);
+    check("KDGKBENT Up", kbe.kb_value, K_UP);
+    kbe = (struct kbentry) {0, 42, 0};
+    SC(SYS_ioctl, vt0, KDGKBENT, &kbe);
+    check("KDGKBENT Shift", kbe.kb_value, K_SHIFT);
+    kbe = (struct kbentry) {1 << KG_CTRL, 30, 0};
+    SC(SYS_ioctl, vt0, KDGKBENT, &kbe);
+    check("KDGKBENT no Ctrl table", kbe.kb_value, K_HOLE);
     check("VT_ACTIVATE 7", SC(SYS_ioctl, vt0, VT_ACTIVATE, 7), -ENXIO);
 
     /* a freevt terminal, in use once it is open */
