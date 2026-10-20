@@ -110,6 +110,7 @@ static int ptm_new(struct pty *pty, struct vnode **ref)
 
     ptm->rdev        = DEV(2, pty->id);
     ptm->mode        = S_IFCHR;
+    ptm->ref         = 1;   /* the descriptor ptmx was opened with */
     ptm->read_queue  = &pty->pts_read_queue;
     ptm->write_queue = &pty->pts_write_queue;
     ptm->p           = pty;
@@ -175,11 +176,12 @@ static int pts_new(struct pty *pty, struct vnode **ref)
 
     dev_t dev = DEV(136 + pty->id / 256, pty->id % 256);
 
-    struct uio uio = {0};
+    /* the opener's, writable by the group like other terminals */
+    struct uio uio = {.uid = curproc->uid, .gid = curproc->gid};
 
     struct vnode *pts = NULL;
     int err = 0;
-    if ((err = vfs_vmknod(devpts_root, name, S_IFCHR, dev, &uio, &pts)))
+    if ((err = vfs_vmknod(devpts_root, name, S_IFCHR | 0620, dev, &uio, &pts)))
         return err;
 
     pts->read_queue = &pty->pts_read_queue;
@@ -269,6 +271,7 @@ int pty_new(struct proc *proc, struct vnode **master)
     if ((err = pts_new(pty, &pty->slave)))
         goto error;
 
+    pty->tty->vnode = pty->slave;
     ptys[pty->id] = pty;
 
     if (master)
@@ -297,9 +300,67 @@ error:
     return err;
 }
 
+/* the master was closed: the pty, its /dev/pts entry and its id go */
+static void pty_free(struct pty *pty)
+{
+    char name[12] = {0};
+    struct uio uio = {0};
+
+    ptys[pty->id] = NULL;
+
+    /* the session it controls is hung up */
+    tty_free(pty->tty);
+
+    /* slaves still open fail with ENXIO, wake up those waiting on them */
+    thread_queue_wakeup(&pty->pts_read_queue);
+    thread_queue_wakeup(&pty->pts_write_queue);
+    pty->slave->read_queue  = NULL;
+    pty->slave->write_queue = NULL;
+
+    snprintf(name, 11, "%d", pty->id);
+    vfs_vunlink(devpts_root, name, &uio);
+    vfs_close(pty->slave);
+
+    ringbuf_free(pty->in);
+    ringbuf_free(pty->out);
+    pty_ids[pty->id] = 0;
+    kfree(pty);
+}
+
 int ptmx_open(struct file *file)
-{   
-    return pty_new(curproc, &(file->vnode));
+{
+    struct vnode *ptmx = file->vnode;
+    int err = pty_new(curproc, &file->vnode);
+
+    /* the descriptor now refers to the new master */
+    if (!err)
+        vfs_close(ptmx);
+
+    return err;
+}
+
+/* the master has no filesystem, its references are counted here */
+static int ptm_close(struct file *file)
+{
+    struct vnode *ptm = file->vnode;
+
+    if (--ptm->ref)
+        return 0;
+
+    pty_free(ptm->p);
+    kfree(ptm);
+    return 0;
+}
+
+static int pts_open(struct file *file)
+{
+    struct pty *pty = pty_get(&VNODE_DEV(file->vnode));
+
+    if (!pty)
+        return -ENXIO;
+
+    tty_open(pty->tty, file);
+    return posix_file_open(file);
 }
 
 int pty_init()
@@ -319,7 +380,7 @@ struct dev ptsdev = {
     .ioctl = pty_ioctl,
 
     .fops = {
-        .open  = posix_file_open,
+        .open  = pts_open,
         .read  = posix_file_read,
         .write = posix_file_write,
         .ioctl = posix_file_ioctl,
@@ -338,6 +399,7 @@ struct dev ptmdev = {
 
     .fops = {
         .open  = ptmx_open,
+        .close = ptm_close,
         .read  = posix_file_read,
         .write = posix_file_write,
         .ioctl = posix_file_ioctl,

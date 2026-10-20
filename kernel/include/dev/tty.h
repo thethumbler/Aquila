@@ -31,11 +31,14 @@ struct tty {
     /** associated device */
     struct dev *dev;
 
-    /** controlling process */
-    struct proc *proc;
+    /** the session it is the controlling terminal of, NULL if none */
+    struct session *session;
 
-    /** foreground process group */
+    /** foreground process group, NULL if none */
     struct pgroup *fg;
+
+    /** the device's vnode, which /dev/tty opens instead of itself */
+    struct vnode *vnode;
 
     /* interface */
 
@@ -56,5 +59,7 @@ int     tty_free(struct tty *tty);
 ssize_t tty_master_write(struct tty *tty, size_t size, void *buf);
 ssize_t tty_slave_write(struct tty *tty, size_t size, void *buf);
 int     tty_ioctl(struct tty *tty, int request, void *argp);
+void    tty_open(struct tty *tty, struct file *file);
+void    tty_hangup(struct tty *tty);
 
 #endif /* ! _DEV_TTY_H */

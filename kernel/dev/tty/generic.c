@@ -2,6 +2,8 @@
 #include <sys/sched.h>
 #include <dev/tty.h>
 #include <sys/uaccess.h>
+#include <sys/signal.h>
+#include <aquila/fcntl.h>
 
 MALLOC_DEFINE(M_TTY, "tty", "tty structure");
 MALLOC_DEFINE(M_TTY_COOK, "tty-cook", "tty cooking buffer");
@@ -34,7 +36,8 @@ ssize_t tty_master_write(struct tty *tty, size_t size, void *buf)
 
                 goto skip_echo;
             } else if (*c == tty->tios.c_cc[VINTR]) {
-                signal_pgrp_send(tty->fg, SIGINT);
+                if (tty->fg)
+                    signal_pgrp_send(tty->fg, SIGINT);
                 char cc[] = {'^', *c + '@', '\n'};
                 tty_slave_write(tty, 3, cc);
                 goto skip_echo;
@@ -173,13 +176,17 @@ int tty_ioctl(struct tty *tty, int request, void *argp)
             memcpy(&tty->tios, argp, sizeof(struct termios));
             break;
         case TIOCGPGRP:
-            *(pid_t *) argp = tty->fg->pgid;
+            /* without one, a value that is no process group (POSIX) */
+            *(pid_t *) argp = tty->fg ? tty->fg->pgid : 0x7fffffff;
             break;
         case TIOCSPGRP: {
-            /* process group must be in the caller's session */
+            /* the caller's controlling terminal, a group of its session */
             pid_t pgid = *(pid_t *) argp;
             struct session *session = curproc->pgrp->session;
             struct pgroup *pgrp = NULL;
+
+            if (session->ctty != tty)
+                return -ENOTTY;
 
             queue_for (node, session->pgps) {
                 struct pgroup *pg = node->value;
@@ -201,11 +208,19 @@ int tty_ioctl(struct tty *tty, int request, void *argp)
         case TIOCSWINSZ:
             memcpy(&tty->ws, argp, sizeof(struct winsize));
             break;
-        case TIOCSCTTY:
-            /* FIXME */
-            tty->proc = curproc;
-            curproc->pgrp->session->ctty = tty->dev;
+        case TIOCSCTTY: {
+            /* a session leader without one takes a terminal no other
+             * session has */
+            struct session *session = curproc->pgrp->session;
+
+            if (session->leader != curproc || session->ctty || tty->session)
+                return -EPERM;
+
+            session->ctty = tty;
+            tty->session  = session;
+            tty->fg       = curproc->pgrp;
             break;
+        }
         default:
             return -EINVAL;
     }
@@ -253,8 +268,6 @@ int tty_new(struct proc *proc, size_t buf_size, ttyio master,
     tty->ws.ws_row = 24;
     tty->ws.ws_col = 80;
 
-    tty->fg = proc->pgrp;
-
     /* Interface */
     tty->master_write = master;
     tty->slave_write  = slave;
@@ -266,8 +279,47 @@ int tty_new(struct proc *proc, size_t buf_size, ttyio master,
     return 0;
 }
 
+/*
+ * A terminal device was opened: it becomes the controlling terminal of a
+ * session leader that has none (unless O_NOCTTY), if no session has it.
+ */
+void tty_open(struct tty *tty, struct file *file)
+{
+    struct session *session = curproc->pgrp->session;
+
+    if ((file->flags & O_NOCTTY) || session->leader != curproc ||
+        session->ctty || tty->session)
+        return;
+
+    session->ctty = tty;
+    tty->session  = session;
+    tty->fg       = curproc->pgrp;
+}
+
+/*
+ * The session of a controlling terminal ends (its leader exited) or the
+ * terminal goes away: its foreground group gets SIGHUP, and the terminal
+ * belongs to no session.
+ */
+void tty_hangup(struct tty *tty)
+{
+    if (!tty->session)
+        return;
+
+    if (tty->fg) {
+        signal_pgrp_send(tty->fg, SIGHUP);
+        signal_pgrp_send(tty->fg, SIGCONT);
+    }
+
+    tty->session->ctty = NULL;
+    tty->session = NULL;
+    tty->fg = NULL;
+}
+
 int tty_free(struct tty *tty)
 {
+    tty_hangup(tty);
+
     kfree(tty->cook);
     kfree(tty);
 

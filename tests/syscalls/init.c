@@ -7,6 +7,7 @@
  * - files: the *at() calls, links, rename, permissions and attributes
  * - nanosleep and clocks
  * - FIFOs
+ * - sessions and controlling terminals, on a pty
  */
 
 #include "../lib/aqtest.h"
@@ -25,7 +26,77 @@ static char tstack[8192] __attribute__((aligned(16)));
 
 static unsigned char bad_elf[52 + 32];
 
-/* CLOCK_MONOTONIC in milliseconds */
+static int hup_pipe = -1;
+static void hup_handler(int sig) { SC(SYS_write, hup_pipe, "H", 1); SC(SYS_exit, 0, 0, 0); (void) sig; }
+
+/* "/dev/pts/<n>" */
+static char *pts_path(int n)
+{
+    static char path[16] = "/dev/pts/";
+    int i = 9;
+
+    if (n >= 10)
+        path[i++] = '0' + n / 10;
+    path[i++] = '0' + n % 10;
+    path[i] = 0;
+    return path;
+}
+
+/* a new session with a pty as its controlling terminal; exits with the
+ * failed step */
+static void pty_session(void)
+{
+    int me = SC(SYS_getpid, 0, 0, 0), pgid = 0, n = -1;
+
+    if (SC(SYS_setsid, 0, 0, 0) != me) SC(SYS_exit, 1, 0, 0);
+    if (SC(SYS_open, "/dev/tty", O_RDWR, 0) != -ENXIO) SC(SYS_exit, 2, 0, 0);
+
+    int master = SC(SYS_open, "/dev/ptmx", O_RDWR, 0);
+    if (master < 0 || SC(SYS_ioctl, master, TIOCGPTN, &n) || n < 0) SC(SYS_exit, 3, 0, 0);
+
+    /* opening the slave makes it the controlling terminal */
+    int slave = SC(SYS_open, pts_path(n), O_RDWR, 0);
+    if (slave < 0) SC(SYS_exit, 4, 0, 0);
+    if (SC(SYS_ioctl, slave, TIOCGPGRP, &pgid) || pgid != me) SC(SYS_exit, 5, 0, 0);
+
+    /* /dev/tty is that pty */
+    int tty = SC(SYS_open, "/dev/tty", O_WRONLY, 0);
+    if (tty < 0) SC(SYS_exit, 6, 0, 0);
+    char out[8] = {0};
+    SC(SYS_write, tty, "via", 3);
+    if (SC(SYS_read, master, out, 8) != 3 || out[0] != 'v') SC(SYS_exit, 7, 0, 0);
+
+    /* a foreground group that goes away leaves none */
+    int c = SC(SYS_fork, 0, 0, 0);
+    if (!c) {
+        SC(SYS_setpgid, 0, 0, 0);
+        SC(SYS_exit, 0, 0, 0);
+    }
+    aq_spin(10000000);
+    if (SC(SYS_ioctl, slave, TIOCSPGRP, &c)) SC(SYS_exit, 8, 0, 0);
+    int st;
+    SC(SYS_waitpid, c, &st, 0);
+    SC(SYS_ioctl, slave, TIOCGPGRP, &pgid);
+    if (pgid != 0x7fffffff) SC(SYS_exit, 9, 0, 0);
+    SC(SYS_ioctl, slave, TIOCSPGRP, &me);
+
+    /* the end of the session hangs up the foreground group: a child left
+     * in it writes to hup_pipe when it gets SIGHUP */
+    int ready[2];
+    SC(SYS_pipe, ready, 0, 0);
+    c = SC(SYS_fork, 0, 0, 0);
+    if (!c) {
+        struct aquila_sigaction hsa = {(u32) hup_handler, 0, 0};
+        SC(SYS_sigaction, SIGHUP, &hsa, 0);
+        SC(SYS_write, ready[1], "R", 1);
+        for (;;)
+            SC(SYS_getpid, 0, 0, 0);
+    }
+    char r;
+    SC(SYS_read, ready[0], &r, 1);
+    SC(SYS_exit, 0, 0, 0);
+}
+
 static int now_ms(void)
 {
     struct aquila_timespec ts;
@@ -560,6 +631,34 @@ void aq_main(void)
     check("pipe is a FIFO", ST(sb)->st_mode & S_IFMT, S_IFIFO);
     SC(SYS_close, fp[0], 0, 0);
     SC(SYS_close, fp[1], 0, 0);
+
+    /* --- sessions and controlling terminals --- */
+    SC(SYS_mknod, "/dev/tty", S_IFCHR | 0666, DEV(5, 0));
+    SC(SYS_mknod, "/dev/ptmx", S_IFCHR | 0666, DEV(5, 2));
+    SC(SYS_mkdir, "/dev/pts", 0755, 0);
+    check("mount devpts", aq_mount("devpts", "/dev/pts", 0), 0);
+    int hp[2];
+    SC(SYS_pipe, hp, 0, 0);
+    hup_pipe = hp[1];
+    c = SC(SYS_fork, 0, 0, 0);
+    if (!c)
+        pty_session();
+    SC(SYS_close, hp[1], 0, 0);
+    SC(SYS_waitpid, c, &st, 0);
+    check("pty session (failed step)", st >> 8, 0);
+    char hup = 0;
+    check("SIGHUP to the foreground group", SC(SYS_read, hp[0], &hup, 1) == 1 && hup == 'H', 1);
+    SC(SYS_close, hp[0], 0, 0);
+
+    /* every end closed: the pty went away, its id is free again */
+    aq_spin(10000000);
+    check("/dev/pts/0 removed", SC(SYS_stat, "/dev/pts/0", sb, 0), -ENOENT);
+    int ptm = SC(SYS_open, "/dev/ptmx", O_RDWR | O_NOCTTY, 0), ptn = -1;
+    SC(SYS_ioctl, ptm, TIOCGPTN, &ptn);
+    check("pty id reused", ptn, 0);
+    check("TIOCSPGRP not our terminal", SC(SYS_ioctl, ptm, TIOCSPGRP, &c), -ENOTTY);
+    SC(SYS_close, ptm, 0, 0);
+    check("closed pty removed", SC(SYS_stat, "/dev/pts/0", sb, 0), -ENOENT);
 
     /* --- clocks and nanosleep --- */
     struct aquila_timespec ts = {0, 0}, left = {0, 0};

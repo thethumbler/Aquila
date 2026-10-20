@@ -315,6 +315,9 @@ relaunch:
         for (int i = 0; i < 10; ++i)
             close(i);
 
+        /* a session of its own, the pty becomes its controlling
+         * terminal when it is opened */
+        setsid();
         int stdin_fd  = open(pts_fn, O_RDONLY);
         int stdout_fd = open(pts_fn, O_WRONLY);
         int stderr_fd = open(pts_fn, O_WRONLY);

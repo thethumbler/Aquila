@@ -14,6 +14,8 @@ struct session;
 #include <sys/signal.h>
 #include <dev/dev.h>
 
+struct tty;
+
 /**
  * \ingroup sys
  * \brief session
@@ -28,8 +30,8 @@ struct session {
     /** Session Leader */
     struct proc *leader;
 
-    /* Controlling Terminal */
-    struct dev *ctty;
+    /** Controlling terminal, NULL if none */
+    struct tty *ctty;
 
     /** Session node on sessions queue */
     struct qnode *qnode;
@@ -149,6 +151,7 @@ struct proc *proc_pid_find(pid_t pid);
 int proc_new(struct proc **ref);
 int session_new(struct proc *proc);
 int proc_setpgid(struct proc *proc, pid_t pgid);
+void pgrp_release(struct pgroup *pgrp);
 
 void proc_kill(struct proc *proc);
 int  proc_reap(struct proc *proc);

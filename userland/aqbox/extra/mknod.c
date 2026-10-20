@@ -4,25 +4,39 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <errno.h>
+#include <stdlib.h>
 
 void mknod_usage()
 {
-    fprintf(stderr, "Usage: mknod NAME TYPE MAJOR MINOR\n");
+    fprintf(stderr, "Usage: mknod [-m MODE] NAME TYPE MAJOR MINOR\n");
 }
 
 AQBOX_APPLET(mknod)(int argc, char **argv)
 {
-    if (argc != 5) {
+    mode_t mode = 0666;     /* less the umask, unless -m */
+    int opt;
+
+    while ((opt = getopt(argc, argv, "m:")) != -1) {
+        switch (opt) {
+            case 'm':
+                mode = strtoul(optarg, NULL, 8) & 07777;
+                umask(0);
+                break;
+            default:
+                mknod_usage();
+                return -1;
+        }
+    }
+
+    if (argc - optind != 4) {
         mknod_usage();
         return -1;
     }
 
-    char *path  = argv[1];
-    char *type  = argv[2];
-    char *major = argv[3];
-    char *minor = argv[4];
-
-    mode_t mode = 0666;     /* less the umask */
+    char *path  = argv[optind];
+    char *type  = argv[optind + 1];
+    char *major = argv[optind + 2];
+    char *minor = argv[optind + 3];
 
     switch (type[0]) {
         case 'b': mode |= S_IFBLK; break;

@@ -104,6 +104,9 @@ int main(int argc, char **argv)
             for (int i = 0; i < 3; ++i)
                 close(i);
 
+            /* a session of its own, the serial port becomes its
+             * controlling terminal when it is opened */
+            setsid();
             open("/dev/ttyS0", O_RDONLY);
             open("/dev/ttyS0", O_WRONLY);
             open("/dev/ttyS0", O_WRONLY);

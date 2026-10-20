@@ -21,6 +21,7 @@
 #include <sys/sched.h>
 
 #include <fs/vfs.h>
+#include <dev/tty.h>
 
 #include <ds/queue.h>
 #include <ds/bitmap.h>
@@ -236,8 +237,17 @@ void proc_kill(struct proc *proc)
 
     kfree(proc->name);
 
-    /* XXX */
-    queue_node_remove(proc->pgrp->procs, proc->pgrp_node);
+    /* the end of the session: the controlling terminal hangs up (a zombie
+     * stays in its process group until it is reaped, waitpid matches it
+     * by group) */
+    struct session *session = proc->pgrp->session;
+
+    if (session->leader == proc) {
+        if (session->ctty)
+            tty_hangup(session->ctty);
+
+        session->leader = NULL;
+    }
 
     /* Wakeup parent if it is waiting for children */
     if (proc->parent) {
@@ -263,6 +273,9 @@ int proc_reap(struct proc *proc)
     }
 
     proc_pid_free(proc->pid);
+
+    queue_node_remove(proc->pgrp->procs, proc->pgrp_node);
+    pgrp_release(proc->pgrp);
 
     queue_remove(procs, proc);
     kfree(proc);
@@ -349,8 +362,7 @@ error:
  * \brief move `proc' into the process group `pgid' of its session
  *
  * Joining a group requires it to exist (and have members), only a process
- * can start a group with its own pid as the id. Empty groups are reused
- * rather than freed, a terminal may still have one as its foreground group.
+ * can start a group with its own pid as the id.
  */
 int proc_setpgid(struct proc *proc, pid_t pgid)
 {
@@ -398,9 +410,43 @@ int proc_setpgid(struct proc *proc, pid_t pgid)
     if (pgid == proc->pid)
         pgrp->leader = proc;
 
-    queue_node_remove(proc->pgrp->procs, proc->pgrp_node);
+    struct pgroup *old = proc->pgrp;
+
+    queue_node_remove(old->procs, proc->pgrp_node);
     proc->pgrp_node = node;
     proc->pgrp = pgrp;
 
+    pgrp_release(old);
     return 0;
+}
+
+/**
+ * \ingroup sys
+ * \brief free `pgrp' if it has no processes left, and its session if that
+ * was its last group (a terminal loses it as its foreground group)
+ */
+void pgrp_release(struct pgroup *pgrp)
+{
+    if (pgrp->procs->count)
+        return;
+
+    struct session *session = pgrp->session;
+
+    if (session->ctty && session->ctty->fg == pgrp)
+        session->ctty->fg = NULL;
+
+    queue_node_remove(session->pgps, pgrp->session_node);
+    kfree(pgrp->procs);
+    kfree(pgrp);
+
+    if (session->pgps->count)
+        return;
+
+    if (session->ctty) {
+        session->ctty->session = NULL;
+        session->ctty->fg = NULL;
+    }
+
+    kfree(session->pgps);
+    kfree(session);
 }

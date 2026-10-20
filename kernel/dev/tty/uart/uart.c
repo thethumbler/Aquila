@@ -105,10 +105,12 @@ int uart_file_open(struct file *file)
         u->in = ringbuf_new(UART_RING);
         u->out = ringbuf_new(UART_RING);
         tty_new(curproc, 0, uart_master_write, uart_slave_write, u, &u->tty);
+        u->tty->vnode = u->vnode;
         file->vnode->read_queue  = queue_new();
         file->vnode->write_queue = queue_new();
     }
 
+    tty_open(u->tty, file);
     return 0;
 }
 

@@ -8,6 +8,8 @@
 #include <dev/ttydev.h>
 #include <fs/posix.h>
 #include <sys/sched.h>
+#include <dev/tty.h>
+#include <fs/vfs.h>
 
 struct dev *sttydev_mux(struct devid *dd)
 {
@@ -20,11 +22,42 @@ struct dev *sttydev_mux(struct devid *dd)
     return NULL;
 }
 
+/* /dev/tty: opens the controlling terminal's device instead */
+static int ctty_open(struct file *file)
+{
+    struct tty *tty = curproc->pgrp->session->ctty;
+    struct vnode *vnode = file->vnode;
+
+    if (!tty || !tty->vnode)
+        return -ENXIO;
+
+    tty->vnode->ref++;
+    file->vnode = tty->vnode;
+
+    int err = kdev_file_open(&VNODE_DEV(tty->vnode), file);
+
+    if (err) {
+        vfs_close(tty->vnode);
+        file->vnode = vnode;
+        return err;
+    }
+
+    vfs_close(vnode);
+    return 0;
+}
+
+static struct dev cttydev = {
+    .name = "ctty",
+    .fops = {
+        .open = ctty_open,
+    },
+};
+
 struct dev *ttydev_mux(struct devid *dd)
 {
     switch (dd->minor) {
         case 0: /* /dev/tty */
-            return curproc->pgrp->session->ctty;
+            return &cttydev;
         case 1: /* /dev/console */
             return &condev;
         case 2: /* /dev/ptmx */

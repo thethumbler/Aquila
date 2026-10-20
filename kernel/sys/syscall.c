@@ -2051,6 +2051,7 @@ static void sys_setsid(void)
     }
 
     queue_node_remove(pgrp->procs, pgrp_node);
+    pgrp_release(pgrp);
     arch_syscall_return(curthread, proc->pid);
 }
 

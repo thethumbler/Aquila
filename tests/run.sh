@@ -319,7 +319,7 @@ test_system()
     local session=(
         "6 root" "1 wrong-password"
         "6 guest" "1 guest-password" "5 echo user=\$USER" "1 cat /etc/shadow"
-        "1 touch /tmp/g; ls -l /tmp/g" "1 exit"
+        "1 touch /tmp/g; ls -l /tmp/g" "1 echo via-\$((1 + 1))-tty > /dev/tty" "1 exit"
         "4 root" "1 root-password" "5 echo user=\$USER" "1 uname -a" "1 ls /bin" "1 ps"
         "1 cat /proc/meminfo" "1 touch /tmp/f" "1 ls /tmp" "1 cat /etc/shadow"
         "1 echo pipe-\$((6 * 7)) | cat | cat" "1 echo subst=\$(echo inner | cat)"
@@ -351,14 +351,14 @@ test_system()
                 'user=root' 'AquilaOS aquila' 'aqbox' '/bin/ps' 'MemTotal' \
                 '(^| )f( |$)' 'guest:\$6\$' 'pipe-42' 'subst=inner' \
                 "long:root:$long:end" 'status=130' 'guest +guest .* /tmp/g' \
-                '^g$' '^sbase$' 'l -> d/f' '^3,2,1$' '^2$'; do
+                '^g$' '^sbase$' 'l -> d/f' '^3,2,1$' '^2$' '^via-2-tty$'; do
         if ! grep -a -q -E -- "$want" "$log"; then
             echo "missing output: $want"
             missing=1
         fi
     done
 
-    [ $missing = 0 ] && echo "wrong password rejected, guest denied /etc/shadow, root ran uname, ls, ps, cat, touch, pipelines, \$(...), a long line, ^C and sbase"
+    [ $missing = 0 ] && echo "wrong password rejected, guest denied /etc/shadow, root ran uname, ls, ps, cat, touch, pipelines, \$(...), a long line, ^C, /dev/tty and sbase"
 }
 
 #
