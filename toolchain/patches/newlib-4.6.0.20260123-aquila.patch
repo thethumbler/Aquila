@@ -207,6 +207,25 @@ diff -ruN a/newlib/libc/include/time.h b/newlib/libc/include/time.h
  
  #include <signal.h>
  
+diff -ruN a/newlib/libc/posix/_isatty.c b/newlib/libc/posix/_isatty.c
+--- a/newlib/libc/posix/_isatty.c
++++ b/newlib/libc/posix/_isatty.c
+@@ -5,6 +5,9 @@
+ #include <sys/stat.h>
+ #include <errno.h>
+ 
++/* aquila's libc/sys/aquila asks the terminal instead */
++#ifndef __aquila__
++
+ int
+ _isatty (int fd)
+ {
+@@ -19,3 +22,5 @@
+   errno = ENOTTY;
+   return 0;
+ }
++
++#endif /* !__aquila__ */
 diff -ruN a/newlib/libc/sys/Makefile.inc b/newlib/libc/sys/Makefile.inc
 --- a/newlib/libc/sys/Makefile.inc
 +++ b/newlib/libc/sys/Makefile.inc
