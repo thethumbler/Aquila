@@ -26,6 +26,9 @@
 #   make run-iso      boot the ISO in QEMU (framebuffer console)
 #   make run-hdd      boot the hard disk in QEMU, made by make hdd if there
 #                     is none (what was written to it is kept)
+#
+#   QEMU uses KVM when /dev/kvm can be used, KVM=0 turns it off (also for
+#   make test).
 #   make test         kernel test suite (tests/run.sh, uses the host gcc)
 #   make clean        remove build output except the toolchain, downloads
 #                     and the hard disk (it has what was saved on it)
@@ -62,7 +65,10 @@ LN    := ln
 STRIP := i686-aquila-strip
 
 LIMINE := $(TOOLCHAIN)/share/limine
-QEMU   := qemu-system-i386
+
+# KVM when /dev/kvm can be used, KVM=0 emulates the CPU instead
+KVM  ?= $(if $(shell test -r /dev/kvm -a -w /dev/kvm && echo y),1,0)
+QEMU := qemu-system-i386 $(if $(filter 1,$(KVM)),-accel kvm)
 
 MAKEFLAGS += --no-print-directory
 

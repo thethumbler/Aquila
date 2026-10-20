@@ -18,6 +18,14 @@ jobs:
             texinfo libgmp-dev libmpfr-dev libmpc-dev wget nasm xorriso cpio \
             qemu-system-x86 e2fsprogs python3 fdisk dosfstools mtools fakeroot
 
+      # QEMU runs the tests with KVM if /dev/kvm can be used
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
+            sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
       # the toolchain takes a while to build, rebuild it only when its
       # sources (or the ABI headers it installs) change
       - name: Cache toolchain

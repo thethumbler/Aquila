@@ -7,6 +7,9 @@
 #   -n      don't rebuild the kernel, use the existing image
 #   -v      print the serial log of failed tests
 #
+# QEMU uses KVM when /dev/kvm can be used, KVM=0 in the environment turns
+# it off.
+#
 # tests: ata cpu syscalls ext2 libc system disk (default: all)
 #
 # Requires gcc with 32-bit support, ld, cpio and qemu-system-i386. The ext2
@@ -49,6 +52,12 @@ for tool in gcc ld cpio qemu-system-i386; do
 done
 
 mkdir -p "$OUT"
+
+# hardware virtualization if there is any
+ACCEL=
+if [ "${KVM:-1}" != 0 ] && [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
+    ACCEL="-accel kvm"
+fi
 
 #
 # Kernel
@@ -116,7 +125,7 @@ run_qemu()
     shift 3
 
     rm -f "$log"
-    qemu-system-i386 -kernel "$KERNEL" -m 256 -display none -no-reboot \
+    qemu-system-i386 $ACCEL -kernel "$KERNEL" -m 256 -display none -no-reboot \
         -serial file:"$log" "$@" >/dev/null 2>&1 &
 
     local pid=$! ticks=0
@@ -342,7 +351,7 @@ test_system()
             printf '%s\r' "${step#* }"
         done
         sleep 2
-    } | timeout 90 qemu-system-i386 -kernel "$KERNEL" -initrd "$initrd" \
+    } | timeout 90 qemu-system-i386 $ACCEL -kernel "$KERNEL" -initrd "$initrd" \
         -append earlycon=ttyS0 -m 256 -display none -no-reboot -serial stdio \
         2>/dev/null | tr -d '\r' > "$log"
 
@@ -404,13 +413,38 @@ test_disk()
         return 1
     }
 
-    # boot <log> <command>: log in as root on the serial port (Limine waits
-    # 3 seconds), run the command and power off
+    # wait_for <log> <count> <pattern>: until the pattern is on <count>
+    # lines of the log, at most a minute
+    wait_for()
+    {
+        for _ in $(seq 600); do
+            [ "$(grep -a -c -E -- "$3" "$1")" -ge "$2" ] && return 0
+            sleep 0.1
+        done
+        return 1
+    }
+
+    # boot <log> <command>: log in as root on the serial port once there
+    # is a prompt, run the command and power off
     boot()
     {
-        { sleep 12; printf 'root\r'; sleep 4; printf '%s\r' "$2"; sleep 2; printf 'poweroff\r'; sleep 10; } |
-            timeout 60 qemu-system-i386 -hda "$img" -m 256 -display none -no-reboot \
-                -serial stdio 2>/dev/null | tr -d '\r' > "$1"
+        local fifo=$OUT/disk/input
+
+        rm -f "$fifo"
+        mkfifo "$fifo"
+        # straight to the log, a pipe would hold back what the waits look for
+        timeout 120 qemu-system-i386 $ACCEL -hda "$img" -m 256 -display none -no-reboot \
+            -serial stdio < "$fifo" > "$1.raw" 2>/dev/null &
+        local pid=$!
+
+        exec 3> "$fifo"
+        wait_for "$1.raw" 1 'login: ' && printf 'root\r' >&3 &&
+        wait_for "$1.raw" 1 '^# ' && printf '%s\r' "$2" >&3 &&
+        wait_for "$1.raw" 2 '^# ' && printf 'poweroff\r' >&3
+        wait $pid
+        exec 3>&-
+
+        tr -d '\r' < "$1.raw" > "$1"
     }
 
     boot "$OUT/disk/serial.log" 'echo disk-$((6 * 7)) > /root/kept; sync'
