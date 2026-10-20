@@ -322,10 +322,10 @@ relaunch:
         int stdout_fd = open(pts_fn, O_WRONLY);
         int stderr_fd = open(pts_fn, O_WRONLY);
 
-        /* run login shell */
-        char *argp[] = {DEFAULT_SHELL, "login", NULL};
+        /* log in, then run the user's shell */
+        char *argp[] = {LOGIN_PROGRAM, NULL};
         char *envp[] = {"PWD=/", "TERM=VT100", NULL};
-        execve(DEFAULT_SHELL, argp, envp);
+        execve(LOGIN_PROGRAM, argp, envp);
         for (;;);
     }
 }

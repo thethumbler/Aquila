@@ -102,8 +102,8 @@ ports: check-toolchain
 # Root filesystem and initrd
 #
 
-AQBOX_BIN  := cat clear date echo env kill ls mkdir mknod mktemp ps pwd \
-              sh stat touch truncate uname unlink vmstat
+# what the base system has besides contrib/ (sbase, dash)
+AQBOX_BIN  := clear ps stat truncate vmstat
 AQBOX_SBIN := getty login mount readmbr reboot
 
 # contrib/ is built unless it comes from elsewhere

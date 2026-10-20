@@ -4,7 +4,7 @@
 /* Defaults */
 #define DEFAULT_WALLPAPER  "/etc/wallpaper.jpg"
 #define DEFAULT_FONT       "/etc/font.tf"
-#define DEFAULT_SHELL      "/bin/aqbox"
+#define LOGIN_PROGRAM      "/sbin/login"
 
 #define FB_PATH            "/dev/fb0"
 #define KBD_PATH           "/dev/kbd"
