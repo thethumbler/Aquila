@@ -269,9 +269,12 @@ static size_t tty_ioctl_argsize(int request)
     switch (request) {
         case TCGETS:
         case TCSETS:
+        case TCSETSW:
+        case TCSETSF:
             return sizeof(struct termios);
         case TIOCGPGRP:
         case TIOCSPGRP:
+        case TIOCGSID:
             return sizeof(pid_t);
         case TIOCGWINSZ:
         case TIOCSWINSZ:
@@ -292,8 +295,31 @@ int tty_ioctl(struct tty *tty, int request, void *argp)
             memcpy(argp, &tty->tios, sizeof(struct termios));
             break;
         case TCSETS:
+        case TCSETSW:   /* output is never waiting to be sent */
+        case TCSETSF:
             tty_background(tty, SIGTTOU);
+
+            if (request == TCSETSF)
+                tty_flush(tty, TCIFLUSH);
+
             memcpy(&tty->tios, argp, sizeof(struct termios));
+            break;
+        case TCFLSH:
+            /* the argument is the value: TCIFLUSH, TCOFLUSH, TCIOFLUSH */
+            if ((uintptr_t) argp > TCIOFLUSH)
+                return -EINVAL;
+
+            tty_flush(tty, (uintptr_t) argp);
+            break;
+        case TCSBRK:
+        case TCXONC:
+            /* no output waits to be sent, there is no flow control */
+            break;
+        case TIOCGSID:
+            if (!tty->session)
+                return -ENOTTY;
+
+            *(pid_t *) argp = tty->session->sid;
             break;
         case TIOCGPGRP:
             /* without one, a value that is no process group (POSIX) */
@@ -438,6 +464,20 @@ void tty_hangup(struct tty *tty)
     tty->session->ctty = NULL;
     tty->session = NULL;
     tty->fg = NULL;
+}
+
+/* discard input (TCIFLUSH, TCIOFLUSH): the line being edited, what the
+ * driver holds for readers, pending end-of-files; output isn't kept */
+void tty_flush(struct tty *tty, int which)
+{
+    if (which == TCOFLUSH)
+        return;
+
+    tty->pos = 0;
+    tty->eof = 0;
+
+    if (tty->input_flush)
+        tty->input_flush(tty);
 }
 
 int tty_free(struct tty *tty)

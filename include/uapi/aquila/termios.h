@@ -7,6 +7,9 @@ typedef unsigned int  tcflag_t;
 
 #define NCCS 32
 
+/* a c_cc entry with this value is disabled */
+#define _POSIX_VDISABLE 0
+
 /**
  * \ingroup vfs
  * \brief terminal I/O structure

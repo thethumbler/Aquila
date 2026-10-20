@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <termios.h>
 #include <sys/ioctl.h>
 
@@ -8,8 +9,45 @@ int tcgetattr(int fd, struct termios *tios)
 
 int tcsetattr(int fd, int optional_actions, const struct termios *tios)
 {
-    /* TCSADRAIN and TCSAFLUSH are treated as TCSANOW */
-    return ioctl(fd, TCSETS, tios);
+    switch (optional_actions) {
+        case TCSANOW:   return ioctl(fd, TCSETS, tios);
+        case TCSADRAIN: return ioctl(fd, TCSETSW, tios);
+        case TCSAFLUSH: return ioctl(fd, TCSETSF, tios);
+    }
+
+    errno = EINVAL;
+    return -1;
+}
+
+int tcflush(int fd, int queue)
+{
+    return ioctl(fd, TCFLSH, queue);
+}
+
+int tcdrain(int fd)
+{
+    return ioctl(fd, TCSBRK, 1);
+}
+
+int tcflow(int fd, int action)
+{
+    return ioctl(fd, TCXONC, action);
+}
+
+int tcsendbreak(int fd, int duration)
+{
+    /* the terminals have no line to break */
+    return ioctl(fd, TCSBRK, 0);
+}
+
+pid_t tcgetsid(int fd)
+{
+    pid_t sid;
+
+    if (ioctl(fd, TIOCGSID, &sid) == -1)
+        return -1;
+
+    return sid;
 }
 
 speed_t cfgetispeed(const struct termios *tios)

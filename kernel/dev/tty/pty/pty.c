@@ -94,6 +94,16 @@ ssize_t pty_slave_write(struct tty *tty, size_t size, void *buf)
     return written;
 }
 
+/* discard what the slave hasn't read */
+static void pty_input_flush(struct tty *tty)
+{
+    struct pty *pty = (struct pty *) tty->p;
+    char c;
+
+    while (ringbuf_read(pty->in, 1, &c))
+        ;
+}
+
 /*************************************
  *
  * Pseudo Terminal Master Helpers
@@ -298,6 +308,7 @@ int pty_new(struct proc *proc, struct vnode **master)
         goto error;
 
     pty->tty->vnode = pty->slave;
+    pty->tty->input_flush = pty_input_flush;
     ptys[pty->id] = pty;
 
     if (master)

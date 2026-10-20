@@ -53,6 +53,9 @@ struct tty {
 
     /** slave write handler */
     ttyio   slave_write;
+
+    /** discards the input readers haven't read yet */
+    void    (*input_flush)(struct tty *tty);
 };
 
 #define TTY_BUF_SIZE 512
@@ -64,6 +67,7 @@ ssize_t tty_slave_write(struct tty *tty, size_t size, void *buf);
 int     tty_ioctl(struct tty *tty, int request, void *argp);
 void    tty_open(struct tty *tty, struct file *file);
 void    tty_hangup(struct tty *tty);
+void    tty_flush(struct tty *tty, int which);
 int     tty_eof(struct tty *tty);
 uint64_t tty_read_timeout(struct tty *tty);
 int     tty_can_read(struct tty *tty, size_t buffered);

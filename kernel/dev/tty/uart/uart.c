@@ -50,6 +50,15 @@ ssize_t uart_master_write(struct tty *tty, size_t size, void *buf)
     return s;
 }
 
+static void uart_input_flush(struct tty *tty)
+{
+    struct uart *u = (struct uart *) tty->p;
+    char c;
+
+    while (ringbuf_read(u->in, 1, &c))
+        ;
+}
+
 ssize_t uart_slave_write(struct tty *tty, size_t size, void *buf)
 {
     struct uart *u = (struct uart *) tty->p;
@@ -133,6 +142,7 @@ int uart_file_open(struct file *file)
         u->out = ringbuf_new(UART_RING);
         tty_new(curproc, 0, uart_master_write, uart_slave_write, u, &u->tty);
         u->tty->vnode = u->vnode;
+        u->tty->input_flush = uart_input_flush;
         file->vnode->read_queue  = queue_new();
         file->vnode->write_queue = queue_new();
     }
