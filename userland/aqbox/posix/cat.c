@@ -68,6 +68,10 @@ AQBOX_APPLET(cat)(int argc, char **argv)
         }
     }
 
+    /* no operands: standard input */
+    if (optind == argc)
+        do_cat(NULL);
+
     for (int i = optind; i < argc; ++i) {
         if (!strcmp(argv[i], "-"))
             do_cat(NULL);
