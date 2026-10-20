@@ -200,6 +200,7 @@ static inline int __vfs_eof_never (struct file *f){return 0;}
 void    vfs_init(void);
 int     vfs_install(struct fs *fs);
 int     vfs_mount_root(struct vnode *vnode);
+int     vfs_mount_root_dev(const char *name, const char *type);
 int     vfs_bind(const char *path, struct vnode *target);
 int     vfs_mount(const char *type, const char *dir, int flags, void *data, struct uio *uio);
 

@@ -7,6 +7,7 @@
 #include <core/panic.h>
 #include <core/string.h>
 #include <core/module.h>
+#include <core/kargs.h>
 #include <core/arch.h>
 #include <mm/mm.h>
 #include <mm/pmap.h> /* XXX */
@@ -37,10 +38,23 @@ void kmain(struct boot *boot)
     vfs_init();
     modules_init();
 
-    if (boot->modules_count)
+    /* the root filesystem: a disk partition (root=/dev/hda2), or the
+     * ramdisk the bootloader loaded */
+    const char *root = NULL, *rootfstype = NULL;
+    int err;
+
+    if (!kargs_get("root", &root) && root) {
+        kargs_get("rootfstype", &rootfstype);
+
+        if ((err = vfs_mount_root_dev(root, rootfstype))) {
+            printk("kernel: can't mount %s: error %d\n", root, -err);
+            panic("could not mount the root filesystem");
+        }
+    } else if (boot->modules_count) {
         load_ramdisk(&boot->modules[0]);
-    else
+    } else {
         panic("No modules loaded: unable to load ramdisk");
+    }
 
     /* devfs on /dev with /dev/console, init may write to it right away */
     struct uio uio = {.cwd = "/", .mask = 022};
@@ -51,7 +65,6 @@ void kmain(struct boot *boot)
     printk("kernel: loading init process\n");
 
     struct proc *init;
-    int err;
 
     if ((err = proc_new(&init))) {
         panic("failed to allocate process structure for init");
@@ -71,7 +84,8 @@ void kmain(struct boot *boot)
 
     arch_proc_init(init);
 
-    char *cmdline = boot->modules[0].cmdline;
+    /* init's argument, the module's command line (none from a disk) */
+    char *cmdline = boot->modules_count ? boot->modules[0].cmdline : "";
     char *argp[] = {cmdline, 0};
     char *envp[] = {0};
 
