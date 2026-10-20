@@ -120,7 +120,7 @@ ssize_t kdev_bwrite(struct devid *dd, off_t offset, size_t size, void *buf)
     struct dev *dev = kdev_get(dd);
     size_t bs = dev->getbs(dd);
 
-    ssize_t ret = 0;
+    ssize_t ret = 0, err = 0;
     char *cbuf = buf;
     char *bbuf = NULL;
 
@@ -132,9 +132,13 @@ ssize_t kdev_bwrite(struct devid *dd, off_t offset, size_t size, void *buf)
         size_t start = MIN(bs - offset % bs, size);
 
         if (start) {
-            dev->read(dd, offset/bs, 1, bbuf);
+            if ((err = dev->read(dd, offset/bs, 1, bbuf)) < 0)
+                goto error;
+
             memcpy(bbuf + (offset % bs), cbuf, start);
-            dev->write(dd, offset/bs, 1, bbuf);
+
+            if ((err = dev->write(dd, offset/bs, 1, bbuf)) < 0)
+                goto error;
 
             ret    += start;
             size   -= start;
@@ -151,7 +155,8 @@ ssize_t kdev_bwrite(struct devid *dd, off_t offset, size_t size, void *buf)
     size_t count = size/bs;
 
     if (count) {
-        dev->write(dd, offset/bs, count, cbuf);
+        if ((err = dev->write(dd, offset/bs, count, cbuf)) < 0)
+            goto error;
 
         ret    += count * bs;
         size   -= count * bs;
@@ -168,9 +173,14 @@ ssize_t kdev_bwrite(struct devid *dd, off_t offset, size_t size, void *buf)
         if (!bbuf && !(bbuf = kmalloc(bs, &M_KDEV_BLK, 0)))
             return -ENOMEM;
 
-        dev->read(dd, offset/bs, 1, bbuf);
+        if ((err = dev->read(dd, offset/bs, 1, bbuf)) < 0)
+            goto error;
+
         memcpy(bbuf, cbuf, end);
-        dev->write(dd, offset/bs, 1, bbuf);
+
+        if ((err = dev->write(dd, offset/bs, 1, bbuf)) < 0)
+            goto error;
+
         ret += end;
     }
 
@@ -179,6 +189,12 @@ done:
         kfree(bbuf);
 
     return ret;
+
+error:
+    if (bbuf)
+        kfree(bbuf);
+
+    return err;
 }
 
 ssize_t kdev_read(struct devid *dd, off_t offset, size_t size, void *buf)
