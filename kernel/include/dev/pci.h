@@ -30,7 +30,7 @@ struct pci_dev {
     uint8_t func;
 };
 
-extern struct dev pci_bus;
+extern struct dev pcidev;
 void pci_ioaddr_set(struct ioaddr *io);
 
 /*
@@ -43,8 +43,8 @@ uint8_t  pci_reg8_read(struct pci_dev *dev, uint8_t off);
 uint16_t pci_reg16_read(struct pci_dev *dev, uint8_t off);
 uint32_t pci_reg32_read(struct pci_dev *dev, uint8_t off);
 void     pci_reg8_write(struct pci_dev *dev, uint8_t off, uint8_t val);
-void     pci_reg16_write(struct pci_dev *dev, uint8_t off, uint8_t val);
-void     pci_reg32_write(struct pci_dev *dev, uint8_t off, uint8_t val);
+void     pci_reg16_write(struct pci_dev *dev, uint8_t off, uint16_t val);
+void     pci_reg32_write(struct pci_dev *dev, uint8_t off, uint32_t val);
 uint32_t pci_read_bar(struct pci_dev *dev, uint8_t id);
 
 #endif /* ! _DEV_PCI_H */

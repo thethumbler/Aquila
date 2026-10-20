@@ -9,6 +9,6 @@ struct ramdev_priv {
 
 #include <dev/dev.h>
 
-extern struct dev ramdev;
+extern struct dev rddev;
 
 #endif /* ! _DEV_RAMDEV_H */

@@ -109,18 +109,18 @@ uint32_t pci_reg32_read(struct pci_dev *dev, uint8_t off)
 void pci_reg8_write(struct pci_dev *dev, uint8_t off, uint8_t val)
 {
     uint32_t oval = pci_read_dword(dev->bus, dev->dev, dev->func, off);
-    oval = (oval & (~0xFFUL << (off & 3) * 8)) | (val << (off & 3) * 8);
+    oval = (oval & ~(0xFFUL << (off & 3) * 8)) | ((uint32_t) val << (off & 3) * 8);
     pci_write_dword(dev->bus, dev->dev, dev->func, off, oval);
 }
 
-void pci_reg16_write(struct pci_dev *dev, uint8_t off, uint8_t val)
+void pci_reg16_write(struct pci_dev *dev, uint8_t off, uint16_t val)
 {
     uint32_t oval = pci_read_dword(dev->bus, dev->dev, dev->func, off);
-    oval = (oval & (~0xFFFFUL << (off & 2) * 8)) | (val << (off & 2) * 8);
+    oval = (oval & ~(0xFFFFUL << (off & 2) * 8)) | ((uint32_t) val << (off & 2) * 8);
     pci_write_dword(dev->bus, dev->dev, dev->func, off, oval);
 }
 
-void pci_reg32_write(struct pci_dev *dev, uint8_t off, uint8_t val)
+void pci_reg32_write(struct pci_dev *dev, uint8_t off, uint32_t val)
 {
     pci_write_dword(dev->bus, dev->dev, dev->func, off, val);
 }
