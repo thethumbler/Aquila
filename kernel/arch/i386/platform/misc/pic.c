@@ -4,11 +4,6 @@
  *
  *  -- Should only be used when no APIC is avilable or APIC support 
  *  isn't built into the kernel.
- *
- *  This file is part of AquilaOS and is released under the terms of
- *  GNU GPLv3 - See LICENSE.
- *
- *  Copyright (C) Mohamed Anwar
  */
 
 #include <core/system.h>

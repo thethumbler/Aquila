@@ -1,11 +1,5 @@
 /*
  *          Process managment helpers
- *
- *
- *  This file is part of AquilaOS and is released under
- *  the terms of GNU GPLv3 - See LICENSE.
- *
- *  Copyright (C) Mohamed Anwar
  */
 
 

@@ -1,11 +1,5 @@
 /*
  *          PS/2 Mouse driver
- *
- *
- *  This file is part of Aquila OS and is released under
- *  the terms of GNU GPLv3 - See LICENSE.
- *
- *  Copyright (C) Mohamed Anwar
  */
 
 

@@ -96,3 +96,24 @@ from source, see [tests/](tests/README.md).
 - [X] kilo    (text editor)
 - [X] Lua     (port)
 - [ ] tcc
+
+## License
+
+AquilaOS is dedicated to the public domain under
+[CC0 1.0 Universal](LICENSE): you can copy, modify and distribute it,
+even commercially, without asking permission.
+
+Third-party code keeps its own license:
+
+| component | location | license |
+|-----------|----------|---------|
+| kilo | [userland/kilo/](userland/kilo/LICENSE) | BSD 2-Clause, Salvatore Sanfilippo |
+| bim | [userland/aqbox/extra/bim.c](userland/aqbox/extra/bim.c) | ISC, K. Lange |
+| libvterm | [userland/fbterm/libvterm/](userland/fbterm/libvterm/LICENSE), `userland/fbterm/include/vterm.h` | MIT, Paul Evans |
+| NanoJPEG | [userland/fbterm/nanojpeg.c](userland/fbterm/nanojpeg.c) | MIT, Martin J. Fiedler |
+| multiboot.h | [kernel/arch/i386/include/boot/multiboot.h](kernel/arch/i386/include/boot/multiboot.h) | permissive, Free Software Foundation |
+
+The toolchain patches in [toolchain/patches/](toolchain/patches/) modify
+binutils and GCC (GPLv3) and newlib (various free licenses); the patched
+tools remain under those licenses. Ports are fetched from upstream under
+their own licenses.

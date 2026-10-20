@@ -1,10 +1,5 @@
 /*
  *          VFS => Generic file read function
- *
- *
- *  This file is part of Aquila OS and is released under
- *  the terms of GNU GPLv3 - See LICENSE.
- *
  */
 
 #include <core/system.h>

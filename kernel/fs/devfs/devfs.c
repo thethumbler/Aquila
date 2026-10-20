@@ -1,11 +1,5 @@
 /**********************************************************************
  *                  Device Filesystem (devfs) handler
- *
- *
- *  This file is part of Aquila OS and is released under the terms of
- *  GNU GPLv3 - See LICENSE.
- *
- *  Copyright (C) 2016 Mohamed Anwar <mohamed_anwar@opmbx.org>
  */
 
 #include <core/system.h>

@@ -1,12 +1,6 @@
 /**********************************************************************
  *                  Early initalization of the kernel
  *                   (Switch to higher half kernel)
- *
- *
- *  This file is part of AquilaOS and is released under the terms of
- *  GNU GPLv3 - See LICENSE.
- *
- *  Copyright (C) Mohamed Anwar
  */
 
 #include <core/system.h>

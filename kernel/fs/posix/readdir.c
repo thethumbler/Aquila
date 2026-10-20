@@ -1,12 +1,5 @@
 /*
  *          VFS => Generic file readdir function
- *
- *
- *  This file is part of Aquila OS and is released under
- *  the terms of GNU GPLv3 - See LICENSE.
- *
- *  Copyright (C) 2016-2017 Mohamed Anwar <mohamed_anwar@opmbx.org>
- *
  */
 
 #include <core/system.h>
