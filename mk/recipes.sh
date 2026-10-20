@@ -62,7 +62,29 @@ if ! command -v $CC >/dev/null; then
     exit 1
 fi
 
+# recipes are rebuilt when libc changed
+LIBC=$($CC -print-sysroot)/usr/lib/libc.a
+
 declare -A built
+
+# for build(): autoconf's config.sub doesn't know aquila, wrap each one in
+# the source tree to answer for *-aquila* and ask the original otherwise
+aquila_config_sub()
+{
+    local f
+
+    find . -name config.sub | while read -r f; do
+        mv "$f" "$f.orig"
+        cat > "$f" <<'EOF'
+#!/bin/sh
+case "$1" in
+    *-aquila*) echo i686-pc-aquila ;;
+    *) exec "$(dirname "$0")/config.sub.orig" "$@" ;;
+esac
+EOF
+        chmod +x "$f"
+    done
+}
 
 # the tree a recipe is in: the one being built, or contrib
 recipe_tree()
@@ -76,6 +98,8 @@ recipe_tree()
     done
 }
 
+# build_port <name> [dep]: a dependency (dep set) that was built since its
+# recipe and libc last changed is not built again
 build_port()
 {
     local tree
@@ -90,10 +114,18 @@ build_port()
         exit 2
     fi
 
+    local stamp=$BUILDDIR/$tree/$1.built
+
+    if [ -n "${2:-}" ] && [ -f "$stamp" ] &&
+       [ -z "$(find "$ROOT/$tree/$1" "$LIBC" -newer "$stamp" 2>/dev/null)" ]; then
+        built[$1]=1
+        return
+    fi
+
     # dependencies first
     local dep
     for dep in $(DEPENDS=; source "$recipe"; echo "$DEPENDS"); do
-        build_port "$dep"
+        build_port "$dep" dep
     done
 
     (
@@ -145,6 +177,7 @@ build_port()
         build
     )
 
+    touch "$stamp"
     built[$1]=1
 }
 

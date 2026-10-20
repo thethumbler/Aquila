@@ -20,7 +20,7 @@ Then:
 ```
 make toolchain      # i686-aquila gcc/binutils, newlib and Limine (once, ~15 min)
 make                # kernel, user space programs, contrib/ and initrd
-make ports          # optional software (kilo, Lua), included in the initrd
+make ports          # optional software (vis, kilo, Lua, ...), included in the initrd
 make run-iso        # build the ISO and boot it in QEMU
 ```
 
@@ -103,6 +103,7 @@ from source, see [tests/](tests/README.md).
 - [X] aqbox   (system tools)
 - [X] fbterm  (framebuffer terminal)
 - [X] kilo    (text editor, port)
+- [X] vis     (vi-like editor, port) on ncurses (port)
 - [X] Lua     (port)
 - [ ] tcc
 
@@ -124,4 +125,5 @@ The toolchain patches in [toolchain/patches/](toolchain/patches/) modify
 binutils and GCC (GPLv3) and newlib (various free licenses); the patched
 tools remain under those licenses. contrib/ and ports/ software is
 fetched from upstream and keeps its own license (dash: BSD, sbase: MIT,
-kilo: BSD 2-Clause, Lua: MIT).
+kilo: BSD 2-Clause, Lua: MIT, ncurses: MIT-style, libtermkey: MIT,
+vis: ISC).

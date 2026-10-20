@@ -31,6 +31,10 @@ build()
 }
 ```
 
+Recipes may call `aquila_config_sub` in `build()` to let an autoconf
+`configure` accept `--host=i686-aquila`. A dependency is rebuilt only
+when its recipe or libc changed since it was last built.
+
 `build()` runs in the extracted source directory, after applying any
 `<name>/*.patch` (`patch -p1`), with `CC`, `AR`, `RANLIB` and
 `STRIP` set for the `i686-aquila` toolchain and `JOBS` for parallel
@@ -48,7 +52,10 @@ against go into `$STAGING`, which `CPPFLAGS` and `LDFLAGS` point at.
 
 ## Ports
 
-| port  | version  |                                |
-|-------|----------|--------------------------------|
-| kilo  | 323d93b  | `kilo` in `/usr/bin`           |
-| lua   | 5.5.1    | `lua` and `luac` in `/usr/bin` |
+| port       | version  |                                                     |
+|------------|----------|-----------------------------------------------------|
+| kilo       | 323d93b  | `kilo` in `/usr/bin`                                |
+| libtermkey | 0.22     | library only (for vis)                              |
+| lua        | 5.5.1    | `lua` and `luac` in `/usr/bin`                      |
+| ncurses    | 6.6      | library only, wide characters, the vt100, ansi, linux, xterm and xterm-256color descriptions built in (no terminfo database) |
+| vis        | 0.9      | `vis` in `/usr/bin`, without Lua (no syntax highlighting) |
