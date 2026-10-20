@@ -127,8 +127,9 @@ static const char *ata_error_string(uint8_t err)
 
 static void ata_wait(struct ata_drive *drive)
 {
+    /* alternate status lives at offset 0 of the control block */
     for (int i = 0; i < 4; ++i)
-        io_in8(&drive->base, ATA_REG_ALTSTATUS);
+        io_in8(&drive->ctrl, 0);
 }
 
 static int ata_poll(struct ata_drive *drive, int advanced_check)

@@ -31,6 +31,8 @@ void ata_select_drive(struct ata_drive *drive, uint32_t mode)
         if (mode & ATA_MODE_LBA48)
             //io_out8(&drive->base, ATA_REG_HDDEVSEL, ATA_DRIVE_LBA48 | (drive->slave << 4) | (mode & 0xF));
             io_out8(&drive->base, ATA_REG_HDDEVSEL, 0xE0 | (drive->slave << 4) | (mode & 0xF));
+        else if (mode & ATA_MODE_LBA28)
+            io_out8(&drive->base, ATA_REG_HDDEVSEL, 0xE0 | (drive->slave << 4));
         else
             io_out8(&drive->base, ATA_REG_HDDEVSEL, 0xA0 | (drive->slave << 4) | (mode & 0xF));
 
@@ -58,7 +60,9 @@ static size_t ata_partition_offset(struct ata_drive *drive, size_t part)
 
     struct mbr *mbr;
 
-    drive->read(drive, 0, 1, read_buf);
+    if (drive->read(drive, 0, 1, read_buf) < 0)
+        return 0;
+
     mbr = (struct mbr *) read_buf;
 
     /* TODO Support CHS */
@@ -73,7 +77,13 @@ static ssize_t ata_read(struct devid *dd, off_t offset, size_t size, void *buf)
     size_t drive_id  = dd->minor / 64;
     size_t partition = dd->minor % 64;
 
+    if (drive_id >= 4 || partition > 4)
+        return -ENXIO;
+
     struct ata_drive *drive = &drives[drive_id];
+
+    if (!drive->read)
+        return -ENXIO;
 
     offset += ata_partition_offset(drive, partition);
     return drive->read(drive, offset, size, buf);
@@ -85,7 +95,13 @@ static ssize_t ata_write(struct devid *dd, off_t offset, size_t size, void *buf)
     size_t drive_id  = dd->minor / 64;
     size_t partition = dd->minor % 64;
 
+    if (drive_id >= 4 || partition > 4)
+        return -ENXIO;
+
     struct ata_drive *drive = &drives[drive_id];
+
+    if (!drive->write)
+        return -ENXIO;
 
     offset += ata_partition_offset(drive, partition);
 
@@ -101,17 +117,17 @@ static uint8_t ata_detect_drive(struct ata_drive *drive)
     }
 
     ata_select_drive(drive, 0);
-    ata_poll(drive, 0);
 
-#if 0
+    /* a floating bus reads 0xFF and would keep BSY set forever */
     uint8_t status = io_in8(&drive->base, ATA_REG_STATUS);
 
-    if (!status) {
+    if (status == 0x00 || status == 0xFF) {
         /* no device, bail */
         drive->type = ATADEV_NOTFOUND;
         goto done;
     }
-#endif
+
+    ata_poll(drive, 0);
 
     uint8_t  type_lo = io_in8(&drive->base, ATA_REG_LBA1);
     uint8_t  type_hi = io_in8(&drive->base, ATA_REG_LBA2);
@@ -153,7 +169,12 @@ static uint8_t ata_detect_drive(struct ata_drive *drive)
     memset(ide_ident, 0, sizeof(ide_ident));
 
     io_out8(&drive->base, ATA_REG_CMD, identify_command);
-    ata_poll(drive, 1);
+
+    if (io_in8(&drive->base, ATA_REG_STATUS) == 0 || ata_poll(drive, 1)) {
+        /* drive did not respond to IDENTIFY */
+        drive->type = ATADEV_NOTFOUND;
+        goto done;
+    }
 
     for (int i = 0; i < 512; i += 2) {
         uint16_t x = io_in16(&drive->base, ATA_REG_DATA);
@@ -167,10 +188,7 @@ static uint8_t ata_detect_drive(struct ata_drive *drive)
 
     if (drive->command_sets & (1 << 26)) {
         /* 48-bit LBA */
-        uint32_t high  = *(uint32_t *) (ide_ident + ATA_IDENT_MAX_LBA);
-        uint32_t low   = *(uint32_t *) (ide_ident + ATA_IDENT_MAX_LBA_EXT);
-
-        drive->max_lba = ((uint64_t) high << 32) | low;
+        drive->max_lba = *(uint64_t *) (ide_ident + ATA_IDENT_MAX_LBA_EXT);
         drive->mode    = ATA_MODE_LBA48;
     } else {
         /* 28-bit LBA */
@@ -187,7 +205,7 @@ static uint8_t ata_detect_drive(struct ata_drive *drive)
     printk("ata%d: signature: 0x%x\n", drive->id, drive->signature);
     printk("ata%d: capabilities: 0x%x\n", drive->id, drive->capabilities);
     printk("ata%d: command Sets: 0x%x\n", drive->id, drive->command_sets);
-    printk("ata%d: max LBA: 0x%x\n", drive->id, drive->max_lba);
+    printk("ata%d: max LBA: 0x%lx\n", drive->id, drive->max_lba);
     printk("ata%d: model: %s\n", drive->id, drive->model);
     
 done:
