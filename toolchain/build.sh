@@ -122,7 +122,9 @@ stage_autotools()
     for pkg in $AUTOCONF $AUTOMAKE; do
         log "building $pkg"
         unpack $pkg
-        (cd "$SRC/$pkg" && ./configure --prefix="$PREFIX/autotools" >/dev/null &&
+        # automake needs the autoconf built just before it, not the host's
+        (cd "$SRC/$pkg" && export PATH=$PREFIX/autotools/bin:$PATH &&
+            ./configure --prefix="$PREFIX/autotools" >/dev/null &&
             make -j"$JOBS" >/dev/null && make install >/dev/null)
     done
 }
