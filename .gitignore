@@ -21,3 +21,5 @@ system/nuklear/nuklear
 system/nuklear/libnk.a
 system/fbterm/fbterm
 system/aqbox/aqbox
+
+kernel/arch/*/kernel-*
