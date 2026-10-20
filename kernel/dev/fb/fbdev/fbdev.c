@@ -84,6 +84,35 @@ static int fbdev_ioctl(struct devid *dd, int request, void *argp)
             return -EFAULT;
         memcpy(argp, fb->var_screeninfo, sizeof(struct fb_var_screeninfo));
         return 0;
+    case FBIOPUT_VSCREENINFO: {
+        /* the mode can't be changed: only to the one it is, and the
+         * caller gets what it is */
+        struct fb_var_screeninfo *var = fb->var_screeninfo, *new = argp;
+
+        if (!var)
+            return -ENXIO;
+        if (uaccess_check(argp, sizeof(struct fb_var_screeninfo)))
+            return -EFAULT;
+
+        if (new->xres != var->xres || new->yres != var->yres ||
+            new->xres_virtual > var->xres_virtual ||
+            new->yres_virtual > var->yres_virtual ||
+            (new->bits_per_pixel && new->bits_per_pixel != var->bits_per_pixel) ||
+            new->xoffset || new->yoffset)
+            return -EINVAL;
+
+        memcpy(argp, var, sizeof(struct fb_var_screeninfo));
+        return 0;
+    }
+    case FBIOPAN_DISPLAY: {
+        /* no panning, the virtual screen is the visible one */
+        struct fb_var_screeninfo *new = argp;
+
+        if (uaccess_check(argp, sizeof(struct fb_var_screeninfo)))
+            return -EFAULT;
+
+        return new->xoffset || new->yoffset ? -EINVAL : 0;
+    }
     }
 
     return -ENOTTY;

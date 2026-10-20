@@ -37,7 +37,6 @@ static ssize_t fbdev_vesa_write(struct fbdev *fb, off_t offset, size_t size, voi
 
 static int fbdev_vesa_map(struct fbdev *fb, struct vm_space *vm_space, struct vm_entry *vm_entry)
 {
-    printk("fbdev_vesa_map(fb=%p, vm_space=%p, vm_entry=%p {base=%p, off=0x%x, size=0x%x})\n", fb, vm_space, vm_entry, vm_entry->base, vm_entry->off, vm_entry->size);
 
     /* We do not support private maps */
     if (!(vm_entry->flags & VM_SHARED))
@@ -80,9 +79,8 @@ static int fbdev_vesa_prope(int i __unused, struct fbdev *fb)
     /* Init fb structs */
     vesa_fix_screeninfo.smem_start = (uintptr_t) vmem;
     vesa_fix_screeninfo.smem_len   = size;
-    //vesa_fix_screenifo.type
-    //vesa_fix_screenifo.type_aux
-    //vesa_fix_screenifo.visual
+    vesa_fix_screeninfo.type          = FB_TYPE_PACKED_PIXELS;
+    vesa_fix_screeninfo.visual        = FB_VISUAL_TRUECOLOR;
     vesa_fix_screeninfo.xpanstep      = 0;
     vesa_fix_screeninfo.ypanstep      = 0;
     vesa_fix_screeninfo.ywrapstep     = 0;
@@ -102,11 +100,23 @@ static int fbdev_vesa_prope(int i __unused, struct fbdev *fb)
     vesa_var_screeninfo.yoffset       = 0;
 
     vesa_var_screeninfo.bits_per_pixel = info->bits_per_pixel;
-    //vesa_var_screeninfo.grayscale
-    //struct fb_bitfield red;     /* bitfield in fb mem if true color, */
-    //struct fb_bitfield green;   /* else only length is significant */
-    //struct fb_bitfield blue;
-    //struct fb_bitfield transp;  /* transparency         */
+
+    /* the colors' bits; xRGB if the mode doesn't tell (8 bits each, or
+     * 5-6-5 for 16 bits per pixel) */
+    if (info->red_mask_size && info->green_mask_size && info->blue_mask_size) {
+        vesa_var_screeninfo.red   = (struct fb_bitfield) {info->red_field_position, info->red_mask_size, 0};
+        vesa_var_screeninfo.green = (struct fb_bitfield) {info->green_field_position, info->green_mask_size, 0};
+        vesa_var_screeninfo.blue  = (struct fb_bitfield) {info->blue_field_position, info->blue_mask_size, 0};
+    } else if (info->bits_per_pixel == 16) {
+        vesa_var_screeninfo.red   = (struct fb_bitfield) {11, 5, 0};
+        vesa_var_screeninfo.green = (struct fb_bitfield) {5, 6, 0};
+        vesa_var_screeninfo.blue  = (struct fb_bitfield) {0, 5, 0};
+    } else {
+        vesa_var_screeninfo.red   = (struct fb_bitfield) {16, 8, 0};
+        vesa_var_screeninfo.green = (struct fb_bitfield) {8, 8, 0};
+        vesa_var_screeninfo.blue  = (struct fb_bitfield) {0, 8, 0};
+    }
+
     //vesa_var_screeninfo.nonstd
     //vesa_var_screeninfo.activate
     //vesa_var_screeninfo.height

@@ -143,6 +143,15 @@ static inline struct boot *process_multiboot_info(multiboot_info_t *info)
         fb_minfo.y_resolution           = info->framebuffer_height;
         fb_minfo.bits_per_pixel         = info->framebuffer_bpp;
 
+        /* the positions and sizes of red, green and blue */
+        uint8_t *color = info->framebuffer_color_info;
+        fb_minfo.red_field_position     = color[0];
+        fb_minfo.red_mask_size          = color[1];
+        fb_minfo.green_field_position   = color[2];
+        fb_minfo.green_mask_size        = color[3];
+        fb_minfo.blue_field_position    = color[4];
+        fb_minfo.blue_mask_size         = color[5];
+
         minfo = &fb_minfo;
         data.vbe_info  = NULL;
         data.mode_info = &fb_minfo;
