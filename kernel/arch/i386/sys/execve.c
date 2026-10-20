@@ -65,6 +65,15 @@ void arch_sys_execve(struct proc *proc, int argc, char * const _argp[], int envc
     uintptr_t env_ptr = (uintptr_t) u_envp;
     uintptr_t arg_ptr = (uintptr_t) u_argp;
 
+    /* the ABI expects the stack to be 16-byte aligned at process entry,
+     * i.e. once argc, argp and envp below are pushed */
+#if ARCH_BITS==32
+    size_t frame = 2 * sizeof(uintptr_t) + sizeof(int32_t);
+#else
+    size_t frame = 2 * sizeof(uintptr_t) + sizeof(int64_t);
+#endif
+    stack = (volatile char *) ((((uintptr_t) stack - frame) & ~(uintptr_t) 15) + frame);
+
     /* main(int argc, char **argv, char **envp) */
     stack -= sizeof(uintptr_t);
     *(volatile uintptr_t *) stack = env_ptr;
