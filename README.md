@@ -1,53 +1,98 @@
-# Aquila OS ![https://travis-ci.org/mohamed-anwar/Aquila](https://api.travis-ci.org/mohamed-anwar/Aquila.svg?branch=master) [![Gitter chat](https://badges.gitter.im/mohamed-anwar/aquila.png)](https://gitter.im/_aquila)
-![Image of Aquila](http://aquilaos.com/img/screenshot.png)
+# Aquila OS [![build](https://github.com/thethumbler/aquila/actions/workflows/build.yml/badge.svg)](https://github.com/thethumbler/aquila/actions/workflows/build.yml)
 
-UNIX-like Operating System, including the kernel and system tools.
-Intended to be fully **POSIX** compliant. Oh, and it compiles with -O3.
+UNIX-like operating system, including the kernel, C library and system
+tools. Intended to be fully **POSIX** compliant.
 
-#### Build Instructions
-Follow the instructions in this [wiki page.](https://github.com/mohamed-anwar/Aquila/wiki/Build-Instructions)
+## Building
 
-#### CPU-based Features:
-##### Supported Archetictures:
-> - [X] x86
-> - [ ] x86-64
+Everything is built from source into `build/`. On a Linux host you need
+a C/C++ compiler with 32-bit support, `make`, `bison`, `flex`, `texinfo`,
+GMP, MPFR and MPC development headers, `wget`, `nasm`, `cpio`, `xorriso`
+and `qemu-system-i386`. On Debian/Ubuntu:
+
+```
+sudo apt install build-essential gcc-multilib bison flex texinfo libgmp-dev \
+    libmpfr-dev libmpc-dev wget nasm cpio xorriso qemu-system-x86
+```
+
+Then:
+
+```
+make toolchain      # i686-aquila gcc/binutils, newlib and Limine (once, ~15 min)
+make                # kernel, user space programs and initrd
+make ports          # optional: third-party software (Lua), included in the initrd
+make run-iso        # build the ISO and boot it in QEMU
+```
+
+`make run` boots the kernel directly with the console on the serial port
+(log in as `root`, no password). `make iso` only builds
+`build/aquila.iso`. See the top of the [Makefile](Makefile) for all
+targets.
+
+## Testing
+
+```
+make test           # or tests/run.sh
+```
+
+boots the kernel in QEMU with test programs and checks the system built
+from source, see [tests/](tests/README.md).
+
+## Layout
+
+| directory                    |                                                    |
+|------------------------------|----------------------------------------------------|
+| [kernel/](kernel/)           | the kernel                                         |
+| [include/uapi/](include/uapi/aquila) | user/kernel ABI: syscall numbers, errno, structures shared by the kernel and libc |
+| [libc/](libc/aquila)         | AquilaOS port of newlib                            |
+| [toolchain/](toolchain/)     | cross toolchain build script and patches           |
+| [userland/](userland/)       | init, aqbox (core utilities), fbterm, kilo         |
+| [ports/](ports/)             | third-party software recipes                       |
+| [rootfs/](rootfs/)           | root filesystem skeleton                           |
+| [boot/](boot/)               | bootloader configuration                           |
+| [configs/](configs/)         | kernel build configurations                        |
+| [tests/](tests/)             | QEMU based test suite                              |
+
+## Features
+
+#### Architectures
+- [X] x86
+- [ ] x86-64
 
 - [X] Multitasking
 - [X] Multithreading
 - [ ] SMP
 
-#### Kernel Features:
-- [X] Monolitihic kernel
+#### Kernel
+- [X] Monolithic kernel
 - [X] Virtual Filesystem
-- [ ] Supports loadable modules
+- [ ] Loadable modules
 
-#### Supported Filesystems:
-- [X] initramfs (CPIO Archive filesystem, used for Ramdisk, read only)
-- [X] tmpfs     (Generic temporary filesystem, read/write)
-- [X] devfs     (Virtual filesystem, used for device handlers, statically populated, read/write)
-- [X] devpts    (Virtual filesystem, used for psudo-terminals, dynamically populated, read/write)
-- [X] procfs    (Processes information filesystem, read only)
-- [X] ext2      (Basic Extended 2 filesystem, read/write)
+#### Filesystems
+- [X] initramfs (CPIO archive, read only)
+- [X] tmpfs     (temporary filesystem, read/write)
+- [X] devfs     (device files, read/write)
+- [X] devpts    (pseudo-terminals, read/write)
+- [X] procfs    (process information, read only)
+- [X] ext2      (read/write)
+- [X] minix     (read/write)
 - [ ] ext3
 - [ ] ext4
-- [ ] sysfs
 
-#### Supported Devices:
-- [X] i8042   (PS/2 Controller)
-- [X] ramdev  (Memory mapped device, generic handler)
-- [X] ps2kbd  (PS/2 Keyboard Controller)
-- [X] console (IBM TGA console)
-- [X] ata     (ATA Harddisk handler, PIO mode)
-- [X] fbdev   (Generic framebuffer device handler)
+#### Devices
+- [X] i8042   (PS/2 controller)
+- [X] ps2kbd  (PS/2 keyboard)
+- [X] ps2mouse (PS/2 mouse)
+- [X] ramdev  (memory mapped devices)
+- [X] console
+- [X] ata     (ATA hard disks, PIO mode)
+- [X] fbdev   (framebuffer, VESA)
 - [X] 8250    (UART)
 
-#### Supported video interfaces:
-- [X] VESA 3.0
-
-#### System Feautres:
-- [X] newlib-3.0.0 (latest)
-- [X] aqbox        (Aquila Box, like busybox)
-- [X] fbterm       (Framebuffer based terminal)
-- [X] tcc          (Tiny C Compiler)
-- [X] lua          (Lua programming language)
-- [X] kilo         (Kilo text editor)
+#### System
+- [X] newlib 4.6 C library
+- [X] aqbox   (Aquila Box, like busybox)
+- [X] fbterm  (framebuffer terminal)
+- [X] kilo    (text editor)
+- [X] Lua     (port)
+- [ ] tcc
