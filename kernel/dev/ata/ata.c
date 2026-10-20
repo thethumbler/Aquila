@@ -16,6 +16,7 @@
 #include <aquila/errno.h>
 
 #include <dev/pci.h>
+#include <dev/blkcache.h>
 #include <platform/misc.h>
 #include <sys/sched.h>
 
@@ -40,6 +41,30 @@ static void channel_release(struct ata_channel *ch)
 {
     ch->busy = 0;
     thread_queue_wakeup_nopoll(&ch->wait);
+}
+
+/* the driver's transfers, for the block cache: the channel is held for
+ * the command only, the buffers are the cache's */
+static ssize_t drive_read(void *_drive, uint64_t lba, size_t count, void *buf)
+{
+    struct ata_drive *drive = _drive;
+
+    channel_acquire(drive->channel);
+    ssize_t ret = drive->read(drive, lba, count, buf);
+    channel_release(drive->channel);
+
+    return ret;
+}
+
+static ssize_t drive_write(void *_drive, uint64_t lba, size_t count, void *buf)
+{
+    struct ata_drive *drive = _drive;
+
+    channel_acquire(drive->channel);
+    ssize_t ret = drive->write(drive, lba, count, buf);
+    channel_release(drive->channel);
+
+    return ret;
 }
 
 static void ata_irq_primary(struct x86_regs *r __unused)
@@ -172,10 +197,9 @@ static ssize_t ata_read(struct devid *dd, off_t offset, size_t size, void *buf)
 
     channel_acquire(drive->channel);
     offset += ata_partition_offset(drive, partition);
-    ssize_t ret = drive->read(drive, offset, size, buf);
     channel_release(drive->channel);
 
-    return ret;
+    return blkcache_read(drive, offset, size, buf, drive->max_lba, drive_read);
 }
 
 static ssize_t ata_write(struct devid *dd, off_t offset, size_t size, void *buf)
@@ -194,11 +218,9 @@ static ssize_t ata_write(struct devid *dd, off_t offset, size_t size, void *buf)
 
     channel_acquire(drive->channel);
     offset += ata_partition_offset(drive, partition);
-
-    ssize_t ret = drive->write(drive, offset, size, buf);
     channel_release(drive->channel);
 
-    return ret;
+    return blkcache_write(drive, offset, size, buf, drive_write);
 }
 
 /**

@@ -1,0 +1,14 @@
+#ifndef _DEV_BLKCACHE_H
+#define _DEV_BLKCACHE_H
+
+#include <core/system.h>
+
+/* reads or writes `count' sectors from `sector' of the owner's device */
+typedef ssize_t (*blkcache_io)(void *owner, uint64_t sector, size_t count, void *buf);
+
+ssize_t blkcache_read(void *owner, uint64_t sector, size_t count, void *buf,
+                      uint64_t nsectors, blkcache_io read);
+ssize_t blkcache_write(void *owner, uint64_t sector, size_t count, void *buf,
+                       blkcache_io write);
+
+#endif /* ! _DEV_BLKCACHE_H */
