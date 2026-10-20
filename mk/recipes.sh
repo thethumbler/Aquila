@@ -23,7 +23,7 @@
 # tools that generate target tables). Programs are installed into
 # $DESTDIR (build/<tree>/root), which the initrd includes (make initrd);
 # libraries and headers other recipes build against into $STAGING
-# (CPPFLAGS and LDFLAGS point there).
+# (CPPFLAGS and LDFLAGS point there, and pkg-config only looks there).
 #
 # environment:
 #   BUILDDIR    output directory (default: <repo>/build)
@@ -58,6 +58,13 @@ export JOBS
 export AQUILA_UAPI=$ROOT/include/uapi
 export CPPFLAGS="-I$STAGING/usr/include" LDFLAGS="-L$STAGING/usr/lib"
 
+# pkg-config finds what recipes installed into $STAGING, not the host's
+export PKG_CONFIG_LIBDIR=$STAGING/usr/lib/pkgconfig:$STAGING/usr/share/pkgconfig
+export PKG_CONFIG_SYSROOT_DIR=$STAGING PKG_CONFIG_PATH=
+
+# libraries are static: what they link with (Requires.private, Libs.private)
+export PKG_CONFIG="pkg-config --static"
+
 if ! command -v $CC >/dev/null; then
     echo "error: $CC not found, run 'make toolchain' first" >&2
     exit 1
@@ -80,7 +87,7 @@ aquila_config_sub()
 #!/bin/sh
 case "$1" in
     *-aquila*) echo i686-pc-aquila ;;
-    *) exec "$(dirname "$0")/config.sub.orig" "$@" ;;
+    *) exec sh "$(dirname "$0")/config.sub.orig" "$@" ;;
 esac
 EOF
         chmod +x "$f"
@@ -180,6 +187,10 @@ build_port()
         done
 
         build
+
+        # libtool archives name /usr/lib, the build host's: libraries are
+        # found without them
+        find "$STAGING" -name '*.la' -delete
     )
 
     touch "$stamp"
