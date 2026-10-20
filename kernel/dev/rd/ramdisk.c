@@ -10,8 +10,14 @@ size_t rd_size = 0; /* XXX */
 
 static ssize_t rd_read(struct devid *dd __unused, off_t offset, size_t size, void *buf)
 {
+    if (offset < 0)
+        return -EINVAL;
+
+    if ((size_t) offset >= rd_size)
+        return 0;
+
     /* Maximum possible read size */
-    size = MIN(size, rd_size - offset);
+    size = MIN(size, rd_size - (size_t) offset);
     
     /* Copy `size' bytes from ramdev into buffer */
     memcpy(buf, (char *) rd_addr + offset, size);
@@ -21,8 +27,14 @@ static ssize_t rd_read(struct devid *dd __unused, off_t offset, size_t size, voi
 
 static ssize_t rd_write(struct devid *dd __unused, off_t offset, size_t size, void *buf)
 {
+    if (offset < 0)
+        return -EINVAL;
+
+    if ((size_t) offset >= rd_size)
+        return 0;
+
     /* Maximum possible write size */
-    size = MIN(size, rd_size - offset);
+    size = MIN(size, rd_size - (size_t) offset);
     
     /* Copy `size' bytes from buffer to ramdev */
     memcpy((char *) rd_addr + offset, buf, size);
