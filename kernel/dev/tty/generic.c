@@ -1,6 +1,7 @@
 #include <core/system.h>
 #include <sys/sched.h>
 #include <dev/tty.h>
+#include <sys/uaccess.h>
 
 MALLOC_DEFINE(M_TTY, "tty", "tty structure");
 MALLOC_DEFINE(M_TTY_COOK, "tty-cook", "tty cooking buffer");
@@ -140,8 +141,30 @@ ssize_t tty_slave_write(struct tty *tty, size_t size, void *_buf)
     }
 }
 
+/** size of the user buffer an ioctl request reads or writes */
+static size_t tty_ioctl_argsize(int request)
+{
+    switch (request) {
+        case TCGETS:
+        case TCSETS:
+            return sizeof(struct termios);
+        case TIOCGPGRP:
+        case TIOCSPGRP:
+            return sizeof(pid_t);
+        case TIOCGWINSZ:
+        case TIOCSWINSZ:
+            return sizeof(struct winsize);
+    }
+
+    return 0;
+}
+
 int tty_ioctl(struct tty *tty, int request, void *argp)
 {
+    /* argp comes straight from user space */
+    if (uaccess_check(argp, tty_ioctl_argsize(request)))
+        return -EFAULT;
+
     switch (request) {
         case TCGETS:
             memcpy(argp, &tty->tios, sizeof(struct termios));

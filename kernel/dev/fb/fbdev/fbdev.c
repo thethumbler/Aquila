@@ -1,4 +1,5 @@
 #include <core/system.h>
+#include <sys/uaccess.h>
 #include <core/module.h>
 
 #include <dev/fbdev.h>
@@ -63,11 +64,15 @@ static int fbdev_ioctl(struct devid *dd, int request, void *argp)
     case FBIOGET_FSCREENINFO:
         if (!fb->fix_screeninfo)
             return -ENXIO;
+        if (uaccess_check(argp, sizeof(struct fb_fix_screeninfo)))
+            return -EFAULT;
         memcpy(argp, fb->fix_screeninfo, sizeof(struct fb_fix_screeninfo));
         return 0;
     case FBIOGET_VSCREENINFO:
         if (!fb->var_screeninfo)
             return -ENXIO;
+        if (uaccess_check(argp, sizeof(struct fb_var_screeninfo)))
+            return -EFAULT;
         memcpy(argp, fb->var_screeninfo, sizeof(struct fb_var_screeninfo));
         return 0;
     }

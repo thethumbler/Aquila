@@ -1,4 +1,5 @@
 #include <core/system.h>
+#include <sys/uaccess.h>
 #include <core/module.h>
 #include <fs/vfs.h>
 #include <fs/devpts.h>
@@ -146,9 +147,13 @@ static int pty_ioctl(struct devid *dd, int request, void *argp)
 
     switch (request) {
         case TIOCGPTN:
+            if (uaccess_check(argp, sizeof(int)))
+                return -EFAULT;
             *(int *) argp = pty->id;
             return 0;
         case TIOCSPTLCK:
+            if (uaccess_check(argp, sizeof(int)))
+                return -EFAULT;
             *(int *) argp = 0;  /* FIXME */
             return 0;
     }
