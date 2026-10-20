@@ -33,11 +33,11 @@ static void x86_sched_handler(struct x86_regs *r)
     if (!(timer_ticks & 0xFFFF)) {
         if (!timer_ticks) {
             struct timespec ts = {0};
-            gettime(&ts);
+            arch_time_get(&ts);     /* the real time clock itself */
             first_measured_time = ts.tv_sec;
         } else {
             struct timespec ts = {0};
-            gettime(&ts);
+            arch_time_get(&ts);
 
             uint64_t measured_time = ts.tv_sec - first_measured_time;
             uint64_t calculated_time = arch_rtime_ms() / 1000;
