@@ -1,0 +1,16 @@
+--- a/touch.c
++++ b/touch.c
+@@ -89,11 +89,8 @@
+ 
+ 	if (!strptime(str, format, &t))
+ 		eprintf("strptime %s: Invalid date format\n", str);
+-	if (zulu) {
+-		t.tm_hour += t.tm_gmtoff / 60;
+-		t.tm_gmtoff = 0;
+-		t.tm_zone = "Z";
+-	}
++	/* AquilaOS has no time zones, local time is UTC (no tm_gmtoff) */
++	(void) zulu;
+ 
+ 	return mktime(&t);
+ }

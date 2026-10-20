@@ -10,6 +10,10 @@
 #   DEPENDS     ports to build first
 #   FILE        name of the downloaded archive (default: basename of URL)
 #
+# Sources that have no usable release archive come from git instead: GIT
+# (repository) and COMMIT (full hash, which pins the contents) replace URL
+# and SHA256.
+#
 # build() runs in the extracted source directory (after applying
 # ports/<name>/*.patch) with CC, AR, RANLIB, STRIP set for the i686-aquila
 # toolchain, and AQUILA_UAPI pointing at the kernel ABI headers (for host
@@ -73,17 +77,37 @@ build_port()
         # shellcheck source=/dev/null
         source "$recipe"
 
-        local archive=$DOWNLOADS/${FILE:-$(basename "$URL")}
-
         mkdir -p "$DOWNLOADS" "$SRC" "$DESTDIR" "$STAGING"
 
-        if [ ! -f "$archive" ]; then
-            echo "==> downloading $NAME-$VERSION"
-            wget -q -O "$archive.part" "$URL"
-            mv "$archive.part" "$archive"
-        fi
+        if [ -n "${GIT:-}" ]; then
+            local archive=$DOWNLOADS/$NAME-$COMMIT.tar
+            local repo=$DOWNLOADS/$NAME.git
 
-        echo "$SHA256  $archive" | sha256sum -c --quiet -
+            # a branch or tag name could change what is built
+            if ! [[ $COMMIT =~ ^[0-9a-f]{40}$ ]]; then
+                echo "$NAME: COMMIT must be a full commit hash" >&2
+                exit 1
+            fi
+
+            if [ ! -f "$archive" ]; then
+                echo "==> downloading $NAME-$VERSION"
+                [ -d "$repo" ] || git clone -q --bare "$GIT" "$repo"
+                git -C "$repo" cat-file -e "$COMMIT^{commit}" 2>/dev/null ||
+                    git -C "$repo" fetch -q origin
+                git -C "$repo" archive --prefix="$NAME-$VERSION/" -o "$archive.part" "$COMMIT"
+                mv "$archive.part" "$archive"
+            fi
+        else
+            local archive=$DOWNLOADS/${FILE:-$(basename "$URL")}
+
+            if [ ! -f "$archive" ]; then
+                echo "==> downloading $NAME-$VERSION"
+                wget -q -O "$archive.part" "$URL"
+                mv "$archive.part" "$archive"
+            fi
+
+            echo "$SHA256  $archive" | sha256sum -c --quiet -
+        fi
 
         echo "==> building $NAME-$VERSION"
         rm -rf "${SRC:?}/$NAME-$VERSION"

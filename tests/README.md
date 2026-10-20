@@ -25,10 +25,10 @@ Build output goes to `tests/out/`.
 |------------|----------------|
 | `ata`      | a disk on the first ATA channel is detected, over several boots |
 | `cpu`      | DF and segment registers are sanitized on kernel entry, user exceptions and port I/O raise signals, SSE works, entry stack alignment |
-| `syscalls` | kernel addresses are rejected (`EFAULT`), descriptor and signal checks, wait, threads, pipes, unix sockets, bad ELF files, descriptor flags and close-on-exec, symlinks, signal masks, process groups, copy-on-write after fork |
+| `syscalls` | kernel addresses are rejected (`EFAULT`), descriptor and signal checks, wait, threads, pipes, unix sockets, bad ELF files, descriptor flags and close-on-exec, symlinks, signal masks, process groups, copy-on-write after fork, the `*at()` calls, links, rename, permissions and attributes, `SIGPIPE`, `nanosleep`, clocks and `times` |
 | `ext2`     | writes through singly and doubly indirect blocks and appends on an ext2 image, then `e2fsck` and a byte compare on the host |
-| `libc`     | errno and signal numbers, stdio, directories, fork/wait, crypt, passwd/shadow, truncate, signal masks through newlib (needs `make toolchain`) |
-| `system`   | the initrd built from source with the ports: logins on the serial console, then dash runs commands, pipelines, `$(...)`, a long line and `^C` (needs `make toolchain ports`) |
+| `libc`     | errno and signal numbers, stdio, directories, fork/wait, crypt, passwd/shadow and group, truncate, signal masks, the `*at()` calls, `realpath`, `ttyname`, sleeping, `SIGPIPE` and C99 `printf` formats through newlib (needs `make toolchain`) |
+| `system`   | the initrd built from source with the ports: logins on the serial console, then dash runs commands, pipelines, `$(...)`, a long line, `^C` and sbase tools (needs `make toolchain ports`) |
 
 A test fails on a `FAIL` line, a kernel panic, a guest reset (QEMU runs
 with `-no-reboot`) or if it doesn't finish in time.
