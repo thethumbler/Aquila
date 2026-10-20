@@ -20,6 +20,9 @@ static void t_outb(void) { asm volatile("outb %%al, $0x80" :: "a"(0)); }
 static void t_ud2(void)  { asm volatile("ud2"); }
 static void t_div(void)  { volatile int z = 0; volatile int x = 5 / z; (void) x; }
 
+/* gcc may target i686 without SSE for -m32 (Ubuntu does), which forbids
+ * naming xmm0 in asm */
+__attribute__((target("sse")))
 static void t_sse(void)
 {
     float f[4] __attribute__((aligned(16))) = {1, 2, 3, 4};
