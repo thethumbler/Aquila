@@ -25,7 +25,10 @@ int vfs_unlink(const char *path, struct uio *uio)
     char *name = NULL;
     char **tok = p->tokens;
 
-    while (tok) {
+    /* hold a reference to the directory we are walking through */
+    dir->ref++;
+
+    while (*tok) {
         char *token = *tok;
 
         if (!*(tok + 1)) {
@@ -34,16 +37,34 @@ int vfs_unlink(const char *path, struct uio *uio)
         }
 
         struct dirent dirent;
-        if ((ret = vfs_finddir(dir, token, &dirent)))
+        if ((ret = vfs_finddir(dir, token, &dirent))) {
+            vfs_close(dir);
             goto error;
+        }
 
-        if ((ret = vfs_vget(p->root, dirent.d_ino, &dir)))
+        struct vnode *next = NULL;
+        if ((ret = vfs_vget(p->root, dirent.d_ino, &next))) {
+            vfs_close(dir);
             goto error;
+        }
+
+        /* release the intermediate directory */
+        vfs_close(dir);
+        dir = next;
 
         ++tok;
     }
 
-    if ((ret = vfs_vunlink(dir, name, uio)))
+    if (!name) {    /* path refers to a mountpoint root */
+        vfs_close(dir);
+        ret = -EBUSY;
+        goto error;
+    }
+
+    ret = vfs_vunlink(dir, name, uio);
+    vfs_close(dir);
+
+    if (ret)
         goto error;
 
     free_tokens(tokens);

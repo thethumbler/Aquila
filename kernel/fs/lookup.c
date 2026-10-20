@@ -12,7 +12,8 @@ static inline int vfs_follow(struct vnode *vnode, struct uio *uio, struct vnode 
     path = kmalloc(1024, &M_BUFFER, M_ZERO);
     if (!path) goto e_nomem;
 
-    if ((err = vfs_read(vnode, 0, 1024, path)) < 0)
+    /* leave room for the NUL terminator (buffer is zeroed) */
+    if ((err = vfs_read(vnode, 0, 1023, path)) < 0)
         goto error;
 
     if ((err = vfs_lookup(path, uio, ref, NULL)))
@@ -59,11 +60,20 @@ int vfs_lookup(const char *path, struct uio *uio, struct vnode **ref, char **abs
         char *token = *token_p;
 
         struct dirent dirent;
-        if ((ret = vfs_finddir(dir, token, &dirent)))
+        if ((ret = vfs_finddir(dir, token, &dirent))) {
+            vfs_close(dir);
             goto error;
+        }
 
-        if ((ret = vfs_vget(vfs_path->root, dirent.d_ino, &dir)))
+        struct vnode *next = NULL;
+        if ((ret = vfs_vget(vfs_path->root, dirent.d_ino, &next))) {
+            vfs_close(dir);
             goto error;
+        }
+
+        /* release the intermediate directory */
+        vfs_close(dir);
+        dir = next;
     }
 
     free_tokens(tokens);
@@ -75,8 +85,13 @@ int vfs_lookup(const char *path, struct uio *uio, struct vnode **ref, char **abs
     kfree(rpath);
 
     /* resolve symbolic links */
-    if (S_ISLNK(dir->mode) && !(uio->flags & O_NOFOLLOW))
-        return vfs_follow(dir, uio, ref);
+    if (S_ISLNK(dir->mode) && !(uio->flags & O_NOFOLLOW)) {
+        ret = vfs_follow(dir, uio, ref);
+
+        /* the link itself is no longer needed */
+        vfs_close(dir);
+        return ret;
+    }
 
     return 0;
 
