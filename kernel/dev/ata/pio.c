@@ -181,5 +181,5 @@ void pio_init(struct ata_drive *drive)
 {
     drive->read  = pio_read;
     drive->write = pio_write;
-    ata_soft_reset(drive);
+    ata_reset(drive);
 }

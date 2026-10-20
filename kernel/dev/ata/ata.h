@@ -158,14 +158,8 @@ static int ata_poll(struct ata_drive *drive, int advanced_check)
     return 0;
 }
 
-static void ata_soft_reset(struct ata_drive *drive)
-{
-    io_out8(&drive->ctrl, 0, ATA_CMD_RESET);
-    ata_wait(drive);
-    io_out8(&drive->ctrl, 0, 0);
-}
-
 /* ata.c */
+void ata_reset(struct ata_drive *drive);
 void ata_select_drive(struct ata_drive *drive, uint32_t mode);
 
 /* pio.c */

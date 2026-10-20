@@ -22,11 +22,40 @@
 
 static struct ata_drive drives[4];
 
+/* last drive select register value written, invalidated by a reset */
+static struct ata_drive *last_selected_drive = NULL;
+static uint32_t last_selected_mode = -1;
+
+/* max status reads while waiting for a drive after a reset */
+#define ATA_RESET_TIMEOUT  1000000
+
+/**
+ * reset both drives on the drive's channel and wait for completion
+ */
+void ata_reset(struct ata_drive *drive)
+{
+    /* select the master first so its status reflects the reset (an absent
+     * slave would read 0 and hide BSY) */
+    io_out8(&drive->base, ATA_REG_HDDEVSEL, 0xA0);
+    ata_wait(drive);
+
+    io_out8(&drive->ctrl, 0, ATA_CMD_RESET);
+    ata_wait(drive);
+    io_out8(&drive->ctrl, 0, 0);
+    ata_wait(drive);
+
+    for (int i = 0; i < ATA_RESET_TIMEOUT; ++i) {
+        if (!(io_in8(&drive->ctrl, 0) & ATA_STATUS_BSY))
+            break;
+    }
+
+    /* a reset changes the drive selection, force the next select */
+    last_selected_drive = NULL;
+    last_selected_mode  = -1;
+}
+
 void ata_select_drive(struct ata_drive *drive, uint32_t mode)
 {
-    static struct ata_drive *last_selected_drive = NULL;
-    static uint32_t last_selected_mode = -1;
-
     if (drive != last_selected_drive || mode != last_selected_mode) {
         if (mode & ATA_MODE_LBA48)
             //io_out8(&drive->base, ATA_REG_HDDEVSEL, ATA_DRIVE_LBA48 | (drive->slave << 4) | (mode & 0xF));
@@ -108,26 +137,44 @@ static ssize_t ata_write(struct devid *dd, off_t offset, size_t size, void *buf)
     return drive->write(drive, offset, size, buf);
 }
 
+/**
+ * check whether the selected drive exists, must be called after the
+ * channel reset completed. A floating bus (no drives on the channel)
+ * reads 0xFF, a missing drive next to a present one reads 0.
+ *
+ * \return 1 if a drive is present, 0 otherwise
+ */
+static int ata_drive_present(struct ata_drive *drive)
+{
+    uint8_t status = io_in8(&drive->base, ATA_REG_STATUS);
+
+    if (status == 0xFF || status & ATA_STATUS_BSY)
+        return 0;
+
+    /* ATA drives report ready, ATAPI drives don't but set a signature */
+    if (status & ATA_STATUS_DRDY)
+        return 1;
+
+    uint8_t lba1 = io_in8(&drive->base, ATA_REG_LBA1);
+    uint8_t lba2 = io_in8(&drive->base, ATA_REG_LBA2);
+
+    return (lba1 == 0x14 && lba2 == 0xEB) || (lba1 == 0x69 && lba2 == 0x96);
+}
+
 static uint8_t ata_detect_drive(struct ata_drive *drive)
 {
     if (!drive->slave) {
-        /* reset device */
-        ata_soft_reset(drive);
-        ata_wait(drive);
+        /* reset both devices on the channel */
+        ata_reset(drive);
     }
 
     ata_select_drive(drive, 0);
 
-    /* a floating bus reads 0xFF and would keep BSY set forever */
-    uint8_t status = io_in8(&drive->base, ATA_REG_STATUS);
-
-    if (status == 0x00 || status == 0xFF) {
+    if (!ata_drive_present(drive)) {
         /* no device, bail */
         drive->type = ATADEV_NOTFOUND;
         goto done;
     }
-
-    ata_poll(drive, 0);
 
     uint8_t  type_lo = io_in8(&drive->base, ATA_REG_LBA1);
     uint8_t  type_hi = io_in8(&drive->base, ATA_REG_LBA2);
