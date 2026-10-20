@@ -1,5 +1,6 @@
 #include <core/system.h>
 #include <core/string.h>
+#include <core/kargs.h>
 
 #define MAX_ARGS 128
 
@@ -21,19 +22,20 @@ int kargs_parse(const char *_cmdline)
 
     char **tokens = tokenize(_cmdline, ' ');
 
-    for (char **token_p = tokens; *token_p; ++token_p) {
+    for (char **token_p = tokens; *token_p && kargc < MAX_ARGS; ++token_p) {
         char *token = *token_p;
-        int i, len = strlen(token);
-        for (i = 0; i < len; ++i) {
-            if (token[i] == '=') {
-                token[i] = 0;
-                kargs[kargc].key   = token;
-                kargs[kargc].value = &token[i+1];
+
+        kargs[kargc].key   = token;
+        kargs[kargc].value = NULL;
+
+        /* split on the first '=' only, value may itself contain '=' */
+        for (char *c = token; *c; ++c) {
+            if (*c == '=') {
+                *c = 0;
+                kargs[kargc].value = c + 1;
+                break;
             }
         }
-
-        if (i == len)
-            kargs[kargc].key = token;
 
         ++kargc;
     }

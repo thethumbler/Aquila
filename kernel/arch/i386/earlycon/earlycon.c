@@ -26,10 +26,10 @@ void earlycon_init()
 
 void earlycon_reinit()
 {
-    const char *arg_earlycon;
+    const char *arg_earlycon = NULL;
     earlycon = &earlycon_fb; /* default */
 
-    if (!kargs_get("earlycon", &arg_earlycon)) {
+    if (!kargs_get("earlycon", &arg_earlycon) && arg_earlycon) {
         if (!strcmp(arg_earlycon, "ttyS0"))
             earlycon = &earlycon_uart;
         else if (!strcmp(arg_earlycon, "vga"))

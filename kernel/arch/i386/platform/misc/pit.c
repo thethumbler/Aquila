@@ -53,13 +53,15 @@ uint32_t x86_pit_period_set(uint32_t period_ns)
     uint32_t div;
     const char *arg_div = NULL;
 
-    if (!kargs_get("i8254.div", &arg_div)) {
+    if (!kargs_get("i8254.div", &arg_div) && arg_div) {
         div = atou32(arg_div);
     } else {
         div = period_ns/838UL;
     }
 
+    /* the divisor register is 16 bits wide */
     if (div == 0) div = 1;
+    if (div > 0xFFFF) div = 0xFFFF;
 
     period_ns = 1000000000UL/(FBASE/div);
 
