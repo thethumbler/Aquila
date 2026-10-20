@@ -4,9 +4,15 @@
 /* test __GNUC__ last because some compilers report
  * compatability with gcc using __GNUC__
  */
+#define __CONFIG_STR(x)     #x
+#define __CONFIG_XSTR(x)    __CONFIG_STR(x)
+
 #if defined(__clang__)
+  /* clang's __VERSION__ is a whole description, not just the version */
   #define __CONFIG_COMPILER__             "clang"
-  #define __CONFIG_COMPILER_VERSION__     __VERSION__
+  #define __CONFIG_COMPILER_VERSION__     __CONFIG_XSTR(__clang_major__) "." \
+                                          __CONFIG_XSTR(__clang_minor__) "." \
+                                          __CONFIG_XSTR(__clang_patchlevel__)
 #elif defined(__PCC__)
   #define __CONFIG_COMPILER__             "pcc"
   #define __CONFIG_COMPILER_VERSION__     __VERSION__
@@ -17,14 +23,15 @@
   #define __CONFIG_COMPILER__             "gcc"
   #define __CONFIG_COMPILER_VERSION__     __VERSION__
 #else
-  #define __CONFIG_COMPILER__             "unkown"
+  #define __CONFIG_COMPILER__             "unknown"
   #define __CONFIG_COMPILER_VERSION__     "?"
 #endif
 
 #define UTSNAME_SYSNAME  "AquilaOS"
 #define UTSNAME_RELEASE  "v0.0.2"
 #define UTSNAME_NODENAME "aquila"
-#define UTSNAME_VERSION  (__DATE__ " " __TIME__)
+/* when and with what the kernel was built */
+#define UTSNAME_VERSION  __DATE__ " " __TIME__ " " __CONFIG_COMPILER__ " " __CONFIG_COMPILER_VERSION__
 
 #define __CONFIG_TIMESTAMP__            __DATE__ " " __TIME__
 

@@ -864,7 +864,10 @@ static void sys_uname(struct utsname *name)
     strcpy(name->sysname,  UTSNAME_SYSNAME);
     strcpy(name->nodename, nodename);
     strcpy(name->release,  UTSNAME_RELEASE);
-    strcpy(name->version,  UTSNAME_VERSION);
+    /* the compiler's version string may be long */
+    size_t n = MIN(sizeof(name->version) - 1, (size_t) strlen(UTSNAME_VERSION));
+    memcpy(name->version, UTSNAME_VERSION, n);
+    name->version[n] = '\0';
     strcpy(name->machine,  UTSNAME_MACHINE);
 
     arch_syscall_return(curthread, 0);
