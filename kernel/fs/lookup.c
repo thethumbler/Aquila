@@ -105,10 +105,10 @@ static int lookup(const char *path, struct uio *uio, struct vnode **ref, char **
     free_tokens(tokens);
     kfree(vfs_path);
 
-    if (ref) *ref = dir;
     if (abs_path) *abs_path = strdup(rpath);
 
-    /* resolve symbolic links */
+    /* resolve symbolic links, *ref is only set on success: the link is
+     * released here and callers close *ref on errors */
     if (S_ISLNK(dir->mode) && !(uio->flags & O_NOFOLLOW)) {
         ret = vfs_follow(dir, rpath, uio, ref, depth);
 
@@ -117,6 +117,8 @@ static int lookup(const char *path, struct uio *uio, struct vnode **ref, char **
         kfree(rpath);
         return ret;
     }
+
+    if (ref) *ref = dir;
 
     kfree(rpath);
     return 0;
