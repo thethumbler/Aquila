@@ -11,13 +11,17 @@ struct ioaddr vga_ioaddr = {
     .type = IOADDR_PORT,
 };
 
+#define VGA_COLS    80
+#define VGA_ROWS    25
+#define VGA_SIZE    (2 * VGA_COLS * VGA_ROWS)
+
 static void earlycon_vga_scroll(int n)
 {
-    memcpy(vga_start, vga_start + 160 * n, 160 * (25 - n));
-    vga = vga_start + 160 * (25 - n);
+    memmove(vga_start, vga_start + 160 * n, 160 * (VGA_ROWS - n));
+    vga = vga_start + 160 * (VGA_ROWS - n);
 
     int i;
-    for (i = 0; i < 80 * n; ++i) {
+    for (i = 0; i < VGA_COLS * n; ++i) {
         vga[2 * i + 0] = '\0';
         vga[2 * i + 1] = 0x07;
     }
@@ -26,15 +30,17 @@ static void earlycon_vga_scroll(int n)
 static int earlycon_vga_putc(char c)
 {
     if (c) {
-        if (c == '\n') {
+        if (c == '\n')
             vga = vga_start + (vga - vga_start) / 160 * 160 + 160;
-            if (vga - vga_start >= 160 * 25)
-                earlycon_vga_scroll(1);
-            return 1;
+        else {
+            *vga = c;
+            vga += 2;
         }
 
-        *vga = c;
-        vga += 2;
+        /* wrapped past the last line */
+        if (vga - vga_start >= VGA_SIZE)
+            earlycon_vga_scroll(1);
+
         return 1;
     }
 
@@ -44,10 +50,9 @@ static int earlycon_vga_putc(char c)
 static int earlycon_vga_puts(char *s)
 {
     char *_s = s;
-    while (*s) {
-        *vga = *s++;
-        vga += 2;
-    }
+
+    while (*s)
+        earlycon_vga_putc(*s++);
 
     return (int)(s - _s);
 }

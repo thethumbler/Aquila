@@ -35,7 +35,7 @@ static void serial_init(void)
 
     uint8_t lcr = io_in8(&earlycon_uart_ioaddr, UART_LCR);
     io_out8(&earlycon_uart_ioaddr, UART_LCR, lcr | UART_LCR_DLAB);  /* Enable DLAB */
-    io_out8(&earlycon_uart_ioaddr, UART_DLL, 0x18);    /* Set divisor to 1 (lo byte) 115200 baud */
+    io_out8(&earlycon_uart_ioaddr, UART_DLL, 0x03);    /* Set divisor to 3 (lo byte) 38400 baud */
     io_out8(&earlycon_uart_ioaddr, UART_DLH, 0x00);    /*                  (hi byte)            */
     io_out8(&earlycon_uart_ioaddr, UART_LCR, lcr & ~UART_LCR_DLAB); /* Disable DLAB */
 }
