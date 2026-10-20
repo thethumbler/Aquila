@@ -1,5 +1,6 @@
 #include <core/system.h>
 #include <fs/vfs.h>
+#include <fs/posix.h>
 #include <dev/dev.h>
 #include <net/socket.h>
 #include <bits/fcntl.h>
@@ -151,8 +152,9 @@ ssize_t vfs_file_close(struct file *file)
     if (!file->vnode->fs)
         return -EINVAL;
 
+    /* default to releasing the vnode reference */
     if (!file->vnode->fs->fops.close)
-        return -ENOSYS;
+        return posix_file_close(file);
 
     return file->vnode->fs->fops.close(file);
 }
