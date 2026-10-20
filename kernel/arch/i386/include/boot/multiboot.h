@@ -90,6 +90,9 @@
 /* Is there video information? */
 #define MULTIBOOT_INFO_VIDEO_INFO               0x00000800
 
+/* is there framebuffer information? */
+#define MULTIBOOT_INFO_FRAMEBUFFER_INFO         0x00001000
+
 #ifndef ASM_FILE
 
 #include <stdint.h>
@@ -188,6 +191,18 @@ struct multiboot_info
   uint16_t vbe_interface_seg;
   uint16_t vbe_interface_off;
   uint16_t vbe_interface_len;
+
+  /* Framebuffer, valid if MULTIBOOT_INFO_FRAMEBUFFER_INFO is set */
+  uint64_t framebuffer_addr;
+  uint32_t framebuffer_pitch;
+  uint32_t framebuffer_width;
+  uint32_t framebuffer_height;
+  uint8_t  framebuffer_bpp;
+#define MULTIBOOT_FRAMEBUFFER_TYPE_INDEXED      0
+#define MULTIBOOT_FRAMEBUFFER_TYPE_RGB          1
+#define MULTIBOOT_FRAMEBUFFER_TYPE_EGA_TEXT     2
+  uint8_t  framebuffer_type;
+  uint8_t  framebuffer_color_info[6];
 };
 typedef struct multiboot_info multiboot_info_t;
 

@@ -117,12 +117,39 @@ static inline struct boot *process_multiboot_info(multiboot_info_t *info)
         boot.mmap_count = build_multiboot_mmap(info, boot.mmap, MULTIBOOT_MMAP_MAX);
 
 #ifdef MULTIBOOT_GFX
-    /* VBE info is only valid if the bootloader actually set a video mode */
-    if ((info->flags & MULTIBOOT_INFO_VIDEO_INFO) && info->vbe_mode_info) {
-        struct vbe_info_block  *vinfo = (struct vbe_info_block *)(uintptr_t)  info->vbe_control_info;
-        struct mode_info_block *minfo = (struct mode_info_block *)(uintptr_t) info->vbe_mode_info;
+    /*
+     * Linear framebuffer: VBE mode info (GRUB), or the standard multiboot
+     * framebuffer fields (e.g. Limine), both only if a mode was set.
+     */
+    /* minfo is read here (through the identity mapping), the fbdev uses
+     * the kernel mapping of the structures later */
+    struct mode_info_block *minfo = NULL;
+    static struct fbdev_vesa data;
 
-        uintptr_t vaddr    = minfo->phys_base_ptr;
+    if ((info->flags & MULTIBOOT_INFO_VIDEO_INFO) && info->vbe_mode_info) {
+        minfo = (struct mode_info_block *)(uintptr_t) info->vbe_mode_info;
+        data.vbe_info  = (struct vbe_info_block *) VMA(info->vbe_control_info);
+        data.mode_info = (struct mode_info_block *) VMA(info->vbe_mode_info);
+    } else if ((info->flags & MULTIBOOT_INFO_FRAMEBUFFER_INFO) &&
+               info->framebuffer_type == MULTIBOOT_FRAMEBUFFER_TYPE_RGB &&
+               !(info->framebuffer_addr >> 32)) {
+        /* describe it as a VBE mode for the vesa fbdev */
+        static struct mode_info_block fb_minfo;
+
+        fb_minfo.phys_base_ptr          = info->framebuffer_addr;
+        fb_minfo.bytes_per_scanline     = info->framebuffer_pitch;
+        fb_minfo.lin_bytes_per_scanline = info->framebuffer_pitch;
+        fb_minfo.x_resolution           = info->framebuffer_width;
+        fb_minfo.y_resolution           = info->framebuffer_height;
+        fb_minfo.bits_per_pixel         = info->framebuffer_bpp;
+
+        minfo = &fb_minfo;
+        data.vbe_info  = NULL;
+        data.mode_info = &fb_minfo;
+    }
+
+    if (minfo) {
+        uintptr_t paddr    = minfo->phys_base_ptr;
         uint32_t  scanline = minfo->lin_bytes_per_scanline;
         uint32_t  yres     = minfo->y_resolution;
         uint32_t  xres     = minfo->x_resolution;
@@ -131,18 +158,14 @@ static inline struct boot *process_multiboot_info(multiboot_info_t *info)
         /* We report video memory as mmap region */
         boot.mmap[boot.mmap_count] = (mmap_t) {
             .type  = MMAP_RESERVED,
-            .start = vaddr,
-            .end   = vaddr + yres * scanline,
+            .start = paddr,
+            .end   = paddr + yres * scanline,
         };
 
         boot.mmap_count++;
 
         extern void earlycon_fb_register(uintptr_t, uint32_t, uint32_t, uint32_t, uint32_t);
-        earlycon_fb_register(vaddr, scanline, yres, xres, depth);
-
-        static struct fbdev_vesa data;
-        data.vbe_info  = (struct vbe_info_block *) VMA(vinfo);
-        data.mode_info = (struct mode_info_block *) VMA(minfo);
+        earlycon_fb_register(paddr, scanline, yres, xres, depth);
 
         /* And register fbdev of type `vesa' */
         fbdev_register(FBDEV_TYPE_VESA, &data);
