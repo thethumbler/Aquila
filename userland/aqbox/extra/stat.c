@@ -70,9 +70,9 @@ AQBOX_APPLET(stat)(int argc, char *argv[])
         char atim[64], mtim[64], ctim[64];
 
         /* FIXME */
-        strftime(atim, 64, "%F", (struct tm *) &buf.st_atim);
-        strftime(mtim, 64, "%F", (struct tm *) &buf.st_mtim);
-        strftime(ctim, 64, "%F", (struct tm *) &buf.st_ctim);
+        strftime(atim, 64, "%F %T", localtime(&buf.st_atim.tv_sec));
+        strftime(mtim, 64, "%F %T", localtime(&buf.st_mtim.tv_sec));
+        strftime(ctim, 64, "%F %T", localtime(&buf.st_ctim.tv_sec));
 
         printf("      Type: %s\n", type);
         printf("    Device: %x/%x\n", buf.st_dev >> 8, buf.st_dev & 0xff);
