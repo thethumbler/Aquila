@@ -205,7 +205,7 @@ ssize_t ext2_inode_block_write(struct ext2 *desc, struct ext2_inode *inode, uint
 ino_t ext2_inode_alloc(struct ext2 *desc);
 
 /* dentry.c */
-uint32_t ext2_dentry_find(struct ext2 *desc, struct ext2_inode *inode, const char *name);
+ino_t ext2_dentry_find(struct ext2 *desc, struct ext2_inode *inode, const char *name);
 int ext2_dentry_create(struct vnode *dir, const char *name, ino_t ino, mode_t mode);
 
 /* iops.c */

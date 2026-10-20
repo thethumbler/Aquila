@@ -126,14 +126,14 @@ int minix_bcache_get(struct minix *desc, blk_t blk, void **data);
 /* inode.c */
 ino_t minix_inode_alloc(struct minix *desc);
 void minix_inode_free(struct minix *desc, ino_t ino);
-int minix_inode_read(struct minix *desc, uint32_t id, struct minix_inode *ref);
-int minix_inode_write(struct minix *desc, uint32_t id, struct minix_inode *ref);
+int minix_inode_read(struct minix *desc, ino_t ino, struct minix_inode *ref);
+int minix_inode_write(struct minix *desc, ino_t ino, struct minix_inode *ref);
 ssize_t minix_inode_block_read(struct minix *desc, struct minix_inode *m_inode, size_t idx, void *buf);
-ssize_t minix_inode_block_write(struct minix *desc, struct minix_inode *inode, uint32_t id, size_t idx, void *buf);
+ssize_t minix_inode_block_write(struct minix *desc, struct minix_inode *inode, ino_t ino, size_t idx, void *buf);
 
 /* dentry.c */
 uint32_t minix_dentry_find(struct minix *desc, struct minix_inode *m_inode, const char *name);
-int minix_dentry_create(struct vnode *dir, const char *name, uint32_t inode, mode_t mode);
+int minix_dentry_create(struct vnode *dir, const char *name, ino_t ino, mode_t mode);
 
 /* iops.c */
 ssize_t minix_read(struct vnode *inode, off_t offset, size_t size, void *buf);

@@ -73,8 +73,7 @@ static void switch_to_higher_half(void)
         _BSP_PD[768 + i] = ((uint32_t) _BSP_PT + i * PAGE_SIZE) | P | RW;
 
     /* Enable paging using Bootstrap Processor Page Directory */
-    extern void enable_paging(uint32_t);
-    enable_paging((uint32_t) _BSP_PD);
+    enable_paging((uintptr_t) _BSP_PD);
 #else
     uint64_t *_BSP_PT = (uint64_t *) scratch;
 
