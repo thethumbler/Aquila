@@ -237,5 +237,138 @@ void aq_main(void)
     check("setuid/setgid rules (failed step)", st >> 8, 0);
     check("root still root", SC(SYS_getuid, 0, 0, 0), 0);
 
+    /* --- descriptor flags (fcntl) --- */
+    fd = SC(SYS_open, "/tmp/flags", O_CREAT | O_WRONLY, 0644);
+    check("F_GETFD initially", SC(SYS_fcntl, fd, F_GETFD, 0), 0);
+    check("F_SETFD FD_CLOEXEC", SC(SYS_fcntl, fd, F_SETFD, FD_CLOEXEC), 0);
+    check("F_GETFD after set", SC(SYS_fcntl, fd, F_GETFD, 0), FD_CLOEXEC);
+    /* FD_CLOEXEC == O_WRONLY used to overwrite the open flags */
+    check("F_GETFL unchanged", SC(SYS_fcntl, fd, F_GETFL, 0) & O_ACCMODE, O_WRONLY);
+    check("still writable", SC(SYS_write, fd, "0123456789", 10), 10);
+    int dfd = SC(SYS_fcntl, fd, F_DUPFD_CLOEXEC, 20);
+    check("F_DUPFD_CLOEXEC", dfd >= 20, 1);
+    check("dup has FD_CLOEXEC", SC(SYS_fcntl, dfd, F_GETFD, 0), FD_CLOEXEC);
+    SC(SYS_close, dfd, 0, 0);
+    int cfd = SC(SYS_open, "/tmp/flags", O_RDONLY | O_CLOEXEC, 0);
+    check("O_CLOEXEC", SC(SYS_fcntl, cfd, F_GETFD, 0), FD_CLOEXEC);
+
+    /* --- ftruncate --- */
+    check("ftruncate", SC(SYS_ftruncate, fd, 4, 0), 0);
+    char st_buf[128];
+    SC(SYS_fstat, fd, st_buf, 0);
+    check("size after ftruncate", ((struct aquila_stat *) st_buf)->st_size, 4);
+    check("ftruncate read-only fd", SC(SYS_ftruncate, cfd, 0, 0), -EINVAL);
+    check("ftruncate negative", SC(SYS_ftruncate, fd, -1, 0), -EINVAL);
+    SC(SYS_close, cfd, 0, 0);
+    SC(SYS_close, fd, 0, 0);
+
+    /* --- symbolic links (tests/syscalls/rootfs) --- */
+    fd = SC(SYS_open, "/lnk/relative", O_RDONLY, 0);
+    check("relative symlink", fd >= 0, 1);
+    char lbuf[16] = {0};
+    check("read through symlink", SC(SYS_read, fd, lbuf, 11), 11);
+    SC(SYS_close, fd, 0, 0);
+    fd = SC(SYS_open, "/lnk/absolute", O_RDONLY, 0);
+    check("absolute symlink", fd >= 0, 1);
+    SC(SYS_close, fd, 0, 0);
+    check("symlink loop", SC(SYS_open, "/lnk/loop", O_RDONLY, 0), -ELOOP);
+
+    /* --- signal masks --- */
+    unsigned long set = 1UL << SIGUSR1, old = 0;
+    sa.sa_handler = (u32) handler;
+    SC(SYS_sigaction, SIGUSR1, &sa, 0);
+    got_sig = 0;
+    check("block SIGUSR1", SC(SYS_sigmask, SIG_BLOCK, &set, &old), 0);
+    check("old mask empty", old, 0);
+    SC(SYS_kill, pid, SIGUSR1, 0);
+    check("blocked signal pending", got_sig, 0);
+    check("unblock SIGUSR1", SC(SYS_sigmask, SIG_UNBLOCK, &set, 0), 0);
+    check("delivered on unblock", got_sig, SIGUSR1);
+    unsigned long kset = 1UL << SIGKILL;
+    SC(SYS_sigmask, SIG_BLOCK, &kset, 0);
+    SC(SYS_sigmask, SIG_BLOCK, 0, &old);
+    check("SIGKILL can't be blocked", old & kset, 0);
+    check("sigmask bad how", SC(SYS_sigmask, 7, &set, 0), -EINVAL);
+
+    /* sigsuspend: woken by a signal from a child */
+    got_sig = 0;
+    SC(SYS_sigmask, SIG_BLOCK, &set, 0);
+    c = SC(SYS_fork, 0, 0, 0);
+    if (!c) {
+        aq_spin(20000000);
+        SC(SYS_kill, SC(SYS_getppid, 0, 0, 0), SIGUSR1, 0);
+        SC(SYS_exit, 0, 0, 0);
+    }
+    unsigned long none = 0;
+    check("sigsuspend -> EINTR", SC(SYS_sigsuspend, &none, 0, 0), -EINTR);
+    check("sigsuspend handler ran", got_sig, SIGUSR1);
+    SC(SYS_sigmask, SIG_BLOCK, 0, &old);
+    check("sigsuspend restores mask", old, set);
+    SC(SYS_waitpid, c, &st, 0);
+    SC(SYS_sigmask, SIG_SETMASK, &none, 0);
+
+    /* a blocked read interrupted by a signal handler fails with EINTR */
+    int ip[2];
+    SC(SYS_pipe, ip, 0, 0);
+    c = SC(SYS_fork, 0, 0, 0);
+    if (!c) {
+        aq_spin(20000000);
+        SC(SYS_kill, SC(SYS_getppid, 0, 0, 0), SIGUSR1, 0);
+        aq_spin(20000000);
+        SC(SYS_exit, 0, 0, 0);
+    }
+    check("blocked read -> EINTR", SC(SYS_read, ip[0], lbuf, 1), -EINTR);
+    SC(SYS_waitpid, c, &st, 0);
+    SC(SYS_close, ip[0], 0, 0);
+    SC(SYS_close, ip[1], 0, 0);
+
+    /* --- processes --- */
+    c = SC(SYS_fork, 0, 0, 0);
+    if (!c)
+        SC(SYS_exit, SC(SYS_getppid, 0, 0, 0) == pid ? 0 : 1, 0, 0);
+    SC(SYS_waitpid, c, &st, 0);
+    check("getppid", st >> 8, 0);
+
+    /* process groups: a child in its own group, signalled through it */
+    c = SC(SYS_fork, 0, 0, 0);
+    if (!c) {
+        struct aquila_sigaction s3 = {(u32) child_handler, 0, 0};
+        SC(SYS_sigaction, SIGUSR1, &s3, 0);
+        for (;;);
+    }
+    check("setpgid child", SC(SYS_setpgid, c, c, 0), 0);
+    check("setpgid unknown pid", SC(SYS_setpgid, 3999, 3999, 0), -ESRCH);
+    /* this test runs as init, the session leader */
+    check("setpgid session leader", SC(SYS_setpgid, 0, 0, 0), -EPERM);
+    check("join missing group", SC(SYS_setpgid, 0, 4000, 0), -EPERM);
+    aq_spin(10000000);
+    check("kill group", SC(SYS_kill, -c, SIGUSR1, 0), 0);
+    check("group child wait", SC(SYS_waitpid, c, &st, 0), c);
+    check("group child status", st, 7 << 8);
+    check("kill missing group", SC(SYS_kill, -3999, SIGUSR1, 0), -ESRCH);
+
+    /* --- copy-on-write isolation (CR0.WP) --- */
+    static char cow[4096] __attribute__((aligned(4096)));
+    /* fault the page in, fork then shares it read-only */
+    for (int i = 0; i < 6; ++i)
+        ((volatile char *) cow)[i] = "parent"[i];
+    int cp[2], go[2];
+    char gobyte;
+    SC(SYS_pipe, cp, 0, 0);
+    SC(SYS_pipe, go, 0, 0);
+    c = SC(SYS_fork, 0, 0, 0);
+    if (!c) {
+        /* look at the page only after the parent wrote to its own copy */
+        SC(SYS_read, go[0], &gobyte, 1);
+        SC(SYS_exit, ((volatile char *) cow)[0], 0, 0);
+    }
+    /* fork left the page read-only in the parent, the kernel write must
+     * fault and copy it instead of going into the page the child shares */
+    SC(SYS_write, cp[1], "PARENT", 6);
+    SC(SYS_read, cp[0], cow, 6);
+    SC(SYS_write, go[1], "g", 1);
+    SC(SYS_waitpid, c, &st, 0);
+    check("kernel write didn't leak into child", (st >> 8) & 0xff, 'p');
+
     aq_end();
 }
