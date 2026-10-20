@@ -73,6 +73,7 @@ struct thread {
 
 int thread_queue_sleep(struct queue *queue);
 int thread_queue_wakeup(struct queue *queue);
+int thread_queue_wakeup_nopoll(struct queue *queue);
 
 /* threads in select() and poll(), woken by every thread_queue_wakeup() */
 extern struct queue poll_queue;

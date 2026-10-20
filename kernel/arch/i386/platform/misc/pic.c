@@ -185,6 +185,8 @@ void __x86_irq_handler(struct x86_regs *r)
     if (handler)
         handler(r);
 
+    sched_idle_wakeup();
+
     /* back to user mode (maybe after other threads ran): signals queued
      * meanwhile (by drivers) are delivered, a stop that was left for the
      * thread is taken now */

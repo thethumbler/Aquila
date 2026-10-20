@@ -125,11 +125,21 @@ void kernel_idle(void)
     arch_idle();
 }
 
+/* an interrupt woke a thread up while the CPU was idle: it runs now rather
+ * than at the next timer tick (a disk request would wait for one each) */
+void sched_idle_wakeup(void)
+{
+    if (kidle && ready_queue->count)
+        schedule();
+}
+
 void sched_thread_spawn(struct thread *thread)   /* Starts thread execution */
 {
     thread->spawned = 1;
     arch_thread_spawn(thread);
 }
+
+int sched_running = 0;
 
 void sched_init_spawn(struct proc *init)
 {
@@ -145,6 +155,7 @@ void sched_init_spawn(struct proc *init)
 
     curthread = (struct thread *) init->threads.head->value;
     curthread->state = RUNNABLE;
+    sched_running = 1;
     sched_thread_spawn(curthread);
 }
 

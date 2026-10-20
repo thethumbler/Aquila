@@ -10,11 +10,15 @@ extern struct thread *curthread;
 #define curproc (curthread->owner)
 
 extern int kidle;
+
+/* processes run, a thread may sleep (before, at boot, only the kernel) */
+extern int sched_running;
 void kernel_idle(void);
 void scheduler_init(void);
 void sched_thread_spawn(struct thread *thread);
 void sched_init_spawn(struct proc *init);
 void schedule(void);
+void sched_idle_wakeup(void);
 
 void sched_thread_ready(struct thread *thread);
 

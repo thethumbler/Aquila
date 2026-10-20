@@ -83,6 +83,16 @@ int thread_queue_wakeup(struct queue *queue)
     if (queue != &poll_queue && poll_queue.count)
         thread_queue_wakeup(&poll_queue);
 
+    return thread_queue_wakeup_nopoll(queue);
+}
+
+/* for queues no descriptor is waited on through (a disk request): the
+ * threads in select() and poll() aren't woken for nothing */
+int thread_queue_wakeup_nopoll(struct queue *queue)
+{
+    if (!queue)
+        return -EINVAL;
+
     while (queue->count) {
         struct thread *thread = dequeue(queue);
         thread->sleep_node = NULL;
