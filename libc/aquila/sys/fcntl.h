@@ -15,6 +15,8 @@ extern "C" {
 
 #if __BSD_VISIBLE
 #define O_NDELAY    O_NONBLOCK
+#define FNDELAY     O_NONBLOCK
+#define FNONBLOCK   O_NONBLOCK
 #endif
 
 #define F_RDLCK     1   /* read lock */

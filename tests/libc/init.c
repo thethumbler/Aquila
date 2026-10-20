@@ -4,12 +4,14 @@
  * Built with i686-aquila-gcc against newlib (unlike the other tests),
  * checks that what programs see through libc matches the kernel: errno
  * values, signal numbers, struct stat, and a few library functions that
- * depend on the port (stdio, getline, opendir, pipes, fork/wait).
+ * depend on the port (stdio, getline, opendir, pipes, fork/wait, sockets,
+ * vectored I/O, the interval timer, addresses).
  *
  * Reports in the aqtest format on the serial port.
  */
 
 #include <arpa/inet.h>
+#include <netdb.h>
 #include <crypt.h>
 #include <dirent.h>
 #include <errno.h>
@@ -31,6 +33,11 @@
 #include <sys/reboot.h>
 #include <sys/select.h>
 #include <sys/stat.h>
+#include <sys/shm.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <sys/uio.h>
+#include <sys/un.h>
 #include <sys/utsname.h>
 #include <sys/wait.h>
 #include <termios.h>
@@ -65,6 +72,112 @@ static void handler(int sig)
 }
 
 /* virtual terminal 2 (VGA text mode, 80x25 under QEMU -kernel) */
+static volatile int alarms;
+static void alarm_handler(int sig) { alarms++; (void) sig; }
+
+/* what the libc port adds for X: vectored I/O, addresses, socket calls,
+ * the interval timer */
+static void test_x_support(void)
+{
+    /* writev: one write, readv: one read spread over the vectors */
+    int p[2];
+    pipe(p);
+    struct iovec wv[3] = {{"ab", 2}, {"", 0}, {"cde", 3}};
+    check("writev", writev(p[1], wv, 3), 5);
+    char r1[2], r2[8] = {0};
+    struct iovec rv[2] = {{r1, 2}, {r2, sizeof(r2)}};
+    check("readv", readv(p[0], rv, 2), 5);
+    check("readv spread", r1[0] == 'a' && r1[1] == 'b' && !strcmp(r2, "cde"), 1);
+    errno = 0;
+    check("writev bad count -> EINVAL", writev(p[1], wv, -1) == -1 ? errno : 0, EINVAL);
+    close(p[0]);
+    close(p[1]);
+
+    /* addresses */
+    struct in_addr in;
+    char text[INET_ADDRSTRLEN];
+    check("inet_pton", inet_pton(AF_INET, "192.168.1.20", &in), 1);
+    check("inet_pton order", in.s_addr, htonl(0xc0a80114));
+    check("inet_pton bad", inet_pton(AF_INET, "192.168.1", &in), 0);
+    check("inet_pton leading zero", inet_pton(AF_INET, "1.02.3.4", &in), 0);
+    check("inet_ntop", strcmp(inet_ntop(AF_INET, &in.s_addr, text, sizeof(text)) ? text : "", "1.02.3.4") != 0, 1);
+    in.s_addr = htonl(0x7f000001);
+    check("inet_ntoa", strcmp(inet_ntoa(in), "127.0.0.1"), 0);
+    check("inet_aton short form", inet_aton("10.1", &in) && in.s_addr == htonl(0x0a000001), 1);
+    check("inet_addr", inet_addr("1.2.3.4"), htonl(0x01020304));
+    check("inet_addr bad", inet_addr("1.2.3.256"), INADDR_NONE);
+
+    /* names: only numeric hosts (no resolver) */
+    struct addrinfo *res = NULL, hints = {0};
+    hints.ai_socktype = SOCK_STREAM;
+    check("getaddrinfo numeric", getaddrinfo("10.0.0.1", "6000", &hints, &res), 0);
+    struct sockaddr_in *sin = res ? (struct sockaddr_in *) res->ai_addr : NULL;
+    check("getaddrinfo address", sin && sin->sin_addr.s_addr == htonl(0x0a000001) && sin->sin_port == htons(6000), 1);
+    freeaddrinfo(res);
+    check("getaddrinfo name", getaddrinfo("example.org", NULL, NULL, &res), EAI_NONAME);
+    check("getaddrinfo bad service", getaddrinfo("1.2.3.4", "x11", NULL, &res), EAI_SERVICE);
+    struct hostent *he = gethostbyname("10.0.0.2");
+    check("gethostbyname numeric", he && he->h_length == 4 && !strcmp(he->h_name, "10.0.0.2"), 1);
+    check("gethostbyname name", gethostbyname("localhost") == NULL && h_errno == HOST_NOT_FOUND, 1);
+
+    /* socket calls on a Unix socket */
+    int s = socket(AF_UNIX, SOCK_STREAM, 0);
+    struct sockaddr_storage ss;
+    socklen_t len = sizeof(ss);
+    check("getsockname", getsockname(s, (struct sockaddr *) &ss, &len), 0);
+    check("getsockname family", ss.ss_family, AF_UNIX);
+    int val = -1;
+    len = sizeof(val);
+    check("getsockopt SO_TYPE", getsockopt(s, SOL_SOCKET, SO_TYPE, &val, &len) == 0 && val == SOCK_STREAM, 1);
+    check("getsockopt SO_ERROR", getsockopt(s, SOL_SOCKET, SO_ERROR, &val, &len) == 0 && val == 0, 1);
+    val = 65536;
+    check("setsockopt SO_SNDBUF", setsockopt(s, SOL_SOCKET, SO_SNDBUF, &val, sizeof(val)), 0);
+    errno = 0;
+    check("setsockopt other level -> ENOPROTOOPT", setsockopt(s, 6, 1, &val, sizeof(val)) == -1 ? errno : 0, ENOPROTOOPT);
+    errno = 0;
+    len = sizeof(ss);
+    int nf = open("/", O_RDONLY);
+    check("getpeername not a socket -> ENOTSOCK", getpeername(nf, (struct sockaddr *) &ss, &len) == -1 ? errno : 0, ENOTSOCK);
+    close(nf);
+    errno = 0;
+    check("shutdown unconnected -> ENOTCONN", shutdown(s, SHUT_RDWR) == -1 ? errno : 0, ENOTCONN);
+    close(s);
+
+    /* no System V shared memory: programs check and go without */
+    errno = 0;
+    check("shmget -> ENOSYS", shmget(IPC_PRIVATE, 4096, IPC_CREAT) == -1 ? errno : 0, ENOSYS);
+    check("getpagesize", getpagesize(), 4096);
+    check("getdtablesize", getdtablesize() > 20, 1);
+
+    /* gettimeofday counts below the second */
+    struct timeval t0, t1;
+    gettimeofday(&t0, NULL);
+    usleep(120000);
+    gettimeofday(&t1, NULL);
+    long ms = (t1.tv_sec - t0.tv_sec) * 1000 + (t1.tv_usec - t0.tv_usec) / 1000;
+    check("gettimeofday resolution", ms >= 110 && ms < 900, 1);
+
+    /* the interval timer, alarm() and pause() */
+    signal(SIGALRM, alarm_handler);
+    struct itimerval it = {{0, 30000}, {0, 30000}}, old;
+    check("setitimer", setitimer(ITIMER_REAL, &it, NULL), 0);
+    while (alarms < 3)
+        pause();
+    check("SIGALRM by setitimer", alarms, 3);
+    check("getitimer", getitimer(ITIMER_REAL, &old) == 0 && old.it_interval.tv_usec == 30000, 1);
+    memset(&it, 0, sizeof(it));
+    setitimer(ITIMER_REAL, &it, NULL);
+    errno = 0;
+    check("setitimer virtual -> EINVAL", setitimer(ITIMER_VIRTUAL, &it, NULL) == -1 ? errno : 0, EINVAL);
+    check("alarm none pending", alarm(5), 0);
+    check("alarm pending", alarm(0), 5);
+    alarms = 0;
+    alarm(1);
+    pause();
+    check("alarm fired", alarms, 1);
+    signal(SIGALRM, SIG_DFL);
+}
+
 static int vt, vcs;
 
 static void vt_write(const char *s)
@@ -531,6 +644,8 @@ int main(void)
     int rb_status;
     waitpid(rb, &rb_status, 0);
     check("reboot unprivileged -> EPERM", WEXITSTATUS(rb_status), 0);
+
+    test_x_support();
 
     /* virtual terminals */
     test_vt();

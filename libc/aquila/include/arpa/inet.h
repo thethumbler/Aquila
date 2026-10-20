@@ -1,25 +1,23 @@
 #ifndef _ARPA_INET_H
 #define _ARPA_INET_H
 
-/*
- * Byte order conversion and Internet address types. There is no network
- * stack yet, so the address conversion functions (inet_addr, inet_ntop,
- * ...) are not provided.
- */
+/* Internet address types (<netinet/in.h>), byte order, and conversions
+ * between addresses and their text (IPv4 only) */
 
-#include <stdint.h>
+#include <netinet/in.h>
 
-typedef uint16_t in_port_t;
-typedef uint32_t in_addr_t;
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-struct in_addr {
-    in_addr_t s_addr;
-};
+in_addr_t   inet_addr(const char *cp);
+int         inet_aton(const char *cp, struct in_addr *inp);
+char       *inet_ntoa(struct in_addr in);
+int         inet_pton(int af, const char *src, void *dst);
+const char *inet_ntop(int af, const void *src, char *dst, socklen_t size);
 
-/* i386 is little-endian, network byte order is big-endian */
-static inline uint32_t htonl(uint32_t x) { return __builtin_bswap32(x); }
-static inline uint16_t htons(uint16_t x) { return __builtin_bswap16(x); }
-static inline uint32_t ntohl(uint32_t x) { return __builtin_bswap32(x); }
-static inline uint16_t ntohs(uint16_t x) { return __builtin_bswap16(x); }
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* ! _ARPA_INET_H */

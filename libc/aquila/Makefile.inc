@@ -7,10 +7,14 @@ libc_a_SOURCES += \
 	%D%/dirent.c \
 	%D%/flockfile.c \
 	%D%/group.c \
+	%D%/inet.c \
 	%D%/nanosleep.c \
+	%D%/netdb.c \
 	%D%/pthread.c \
 	%D%/realpath.c \
 	%D%/shadow.c \
+	%D%/shm.c \
 	%D%/syscalls.c \
 	%D%/termios.c \
-	%D%/ttydev.c
+	%D%/ttydev.c \
+	%D%/uio.c
