@@ -15,6 +15,7 @@
 #include <core/string.h>
 #include <cpu/cpu.h>
 #include <sys/sched.h>
+#include <sys/signal.h>
 #include <mm/mm.h>
 
 extern void __x86_isr0 (void);
@@ -92,6 +93,30 @@ static const char *int_msg[32] = {
     /* 0x1F */ "Reserved"
 };
 
+/* Signal to send to a user thread causing exception, 0 if fatal */
+static const int int_sig[32] = {
+    /* 0x00 */ SIGFPE,  /* #DE */
+    /* 0x01 */ SIGTRAP, /* #DB */
+    /* 0x02 */ 0,
+    /* 0x03 */ SIGTRAP, /* #BP */
+    /* 0x04 */ SIGSEGV, /* #OF */
+    /* 0x05 */ SIGSEGV, /* #BR */
+    /* 0x06 */ SIGILL,  /* #UD */
+    /* 0x07 */ 0,
+    /* 0x08 */ 0,
+    /* 0x09 */ SIGFPE,
+    /* 0x0A */ 0,
+    /* 0x0B */ SIGBUS,  /* #NP */
+    /* 0x0C */ SIGBUS,  /* #SS */
+    /* 0x0D */ SIGSEGV, /* #GP */
+    /* 0x0E */ SIGSEGV, /* #PF */
+    /* 0x0F */ 0,
+    /* 0x10 */ SIGFPE,  /* #MF */
+    /* 0x11 */ SIGBUS,  /* #AC */
+    /* 0x12 */ 0,
+    /* 0x13 */ SIGFPE,  /* #XM */
+};
+
 void __x86_isr(struct x86_regs *regs)
 {
     extern uint32_t __x86_isr_int_num;
@@ -137,6 +162,9 @@ void __x86_isr(struct x86_regs *regs)
     }
     
     if (__x86_isr_int_num == 0x80) {  /* syscall */
+        if (!curthread)
+            panic("syscall without a current thread");
+
         struct x86_thread *arch = curthread->arch;
         arch->regs = regs;
         //asm volatile ("sti");
@@ -144,6 +172,15 @@ void __x86_isr(struct x86_regs *regs)
         return;
     }
 
+
+    /* Exception caused by user code, signal the process instead of panicking */
+    if (__x86_isr_int_num < 32 && (regs->cs & 3) == 3 && curthread
+            && int_sig[__x86_isr_int_num]) {
+        struct x86_thread *arch = curthread->arch;
+        arch->regs = regs;
+        signal_proc_send(curproc, int_sig[__x86_isr_int_num]);
+        return;
+    }
 
     if (__x86_isr_int_num < 32) {
         const char *msg = int_msg[__x86_isr_int_num];
