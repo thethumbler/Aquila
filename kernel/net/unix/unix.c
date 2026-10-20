@@ -213,6 +213,12 @@ static int socket_unix_connect(struct file *file, const struct sockaddr *addr, s
             return -EINTR;
     }
 
+    /* listening socket was closed before accepting us */
+    if (request->connected < 0) {
+        kfree(request);
+        return -ECONNREFUSED;
+    }
+
     /* Initialize connection */
     file->socket->domain = AF_UNIX_CONN;
     file->socket->p = request;
@@ -442,11 +448,30 @@ static int socket_unix_shutdown(struct file *file, int how)
         }
 
         return 0;
-    } else {
-        /* TODO */
     }
 
-    return -ENOTCONN;
+    /* Unconnected socket, unbind it if bound */
+    struct un_socket *socket = file->socket->p;
+
+    if (socket) {
+        struct un_conn *request;
+
+        queue_remove(sockets, socket);
+
+        /* refuse pending connections, connect() frees the request */
+        while ((request = dequeue(&socket->requests))) {
+            request->connected = -1;
+            thread_queue_wakeup(&request->connect);
+        }
+
+        vfs_close(socket->vnode);
+        kfree(socket);
+    }
+
+    kfree(file->socket);
+    file->socket = NULL;
+
+    return 0;
 }
 
 static struct sock_ops socket_unix_ops = {

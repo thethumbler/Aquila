@@ -13,6 +13,7 @@ struct un_conn {
     struct queue client_send;
     struct queue connect;
 
+    /* 1 when accepted, -1 when refused by the listener closing */
     int connected;
 };
 
