@@ -130,22 +130,46 @@ ssize_t minix_inode_block_write(struct minix *desc, struct minix_inode *inode, i
 
         minix_block_write(desc, inode->zones[idx], buf);
     } else if (idx < MINIX_DIRECT_ZONES + p) {
-        if (!inode->zones[MINIX_DIRECT_ZONES+1]) {    /* Allocate */
-            inode->zones[MINIX_DIRECT_ZONES+1] = minix_block_alloc(desc);
+        /* singly indirect zone, same slot used by minix_inode_block_read */
+        if (!inode->zones[MINIX_DIRECT_ZONES]) {    /* Allocate */
+            blk_t iblk = minix_block_alloc(desc);
+            if (!iblk)
+                return -ENOSPC;
+
+            /* new indirect block must not contain stale pointers */
+            uint16_t *zero = kmalloc(desc->bs, &M_BUFFER, M_ZERO);
+            if (!zero)
+                return -ENOMEM;
+
+            minix_block_write(desc, iblk, zero);
+            kfree(zero);
+
+            /* drop stale cached contents if this block was cached before */
+            void *cached = bcache_find(desc->bcache, iblk);
+            if (cached)
+                memset(cached, 0, desc->bs);
+
+            inode->zones[MINIX_DIRECT_ZONES] = iblk;
             minix_inode_write(desc, ino, inode);
         }
 
-        uint16_t *tmp = kmalloc(desc->bs, &M_BUFFER, 0);
-        minix_block_read(desc, inode->zones[MINIX_DIRECT_ZONES+1], tmp);
+        /* go through the block cache so readers see the updated pointers */
+        uint16_t *tmp = NULL;
+        int err;
+        if ((err = minix_bcache_get(desc, inode->zones[MINIX_DIRECT_ZONES], (void **) &tmp)))
+            return err;
 
         uint16_t block = tmp[idx - MINIX_DIRECT_ZONES];
 
         if (!block) {   /* Allocate */
-            tmp[idx - MINIX_DIRECT_ZONES] = minix_block_alloc(desc);
-            minix_block_write(desc, inode->zones[MINIX_DIRECT_ZONES+1], tmp);
+            block = minix_block_alloc(desc);
+            if (!block)
+                return -ENOSPC;
+
+            tmp[idx - MINIX_DIRECT_ZONES] = block;
+            minix_block_write(desc, inode->zones[MINIX_DIRECT_ZONES], tmp);
         }
 
-        kfree(tmp);
         minix_block_write(desc, block, buf);
     } else {
         panic("Not impelemented\n");

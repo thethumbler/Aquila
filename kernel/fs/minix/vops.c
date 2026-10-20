@@ -264,6 +264,11 @@ int minix_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, stru
 
     ino_t ino = minix_inode_alloc(desc);
 
+    if (!ino) { /* out of inodes */
+        err = -ENOSPC;
+        goto error;
+    }
+
     struct minix_inode m_inode;
     
     if ((err = minix_inode_read(desc, ino, &m_inode))) {
@@ -311,7 +316,7 @@ int minix_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, stru
         minix_inode_build(desc, ino, ref);
 
 error:
-    return 0;
+    return err;
 }
 
 int minix_finddir(struct vnode *dir, const char *fn, struct dirent *dirent)

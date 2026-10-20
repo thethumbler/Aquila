@@ -68,7 +68,7 @@ int minix_dentry_create(struct vnode *dir, const char *name, ino_t ino, mode_t m
 
         while ((char *) dentry < (char *) block + bs) {
             if (!dentry->ino) {
-                memset(dentry->name, 0, desc->dentry_size);
+                memset(dentry->name, 0, desc->name_len);
                 dentry->ino = ino;
                 memcpy(dentry->name, name, MIN(len, desc->name_len));
                 minix_inode_block_write(desc, &m_inode, dir->ino, i, block);

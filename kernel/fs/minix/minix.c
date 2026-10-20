@@ -193,7 +193,10 @@ static int minix_mount(const char *dir, int flags, void *_args)
 
     struct uio uio = {0};   /* FIXME */
 
-    if ((err = vfs_lookup(args->dev, &uio, &dev, NULL)))
+    if (!args || !args->dev)
+        return -EINVAL;
+
+    if ((err= vfs_lookup(args->dev, &uio, &dev, NULL)))
         goto error;
 
     struct vnode *fs;
