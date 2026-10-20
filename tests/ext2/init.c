@@ -226,5 +226,8 @@ void aq_main(void)
     check("grown part reads zeros", zeros, 1);
     SC(SYS_close, fd, 0, 0);
 
+    /* the disk has what was written (the host checks it) */
+    check("sync", SC(SYS_sync, 0, 0, 0), 0);
+
     aq_end();
 }

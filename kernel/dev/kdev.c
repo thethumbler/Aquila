@@ -7,6 +7,7 @@
 #include <dev/dev.h>
 #include <fs/vfs.h>
 #include <fs/posix.h>
+#include <dev/blkcache.h>
 
 MALLOC_DEFINE(M_KDEV_BLK, "kdev-blk", "kdev block buffer");
 
@@ -398,10 +399,11 @@ void kdev_chrdev_register(devid_t major, struct dev *dev)
  * \ingroup kdev
  * \brief register a new block device
  */
-/* what block devices have in their write caches to the media */
+/* what was written to the block cache, and what block devices have in
+ * their write caches, to the media */
 int kdev_sync(void)
 {
-    int err = 0;
+    int err = blkcache_flush();
 
     for (int i = 0; i < 256; ++i)
         if (blkdev[i] && blkdev[i]->sync && blkdev[i]->sync())

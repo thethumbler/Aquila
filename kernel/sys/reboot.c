@@ -46,8 +46,11 @@ int kernel_reboot(unsigned cmd)
 /* from the keyboard, maybe in an interrupt */
 void kernel_ctrlaltdel(void)
 {
+    /* right away, as a reset: writing what the caches have would wait for
+     * the disk, which an interrupt can't */
     if (cad_restarts) {
-        kernel_reboot(RB_AUTOBOOT);
+        printk("kernel: restarting system\n");
+        arch_reboot();
         return;
     }
 

@@ -448,7 +448,8 @@ test_disk()
         tr -d '\r' < "$1.raw" > "$1"
     }
 
-    boot "$OUT/disk/serial.log" 'echo disk-$((6 * 7)) > /root/kept; sync'
+    # no sync: powering off writes what the block cache has
+    boot "$OUT/disk/serial.log" 'echo disk-$((6 * 7)) > /root/kept'
 
     # a new kernel leaves the root filesystem alone (make hdd-kernel)
     "$ROOT/mk/hdd-kernel.sh" "$img" "$KERNEL" "$ROOT/boot/limine-hdd.conf" \

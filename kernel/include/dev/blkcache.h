@@ -11,4 +11,7 @@ ssize_t blkcache_read(void *owner, uint64_t sector, size_t count, void *buf,
 ssize_t blkcache_write(void *owner, uint64_t sector, size_t count, void *buf,
                        blkcache_io write);
 
+/* what was written to the cache, to the disks */
+int blkcache_flush(void);
+
 #endif /* ! _DEV_BLKCACHE_H */
