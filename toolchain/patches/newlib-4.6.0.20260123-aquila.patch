@@ -322,6 +322,21 @@ diff -ruN a/newlib/libc/posix/_isatty.c b/newlib/libc/posix/_isatty.c
  }
 +
 +#endif /* !__aquila__ */
+diff -ruN a/newlib/libc/string/wcwidth.c b/newlib/libc/string/wcwidth.c
+--- a/newlib/libc/string/wcwidth.c
++++ b/newlib/libc/string/wcwidth.c
+@@ -223,7 +223,10 @@
+ #else /* !_MB_CAPABLE */
+   if (iswprint (ucs))
+     return 1;
+-  if (iswcntrl (ucs) || ucs == L'\0')
++  /* POSIX: -1 for characters that aren't printable, as the
++     _MB_CAPABLE version does (control characters were 0, which
++     programs take for combining characters) */
++  if (ucs == L'\0')
+     return 0;
+   return -1;
+ #endif /* _MB_CAPABLE */
 diff -ruN a/newlib/libc/sys/Makefile.inc b/newlib/libc/sys/Makefile.inc
 --- a/newlib/libc/sys/Makefile.inc
 +++ b/newlib/libc/sys/Makefile.inc

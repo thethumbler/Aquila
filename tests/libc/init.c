@@ -33,6 +33,7 @@
 #include <termios.h>
 #include <time.h>
 #include <unistd.h>
+#include <wchar.h>
 
 static FILE *out;
 static int fails;
@@ -397,6 +398,12 @@ int main(void)
     /* the serial port is init's controlling terminal */
     check("tcgetsid", tcgetsid(fileno(out)), getpid());
     check("tcflush", tcflush(fileno(out), TCIFLUSH), 0);
+
+    /* wcwidth: control characters aren't printable (-1, not 0, which
+     * programs take for a combining character) */
+    check("wcwidth newline", wcwidth(L'\n'), -1);
+    check("wcwidth NUL", wcwidth(L'\0'), 0);
+    check("wcwidth letter", wcwidth(L'a'), 1);
 
     /* C99 printf formats */
     char fmt[32];
