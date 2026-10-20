@@ -24,37 +24,64 @@ int fbdev_register(int type, void *data)
     return 0;
 }
 
+static struct fbdev *fbdev_get(struct devid *dd)
+{
+    if (dd->minor >= fbdev_cnt)
+        return NULL;
+
+    return &registered_fbs[dd->minor];
+}
+
 static ssize_t fbdev_read(struct devid *dd, off_t offset, size_t size, void *buf)
 {
-    struct fbdev *fb = &registered_fbs[dd->minor];
+    struct fbdev *fb = fbdev_get(dd);
+
+    if (!fb || !fb->read)
+        return -ENXIO;
+
     return fb->read(fb, offset, size, buf);
 }
 
 static ssize_t fbdev_write(struct devid *dd, off_t offset, size_t size, void *buf)
 {
-    struct fbdev *fb = &registered_fbs[dd->minor];
+    struct fbdev *fb = fbdev_get(dd);
+
+    if (!fb || !fb->write)
+        return -ENXIO;
+
     return fb->write(fb, offset, size, buf);
 }
 
 static int fbdev_ioctl(struct devid *dd, int request, void *argp)
 {
-    struct fbdev *fb = &registered_fbs[dd->minor];
+    struct fbdev *fb = fbdev_get(dd);
+
+    if (!fb)
+        return -ENXIO;
 
     switch (request) {
     case FBIOGET_FSCREENINFO:
+        if (!fb->fix_screeninfo)
+            return -ENXIO;
         memcpy(argp, fb->fix_screeninfo, sizeof(struct fb_fix_screeninfo));
         return 0;
     case FBIOGET_VSCREENINFO:
+        if (!fb->var_screeninfo)
+            return -ENXIO;
         memcpy(argp, fb->var_screeninfo, sizeof(struct fb_var_screeninfo));
         return 0;
     }
 
-    return -1;
+    return -ENOTTY;
 }
 
 static int fbdev_map(struct devid *dd, struct vm_space *vm_space, struct vm_entry *vm_entry)
 {
-    struct fbdev *fb = &registered_fbs[dd->minor];
+    struct fbdev *fb = fbdev_get(dd);
+
+    if (!fb || !fb->map)
+        return -ENXIO;
+
     return fb->map(fb, vm_space, vm_entry);
 }
 

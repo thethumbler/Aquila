@@ -20,8 +20,14 @@ static struct fb_var_screeninfo vesa_var_screeninfo;
 
 static ssize_t fbdev_vesa_write(struct fbdev *fb, off_t offset, size_t size, void *buf)
 {
+    if (offset < 0)
+        return -EINVAL;
+
+    if ((size_t) offset >= len)
+        return 0;
+
     /* Maximum possible write size */
-    size = MIN(size, len - offset);
+    size = MIN(size, len - (size_t) offset);
     
     /* Copy `size' bytes from buffer to ramdev */
     memcpy((char *) vmem + offset, buf, size);
@@ -37,13 +43,13 @@ static int fbdev_vesa_map(struct fbdev *fb, struct vm_space *vm_space, struct vm
     if (!(vm_entry->flags & VM_SHARED))
         return -ENOTSUP;
 
-#if 0
-    /* Mapping framebuffer must start at 0 */
-    if (vm_entry->off != 0 || vm_entry->size > vesa_vm.size)
-        return -ENXIO;
-#endif
+    /* Mapping must lie within the (page rounded) framebuffer */
+    size_t fb_size = PAGE_ROUND(vesa_vm.size);
 
-    vm_entry->paddr = vesa_vm.paddr;
+    if (vm_entry->off > fb_size || vm_entry->size > fb_size - vm_entry->off)
+        return -ENXIO;
+
+    vm_entry->paddr = vesa_vm.paddr + vm_entry->off;
     return vm_map(vm_space, vm_entry);
 }
 
