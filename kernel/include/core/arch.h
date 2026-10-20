@@ -42,6 +42,8 @@ paddr_t arch_page_get_mapping(struct pmap *pmap, vaddr_t vaddr);
 void arch_disable_interrupts(void);
 
 void arch_reboot(void);
+void arch_halt(void) __attribute__((noreturn));
+void arch_poweroff(void) __attribute__((noreturn));
 
 uint64_t arch_rtime_ns(void);
 uint64_t arch_rtime_us(void);

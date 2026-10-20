@@ -38,6 +38,8 @@ static int copy_fds(struct proc *parent, struct proc *fork)
 
             if (file->path)
                 file->path = strdup(file->path);
+
+            vfs_file_lock_copy(&parent->fds[i], file);
         }
     }
 

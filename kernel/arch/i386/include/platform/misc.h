@@ -15,6 +15,8 @@ int x86_i8042_setup(struct ioaddr *io);
 void x86_i8042_handler_register(int channel, void (*fun)(int));
 void x86_i8042_reboot(void);
 
+void x86_acpi_poweroff(void) __attribute__((weak));
+
 int x86_pit_setup(struct ioaddr *io);
 uint32_t x86_pit_period_set(uint32_t period_ns);
 

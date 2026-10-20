@@ -1,5 +1,6 @@
 obj-y  += attr.o
 obj-y  += close.o
+obj-y  += flock.o
 obj-y  += fops.o
 obj-y  += ioctl.o
 obj-y  += link.o

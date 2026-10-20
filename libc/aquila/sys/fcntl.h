@@ -17,13 +17,6 @@ extern "C" {
 #define F_WRLCK     2   /* write lock */
 #define F_UNLCK     3   /* remove lock(s) */
 
-#if __BSD_VISIBLE
-#define LOCK_SH     0x01    /* shared file lock */
-#define LOCK_EX     0x02    /* exclusive file lock */
-#define LOCK_NB     0x04    /* don't block when locking */
-#define LOCK_UN     0x08    /* unlock file */
-#endif
-
 /* file record locking, not supported by the kernel yet */
 struct flock {
     short   l_type;     /* F_RDLCK, F_WRLCK, or F_UNLCK */

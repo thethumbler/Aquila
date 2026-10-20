@@ -10,6 +10,7 @@
  * - sessions and controlling terminals, on a pty
  * - stopping and continuing processes, the terminal line discipline
  * - select, poll and terminal read timeouts (VTIME)
+ * - flock
  */
 
 #include "../lib/aqtest.h"
@@ -19,6 +20,7 @@
 #include <aquila/termios.h>
 #include <aquila/wait.h>
 #include <aquila/poll.h>
+#include <aquila/reboot.h>
 
 static volatile int got_sig = 0;
 static void handler(int sig) { got_sig = sig; }
@@ -278,6 +280,8 @@ static void unprivileged_files(void)
     if (SC(SYS_chown, "/tmp/mine", -1, 0) != -EPERM) SC(SYS_exit, 12, 0, 0);
     SC(SYS_close, fd, 0, 0);
     if (SC(SYS_unlink, "/tmp/mine", 0, 0)) SC(SYS_exit, 13, 0, 0);
+    /* only root restarts the machine */
+    if (SC(SYS_reboot, RB_AUTOBOOT, 0, 0) != -EPERM) SC(SYS_exit, 14, 0, 0);
 
     SC(SYS_exit, 0, 0, 0);
 }
@@ -770,6 +774,48 @@ void aq_main(void)
     check("fifo open interrupted", st >> 8, 0);
     check("no reader left", SC(SYS_open, "/tmp/fifo", O_WRONLY | O_NONBLOCK, 0), -ENXIO);
     check("unlink fifo", SC(SYS_unlink, "/tmp/fifo", 0, 0), 0);
+
+    /* --- reboot (restarting itself is left to the system test) --- */
+    check("reboot bad command", SC(SYS_reboot, 0x12345678, 0, 0), -EINVAL);
+    check("reboot disable Ctrl+Alt+Del", SC(SYS_reboot, RB_DISABLE_CAD, 0, 0), 0);
+    check("reboot enable Ctrl+Alt+Del", SC(SYS_reboot, RB_ENABLE_CAD, 0, 0), 0);
+
+    /* --- flock --- */
+    int la = SC(SYS_open, "/tmp/lock", O_CREAT | O_RDWR, 0644);
+    int lb = SC(SYS_open, "/tmp/lock", O_RDWR, 0);
+    check("flock bad fd", SC(SYS_flock, 99, LOCK_EX, 0), -EBADF);
+    check("flock bad op", SC(SYS_flock, la, 0, 0), -EINVAL);
+    check("flock exclusive", SC(SYS_flock, la, LOCK_EX, 0), 0);
+    check("flock exclusive again", SC(SYS_flock, la, LOCK_EX | LOCK_NB, 0), 0);
+    check("flock held by another open", SC(SYS_flock, lb, LOCK_EX | LOCK_NB, 0), -EAGAIN);
+    check("flock shared vs exclusive", SC(SYS_flock, lb, LOCK_SH | LOCK_NB, 0), -EAGAIN);
+    /* a copy of the descriptor holds the same lock */
+    int lc = SC(SYS_fcntl, la, F_DUPFD, 0);
+    SC(SYS_close, la, 0, 0);
+    check("flock kept by the copy", SC(SYS_flock, lb, LOCK_EX | LOCK_NB, 0), -EAGAIN);
+    SC(SYS_close, lc, 0, 0);
+    check("flock released on the last close", SC(SYS_flock, lb, LOCK_EX | LOCK_NB, 0), 0);
+    /* shared locks */
+    check("flock downgrade", SC(SYS_flock, lb, LOCK_SH, 0), 0);
+    la = SC(SYS_open, "/tmp/lock", O_RDONLY, 0);
+    check("flock two shared", SC(SYS_flock, la, LOCK_SH | LOCK_NB, 0), 0);
+    check("flock exclusive vs shared", SC(SYS_flock, la, LOCK_EX | LOCK_NB, 0), -EAGAIN);
+    check("flock unlock", SC(SYS_flock, lb, LOCK_UN, 0), 0);
+    check("flock upgrade", SC(SYS_flock, la, LOCK_EX | LOCK_NB, 0), 0);
+    /* waiting for the lock: the child gets it once it is released */
+    c = SC(SYS_fork, 0, 0, 0);
+    if (!c) {
+        int l = SC(SYS_open, "/tmp/lock", O_RDWR, 0);
+        int busy = SC(SYS_flock, l, LOCK_EX | LOCK_NB, 0) == -EAGAIN;
+        SC(SYS_exit, busy && SC(SYS_flock, l, LOCK_EX, 0) == 0 ? 0 : 1, 0, 0);
+    }
+    aq_spin(10000000);
+    SC(SYS_flock, la, LOCK_UN, 0);
+    SC(SYS_waitpid, c, &st, 0);
+    check("flock waits for the holder", st >> 8, 0);
+    SC(SYS_close, la, 0, 0);
+    SC(SYS_close, lb, 0, 0);
+    SC(SYS_unlink, "/tmp/lock", 0, 0);
 
     int fp[2];
     SC(SYS_pipe, fp, 0, 0);

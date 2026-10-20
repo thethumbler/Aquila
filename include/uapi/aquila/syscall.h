@@ -94,8 +94,10 @@
 #define SYS_clock_gettime   81
 #define SYS_sethostname     82
 #define SYS_poll            83
+#define SYS_flock           84
+#define SYS_reboot          85
 
-#define SYS_MAX             83
+#define SYS_MAX             85
 
 /*
  * Arguments of the older system calls that take more than three, passed

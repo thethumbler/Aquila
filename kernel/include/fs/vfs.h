@@ -161,6 +161,9 @@ struct file {
     /* absolute path of an open directory, for the *at() system calls;
      * owned by the descriptor (freed by vfs_file_close) */
     char *path;
+
+    /* the flock() lock, shared with the descriptors copied from this one */
+    struct file_lock *lock;
 };
 
 /**
@@ -238,6 +241,9 @@ ssize_t vfs_file_write(struct file *file, void *buf, size_t size);
 ssize_t vfs_file_readdir(struct file *file, struct dirent *dirent);  
 off_t   vfs_file_lseek(struct file *file, off_t offset, int whence);
 ssize_t vfs_file_close(struct file *file);
+int     vfs_file_flock(struct file *file, int op);
+void    vfs_file_lock_copy(struct file *file, struct file *copy);
+void    vfs_file_lock_release(struct file *file);
 int     vfs_file_ioctl(struct file *file, int request, void *argp);
 int     vfs_file_trunc(struct file *file, off_t len);
 

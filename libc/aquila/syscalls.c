@@ -13,6 +13,7 @@
 #include <sys/socket.h>
 #include <sys/mman.h>
 #include <sys/mount.h>
+#include <sys/reboot.h>
 #include <sys/utsname.h>
 #include <sys/wait.h>
 #include <sys/resource.h>
@@ -574,6 +575,16 @@ long fpathconf(int fildes, int name)
 int poll(struct pollfd *fds, nfds_t nfds, int timeout)
 {
     return SYSCALL(SYS_poll, fds, nfds, timeout);
+}
+
+int flock(int fd, int operation)
+{
+    return SYSCALL(SYS_flock, fd, operation, 0);
+}
+
+int reboot(int cmd)
+{
+    return SYSCALL(SYS_reboot, cmd, 0, 0);
 }
 
 int gettimeofday(struct timeval *__restrict tv, void *__restrict tz)

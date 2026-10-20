@@ -6,3 +6,4 @@ obj-y += fork.o
 dirs-y += binfmt/
 obj-y += execve.o
 obj-y += signal.o
+obj-y += reboot.o

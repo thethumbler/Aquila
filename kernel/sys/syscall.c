@@ -32,6 +32,7 @@
 #include <fs/stat.h>
 
 #include <mm/vm.h>
+#include <sys/reboot.h>
 
 static int syscall_log_level = LOG_NONE;
 LOGGER_DEFINE(syscall, syscall_log, syscall_log_level)
@@ -926,6 +927,8 @@ static void sys_fcntl(int fd, int cmd, uintptr_t arg)
 
             if (file->path)
                 curproc->fds[dupfd].path = strdup(file->path);
+
+            vfs_file_lock_copy(file, &curproc->fds[dupfd]);
 
             /* the new descriptor holds its own reference (as in fork) */
             if (file->flags & FILE_SOCKET)
@@ -2123,6 +2126,32 @@ static void sys_renameat(int olddirfd, const char *oldpath, int newdirfd, const 
     arch_syscall_return(curthread, ret);
 }
 
+static void sys_flock(int fd, int op)
+{
+    syscall_log(LOG_DEBUG, "flock(fd=%d, op=%d)\n", fd, op);
+
+    struct file *file = fd_file(fd);
+
+    if (!file) {
+        arch_syscall_return(curthread, -EBADF);
+        return;
+    }
+
+    arch_syscall_return(curthread, vfs_file_flock(file, op));
+}
+
+static void sys_reboot(unsigned cmd)
+{
+    syscall_log(LOG_DEBUG, "reboot(cmd=0x%x)\n", cmd);
+
+    if (curproc->uid) {
+        arch_syscall_return(curthread, -EPERM);
+        return;
+    }
+
+    arch_syscall_return(curthread, kernel_reboot(cmd));
+}
+
 static void sys_fchdir(int fd)
 {
     syscall_log(LOG_DEBUG, "fchdir(fd=%d)\n", fd);
@@ -2337,6 +2366,8 @@ void (*syscall_table[])() = {
     [SYS_clock_gettime] = sys_clock_gettime,
     [SYS_sethostname]   = sys_sethostname,
     [SYS_poll]          = sys_poll,
+    [SYS_flock]         = sys_flock,
+    [SYS_reboot]        = sys_reboot,
 };
 
 const size_t syscall_cnt = sizeof(syscall_table)/sizeof(syscall_table[0]);

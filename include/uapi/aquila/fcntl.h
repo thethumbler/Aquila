@@ -40,6 +40,12 @@
 
 #define FD_CLOEXEC      1
 
+/* flock(2) operations */
+#define LOCK_SH     0x01    /* shared file lock */
+#define LOCK_EX     0x02    /* exclusive file lock */
+#define LOCK_NB     0x04    /* don't block when locking */
+#define LOCK_UN     0x08    /* unlock file */
+
 /* the *at() system calls: the working directory as dirfd, and flags */
 #define AT_FDCWD            -2
 #define AT_EACCESS          0x0001

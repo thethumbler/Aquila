@@ -2,12 +2,13 @@
  * The keyboard of the virtual terminals: PS/2 scancodes (set 1, what the
  * i8042 translates to) to what the Linux console sends for the keys, with
  * the US layout. Alt sends ESC before the key, Alt+F1 to Alt+F6 switch
- * terminals.
+ * terminals, Ctrl+Alt+Del restarts (or tells init, see sys/reboot.c).
  */
 
 #include <core/system.h>
 #include <core/string.h>
 #include <dev/vt.h>
+#include <sys/reboot.h>
 
 /* scancodes */
 #define SC_ESC      0x01
@@ -185,6 +186,12 @@ void vt_scancode(int scancode)
 
     if (release)
         return;
+
+    /* Ctrl+Alt+Del, also with the keypad's Del */
+    if (ctrl && alt && code == SC_KP_DEL) {
+        kernel_ctrlaltdel();
+        return;
+    }
 
     /* function keys, or switching terminals */
     int fkey = code >= SC_F1 && code <= SC_F10 ? code - SC_F1 :

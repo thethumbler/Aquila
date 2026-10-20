@@ -155,6 +155,8 @@ ssize_t vfs_file_close(struct file *file)
         file->path = NULL;
     }
 
+    vfs_file_lock_release(file);
+
     if (file->flags & FILE_SOCKET)
         return socket_shutdown(file, SHUT_RDWR);
 

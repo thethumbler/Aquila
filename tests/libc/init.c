@@ -26,7 +26,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/file.h>
 #include <sys/mount.h>
+#include <sys/reboot.h>
 #include <sys/select.h>
 #include <sys/stat.h>
 #include <sys/utsname.h>
@@ -508,6 +510,27 @@ int main(void)
     char fmt[32];
     snprintf(fmt, sizeof(fmt), "%zu %jd %hhu", (size_t) 42, (intmax_t) -7, (unsigned char) 300);
     check("printf %zu %jd %hhu", strcmp(fmt, "42 -7 44"), 0);
+
+    /* flock: EWOULDBLOCK for a lock another open file holds */
+    int lk = open("/tmp/flock", O_CREAT | O_RDWR, 0644);
+    int lk2 = open("/tmp/flock", O_RDWR);
+    check("flock", flock(lk, LOCK_EX), 0);
+    errno = 0;
+    check("flock held -> EWOULDBLOCK", flock(lk2, LOCK_SH | LOCK_NB) == -1 ? errno : 0, EWOULDBLOCK);
+    close(lk);
+    check("flock after close", flock(lk2, LOCK_SH | LOCK_NB), 0);
+    close(lk2);
+
+    /* reboot: only root */
+    check("reboot enable Ctrl+Alt+Del", reboot(RB_ENABLE_CAD), 0);
+    pid_t rb = fork();
+    if (!rb) {
+        setuid(1000);
+        _exit(reboot(RB_AUTOBOOT) == -1 && errno == EPERM ? 0 : 1);
+    }
+    int rb_status;
+    waitpid(rb, &rb_status, 0);
+    check("reboot unprivileged -> EPERM", WEXITSTATUS(rb_status), 0);
 
     /* virtual terminals */
     test_vt();
