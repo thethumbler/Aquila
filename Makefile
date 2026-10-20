@@ -27,7 +27,7 @@ include $(SRCDIR)/configs/$(CONFIG).mk
 
 VERSION := 0.0.1
 
-TOOLCHAIN := $(BUILDDIR)/toolchain
+TOOLCHAIN ?= $(BUILDDIR)/toolchain
 SYSROOT   := $(BUILDDIR)/sysroot
 ROOTFS    := $(BUILDDIR)/rootfs
 INITRD    := $(BUILDDIR)/initrd.img

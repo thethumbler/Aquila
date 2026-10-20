@@ -7,10 +7,12 @@
 #   -n      don't rebuild the kernel, use the existing image
 #   -v      print the serial log of failed tests
 #
-# tests: boot ata cpu syscalls ext2 (default: all)
+# tests: boot ata cpu syscalls ext2 libc system (default: all)
 #
 # Requires gcc with 32-bit support, ld, cpio and qemu-system-i386. The ext2
-# test also needs e2fsprogs (mke2fs, e2fsck, debugfs) and python3.
+# test also needs e2fsprogs (mke2fs, e2fsck, debugfs) and python3. The libc
+# and system tests need the i686-aquila toolchain (make toolchain) and are
+# skipped without it.
 #
 
 set -u
@@ -20,7 +22,9 @@ TESTS=$ROOT/tests
 OUT=$TESTS/out
 CONFIG=../tests/host/i386-pc
 
-ALL_TESTS="boot ata cpu syscalls ext2"
+ALL_TESTS="boot ata cpu syscalls ext2 libc system"
+
+CROSS_CC=$ROOT/build/toolchain/bin/i686-aquila-gcc
 
 build=1
 verbose=0
@@ -78,10 +82,16 @@ build_initrd()
     rm -rf "$root"
     mkdir -p "$root/dev" "$root/mnt" "$root/tmp"
 
-    gcc -m32 -static -nostdlib -ffreestanding -fno-builtin -fno-pic -no-pie \
-        -fno-stack-protector -fcf-protection=none -O1 -Wall -Wno-unused-function \
-        -I"$ROOT/include/uapi" -Wl,--build-id=none -o "$root/init" "$TESTS/$name/init.c" \
-        > "$OUT/$name/gcc.log" 2>&1 || { cat "$OUT/$name/gcc.log"; return 1; }
+    if [ "$name" = libc ]; then
+        # a regular program, built against the C library
+        "$CROSS_CC" -O1 -Wall -o "$root/init" "$TESTS/$name/init.c" \
+            > "$OUT/$name/gcc.log" 2>&1 || { cat "$OUT/$name/gcc.log"; return 1; }
+    else
+        gcc -m32 -static -nostdlib -ffreestanding -fno-builtin -fno-pic -no-pie \
+            -fno-stack-protector -fcf-protection=none -O1 -Wall -Wno-unused-function \
+            -I"$ROOT/include/uapi" -Wl,--build-id=none -o "$root/init" "$TESTS/$name/init.c" \
+            > "$OUT/$name/gcc.log" 2>&1 || { cat "$OUT/$name/gcc.log"; return 1; }
+    fi
 
     # the kernel's initramfs reads old binary cpio archives
     (cd "$root" && find . | cpio -o -H bin --quiet) > "$OUT/$name/initrd.img"
@@ -270,6 +280,65 @@ EOF
     echo "e2fsck clean, file contents verified on the host"
 }
 
+# C library: errno, signals, stat and library functions through newlib
+test_libc()
+{
+    if [ ! -x "$CROSS_CC" ]; then
+        echo "SKIP: no i686-aquila toolchain, run make toolchain"
+        return 0
+    fi
+
+    run_qemu "$OUT/libc/serial.log" 30 'aqtest: done' -initrd "$OUT/libc/initrd.img"
+    aqtest_result "$OUT/libc/serial.log"
+}
+
+# the system built from source: log in on the serial console, run commands
+test_system()
+{
+    local log=$OUT/system/serial.log
+    local initrd=$OUT/system/initrd.img
+
+    if [ ! -x "$CROSS_CC" ]; then
+        echo "SKIP: no i686-aquila toolchain, run make toolchain"
+        return 0
+    fi
+
+    mkdir -p "$OUT/system"
+    make -C "$ROOT" initrd BUILDDIR="$OUT/system/build" TOOLCHAIN="$ROOT/build/toolchain" \
+        > "$OUT/system/build.log" 2>&1 || {
+        tail -20 "$OUT/system/build.log"
+        return 1
+    }
+    cp "$OUT/system/build/initrd.img" "$initrd"
+
+    # type on the serial console after the login prompt shows up
+    {
+        sleep 6
+        for line in root "" "uname -a" "ls /bin" "ps" "cat /proc/meminfo" "touch /tmp/f" "ls /tmp"; do
+            printf '%s\r' "$line"
+            sleep 1.5
+        done
+    } | timeout 25 qemu-system-i386 -kernel "$KERNEL" -initrd "$initrd --serial" \
+        -append earlycon=ttyS0 -m 256 -display none -no-reboot -serial stdio \
+        2>/dev/null | tr -d '\r' > "$log"
+
+    if grep -a -q 'Bailing out' "$log"; then
+        echo "kernel panic:"
+        grep -a -B3 'Bailing out' "$log" | sed 's/^/    /'
+        return 1
+    fi
+
+    local missing=0
+    for want in 'login:' 'Welcome to AquilaOS!' 'AquilaOS aquila' 'aqbox' '/bin/ps' 'MemTotal' '^f *$'; do
+        if ! grep -a -q -E -- "$want" "$log"; then
+            echo "missing output: $want"
+            missing=1
+        fi
+    done
+
+    [ $missing = 0 ] && echo "logged in, ran uname, ls, ps, cat, touch"
+}
+
 #
 # Main
 #
@@ -286,8 +355,9 @@ done
 # test programs (the ata test boots the cpu test's initrd)
 needed=" $selected "
 case "$needed" in *" ata "*) needed="$needed cpu " ;; esac
+[ -x "$CROSS_CC" ] || needed=${needed/ libc / }
 
-for name in cpu syscalls ext2; do
+for name in cpu syscalls ext2 libc; do
     case "$needed" in
         *" $name "*)
             mkdir -p "$OUT/$name"
