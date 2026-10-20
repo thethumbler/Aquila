@@ -107,9 +107,13 @@ int main(int argc, char **argv)
             /* a session of its own, the serial port becomes its
              * controlling terminal when it is opened */
             setsid();
-            open("/dev/ttyS0", O_RDONLY);
-            open("/dev/ttyS0", O_WRONLY);
-            open("/dev/ttyS0", O_WRONLY);
+
+            /* whatever is on the other end, vt100 is the safe guess */
+            setenv("TERM", "vt100", 0);
+            /* read-write as usual, programs may write to standard input */
+            open("/dev/ttyS0", O_RDWR);
+            dup(0);
+            dup(0);
 
             char *argp[] = {"/sbin/login", NULL};
             while (1) run(argp);

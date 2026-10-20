@@ -28,7 +28,7 @@
 ssize_t posix_file_read(struct file *file, void *buf, size_t size)
 {
     if (file->flags & O_WRONLY) /* File is not opened for reading */
-        return -EBADFD;
+        return -EBADF;
 
     if (!size)
         return 0;

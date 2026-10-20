@@ -23,7 +23,7 @@
 ssize_t posix_file_write(struct file *file, void *buf, size_t size)
 {
     if (!(file->flags & (O_WRONLY | O_RDWR)))   /* File is not opened for writing */
-        return -EBADFD;
+        return -EBADF;
     
     if (file->flags & O_NONBLOCK) { /* Non-blocking I/O */
         if (vfs_file_can_write(file, size)) {

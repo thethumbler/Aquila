@@ -318,13 +318,15 @@ relaunch:
         /* a session of its own, the pty becomes its controlling
          * terminal when it is opened */
         setsid();
-        int stdin_fd  = open(pts_fn, O_RDONLY);
-        int stdout_fd = open(pts_fn, O_WRONLY);
-        int stderr_fd = open(pts_fn, O_WRONLY);
+        /* read-write as usual, programs may write to standard input */
+        open(pts_fn, O_RDWR);
+        dup(0);
+        dup(0);
 
         /* log in, then run the user's shell */
         char *argp[] = {LOGIN_PROGRAM, NULL};
-        char *envp[] = {"PWD=/", "TERM=VT100", NULL};
+        /* libvterm emulates an xterm */
+        char *envp[] = {"PWD=/", "TERM=xterm-256color", NULL};
         execve(LOGIN_PROGRAM, argp, envp);
         for (;;);
     }
