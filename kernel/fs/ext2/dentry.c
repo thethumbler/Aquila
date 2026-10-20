@@ -11,25 +11,27 @@ ino_t ext2_dentry_find(struct ext2 *desc, struct ext2_inode *inode, const char *
 
     char *buf = kmalloc(bs, &M_BUFFER, 0);
     struct ext2_dentry *d;
+    ino_t ino = 0;
 
-    for (size_t i = 0; i < blocks_nr; ++i) {
+    if (!buf)
+        return 0;
+
+    for (size_t i = 0; i < blocks_nr && !ino; ++i) {
         ext2_inode_block_read(desc, inode, i, buf);
         d = (struct ext2_dentry *) buf;
         while ((char *) d < (char *) buf + bs && d->size) {
             /* entries with no inode are unused */
-            if (d->ino && d->length == strlen(name) && !memcmp(d->name, name, d->length))
-                goto found;
+            if (d->ino && d->length == strlen(name) && !memcmp(d->name, name, d->length)) {
+                /* read before the buffer is freed */
+                ino = d->ino;
+                break;
+            }
             d = (struct ext2_dentry *) ((char *) d + d->size);
         }
     }
-    
-    /* Not found */
-    kfree(buf);
-    return 0;
 
-found:
     kfree(buf);
-    return d->ino;
+    return ino;
 }
 
 static inline uint8_t ext2_dentry_type(mode_t mode)
