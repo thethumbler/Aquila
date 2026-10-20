@@ -8,6 +8,9 @@
 #include <sys/sched.h>
 
 #define UART_BUF 64
+
+/* must hold a full line from the tty (TTY_BUF_SIZE), like the pty rings */
+#define UART_RING 4096
 static struct uart *devices[192] = {0};   /* Registered devices */
 
 /* Called when data is received */
@@ -99,8 +102,8 @@ int uart_file_open(struct file *file)
         u->init(u);
         u->vnode = file->vnode;
         /* TODO Error checking */
-        u->in = ringbuf_new(UART_BUF);
-        u->out = ringbuf_new(UART_BUF);
+        u->in = ringbuf_new(UART_RING);
+        u->out = ringbuf_new(UART_RING);
         tty_new(curproc, 0, uart_master_write, uart_slave_write, u, &u->tty);
         file->vnode->read_queue  = queue_new();
         file->vnode->write_queue = queue_new();
