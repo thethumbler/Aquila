@@ -43,7 +43,10 @@ static int tmpfs_close(struct vnode *vnode)
 
 static ssize_t tmpfs_read(struct vnode *node, off_t offset, size_t size, void *buf)
 {
-    if (!node->size)
+    if (offset < 0)
+        return -EINVAL;
+
+    if ((size_t) offset >= node->size)
         return 0;
 
     ssize_t r = MIN(node->size - offset, size);
@@ -53,16 +56,19 @@ static ssize_t tmpfs_read(struct vnode *node, off_t offset, size_t size, void *b
 
 static ssize_t tmpfs_write(struct vnode *node, off_t offset, size_t size, void *buf)
 {
-    if (!node->size) {
-        size_t sz = (size_t) offset + size;
-        node->p = kmalloc(sz, &M_BUFFER, 0);
-        node->size = sz;
-    }
+    if (offset < 0)
+        return -EINVAL;
 
     if (((size_t) offset + size) > node->size) {    /* Reallocate */
         size_t sz = (size_t) offset + size;
-        void *new = kmalloc(sz, &M_BUFFER, 0);
-        memcpy(new, node->p, node->size);
+
+        /* zeroed, so a gap between old size and offset reads as zeros */
+        void *new = kmalloc(sz, &M_BUFFER, M_ZERO);
+        if (!new)
+            return -ENOMEM;
+
+        if (node->p)
+            memcpy(new, node->p, node->size);
         kfree(node->p);
         node->p = new;
         node->size = sz;
@@ -74,7 +80,7 @@ static ssize_t tmpfs_write(struct vnode *node, off_t offset, size_t size, void *
 
 static int tmpfs_trunc(struct vnode *vnode, off_t len)
 {
-    if (!vnode)
+    if (!vnode || len < 0)
         return -EINVAL;
 
     if ((size_t) len == vnode->size)
@@ -82,6 +88,7 @@ static int tmpfs_trunc(struct vnode *vnode, off_t len)
 
     if (len == 0) {
         kfree(vnode->p);
+        vnode->p    = NULL;
         vnode->size = 0;
         return 0;
     }
@@ -142,7 +149,7 @@ static int tmpfs_mount(const char *dir, int flags __unused, void *data __unused)
         char *opt;
     } *mdata = data;
 
-    if (mdata->opt) {
+    if (mdata && mdata->opt) {
         char **tokens = tokenize(mdata->opt, ',');
         for (char **token_p = tokens; *token_p; ++token_p) {
             char *token = *token_p;
