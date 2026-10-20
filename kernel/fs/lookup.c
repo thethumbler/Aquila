@@ -2,37 +2,63 @@
 #include <fs/vfs.h>
 #include <aquila/fcntl.h>
 
-static inline int vfs_follow(struct vnode *vnode, struct uio *uio, struct vnode **ref)
-{
-    /* TODO enforce limit */
+/* maximum number of symbolic links followed in a lookup (POSIX SYMLOOP_MAX) */
+#define SYMLOOP_MAX 8
 
+static int lookup(const char *path, struct uio *uio, struct vnode **ref, char **abs_path, int depth);
+
+/* resolve the symbolic link `vnode' found at absolute path `link' */
+static int vfs_follow(struct vnode *vnode, const char *link, struct uio *uio, struct vnode **ref, int depth)
+{
     int err = 0;
-    char *path = NULL;
-    
-    path = kmalloc(1024, &M_BUFFER, M_ZERO);
-    if (!path) goto e_nomem;
+    char *target = NULL, *path = NULL;
+
+    if (depth >= SYMLOOP_MAX)
+        return -ELOOP;
+
+    target = kmalloc(1024, &M_BUFFER, M_ZERO);
+    if (!target) goto e_nomem;
 
     /* leave room for the NUL terminator (buffer is zeroed) */
-    if ((err = vfs_read(vnode, 0, 1023, path)) < 0)
+    if ((err = vfs_read(vnode, 0, 1023, target)) < 0)
         goto error;
 
-    if ((err = vfs_lookup(path, uio, ref, NULL)))
-        goto error;
+    if (target[0] == '/') {
+        path = target;
+        target = NULL;
+    } else {
+        /* relative to the directory containing the link */
+        size_t dir_len = strlen(link);
+        while (dir_len && link[dir_len - 1] != '/')
+            --dir_len;
 
-    kfree(path);
-    path = NULL;
+        path = kmalloc(dir_len + strlen(target) + 1, &M_BUFFER, 0);
+        if (!path) goto e_nomem;
 
-    return 0;
+        memcpy(path, link, dir_len);
+        strcpy(path + dir_len, target);
+    }
+
+    err = lookup(path, uio, ref, NULL, depth + 1);
+
+    goto done;
 
 e_nomem:
     err = -ENOMEM;
 
 error:
+done:
+    if (target) kfree(target);
     if (path) kfree(path);
     return err;
 }
 
 int vfs_lookup(const char *path, struct uio *uio, struct vnode **ref, char **abs_path)
+{
+    return lookup(path, uio, ref, abs_path, 0);
+}
+
+static int lookup(const char *path, struct uio *uio, struct vnode **ref, char **abs_path, int depth)
 {
     vfs_log(LOG_DEBUG, "vfs_lookup(path=%s, uio=%p, ref=%p, abs_path=%p)\n", path, uio, ref, abs_path);
 
@@ -82,17 +108,17 @@ int vfs_lookup(const char *path, struct uio *uio, struct vnode **ref, char **abs
     if (ref) *ref = dir;
     if (abs_path) *abs_path = strdup(rpath);
 
-    kfree(rpath);
-
     /* resolve symbolic links */
     if (S_ISLNK(dir->mode) && !(uio->flags & O_NOFOLLOW)) {
-        ret = vfs_follow(dir, uio, ref);
+        ret = vfs_follow(dir, rpath, uio, ref, depth);
 
         /* the link itself is no longer needed */
         vfs_close(dir);
+        kfree(rpath);
         return ret;
     }
 
+    kfree(rpath);
     return 0;
 
 error:
