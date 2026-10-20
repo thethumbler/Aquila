@@ -18,6 +18,9 @@
 
 set -euo pipefail
 
+# don't inherit the kernel settings exported by make
+unset CFLAGS CXXFLAGS CPPFLAGS ASFLAGS LDFLAGS LDLIBS LD AS
+
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 BUILDDIR=${BUILDDIR:-$ROOT/build}
 TOOLCHAIN=${TOOLCHAIN:-$BUILDDIR/toolchain}

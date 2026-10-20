@@ -28,6 +28,9 @@
 
 set -euo pipefail
 
+# built with the host defaults, not the kernel settings exported by make
+unset CC CXX CPP AS LD AR RANLIB CFLAGS CXXFLAGS CPPFLAGS ASFLAGS LDFLAGS LDLIBS
+
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 BUILDDIR=${BUILDDIR:-$ROOT/build}
 JOBS=${JOBS:-$(nproc)}
