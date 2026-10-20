@@ -39,7 +39,7 @@ int vfs_mount(const char *type, const char *dir, int flags, void *data, struct u
             char *dev;
             char *opt;
         } *args = data;
-        mp->dev = args->dev? strdup(args->dev) : "none";
+        mp->dev = (args && args->dev)? strdup(args->dev) : "none";
         mp->type = strdup(type);
         mp->path = strdup(_dir);
         mp->options = "";

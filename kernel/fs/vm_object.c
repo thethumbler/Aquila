@@ -57,6 +57,9 @@ struct vm_page *vnode_page_in(struct vm_object *vm_object, size_t off)
     struct vnode *vnode = (struct vnode *) vm_object->p;
 
     mm_page_map(kvm_space.pmap, (vaddr_t) __load, vm_page->paddr, VM_KW);
+
+    /* clear the page first, a short read must not expose stale memory */
+    memset(__load, 0, PAGE_SIZE);
     vfs_read(vnode, vm_page->off, PAGE_SIZE, (void *) __load);
 
     vm_object_page_insert(vm_object, vm_page);

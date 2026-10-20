@@ -58,7 +58,7 @@ int bcache_remove(struct bcache *bcache, uint64_t off)
     if (node) {
         void *block = node->entry;
         node->entry = NULL;
-        kfree(node->entry);
+        kfree(block);
         hashmap_node_remove(bcache->hashmap, node);
         return 0;
     }
