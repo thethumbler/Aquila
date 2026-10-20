@@ -5,19 +5,23 @@
 #
 #   make toolchain    i686-aquila cross toolchain and C library
 #                     (build/toolchain, build/sysroot), needed by the rest
-#   make              kernel, user space programs and initrd image
+#   make              kernel, user space programs, base third-party
+#                     software (contrib/) and initrd image
 #   make kernel       build/kernel/kernel-$(VERSION).$(ARCH)
 #   make userland     build/userland/bin/
-#   make ports        third-party software in ports/ (build/ports/root),
-#                     included in the initrd once built, PORTS_ROOT=<dir>
-#                     takes them from elsewhere
+#   make contrib      third-party software of the base system in contrib/
+#                     (build/contrib/root): dash, sbase
+#   make ports        optional third-party software in ports/
+#                     (build/ports/root), included in the initrd once built
+#
+#   CONTRIB_ROOT=<dir> and PORTS_ROOT=<dir> take those from elsewhere.
 #   make initrd       build/rootfs/ and build/initrd.img, ROOTFS_OVERLAY=<dir>
 #                     is copied over rootfs/ (e.g. etc/passwd and etc/shadow)
 #   make iso          build/aquila.iso, boots with Limine (needs xorriso)
 #   make run          boot the kernel and initrd in QEMU, console on stdio
 #   make run-iso      boot the ISO in QEMU (framebuffer console)
 #   make test         kernel test suite (tests/run.sh, uses the host gcc)
-#   make clean        remove build output except the toolchain
+#   make clean        remove build output except the toolchain and downloads
 #   make distclean    remove build/
 #
 # CONFIG selects the kernel configuration in configs/ (default: i386-pc).
@@ -37,7 +41,8 @@ ROOTFS    := $(BUILDDIR)/rootfs
 INITRD    := $(BUILDDIR)/initrd.img
 ISO       := $(BUILDDIR)/aquila.iso
 KERNEL    := $(BUILDDIR)/kernel/kernel-$(VERSION).$(ARCH)
-PORTS_ROOT ?= $(BUILDDIR)/ports/root
+CONTRIB_ROOT ?= $(BUILDDIR)/contrib/root
+PORTS_ROOT   ?= $(BUILDDIR)/ports/root
 
 PATH := $(TOOLCHAIN)/bin:$(PATH)
 
@@ -54,9 +59,9 @@ MAKEFLAGS += --no-print-directory
 
 export
 
-.PHONY: all toolchain kernel userland ports initrd iso run run-iso test clean distclean check-toolchain
+.PHONY: all toolchain kernel userland contrib ports initrd iso run run-iso test clean distclean check-toolchain
 
-all: kernel userland initrd
+all: kernel userland contrib initrd
 
 toolchain:
 	@$(SRCDIR)/toolchain/build.sh
@@ -74,8 +79,24 @@ kernel:
 userland: check-toolchain
 	@$(MAKE) -f $(SRCDIR)/userland/Makefile
 
+#
+# Third-party software: contrib/ (base system) and ports/ (optional)
+#
+
+RECIPES := $(SRCDIR)/mk/recipes.sh
+CONTRIB := $(patsubst $(SRCDIR)/contrib/%/recipe.sh,%,$(wildcard $(SRCDIR)/contrib/*/recipe.sh))
+
+# rebuilt when its recipe or patches, the build script or libc change
+contrib: $(CONTRIB:%=$(BUILDDIR)/contrib/%.built)
+
+.SECONDEXPANSION:
+$(BUILDDIR)/contrib/%.built: $$(wildcard $(SRCDIR)/contrib/$$*/*) $(RECIPES) \
+		$$(wildcard $(SYSROOT)/usr/lib/libc.a) | check-toolchain
+	@BUILDDIR=$(BUILDDIR) TOOLCHAIN=$(TOOLCHAIN) $(RECIPES) contrib $*
+	@touch $@
+
 ports: check-toolchain
-	@BUILDDIR=$(BUILDDIR) TOOLCHAIN=$(TOOLCHAIN) $(SRCDIR)/ports/build.sh
+	@BUILDDIR=$(BUILDDIR) TOOLCHAIN=$(TOOLCHAIN) $(RECIPES) ports
 
 #
 # Root filesystem and initrd
@@ -85,7 +106,8 @@ AQBOX_BIN  := cat clear date echo env kill ls mkdir mknod mktemp ps pwd \
               sh stat touch truncate uname unlink vmstat
 AQBOX_SBIN := getty login mount readmbr reboot
 
-initrd: userland
+# contrib/ is built unless it comes from elsewhere
+initrd: userland $(if $(filter $(BUILDDIR)/contrib/root,$(CONTRIB_ROOT)),contrib)
 	@$(ECHO) "  ROOTFS  " $(patsubst $(BUILDDIR)/%,build/%,$(ROOTFS))
 	@$(RM) -r $(ROOTFS)
 	@$(MKDIR) $(ROOTFS)
@@ -97,7 +119,9 @@ initrd: userland
 	@chmod 600 $(ROOTFS)/etc/shadow
 	@for a in $(AQBOX_BIN); do $(LN) -s /bin/aqbox $(ROOTFS)/bin/$$a; done
 	@for a in $(AQBOX_SBIN); do $(LN) -s /bin/aqbox $(ROOTFS)/sbin/$$a; done
-	@# ports go last and may replace aqbox applets (e.g. /bin/sh)
+	@test -d $(CONTRIB_ROOT) || { echo "error: $(CONTRIB_ROOT) not found" >&2; exit 1; }
+	@# replace, not write through, a symbolic link of the same name
+	@$(CP) -r --remove-destination $(CONTRIB_ROOT)/. $(ROOTFS)/
 	@if [ -d $(PORTS_ROOT) ]; then \
 		$(CP) -r --remove-destination $(PORTS_ROOT)/. $(ROOTFS)/; fi
 	@find $(ROOTFS) -type f -exec sh -c \
@@ -136,7 +160,7 @@ test:
 
 clean:
 	@$(RM) -r $(BUILDDIR)/kernel $(BUILDDIR)/userland $(ROOTFS) $(BUILDDIR)/iso \
-		$(INITRD) $(ISO)
+		$(INITRD) $(ISO) $(BUILDDIR)/contrib $(BUILDDIR)/ports $(BUILDDIR)/staging
 
 distclean:
 	@$(RM) -r $(BUILDDIR)

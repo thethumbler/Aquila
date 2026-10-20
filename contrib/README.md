@@ -1,0 +1,16 @@
+# contrib
+
+Third-party software that is part of the AquilaOS base system, as in the
+BSDs' source trees. Unlike the BSDs it isn't kept here: each directory is
+a recipe that fetches a pinned upstream release (see
+[ports/](../ports/README.md#recipes) for the format), and `make` builds
+it into `build/contrib/root`, which every initrd includes. Optional
+software is in [ports/](../ports/).
+
+| recipe | version  |                                                    |
+|--------|----------|----------------------------------------------------|
+| dash   | 0.5.13.5 | `/bin/dash`, also `/bin/sh`                        |
+| sbase  | 0.1      | `/bin/sbase-box`, linked as `ls`, `cp`, `sed`, `grep`, ...; without `chroot`, `cron`, `flock`, `logger`, `nice`, `renice` and `tftp`, which need what the kernel doesn't have yet |
+
+A recipe is rebuilt when its files, `mk/recipes.sh` or libc change.
+`make contrib` builds only these.

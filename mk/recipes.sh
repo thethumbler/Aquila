@@ -1,13 +1,15 @@
 #!/bin/bash
 #
-# Build third-party software for AquilaOS.
+# Build third-party software for AquilaOS from upstream sources.
 #
-# usage: ports/build.sh [port...]   (default: all ports)
+# usage: mk/recipes.sh contrib|ports [name...]   (default: all of the tree)
 #
-# Each port is ports/<name>/recipe.sh, which sets NAME, VERSION, URL and
-# SHA256 and defines a build() function, and optionally:
+# contrib/ is the third-party part of the base system (make), ports/ is
+# optional software (make ports). Both use recipes: <tree>/<name>/recipe.sh
+# sets NAME, VERSION, URL and SHA256 and defines a build() function, and
+# optionally:
 #
-#   DEPENDS     ports to build first
+#   DEPENDS     recipes to build first (of the same tree, or of contrib)
 #   FILE        name of the downloaded archive (default: basename of URL)
 #
 # Sources that have no usable release archive come from git instead: GIT
@@ -15,11 +17,12 @@
 # and SHA256.
 #
 # build() runs in the extracted source directory (after applying
-# ports/<name>/*.patch) with CC, AR, RANLIB, STRIP set for the i686-aquila
+# <tree>/<name>/*.patch) with CC, AR, RANLIB, STRIP set for the i686-aquila
 # toolchain, and AQUILA_UAPI pointing at the kernel ABI headers (for host
-# tools that generate target tables). Programs are installed into $DESTDIR, which the initrd
-# includes (make initrd); libraries and headers other ports build against
-# into $STAGING (CPPFLAGS and LDFLAGS point there).
+# tools that generate target tables). Programs are installed into
+# $DESTDIR (build/<tree>/root), which the initrd includes (make initrd);
+# libraries and headers other recipes build against into $STAGING
+# (CPPFLAGS and LDFLAGS point there).
 #
 # environment:
 #   BUILDDIR    output directory (default: <repo>/build)
@@ -33,15 +36,20 @@ set -euo pipefail
 unset CFLAGS CXXFLAGS CPPFLAGS ASFLAGS LDFLAGS LDLIBS LD AS
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
+
+TREE=${1:-}
+case "$TREE" in
+    contrib|ports) shift ;;
+    *) echo "usage: $0 contrib|ports [name...]" >&2; exit 2 ;;
+esac
+
 BUILDDIR=${BUILDDIR:-$ROOT/build}
 TOOLCHAIN=${TOOLCHAIN:-$BUILDDIR/toolchain}
 JOBS=${JOBS:-$(nproc)}
 
 TARGET=i686-aquila
 DOWNLOADS=$BUILDDIR/downloads
-SRC=$BUILDDIR/ports/src
-export DESTDIR=$BUILDDIR/ports/root
-export STAGING=$BUILDDIR/ports/staging
+export STAGING=$BUILDDIR/staging
 
 export PATH=$TOOLCHAIN/bin:$PATH
 export CC=$TARGET-gcc AR=$TARGET-ar RANLIB=$TARGET-ranlib STRIP=$TARGET-strip
@@ -56,14 +64,29 @@ fi
 
 declare -A built
 
+# the tree a recipe is in: the one being built, or contrib
+recipe_tree()
+{
+    local tree
+    for tree in "$TREE" contrib; do
+        if [ -f "$ROOT/$tree/$1/recipe.sh" ]; then
+            echo "$tree"
+            return
+        fi
+    done
+}
+
 build_port()
 {
-    local recipe=$ROOT/ports/$1/recipe.sh
+    local tree
+    tree=$(recipe_tree "$1")
+    local recipe=$ROOT/$tree/$1/recipe.sh
+    local SRC=$BUILDDIR/$tree/src
 
     [ -n "${built[$1]:-}" ] && return
 
     if [ ! -f "$recipe" ]; then
-        echo "unknown port: $1" >&2
+        echo "unknown recipe: $1 (not in $TREE/ or contrib/)" >&2
         exit 2
     fi
 
@@ -77,6 +100,7 @@ build_port()
         # shellcheck source=/dev/null
         source "$recipe"
 
+        export DESTDIR=$BUILDDIR/$tree/root
         mkdir -p "$DOWNLOADS" "$SRC" "$DESTDIR" "$STAGING"
 
         if [ -n "${GIT:-}" ]; then
@@ -114,7 +138,7 @@ build_port()
         tar -xf "$archive" -C "$SRC"
         cd "$SRC/$NAME-$VERSION"
 
-        for p in "$ROOT/ports/$1"/*.patch; do
+        for p in "$ROOT/$tree/$1"/*.patch; do
             [ -f "$p" ] && patch -p1 -s < "$p"
         done
 
@@ -124,6 +148,6 @@ build_port()
     built[$1]=1
 }
 
-for port in ${*:-$(cd "$ROOT/ports" && ls -d */ | tr -d /)}; do
+for port in ${*:-$(cd "$ROOT/$TREE" && ls -d */ | tr -d /)}; do
     build_port "$port"
 done

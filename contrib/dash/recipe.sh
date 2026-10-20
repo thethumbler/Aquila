@@ -28,6 +28,6 @@ build()
     install -d "$DESTDIR/bin"
     install -m 755 src/dash "$DESTDIR/bin/dash"
 
-    # the system shell, replacing aqbox's sh
+    # the system shell
     ln -sf dash "$DESTDIR/bin/sh"
 }

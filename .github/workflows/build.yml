@@ -33,7 +33,7 @@ jobs:
         if: steps.toolchain.outputs.cache-hit != 'true'
         run: make toolchain
 
-      - name: Build kernel, userland and ports
+      - name: Build the base system (kernel, userland, contrib) and ports
         run: make all ports
 
       - name: Build ISO

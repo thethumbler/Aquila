@@ -18,15 +18,14 @@ build()
     bin=$(sed -n '/^BIN =/,/^$/p' Makefile | tr -d '\\\t' | tail -n +2 |
           grep -v -x -F "$(printf '%s\n' $skip)")
 
-    # one binary for all the tools, like aqbox
+    # one binary for all the tools
     make -j"$JOBS" CC="$CC" AR="$AR" RANLIB="$RANLIB" CFLAGS="-Os" \
         BIN="$(echo $bin)" sbase-box
 
     install -d "$DESTDIR/bin"
     install -m 755 sbase-box "$DESTDIR/bin/sbase-box"
 
-    # sbase-box -i would make the links, but it can't run here; replaces
-    # aqbox's applets of the same name (ls, cat, ...)
+    # sbase-box -i would make the links, but it can't run here
     for tool in install '[' $(grep -l '^main' *.c | sed 's/\.c$//'); do
         ln -sf sbase-box "$DESTDIR/bin/$tool"
     done

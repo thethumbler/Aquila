@@ -19,10 +19,15 @@ Then:
 
 ```
 make toolchain      # i686-aquila gcc/binutils, newlib and Limine (once, ~15 min)
-make                # kernel, user space programs and initrd
-make ports          # third-party software (dash as /bin/sh, sbase, kilo, Lua), included in the initrd
+make                # kernel, user space programs, contrib/ and initrd
+make ports          # optional software (kilo, Lua), included in the initrd
 make run-iso        # build the ISO and boot it in QEMU
 ```
+
+As on the BSDs, some third-party software is part of the base system:
+[contrib/](contrib/) (dash as `/bin/sh`, sbase for the core utilities)
+is fetched from upstream and built by `make`. [ports/](ports/) is
+optional software, built with `make ports`.
 
 `make run` boots the kernel directly with the console on the serial port
 (log in as `root`, no password). `make iso` only builds
@@ -46,8 +51,10 @@ from source, see [tests/](tests/README.md).
 | [include/uapi/](include/uapi/aquila) | user/kernel ABI: syscall numbers, errno, structures shared by the kernel and libc |
 | [libc/](libc/aquila)         | AquilaOS port of newlib                            |
 | [toolchain/](toolchain/)     | cross toolchain build script and patches           |
-| [userland/](userland/)       | init, aqbox (core utilities), fbterm, kilo         |
-| [ports/](ports/)             | third-party software recipes                       |
+| [userland/](userland/)       | init, aqbox (system tools: login, ps, mount, ...), fbterm |
+| [contrib/](contrib/)         | third-party software of the base system (recipes)  |
+| [ports/](ports/)             | optional third-party software (recipes)            |
+| [mk/](mk/)                   | build script for contrib/ and ports/ recipes       |
 | [rootfs/](rootfs/)           | root filesystem skeleton                           |
 | [boot/](boot/)               | bootloader configuration                           |
 | [configs/](configs/)         | kernel build configurations                        |
@@ -91,9 +98,11 @@ from source, see [tests/](tests/README.md).
 
 #### System
 - [X] newlib 4.6 C library
-- [X] aqbox   (Aquila Box, like busybox)
+- [X] dash    (shell, contrib)
+- [X] sbase   (core utilities, contrib)
+- [X] aqbox   (system tools)
 - [X] fbterm  (framebuffer terminal)
-- [X] kilo    (text editor)
+- [X] kilo    (text editor, port)
 - [X] Lua     (port)
 - [ ] tcc
 
@@ -107,13 +116,12 @@ Third-party code keeps its own license:
 
 | component | location | license |
 |-----------|----------|---------|
-| kilo | [userland/kilo/](userland/kilo/LICENSE) | BSD 2-Clause, Salvatore Sanfilippo |
-| bim | [userland/aqbox/extra/bim.c](userland/aqbox/extra/bim.c) | ISC, K. Lange |
 | libvterm | [userland/fbterm/libvterm/](userland/fbterm/libvterm/LICENSE), `userland/fbterm/include/vterm.h` | MIT, Paul Evans |
 | NanoJPEG | [userland/fbterm/nanojpeg.c](userland/fbterm/nanojpeg.c) | MIT, Martin J. Fiedler |
 | multiboot.h | [kernel/arch/i386/include/boot/multiboot.h](kernel/arch/i386/include/boot/multiboot.h) | permissive, Free Software Foundation |
 
 The toolchain patches in [toolchain/patches/](toolchain/patches/) modify
 binutils and GCC (GPLv3) and newlib (various free licenses); the patched
-tools remain under those licenses. Ports are fetched from upstream under
-their own licenses.
+tools remain under those licenses. contrib/ and ports/ software is
+fetched from upstream and keeps its own license (dash: BSD, sbase: MIT,
+kilo: BSD 2-Clause, Lua: MIT).

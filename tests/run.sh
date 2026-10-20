@@ -286,7 +286,7 @@ test_libc()
 # the system built from source: logins on the serial console, run commands
 #
 # tests/system/rootfs adds a root password and an unprivileged guest user,
-# the ports (dash as /bin/sh) come from the main build: make ports
+# dash and sbase (contrib/) come from the main build: make
 test_system()
 {
     local log=$OUT/system/serial.log
@@ -297,15 +297,17 @@ test_system()
         return 0
     fi
 
-    local ports=$ROOT/build/ports/root
-    if [ ! -x "$ports/bin/dash" ]; then
-        echo "SKIP: ports not built, run make ports"
+    # the base system's third-party software from the main build (make),
+    # without the optional ports
+    local contrib=$ROOT/build/contrib/root
+    if [ ! -x "$contrib/bin/dash" ]; then
+        echo "SKIP: contrib not built, run make"
         return 0
     fi
 
     mkdir -p "$OUT/system"
     make -C "$ROOT" initrd BUILDDIR="$OUT/system/build" TOOLCHAIN="$ROOT/build/toolchain" \
-        PORTS_ROOT="$ports" ROOTFS_OVERLAY="$TESTS/system/rootfs" \
+        CONTRIB_ROOT="$contrib" PORTS_ROOT=/nonexistent ROOTFS_OVERLAY="$TESTS/system/rootfs" \
         > "$OUT/system/build.log" 2>&1 || {
         tail -20 "$OUT/system/build.log"
         return 1
