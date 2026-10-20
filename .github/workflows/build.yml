@@ -1,0 +1,52 @@
+name: build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential gcc-multilib bison flex \
+            texinfo libgmp-dev libmpfr-dev libmpc-dev wget nasm xorriso cpio \
+            qemu-system-x86 e2fsprogs python3
+
+      # the toolchain takes a while to build, rebuild it only when its
+      # sources (or the ABI headers it installs) change
+      - name: Cache toolchain
+        id: toolchain
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/toolchain
+            build/sysroot
+          key: toolchain-${{ hashFiles('toolchain/**', 'libc/**', 'include/uapi/**') }}
+
+      - name: Build toolchain
+        if: steps.toolchain.outputs.cache-hit != 'true'
+        run: make toolchain
+
+      - name: Build kernel, userland and ports
+        run: make all ports
+
+      - name: Build ISO
+        run: make initrd iso
+
+      - name: Test
+        run: tests/run.sh -v
+
+      - name: Upload images
+        uses: actions/upload-artifact@v4
+        with:
+          name: aquila
+          path: |
+            build/aquila.iso
+            build/initrd.img
+            build/kernel/kernel-*.i386
