@@ -277,7 +277,8 @@ test_libc()
 
 # the system built from source: logins on the serial console, run commands
 #
-# tests/system/rootfs adds a root password and an unprivileged guest user
+# tests/system/rootfs adds a root password and an unprivileged guest user,
+# the ports (dash as /bin/sh) come from the main build: make ports
 test_system()
 {
     local log=$OUT/system/serial.log
@@ -288,20 +289,33 @@ test_system()
         return 0
     fi
 
+    local ports=$ROOT/build/ports/root
+    if [ ! -x "$ports/bin/dash" ]; then
+        echo "SKIP: ports not built, run make ports"
+        return 0
+    fi
+
     mkdir -p "$OUT/system"
     make -C "$ROOT" initrd BUILDDIR="$OUT/system/build" TOOLCHAIN="$ROOT/build/toolchain" \
-        ROOTFS_OVERLAY="$TESTS/system/rootfs" > "$OUT/system/build.log" 2>&1 || {
+        PORTS_ROOT="$ports" ROOTFS_OVERLAY="$TESTS/system/rootfs" \
+        > "$OUT/system/build.log" 2>&1 || {
         tail -20 "$OUT/system/build.log"
         return 1
     }
     cp "$OUT/system/build/initrd.img" "$initrd"
 
+    # output is checked for what the shell expanded, not the echoed input
+    local long=0123456789012345678901234567890123456789012345678901234567890123456789
+
     # "seconds input": wait, then type the line on the serial console
     local session=(
         "6 root" "1 wrong-password"
-        "6 guest" "1 guest-password" "5 cat /etc/shadow" "1 exit"
-        "4 root" "1 root-password" "5 uname -a" "1 ls /bin" "1 ps"
+        "6 guest" "1 guest-password" "5 echo user=\$USER" "1 cat /etc/shadow" "1 exit"
+        "4 root" "1 root-password" "5 echo user=\$USER" "1 uname -a" "1 ls /bin" "1 ps"
         "1 cat /proc/meminfo" "1 touch /tmp/f" "1 ls /tmp" "1 cat /etc/shadow"
+        "1 echo pipe-\$((6 * 7)) | cat | cat" "1 echo subst=\$(echo inner | cat)"
+        "1 echo long:\$USER:$long:end"
+        "1 cat" "1 "$'\x03' "1 echo status=\$?"
     )
 
     {
@@ -310,7 +324,7 @@ test_system()
             printf '%s\r' "${step#* }"
         done
         sleep 2
-    } | timeout 60 qemu-system-i386 -kernel "$KERNEL" -initrd "$initrd --serial" \
+    } | timeout 90 qemu-system-i386 -kernel "$KERNEL" -initrd "$initrd --serial" \
         -append earlycon=ttyS0 -m 256 -display none -no-reboot -serial stdio \
         2>/dev/null | tr -d '\r' > "$log"
 
@@ -321,16 +335,17 @@ test_system()
     fi
 
     local missing=0
-    for want in 'Login incorrect' '\[guest@aquila' 'shadow: Permission denied' \
-                '\[root@aquila' 'AquilaOS aquila' 'aqbox' '/bin/ps' 'MemTotal' \
-                '(^| )f( |$)' 'guest:\$6\$'; do
+    for want in 'Login incorrect' 'user=guest' 'shadow: Permission denied' \
+                'user=root' 'AquilaOS aquila' 'aqbox' '/bin/ps' 'MemTotal' \
+                '(^| )f( |$)' 'guest:\$6\$' 'pipe-42' 'subst=inner' \
+                "long:root:$long:end" 'status=130'; do
         if ! grep -a -q -E -- "$want" "$log"; then
             echo "missing output: $want"
             missing=1
         fi
     done
 
-    [ $missing = 0 ] && echo "wrong password rejected, guest denied /etc/shadow, root ran uname, ls, ps, cat, touch"
+    [ $missing = 0 ] && echo "wrong password rejected, guest denied /etc/shadow, root ran uname, ls, ps, cat, touch, pipelines, \$(...), a long line and ^C"
 }
 
 #

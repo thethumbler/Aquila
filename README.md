@@ -20,7 +20,7 @@ Then:
 ```
 make toolchain      # i686-aquila gcc/binutils, newlib and Limine (once, ~15 min)
 make                # kernel, user space programs and initrd
-make ports          # optional: third-party software (Lua), included in the initrd
+make ports          # third-party software (dash as /bin/sh, kilo, Lua), included in the initrd
 make run-iso        # build the ISO and boot it in QEMU
 ```
 

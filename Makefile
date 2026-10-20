@@ -9,7 +9,8 @@
 #   make kernel       build/kernel/kernel-$(VERSION).$(ARCH)
 #   make userland     build/userland/bin/
 #   make ports        third-party software in ports/ (build/ports/root),
-#                     included in the initrd once built
+#                     included in the initrd once built, PORTS_ROOT=<dir>
+#                     takes them from elsewhere
 #   make initrd       build/rootfs/ and build/initrd.img, ROOTFS_OVERLAY=<dir>
 #                     is copied over rootfs/ (e.g. etc/passwd and etc/shadow)
 #   make iso          build/aquila.iso, boots with Limine (needs xorriso)
@@ -36,6 +37,7 @@ ROOTFS    := $(BUILDDIR)/rootfs
 INITRD    := $(BUILDDIR)/initrd.img
 ISO       := $(BUILDDIR)/aquila.iso
 KERNEL    := $(BUILDDIR)/kernel/kernel-$(VERSION).$(ARCH)
+PORTS_ROOT ?= $(BUILDDIR)/ports/root
 
 PATH := $(TOOLCHAIN)/bin:$(PATH)
 
@@ -96,8 +98,8 @@ initrd: userland
 	@for a in $(AQBOX_BIN); do $(LN) -s /bin/aqbox $(ROOTFS)/bin/$$a; done
 	@for a in $(AQBOX_SBIN); do $(LN) -s /bin/aqbox $(ROOTFS)/sbin/$$a; done
 	@# ports go last and may replace aqbox applets (e.g. /bin/sh)
-	@if [ -d $(BUILDDIR)/ports/root ]; then \
-		$(CP) -r --remove-destination $(BUILDDIR)/ports/root/. $(ROOTFS)/; fi
+	@if [ -d $(PORTS_ROOT) ]; then \
+		$(CP) -r --remove-destination $(PORTS_ROOT)/. $(ROOTFS)/; fi
 	@find $(ROOTFS) -type f -exec sh -c \
 		'for f; do head -c 4 "$$f" | grep -q ELF && $(STRIP) "$$f"; done' _ {} +
 	@$(ECHO) "  CPIO    " $(patsubst $(BUILDDIR)/%,build/%,$(INITRD))
