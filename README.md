@@ -102,7 +102,7 @@ from source, see [tests/](tests/README.md).
 #### Devices
 - [X] i8042   (PS/2 controller)
 - [X] ps2kbd  (PS/2 keyboard)
-- [X] ps2mouse (PS/2 mouse)
+- [X] ps2mouse (PS/2 mouse, /dev/mouse as Linux's /dev/psaux)
 - [X] ramdev  (memory mapped devices)
 - [X] vt      (virtual terminals on the framebuffer or VGA text mode;
               graphics, raw keyboard and switching as the Linux console)
@@ -120,6 +120,8 @@ from source, see [tests/](tests/README.md).
 - [X] vis     (vi-like editor, port) on ncurses (port)
 - [X] Lua     (port)
 - [X] tcc     (C compiler, port), building programs on AquilaOS
+- [X] TinyX   (Xfbdev, X server on the framebuffer, port) with X.Org's
+              fixed and cursor fonts
 
 ## License
 

@@ -1,0 +1,259 @@
+diff -ruN a/configure.ac b/configure.ac
+--- a/configure.ac
++++ b/configure.ac
+@@ -563,7 +563,7 @@
+     KDRIVE_PURE_LIBS="$FB_LIB $MI_LIB $FIXES_LIB $XEXT_LIB $DBE_LIB $RENDER_LIB $RANDR_LIB $DAMAGE_LIB $MIEXT_DAMAGE_LIB $MIEXT_SHADOW_LIB $OS_LIB"
+     KDRIVE_LIB='$(top_builddir)/kdrive/src/libkdrive.a'
+     case $host_os in
+-	*linux*)
++	*linux*|aquila*)
+ 	    KDRIVE_OS_LIB='$(top_builddir)/kdrive/linux/liblinux.a'
+             KDRIVELINUX=yes
+ 	    ;;
+diff -ruN a/dix/main.c b/dix/main.c
+--- a/dix/main.c
++++ b/dix/main.c
+@@ -101,7 +101,7 @@
+ 
+ #ifdef DPMSExtension
+ #define DPMS_SERVER
+-#include <X11/extensions/dpms.h>
++#include <X11/extensions/dpmsconst.h>
+ #include "dpmsproc.h"
+ #endif
+ 
+diff -ruN a/kdrive/linux/linux.c b/kdrive/linux/linux.c
+--- a/kdrive/linux/linux.c
++++ b/kdrive/linux/linux.c
+@@ -32,7 +32,9 @@
+ #include <sys/stat.h>
+ #include <sys/ioctl.h>
+ #include <X11/keysym.h>
++#ifdef HAVE_LINUX_APM_BIOS_H
+ #include <linux/apm_bios.h>
++#endif
+ 
+ /* These symbols are not defined on musl */
+ #if !defined(__uid_t) && !defined(__gid_t)
+@@ -154,6 +156,7 @@
+ 	}
+ }
+ 
++#ifdef HAVE_LINUX_APM_BIOS_H
+ static void
+ LinuxApmBlock(pointer blockData, OSTimePtr pTimeout, pointer pReadmask)
+ {
+@@ -201,6 +204,8 @@
+ 	}
+ }
+ 
++#endif
++
+ #ifdef FNONBLOCK
+ #define NOBLOCK FNONBLOCK
+ #else
+@@ -215,6 +220,7 @@
+ 		kdSwitchPending = FALSE;
+ 		ioctl(LinuxConsoleFd, VT_RELDISP, VT_ACKACQ);
+ 	}
++#ifdef HAVE_LINUX_APM_BIOS_H
+ 	/*
+ 	 * Open the APM driver
+ 	 */
+@@ -229,6 +235,7 @@
+ 					       0);
+ 		AddEnabledDevice(LinuxApmFd);
+ 	}
++#endif
+ 
+ 	/*
+ 	 * now get the VT
+@@ -272,12 +279,14 @@
+ 		ioctl(LinuxConsoleFd, VT_RELDISP, 1);
+ 	}
+ 	enabled = FALSE;
++#ifdef HAVE_LINUX_APM_BIOS_H
+ 	if (LinuxApmFd >= 0) {
+ 		RemoveBlockAndWakeupHandlers(LinuxApmBlock, LinuxApmWakeup, 0);
+ 		RemoveEnabledDevice(LinuxApmFd);
+ 		close(LinuxApmFd);
+ 		LinuxApmFd = -1;
+ 	}
++#endif
+ }
+ 
+ static void LinuxFini(void)
+diff -ruN a/kdrive/src/kinput.c b/kdrive/src/kinput.c
+--- a/kdrive/src/kinput.c
++++ b/kdrive/src/kinput.c
+@@ -151,6 +151,11 @@
+ #define NOBLOCK FNDELAY
+ #endif
+ 
++/* without SIGIO, input is read once select() finds it (KdWakeupHandler) */
++#ifndef FASYNC
++#define FASYNC 0
++#endif
++
+ static void KdNonBlockFd(int fd)
+ {
+ 	int flags;
+diff -ruN a/mi/miinitext.c b/mi/miinitext.c
+--- a/mi/miinitext.c
++++ b/mi/miinitext.c
+@@ -91,7 +91,7 @@
+ #define _XSHM_SERVER_
+ #include <X11/extensions/shmstr.h>
+ #define _XTEST_SERVER_
+-#include <X11/extensions/XTest.h>
++#include <X11/extensions/xtestconst.h>
+ #ifdef XF86BIGFONT
+ #include <X11/extensions/xf86bigfproto.h>
+ #endif
+diff -ruN a/mi/miscrinit.c b/mi/miscrinit.c
+--- a/mi/miscrinit.c
++++ b/mi/miscrinit.c
+@@ -39,7 +39,7 @@
+ #include "dix.h"
+ #include "miline.h"
+ #define _XSHM_SERVER_
+-#include <X11/extensions/XShm.h>
++#include <X11/extensions/shm.h>
+ #include "shmint.h"
+ 
+ /* We use this structure to propogate some information from miScreenInit to
+diff -ruN a/os/WaitFor.c b/os/WaitFor.c
+--- a/os/WaitFor.c
++++ b/os/WaitFor.c
+@@ -94,7 +94,7 @@
+ 
+ #ifdef DPMSExtension
+ #define DPMS_SERVER
+-#include <X11/extensions/dpms.h>
++#include <X11/extensions/dpmsconst.h>
+ #endif
+ 
+ struct _OsTimerRec {
+diff -ruN a/Xext/bigreq.c b/Xext/bigreq.c
+--- a/Xext/bigreq.c
++++ b/Xext/bigreq.c
+@@ -50,7 +50,7 @@
+ static DISPATCH_PROC(ProcBigReqDispatch);
+ 
+ void
+-BigReqExtensionInit(INITARGS)
++BigReqExtensionInit(void)
+ {
+ #if 0
+     ExtensionEntry *extEntry;
+diff -ruN a/Xext/dpms.c b/Xext/dpms.c
+--- a/Xext/dpms.c
++++ b/Xext/dpms.c
+@@ -44,7 +44,7 @@
+ #include "extnsionst.h"
+ #include "opaque.h"
+ #define DPMS_SERVER
+-#include <X11/extensions/dpms.h>
++#include <X11/extensions/dpmsconst.h>
+ #include <X11/extensions/dpmsproto.h>
+ #include "dpmsproc.h"
+ #include "extinit.h"
+@@ -91,7 +91,7 @@
+ static void DPMSResetProc(ExtensionEntry * extEntry);
+ 
+ void
+-DPMSExtensionInit(INITARGS)
++DPMSExtensionInit(void)
+ {
+ #if 0
+     ExtensionEntry *extEntry;
+diff -ruN a/Xext/saver.c b/Xext/saver.c
+--- a/Xext/saver.c
++++ b/Xext/saver.c
+@@ -47,7 +47,7 @@
+ #include "colormapst.h"
+ #ifdef DPMSExtension
+ #define DPMS_SERVER
+-#include <X11/extensions/dpms.h>
++#include <X11/extensions/dpmsconst.h>
+ #endif
+ 
+ #include <stdio.h>
+@@ -239,7 +239,7 @@
+  ****************/
+ 
+ void
+-ScreenSaverExtensionInit(INITARGS)
++ScreenSaverExtensionInit(void)
+ {
+     ExtensionEntry *extEntry;
+ 
+diff -ruN a/Xext/shm.c b/Xext/shm.c
+--- a/Xext/shm.c
++++ b/Xext/shm.c
+@@ -208,7 +208,7 @@
+ #endif
+ 
+ void
+-ShmExtensionInit(INITARGS)
++ShmExtensionInit(void)
+ {
+     ExtensionEntry *extEntry;
+ 
+diff -ruN a/Xext/sync.c b/Xext/sync.c
+--- a/Xext/sync.c
++++ b/Xext/sync.c
+@@ -65,7 +65,7 @@
+ #include "resource.h"
+ #include "opaque.h"
+ #define _SYNC_SERVER
+-#include <X11/extensions/sync.h>
++#include <X11/extensions/syncconst.h>
+ #include <X11/extensions/syncstr.h>
+ 
+ #include <stdio.h>
+@@ -2296,7 +2296,7 @@
+  * ** Initialise the extension.
+  */
+ void
+-SyncExtensionInit(INITARGS)
++SyncExtensionInit(void)
+ {
+     ExtensionEntry *extEntry;
+ 
+diff -ruN a/Xext/xcmisc.c b/Xext/xcmisc.c
+--- a/Xext/xcmisc.c
++++ b/Xext/xcmisc.c
+@@ -64,7 +64,7 @@
+ static DISPATCH_PROC(SProcXCMiscGetXIDRange);
+ 
+ void
+-XCMiscExtensionInit(INITARGS)
++XCMiscExtensionInit(void)
+ {
+ #if 0
+     ExtensionEntry *extEntry;
+diff -ruN a/Xext/xres.c b/Xext/xres.c
+--- a/Xext/xres.c
++++ b/Xext/xres.c
+@@ -373,7 +373,7 @@
+ }
+ 
+ void
+-ResExtensionInit(INITARGS)
++ResExtensionInit(void)
+ {
+     (void) AddExtension(XRES_NAME, 0, 0,
+                         ProcResDispatch, SProcResDispatch,
+diff -ruN a/Xext/xtest.c b/Xext/xtest.c
+--- a/Xext/xtest.c
++++ b/Xext/xtest.c
+@@ -80,7 +80,7 @@
+ static DISPATCH_PROC(SProcXTestGrabControl);
+ 
+ void
+-XTestExtensionInit(INITARGS)
++XTestExtensionInit(void)
+ {
+ #if 0
+     ExtensionEntry *extEntry;

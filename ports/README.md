@@ -49,15 +49,28 @@ replace `URL` and `SHA256`, and the sources are exported as
 Other optional settings: `DEPENDS` (recipes to build first, ports or
 contrib/ ones), `FILE` (name
 of the downloaded archive). Libraries and headers other ports build
-against go into `$STAGING`, which `CPPFLAGS` and `LDFLAGS` point at.
+against go into `$STAGING`, which `CPPFLAGS` and `LDFLAGS` point at,
+and `pkg-config` only looks there (`--static`: libraries are static).
+Libtool archives (`.la`) are removed from it, they name the build
+host's `/usr/lib`.
 
 ## Ports
 
 | port       | version  |                                                     |
 |------------|----------|-----------------------------------------------------|
+| font-cursor-misc | 1.0.4 | the cursor font, for X servers                 |
+| font-misc-misc | 1.1.3  | the fixed width fonts of X (`fixed`, `6x13`, `9x15`, ...), Unicode, in `/usr/share/fonts/X11/misc` (BDF, there is no `bdftopcf`) |
 | kilo       | 323d93b  | `kilo` in `/usr/bin`                                |
+| libfontenc | 1.1.8    | library only (for libXfont)                         |
 | libtermkey | 0.22     | library only (for vis)                              |
+| libxau     | 1.0.12   | library only (X authorization)                      |
+| libxdmcp   | 1.1.5    | library only (for TinyX)                            |
+| libxfont   | 1.5.4    | library only, bitmap fonts (for TinyX)              |
 | lua        | 5.5.1    | `lua` and `luac` in `/usr/bin`                      |
 | ncurses    | 6.6      | library only, wide characters, the vt100, ansi, linux, xterm and xterm-256color descriptions built in (no terminfo database) |
 | tcc        | mob e23dabe | `tcc` (also `cc`) in `/usr/bin`, compiling static programs on AquilaOS; with the C library's headers in `/usr/include` and archives in `/usr/lib`; no `-run` (no `mprotect()`) |
+| tinyx      | 1.2.0 (feab72c) | `Xfbdev` (also `X`) in `/usr/bin`: X on the framebuffer, the keyboard and mouse of a virtual terminal; clients through a Unix socket (`:0`). Its changes to X.Org's code are GPLv3 |
 | vis        | 0.9      | `vis` in `/usr/bin`, without Lua (no syntax highlighting) |
+| xorgproto  | 2024.1   | headers only (X protocol)                           |
+| xtrans     | 1.5.2    | headers only (X transports)                         |
+| zlib       | 1.3.1    | library only                                        |
