@@ -54,6 +54,12 @@ _start:
     movl %eax, (multiboot_signature)
     movl %ebx, (multiboot_info)
 
+    /*
+     * Multiboot leaves %esp undefined, so use our own boot stack. Paging is
+     * not enabled yet, but the boot sections are linked at their physical
+     * addresses so the symbol can be used as is.
+     */
+    movl $boot_stack_top, %esp
     and  $-16, %esp /* Align stack to 16 byte */
 
     mov  $0, %ebp
@@ -74,6 +80,12 @@ _start:
 
 multiboot_signature: .long 0
 multiboot_info: .long 0
+
+.section .bss
+.align 16
+boot_stack:
+    .skip 16384
+boot_stack_top:
 
 /* vim: ft=gas:
 */
