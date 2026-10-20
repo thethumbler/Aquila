@@ -51,26 +51,6 @@
 #include <stdarg.h>
 #include <fcntl.h>
 
-/* XXX Thses functions are not provided by libc */
-int tcgetattr(int fd, struct termios *tios)
-{
-    return ioctl(fd, TCGETS, tios);
-}
-
-int tcsetattr(int fd, int req, struct termios *tios)
-{
-    return ioctl(fd, TCSETS, tios);
-}
-
-ssize_t __getline(char **lineptr, size_t *n, FILE *stream);
-ssize_t getline(char **lineptr, size_t *n, FILE *stream)
-{
-    return __getline(lineptr, n, stream);
-}
-
-/* XXX fix libc already! */
-#define isatty(...) (1)
-
 /* Syntax highlight types */
 #define HL_NORMAL 0
 #define HL_NONPRINT 1

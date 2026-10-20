@@ -8,7 +8,7 @@
 #define KVMEM   "/proc/kvmem"
 #define BUFSIZE 1024
 
-char buf[BUFSIZE];
+static char buf[BUFSIZE];
 
 AQBOX_APPLET(vmstat)(int argc, char *argv[])
 {

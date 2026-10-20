@@ -16,7 +16,7 @@ static void usage()
             "Concatenate and print files\n");
 }
 
-char buf[CAT_BUFSIZE];
+static char buf[CAT_BUFSIZE];
 static int do_cat(const char *path)
 {
     int err = 0;
