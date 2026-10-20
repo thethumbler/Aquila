@@ -120,6 +120,9 @@ struct VTermState
   VTermEncodingInstance encoding[4], encoding_utf8;
   int gl_set, gr_set, gsingle_set;
 
+  /* the last byte printed as text, which REP repeats */
+  char rep_byte;
+
   struct VTermPen pen;
 
   VTermColor default_fg;

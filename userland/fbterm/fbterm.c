@@ -254,6 +254,9 @@ int fbterm_init(struct fbterm_ctx *ctx)
 
     VTermScreen *sc = vterm_obtain_screen(vt);
     vterm_screen_set_callbacks(sc, &screen_cbs, ctx);
+
+    /* full screen programs (smcup/rmcup) leave the screen as it was */
+    vterm_screen_enable_altscreen(sc, 1);
     vterm_screen_reset(sc, 0);
     ctx->screen = sc;
 

@@ -402,6 +402,9 @@ static int on_text(const char bytes[], size_t len, void *user)
   }
 #endif
 
+  /* the parser passes more than the text, this took `eaten' bytes */
+  state->rep_byte = bytes[eaten - 1];
+
   return eaten;
 }
 
@@ -1170,6 +1173,16 @@ static int on_csi(const char *leader, const long args[], int argcount, const cha
     state->pos.col = col-1;
     state->at_phantom = 0;
     break;
+
+  case 0x62: { // REP - ECMA-48 8.3.103: repeat the preceding character
+    int i;
+    count = CSI_ARG_COUNT(args[0]);
+    if(!state->rep_byte)
+      break;
+    for(i = 0; i < count; i++)
+      on_text(&state->rep_byte, 1, state);
+    break;
+  }
 
   case 0x61: // HPR - ECMA-48 8.3.59
     count = CSI_ARG_COUNT(args[0]);
