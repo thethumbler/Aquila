@@ -41,6 +41,8 @@ void x86_cpu_init(void)
     printk("x86: installing ISRs\n");
     x86_isr_setup();
 
+    x86_fpu_setup();
+
     printk("x86: processing multiboot info block at %p\n", (uintptr_t) multiboot_info);
     struct boot *boot = process_multiboot_info((multiboot_info_t *)(uintptr_t) multiboot_info);
     __kboot = boot;

@@ -72,10 +72,13 @@ struct x86_cpu {
 #define CR0_PG  _BV(31)
 #define CR0_MP  _BV(1)
 #define CR0_EM  _BV(2)
+#define CR0_TS  _BV(3)
 #define CR0_NE  _BV(5)
 
 /* CR4 */
 #define CR4_PSE _BV(4)
+#define CR4_OSFXSR      _BV(9)
+#define CR4_OSXMMEXCPT  _BV(10)
 
 /* CPU function */
 static inline uintptr_t read_cr0(void)
@@ -192,6 +195,7 @@ void x86_idt_gate_user_set(uint32_t id, uintptr_t offset);
 void x86_isr_setup(void);
 
 /* cpu/fpu.c */
+void x86_fpu_setup(void);
 void x86_fpu_enable(void);
 void x86_fpu_disable(void);
 void x86_fpu_trap(void);
