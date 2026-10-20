@@ -19,12 +19,13 @@
 
 #include <bits/errno.h>
 
-int sig_default_action[] = {
+int sig_default_action[SIG_MAX+1] = {
     [SIGABRT] = SIGACT_ABORT,
     [SIGALRM] = SIGACT_TERMINATE,
     [SIGBUS]  = SIGACT_ABORT,
     [SIGCHLD] = SIGACT_IGNORE,
     [SIGCONT] = SIGACT_CONTINUE,
+    [SIGEMT]  = SIGACT_ABORT,
     [SIGFPE]  = SIGACT_ABORT,
     [SIGHUP]  = SIGACT_TERMINATE,
     [SIGILL]  = SIGACT_ABORT,
@@ -45,6 +46,7 @@ int sig_default_action[] = {
     [SIGSYS]  = SIGACT_ABORT,
     [SIGTRAP] = SIGACT_ABORT,
     [SIGURG]  = SIGACT_IGNORE,
+    [SIGWINCH] = SIGACT_IGNORE,
     //[SIGVTALRM] = SIGACT_TERMINATE,
     //[SIGXCPU] = SIGACT_ABORT,
     //[SIGXFSZ] = SIGACT_ABORT,
@@ -52,6 +54,14 @@ int sig_default_action[] = {
 
 int signal_proc_send(struct proc *proc, int signal)
 {
+    if (signal < 0 || signal > SIG_MAX)
+        return -EINVAL;
+
+    /* signal 0 only checks for existence, zombies can't be signalled
+     * (their signal queue and threads are already gone) */
+    if (!signal || !proc->running)
+        return 0;
+
     if (proc == curproc) {
         arch_handle_signal(signal);
     } else {
@@ -78,15 +88,13 @@ int signal_pgrp_send(struct pgroup *pg, int signal)
 
 int signal_send(pid_t pid, int signal)
 {
-    if (curproc->pid == pid) {
-        arch_handle_signal(signal);
-        return 0;
-    } else {
-        struct proc *proc = proc_pid_find(pid);
+    if (signal < 0 || signal > SIG_MAX)
+        return -EINVAL;
 
-        if (!proc)
-            return -ESRCH;
-        else
-            return signal_proc_send(proc, signal);
-    }
+    struct proc *proc = proc_pid_find(pid);
+
+    if (!proc)
+        return -ESRCH;
+
+    return signal_proc_send(proc, signal);
 }

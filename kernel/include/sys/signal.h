@@ -61,7 +61,7 @@ struct sigaction {
     int       sa_flags;
 };
 
-extern int sig_default_action[];
+extern int sig_default_action[SIG_MAX+1];
 
 int signal_send(int pid, int sig);
 int signal_proc_send(struct proc *proc, int signal);
