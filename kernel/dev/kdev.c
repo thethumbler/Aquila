@@ -398,6 +398,18 @@ void kdev_chrdev_register(devid_t major, struct dev *dev)
  * \ingroup kdev
  * \brief register a new block device
  */
+/* what block devices have in their write caches to the media */
+int kdev_sync(void)
+{
+    int err = 0;
+
+    for (int i = 0; i < 256; ++i)
+        if (blkdev[i] && blkdev[i]->sync && blkdev[i]->sync())
+            err = -EIO;
+
+    return err;
+}
+
 void kdev_blkdev_register(devid_t major, struct dev *dev)
 {
     blkdev[major] = dev; /* XXX */

@@ -2214,6 +2214,14 @@ static void sys_flock(int fd, int op)
     arch_syscall_return(curthread, vfs_file_flock(file, op));
 }
 
+static void sys_sync(void)
+{
+    syscall_log(LOG_DEBUG, "sync()\n");
+
+    /* writes go to the devices right away, only their caches are left */
+    arch_syscall_return(curthread, kdev_sync());
+}
+
 static void sys_reboot(unsigned cmd)
 {
     syscall_log(LOG_DEBUG, "reboot(cmd=0x%x)\n", cmd);
@@ -2442,6 +2450,7 @@ void (*syscall_table[])() = {
     [SYS_poll]          = sys_poll,
     [SYS_flock]         = sys_flock,
     [SYS_reboot]        = sys_reboot,
+    [SYS_sync]          = sys_sync,
 };
 
 const size_t syscall_cnt = sizeof(syscall_table)/sizeof(syscall_table[0]);

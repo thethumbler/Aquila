@@ -8,6 +8,7 @@
 #include <sys/proc.h>
 #include <sys/signal.h>
 #include <sys/reboot.h>
+#include <dev/dev.h>
 
 #include <aquila/errno.h>
 
@@ -15,6 +16,10 @@ static int cad_restarts = 1;
 
 int kernel_reboot(unsigned cmd)
 {
+    /* nothing may be left in the disks' write caches */
+    if (cmd == RB_AUTOBOOT || cmd == RB_HALT_SYSTEM || cmd == RB_POWER_OFF)
+        kdev_sync();
+
     switch (cmd) {
         case RB_AUTOBOOT:
             printk("kernel: restarting system\n");

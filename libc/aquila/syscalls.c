@@ -684,13 +684,18 @@ unsigned alarm(unsigned seconds)
 
 void sync(void)
 {
-    /* nothing to do: writes reach the device before write() returns */
+    /* writes reach the devices before write() returns, sync empties the
+     * devices' write caches */
+    SYSCALL(SYS_sync, 0, 0, 0);
 }
 
 int fsync(int fildes)
 {
-    /* as for sync(), only check the descriptor */
-    return fcntl(fildes, F_GETFD) == -1 ? -1 : 0;
+    /* as for sync(), for any descriptor */
+    if (fcntl(fildes, F_GETFD) == -1)
+        return -1;
+
+    return SYSCALL(SYS_sync, 0, 0, 0);
 }
 
 int fdatasync(int fildes)

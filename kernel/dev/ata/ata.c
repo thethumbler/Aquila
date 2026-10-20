@@ -5,6 +5,7 @@
 
 #include <core/system.h>
 #include <core/module.h>
+#include <core/kargs.h>
 
 #include <cpu/io.h>
 #include <dev/dev.h>
@@ -15,12 +16,41 @@
 #include <aquila/errno.h>
 
 #include <dev/pci.h>
+#include <platform/misc.h>
+#include <sys/sched.h>
 
 #include <ata.h>
 
 #define BLOCK_SIZE  512UL
 
 static struct ata_drive drives[4];
+static struct ata_channel channels[2];
+
+/* one command at a time on a channel, a request may sleep (DMA); before
+ * there are processes nothing else runs */
+static void channel_acquire(struct ata_channel *ch)
+{
+    while (ch->busy && sched_running && curthread)
+        thread_queue_sleep(&ch->wait);
+
+    ch->busy = 1;
+}
+
+static void channel_release(struct ata_channel *ch)
+{
+    ch->busy = 0;
+    thread_queue_wakeup_nopoll(&ch->wait);
+}
+
+static void ata_irq_primary(struct x86_regs *r __unused)
+{
+    dma_irq(&channels[0]);
+}
+
+static void ata_irq_secondary(struct x86_regs *r __unused)
+{
+    dma_irq(&channels[1]);
+}
 
 /* last drive select register value written, invalidated by a reset */
 static struct ata_drive *last_selected_drive = NULL;
@@ -76,6 +106,32 @@ void ata_select_drive(struct ata_drive *drive, uint32_t mode)
     }
 }
 
+/* the registers of a command on `count' sectors from `lba' */
+void ata_setup(struct ata_drive *drive, uint64_t lba, size_t count)
+{
+    ata_select_drive(drive, drive->mode);
+
+    /* Send NULL byte to error register */
+    io_out8(&drive->base, ATA_REG_ERROR, 0);
+
+    /* Send sectors count and LBA */
+    if (drive->mode == ATA_MODE_LBA48) {
+        io_out8(&drive->base, ATA_REG_SECCOUNT0, (count >> 8) & 0xFF);
+        io_out8(&drive->base, ATA_REG_LBA0, (uint8_t) (lba >> (8 * 3)));
+        io_out8(&drive->base, ATA_REG_LBA1, (uint8_t) (lba >> (8 * 4)));
+        io_out8(&drive->base, ATA_REG_LBA2, (uint8_t) (lba >> (8 * 5)));
+    } else {
+        /* LBA28 carries bits 24-27 of the address in the drive select register */
+        io_out8(&drive->base, ATA_REG_HDDEVSEL,
+                0xE0 | (drive->slave << 4) | ((lba >> 24) & 0xF));
+    }
+
+    io_out8(&drive->base, ATA_REG_SECCOUNT0, count & 0xFF);
+    io_out8(&drive->base, ATA_REG_LBA0, (uint8_t) (lba >> (8 * 0)));
+    io_out8(&drive->base, ATA_REG_LBA1, (uint8_t) (lba >> (8 * 1)));
+    io_out8(&drive->base, ATA_REG_LBA2, (uint8_t) (lba >> (8 * 2)));
+}
+
 static char read_buf[BLOCK_SIZE] __aligned(16);
 static size_t ata_partition_offset(struct ata_drive *drive, size_t part)
 {
@@ -114,8 +170,12 @@ static ssize_t ata_read(struct devid *dd, off_t offset, size_t size, void *buf)
     if (!drive->read)
         return -ENXIO;
 
+    channel_acquire(drive->channel);
     offset += ata_partition_offset(drive, partition);
-    return drive->read(drive, offset, size, buf);
+    ssize_t ret = drive->read(drive, offset, size, buf);
+    channel_release(drive->channel);
+
+    return ret;
 }
 
 static ssize_t ata_write(struct devid *dd, off_t offset, size_t size, void *buf)
@@ -132,9 +192,13 @@ static ssize_t ata_write(struct devid *dd, off_t offset, size_t size, void *buf)
     if (!drive->write)
         return -ENXIO;
 
+    channel_acquire(drive->channel);
     offset += ata_partition_offset(drive, partition);
 
-    return drive->write(drive, offset, size, buf);
+    ssize_t ret = drive->write(drive, offset, size, buf);
+    channel_release(drive->channel);
+
+    return ret;
 }
 
 /**
@@ -259,6 +323,24 @@ done:
     return drive->type;
 }
 
+/* the drives' write caches to the disks */
+static int ata_sync(void)
+{
+    int err = 0;
+
+    for (int i = 0; i < 4; ++i) {
+        if (!drives[i].flush)
+            continue;
+
+        channel_acquire(drives[i].channel);
+        if (drives[i].flush(&drives[i]))
+            err = -EIO;
+        channel_release(drives[i].channel);
+    }
+
+    return err;
+}
+
 static size_t ata_getbs(struct devid *dd __unused)
 {
     return BLOCK_SIZE;
@@ -295,6 +377,12 @@ static int ata_probe()
 
         printk("ata: IDE controller primary channel: base: 0x%x, control: 0x%x\n", base, control);
 
+        /* native PCI mode has the controller's interrupt line, the
+         * compatibility mode those of the ISA controllers */
+        int native = !(base == ATA_PIO_PRI_PORT_BASE);
+        channels[0].base = (struct ioaddr) {.addr = base, .type = IOADDR_PORT};
+        channels[0].irq  = native ? pci_reg8_read(&ide, 0x3C) : 14;
+
         /* master device */
         drives[0].id        = 0;
         drives[0].base.addr = base;
@@ -323,6 +411,25 @@ static int ata_probe()
 
         printk("ata: IDE controller secondary channel: base: 0x%x, control: 0x%x\n", base, control);
 
+        channels[1].base = (struct ioaddr) {.addr = base, .type = IOADDR_PORT};
+        channels[1].irq  = native ? channels[0].irq : 15;
+
+        /* bus master DMA registers, 8 for each channel */
+        uint32_t bm = pci_read_bar(&ide, 4);
+
+        if ((bm & 1) && (bm & ~3U)) {
+            channels[0].bm = (struct ioaddr) {.addr = bm & ~3U, .type = IOADDR_PORT};
+            channels[1].bm = (struct ioaddr) {.addr = (bm & ~3U) + 8, .type = IOADDR_PORT};
+
+            /* the controller may master the bus */
+            pci_reg16_write(&ide, 0x04, pci_reg16_read(&ide, 0x04) | 0x04);
+
+            printk("ata: bus master DMA at 0x%x\n", bm & ~3U);
+        }
+
+        for (int i = 0; i < 4; ++i)
+            drives[i].channel = &channels[i / 2];
+
         /* master device */
         drives[2].id        = 2;
         drives[2].base.addr = base;
@@ -348,8 +455,10 @@ static int ata_probe()
 
         switch (type) {
             case ATADEV_PATA:
-                printk("ata%d: initializing ATA device (PIO)\n", i);
                 pio_init(&drives[i]);
+                /* ata.nodma keeps to PIO */
+                printk("ata%d: initializing ATA device (%s)\n", i,
+                        !kargs_get("ata.nodma", NULL) || dma_init(&drives[i]) ? "PIO" : "DMA");
                 break;
             case ATADEV_SATA:
                 printk("ata%d: SATA is not supported\n", i);
@@ -368,6 +477,14 @@ static int ata_probe()
         }
     }
 
+    /* DMA transfers end with them, the others are acknowledged */
+    if (count) {
+        x86_irq_handler_install(channels[0].irq, ata_irq_primary);
+
+        if (channels[1].irq != channels[0].irq)
+            x86_irq_handler_install(channels[1].irq, ata_irq_secondary);
+    }
+
     kdev_blkdev_register(3, &atadev);
     return 0;
 }
@@ -378,6 +495,7 @@ struct dev atadev = {
     .read  = ata_read,
     .write = ata_write,
     .getbs = ata_getbs,
+    .sync  = ata_sync,
 
     .fops = {
         .open  = posix_file_open,

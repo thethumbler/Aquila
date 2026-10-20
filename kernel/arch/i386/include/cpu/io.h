@@ -24,9 +24,19 @@
     ret; \
 })
 
+/* rep insw and rep outsw move EDI/ESI and ECX, outputs for the compiler */
 #define __insw(port, count, buf) \
 ({ \
-    asm volatile ("rep insw"::"D"(buf), "c"(count), "d"(port):"memory"); \
+    void *__buf = (buf); \
+    uint32_t __count = (count); \
+    asm volatile ("rep insw":"+D"(__buf), "+c"(__count):"d"(port):"memory"); \
+})
+
+#define __outsw(port, count, buf) \
+({ \
+    const void *__buf = (buf); \
+    uint32_t __count = (count); \
+    asm volatile ("rep outsw":"+S"(__buf), "+c"(__count):"d"(port):"memory"); \
 })
 
 #define __outb(port, value) \

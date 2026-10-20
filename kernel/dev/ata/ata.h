@@ -83,15 +83,36 @@
 #define ATA_IDENT_COMMANDSETS       164
 #define ATA_IDENT_MAX_LBA_EXT       200
 
+#define ATA_CAP_DMA                 0x100
 #define ATA_CAP_LBA                 0x200
 
 #define ATA_MODE_CHS                0x10
 #define ATA_MODE_LBA28              0x20
 #define ATA_MODE_LBA48              0x40
 
+#include <ds/queue.h>
+
+/** an IDE channel, the master and slave drive on it */
+struct ata_channel {
+    /** command block registers, and bus master DMA ones (addr 0 without) */
+    struct ioaddr base;
+    struct ioaddr bm;
+    int irq;
+
+    /** one command at a time, those waiting for the channel */
+    int busy;
+    struct queue wait;
+
+    /** the DMA transfer waiting for the interrupt */
+    struct queue irq_wait;
+    volatile int done;
+    uint8_t bm_status, status;
+};
+
 struct ata_drive {
     struct ioaddr base;
     struct ioaddr ctrl;
+    struct ata_channel *channel;
 
     uint8_t  id;
     uint8_t  mode;
@@ -108,6 +129,7 @@ struct ata_drive {
 
     ssize_t (*read) (struct ata_drive *drive, uint64_t lba, size_t count, void *buf);
     ssize_t (*write)(struct ata_drive *drive, uint64_t lba, size_t count, void *buf);
+    int     (*flush)(struct ata_drive *drive);
 };
 
 static const char *ata_error_string(uint8_t err)
@@ -161,8 +183,13 @@ static int ata_poll(struct ata_drive *drive, int advanced_check)
 /* ata.c */
 void ata_reset(struct ata_drive *drive);
 void ata_select_drive(struct ata_drive *drive, uint32_t mode);
+void ata_setup(struct ata_drive *drive, uint64_t lba, size_t count);
 
 /* pio.c */
 void pio_init(struct ata_drive *drive);
+
+/* dma.c */
+int  dma_init(struct ata_drive *drive);
+void dma_irq(struct ata_channel *channel);
 
 #endif

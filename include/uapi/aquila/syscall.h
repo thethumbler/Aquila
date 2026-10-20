@@ -96,8 +96,9 @@
 #define SYS_poll            83
 #define SYS_flock           84
 #define SYS_reboot          85
+#define SYS_sync            86
 
-#define SYS_MAX             85
+#define SYS_MAX             86
 
 /*
  * Arguments of the older system calls that take more than three, passed

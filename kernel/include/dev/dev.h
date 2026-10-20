@@ -37,12 +37,14 @@ struct dev {
 
     struct dev *(*mux)(struct devid *dev);    /* Device Multiplexr */
     size_t  (*getbs)(struct devid *dev);      /* Block size, for blkdev */
+    int     (*sync)(void);                    /* Cached writes to the devices, for blkdev */
 };
 
 /* Kernel Device Subsystem Handlers */
 void    kdev_init(void);
 void    kdev_chrdev_register(devid_t major, struct dev *dev);
 void    kdev_blkdev_register(devid_t major, struct dev *dev);
+int     kdev_sync(void);
 
 ssize_t kdev_read(struct devid *dd, off_t offset, size_t size, void *buf);
 ssize_t kdev_write(struct devid *dd, off_t offset, size_t size, void *buf);

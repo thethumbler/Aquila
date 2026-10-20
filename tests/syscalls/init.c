@@ -854,6 +854,9 @@ void aq_main(void)
     check("no reader left", SC(SYS_open, "/tmp/fifo", O_WRONLY | O_NONBLOCK, 0), -ENXIO);
     check("unlink fifo", SC(SYS_unlink, "/tmp/fifo", 0, 0), 0);
 
+    /* --- sync: what the disks have cached (the disk test reads it back) --- */
+    check("sync", SC(SYS_sync, 0, 0, 0), 0);
+
     /* --- reboot (restarting itself is left to the system test) --- */
     check("reboot bad command", SC(SYS_reboot, 0x12345678, 0, 0), -EINVAL);
     check("reboot disable Ctrl+Alt+Del", SC(SYS_reboot, RB_DISABLE_CAD, 0, 0), 0);
