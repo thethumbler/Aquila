@@ -70,6 +70,7 @@ struct x86_cpu {
 
 /* CR0 */
 #define CR0_PG  _BV(31)
+#define CR0_WP  _BV(16)     /* honour read-only pages in kernel mode */
 #define CR0_MP  _BV(1)
 #define CR0_EM  _BV(2)
 #define CR0_TS  _BV(3)

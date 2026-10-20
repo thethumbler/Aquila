@@ -31,7 +31,10 @@ static inline void enable_paging(uintptr_t page_directory)
     write_cr3(page_directory);
 #if ARCH_BITS==32
     uint32_t cr0 = read_cr0();
-    write_cr0(cr0 | CR0_PG);
+
+    /* without WP the kernel writes through read-only pages, e.g. into a
+     * copy-on-write page still shared with another process after fork */
+    write_cr0(cr0 | CR0_PG | CR0_WP);
 #endif
 }
 
