@@ -79,6 +79,11 @@ void ps2mouse_handler(int byte)
         if (packet->x_over || packet->y_over)
             return;
 
+        /* Only queue whole packets, a partial write would misalign the
+         * stream. The ring holds at most size - 1 bytes. */
+        if (mouse_ring->size - 1 - ringbuf_available(mouse_ring) < 3)
+            return;
+
         ringbuf_write(mouse_ring, 3, (char *) mouse_data);
         
         if (mouse_read_queue->count)

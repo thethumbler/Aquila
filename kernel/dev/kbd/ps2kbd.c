@@ -36,6 +36,11 @@ static struct queue *kbd_read_queue = QUEUE_NEW(); /* Keyboard read queue */
 
 static void ps2kbd_handler(int scancode)
 {
+    /* Only queue whole records, a partial write would misalign the stream.
+     * The ring holds at most size - 1 bytes. */
+    if (kbd_ring->size - 1 - ringbuf_available(kbd_ring) < sizeof(scancode))
+        return;
+
     ringbuf_write(kbd_ring, sizeof(scancode), (char *) &scancode);
     
     if (kbd_read_queue->count)
@@ -84,6 +89,11 @@ static int ps2kbd_file_can_read(struct file *file, size_t size)
     return ringbuf_available(kbd_ring);
 }
 
+static int ps2kbd_file_close(struct file *file)
+{
+    proc = NULL;
+    return posix_file_close(file);
+}
 
 struct dev ps2kbddev = {
     .name  = "kbddev",
@@ -94,6 +104,7 @@ struct dev ps2kbddev = {
     .fops  = {
         .open  = ps2kbd_file_open,
         .read  = posix_file_read,
+        .close = ps2kbd_file_close,
 
         .can_read  = ps2kbd_file_can_read,
         .can_write = __vfs_can_never,
