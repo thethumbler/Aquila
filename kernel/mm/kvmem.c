@@ -119,6 +119,10 @@ void *kmalloc(size_t size, struct malloc_type *type, int flags)
     /* round size to 4-byte units */
     size = (size + 3)/4;
 
+    /* Zero sized nodes are considered unused, so never hand one out */
+    if (!size)
+        size = 1;
+
     /* Look for a first fit free node */
     unsigned i = get_first_fit_free_node(size);
 
@@ -193,6 +197,10 @@ void kfree(void *_ptr)
                 nodes[prev_node].next  = nodes[cur_node].next;
                 release_node(cur_node);
                 cur_node = nodes[prev_node].next;
+
+                if (cur_node == LAST_NODE_INDEX)  /* Trying to free unallocated node */
+                    goto done;
+
                 continue;
             }
         }
