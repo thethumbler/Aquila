@@ -104,9 +104,10 @@ from source, see [tests/](tests/README.md).
 - [X] ps2kbd  (PS/2 keyboard)
 - [X] ps2mouse (PS/2 mouse)
 - [X] ramdev  (memory mapped devices)
-- [X] vt      (virtual terminals on the framebuffer or VGA text mode)
+- [X] vt      (virtual terminals on the framebuffer or VGA text mode;
+              graphics, raw keyboard and switching as the Linux console)
 - [X] ata     (ATA hard disks, PIO mode)
-- [X] fbdev   (framebuffer, VESA)
+- [X] fbdev   (framebuffer, VESA; the Linux framebuffer API)
 - [X] 8250    (UART)
 
 #### System

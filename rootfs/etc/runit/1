@@ -14,6 +14,7 @@ mknod -m 666 /dev/zero c 1 5
 mknod -m 600 /dev/fb0 c 29 0
 mknod -m 600 /dev/hda b 3 0
 mknod -m 600 /dev/hda1 b 3 1
+mknod -m 600 /dev/tty0 c 4 0
 mknod -m 600 /dev/ttyS0 c 4 64
 for n in 1 2 3 4 5 6; do
     mknod -m 600 /dev/tty$n c 4 $n

@@ -7,6 +7,13 @@
  *
  * /dev/vcsN and /dev/vcsaN (major 7, minors N and 128 + N, 0 is the
  * foreground terminal) read the screen of tty N, as on Linux.
+ *
+ * For programs that draw on the framebuffer themselves (an X server), the
+ * ioctls of the Linux console: KDSETMODE (KD_GRAPHICS, the terminal isn't
+ * drawn), KDSKBMODE (scancodes or key codes instead of characters), and
+ * VT_* to switch terminals, or to be asked first (VT_PROCESS). /dev/tty0
+ * is the foreground terminal. Once the process that set these modes is
+ * gone, they are undone (the screen would be left to no one).
  */
 
 #include <core/system.h>
@@ -18,6 +25,8 @@
 #include <dev/vt.h>
 #include <fs/posix.h>
 #include <sys/sched.h>
+#include <sys/signal.h>
+#include <sys/uaccess.h>
 
 MALLOC_DEFINE(M_VT, "vt", "virtual terminal display");
 
@@ -35,6 +44,13 @@ static struct vt_cell *shown;
 /* kernel messages are written to the foreground terminal, unless it is
  * already being written to */
 static int busy;
+
+/* a switch to this terminal (an index), waiting for the foreground's
+ * VT_PROCESS process to release it (VT_RELDISP), -1 if none */
+static int pending = -1;
+
+/* VT_WAITACTIVE, woken up after each switch */
+static struct queue active_queue;
 
 static const uint32_t ansi_colors[16] = {
     0x000000, 0xaa0000, 0x00aa00, 0xaa5500, 0x0000aa, 0xaa00aa, 0x00aaaa, 0xaaaaaa,
@@ -110,7 +126,7 @@ uint8_t vt_vga_attr(struct vt_cell cell)
 /* draws the cells of the foreground terminal that changed */
 static void refresh(struct vt *vt, int all)
 {
-    if (vt != fg || !display)
+    if (vt != fg || !display || vt->kd_mode == KD_GRAPHICS)
         return;
 
     int cursor = vt->cursor_visible && !display->cursor;
@@ -216,16 +232,90 @@ struct vt *vt_foreground(void)
     return fg;
 }
 
+static int proc_alive(pid_t pid)
+{
+    struct proc *proc = proc_pid_find(pid);
+    return proc && proc->running;
+}
+
+/* the modes of a process that is gone are undone */
+static void vt_check(struct vt *vt)
+{
+    if (vt->kd_pid && !proc_alive(vt->kd_pid)) {
+        vt->kd_pid  = 0;
+        vt->kb_mode = K_XLATE;
+        vt_keyboard_reset();
+
+        if (vt->kd_mode != KD_TEXT) {
+            vt->kd_mode = KD_TEXT;
+            refresh(vt, 1);
+        }
+    }
+
+    if (vt->mode_pid && !proc_alive(vt->mode_pid)) {
+        vt->mode_pid = 0;
+        vt->mode = (struct vt_mode) {.mode = VT_AUTO};
+    }
+}
+
+/* the process of a terminal in VT_PROCESS mode gets a signal */
+static void vt_signal(struct vt *vt, int signal)
+{
+    struct proc *proc = proc_pid_find(vt->mode_pid);
+
+    if (proc && signal > 0 && signal < NSIG)
+        signal_proc_post(proc, signal);
+}
+
+static void vt_switch_now(int id)
+{
+    struct vt *vt = &vts[id];
+
+    pending = -1;
+
+    if (vt_setup(vt))
+        return;
+
+    vt_check(vt);
+
+    /* what the keyboard sends may be different there */
+    if (fg && fg->kb_mode != vt->kb_mode)
+        vt_keyboard_reset();
+
+    fg = vt;
+
+    if (vt->kd_mode == KD_TEXT)
+        refresh(vt, 1);
+    else if (display->cursor)
+        display->cursor(0, 0, 0);
+
+    if (vt->mode.mode == VT_PROCESS)
+        vt_signal(vt, vt->mode.acqsig);
+
+    thread_queue_wakeup(&active_queue);
+}
+
 void vt_switch(int id)
 {
-    if (id < 0 || id >= VT_COUNT || &vts[id] == fg)
+    if (id < 0 || id >= VT_COUNT || !fg || &vts[id] == fg)
         return;
 
-    if (vt_setup(&vts[id]))
-        return;
+    vt_check(fg);
 
-    fg = &vts[id];
-    refresh(fg, 1);
+    /* the process decides, VT_RELDISP */
+    if (fg->mode.mode == VT_PROCESS) {
+        pending = id;
+        vt_signal(fg, fg->mode.relsig);
+        return;
+    }
+
+    vt_switch_now(id);
+}
+
+void vt_keypress(void)
+{
+    if (fg)
+        vt_check(fg);
 }
 
 /* key presses, to the foreground terminal */
@@ -270,11 +360,14 @@ static void vt_kmsg(const char *s, size_t len)
     busy--;
 }
 
-/* /dev/console is the first terminal */
+/* /dev/console is the first terminal, /dev/tty0 the foreground one */
 static struct vt *vt_get(struct devid *dd)
 {
     if (dd->major == 5)
         return &vts[0];
+
+    if (dd->minor == 0)
+        return fg;
 
     if (dd->minor < 1 || dd->minor > VT_COUNT)
         return NULL;
@@ -319,12 +412,183 @@ static ssize_t vt_write(struct devid *dd, off_t offset __unused, size_t size, vo
     return ret;
 }
 
+/* a terminal is in use, VT_OPENQRY doesn't give it */
+static int vt_in_use(struct vt *vt)
+{
+    return vt->tty && (vt->opens || vt->tty->session);
+}
+
+/* the size of the user buffer an ioctl request reads or writes */
+static size_t vt_ioctl_argsize(int request)
+{
+    switch (request) {
+        case KDGKBTYPE:
+            return sizeof(char);
+        case KDGETMODE:
+        case KDGKBMODE:
+        case VT_OPENQRY:
+            return sizeof(int);
+        case VT_GETMODE:
+        case VT_SETMODE:
+            return sizeof(struct vt_mode);
+        case VT_GETSTATE:
+            return sizeof(struct vt_stat);
+    }
+
+    return 0;
+}
+
+/* KD* and VT_*, as on Linux: the argument is a pointer or a value */
+static int vt_kd_ioctl(struct vt *vt, int request, void *argp)
+{
+    int arg = (int) (uintptr_t) argp;
+
+    switch (request) {
+        case KDGKBTYPE:
+            *(char *) argp = KB_101;
+            return 0;
+
+        case KDGETMODE:
+            *(int *) argp = vt->kd_mode;
+            return 0;
+
+        case KDSETMODE:
+            if (arg != KD_TEXT && arg != KD_GRAPHICS)
+                return -EINVAL;
+
+            if (arg == vt->kd_mode)
+                return 0;
+
+            vt->kd_mode = arg;
+
+            if (arg == KD_GRAPHICS) {
+                vt->kd_pid = curproc->pid;
+
+                if (vt == fg && display->cursor)
+                    display->cursor(0, 0, 0);
+            } else {
+                refresh(vt, 1);
+            }
+
+            return 0;
+
+        case KDGKBMODE:
+            *(int *) argp = vt->kb_mode;
+            return 0;
+
+        case KDSKBMODE:
+            if (arg < K_RAW || arg > K_OFF)
+                return -EINVAL;
+
+            if (vt->kb_mode != arg && vt == fg)
+                vt_keyboard_reset();
+
+            vt->kb_mode = arg;
+
+            if (arg != K_XLATE && arg != K_UNICODE)
+                vt->kd_pid = curproc->pid;
+
+            return 0;
+
+        case VT_OPENQRY: {
+            int id = -1;
+
+            /* not the first, the console (kernel messages) */
+            for (int i = 1; i < VT_COUNT && id < 0; ++i)
+                if (!vt_in_use(&vts[i]))
+                    id = i + 1;
+
+            *(int *) argp = id;
+            return 0;
+        }
+
+        case VT_GETMODE:
+            vt_check(vt);
+            *(struct vt_mode *) argp = vt->mode;
+            return 0;
+
+        case VT_SETMODE: {
+            struct vt_mode mode = *(struct vt_mode *) argp;
+
+            if (mode.mode != VT_AUTO && mode.mode != VT_PROCESS)
+                return -EINVAL;
+
+            vt->mode = mode;
+            vt->mode_pid = mode.mode == VT_PROCESS ? curproc->pid : 0;
+
+            /* nothing waits for the process anymore */
+            if (mode.mode == VT_AUTO && vt == fg && pending >= 0)
+                vt_switch_now(pending);
+
+            return 0;
+        }
+
+        case VT_GETSTATE: {
+            struct vt_stat *stat = argp;
+
+            stat->v_active = fg ? fg->id : 0;
+            stat->v_signal = 0;
+            stat->v_state  = 1;     /* bit 0, as on Linux */
+
+            for (int i = 0; i < VT_COUNT; ++i)
+                if (vt_in_use(&vts[i]))
+                    stat->v_state |= 1 << (i + 1);
+
+            return 0;
+        }
+
+        case VT_RELDISP:
+            if (vt->mode.mode != VT_PROCESS || vt != fg)
+                return -EINVAL;
+
+            if (arg == VT_ACKACQ)
+                return 0;
+
+            if (pending < 0)
+                return -EINVAL;
+
+            if (arg)
+                vt_switch_now(pending);
+            else
+                pending = -1;
+
+            return 0;
+
+        case VT_ACTIVATE:
+            if (arg < 1 || arg > VT_COUNT)
+                return -ENXIO;
+
+            vt_switch(arg - 1);
+            return 0;
+
+        case VT_WAITACTIVE:
+            if (arg < 0 || arg > VT_COUNT)
+                return -ENXIO;
+
+            while (arg && fg != &vts[arg - 1])
+                if (thread_queue_sleep(&active_queue))
+                    return -EINTR;
+
+            return 0;
+    }
+
+    return -ENOTTY;
+}
+
 static int vt_ioctl(struct devid *dd, int request, void *argp)
 {
     struct vt *vt = vt_get(dd);
 
     if (!vt || !vt->tty)
         return -EIO;
+
+    /* KD* are 0x4Bxx, VT_* 0x56xx */
+    if ((request >> 8) == 0x4B || (request >> 8) == 0x56) {
+        if (uaccess_check(argp, vt_ioctl_argsize(request)))
+            return -EFAULT;
+
+        return vt_kd_ioctl(vt, request, argp);
+    }
 
     return tty_ioctl(vt->tty, request, argp);
 }
@@ -338,6 +602,16 @@ static int vt_file_open(struct file *file)
 
     int err = vt_setup(vt);
     if (err) return err;
+
+    /* /dev/tty0, whichever terminal is in the foreground: the queues of
+     * this one, and it isn't a terminal of its own */
+    if (DEV_MAJOR(file->vnode->rdev) == 4 && DEV_MINOR(file->vnode->rdev) == 0) {
+        file->vnode->read_queue  = &vt->read_queue;
+        file->vnode->write_queue = &vt->write_queue;
+        return 0;
+    }
+
+    vt->opens++;
 
     /* the same queues for every node of the terminal */
     if (!vt->vnode) {
@@ -354,6 +628,18 @@ static int vt_file_open(struct file *file)
         tty_open(vt->tty, file);
 
     return 0;
+}
+
+static int vt_file_close(struct file *file)
+{
+    struct vt *vt = vt_file(file);
+    dev_t rdev = file->vnode->rdev;
+
+    /* descriptors copied by fork() and dup() weren't counted */
+    if (vt && vt->opens > 0 && !(DEV_MAJOR(rdev) == 4 && DEV_MINOR(rdev) == 0))
+        vt->opens--;
+
+    return posix_file_close(file);
 }
 
 static int vt_file_eof(struct file *file)
@@ -383,6 +669,7 @@ struct dev vtdev = {
 
     .fops = {
         .open  = vt_file_open,
+        .close = vt_file_close,
         .read  = posix_file_read,
         .write = posix_file_write,
         .ioctl = posix_file_ioctl,
@@ -482,10 +769,12 @@ static int vt_probe(void)
         return -ENOMEM;
     }
 
-    for (int i = 0; i < VT_COUNT; ++i)
+    for (int i = 0; i < VT_COUNT; ++i) {
         vts[i].id = i + 1;
+        vts[i].kb_mode = K_XLATE;
+    }
 
-    vt_switch(0);
+    vt_switch_now(0);
 
     if (!fg) {
         display = NULL;

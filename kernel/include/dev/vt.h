@@ -5,6 +5,8 @@
 #include <dev/tty.h>
 #include <ds/ringbuf.h>
 #include <ds/queue.h>
+#include <aquila/kd.h>
+#include <aquila/vt.h>
 
 /**
  * \ingroup dev-tty
@@ -111,6 +113,20 @@ struct vt {
     char reply[32];
     size_t reply_len;
 
+    /* KD_TEXT, or KD_GRAPHICS: a program draws (the framebuffer), the
+     * terminal doesn't; what the keyboard sends (K_XLATE, K_RAW, ...);
+     * the process that set them, they are undone once it is gone */
+    int kd_mode, kb_mode;
+    pid_t kd_pid;
+
+    /* VT_PROCESS: switching away waits for the process (relsig, then
+     * VT_RELDISP), and tells it when the terminal is back (acqsig) */
+    struct vt_mode mode;
+    pid_t mode_pid;
+
+    /* open descriptors, for VT_OPENQRY */
+    int opens;
+
     /* the tty, what readers get */
     struct tty *tty;
     struct ringbuf *in;
@@ -127,9 +143,11 @@ void vt_term_write(struct vt *vt, const char *buf, size_t size);
 extern struct dev vtdev;
 void vt_input(const char *buf, size_t size);
 void vt_switch(int id);
+void vt_keypress(void);
 struct vt *vt_foreground(void);
 
 /* keyboard.c: PS/2 scancodes (set 1), from the keyboard driver */
 void vt_scancode(int scancode);
+void vt_keyboard_reset(void);
 
 #endif /* ! _DEV_VT_H */

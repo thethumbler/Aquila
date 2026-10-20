@@ -3,6 +3,10 @@
  * i8042 translates to) to what the Linux console sends for the keys, with
  * the US layout. Alt sends ESC before the key, Alt+F1 to Alt+F6 switch
  * terminals, Ctrl+Alt+Del restarts (or tells init, see sys/reboot.c).
+ *
+ * Or, if the terminal's program asked for them (KDSKBMODE), the scancodes
+ * as they come (K_RAW), or Linux key codes, with 0x80 for releases
+ * (K_MEDIUMRAW); the program handles every key then, switching too.
  */
 
 #include <core/system.h>
@@ -62,6 +66,31 @@ static const char *keypad_keys[13] = {
 
 static const char keypad_digits[] = "789-456+1230.";
 
+/* Linux key codes of the keys with an E0 prefix, the others' are their
+ * scancodes */
+static const uint8_t e0_keycodes[128] = {
+    [0x1C] = 96,    /* keypad Enter */
+    [0x1D] = 97,    /* right Ctrl */
+    [0x35] = 98,    /* keypad / */
+    [0x37] = 99,    /* Print Screen */
+    [0x38] = 100,   /* right Alt */
+    [0x47] = 102,   /* Home */
+    [0x48] = 103,   /* Up */
+    [0x49] = 104,   /* Page Up */
+    [0x4B] = 105,   /* Left */
+    [0x4D] = 106,   /* Right */
+    [0x4F] = 107,   /* End */
+    [0x50] = 108,   /* Down */
+    [0x51] = 109,   /* Page Down */
+    [0x52] = 110,   /* Insert */
+    [0x53] = 111,   /* Delete */
+    [0x5B] = 125,   /* left Windows */
+    [0x5C] = 126,   /* right Windows */
+    [0x5D] = 127,   /* Menu */
+};
+
+#define KEY_PAUSE   119
+
 static int shift, ctrl, alt, caps, num;
 
 /* a prefix (E0) for the next scancode, bytes of Pause (E1) to skip */
@@ -70,6 +99,18 @@ static int extended, skip;
 static void send(const char *s)
 {
     vt_input(s, strlen(s));
+}
+
+static void send_byte(int c)
+{
+    char b = c;
+    vt_input(&b, 1);
+}
+
+/* a sequence was cut by a change of mode */
+void vt_keyboard_reset(void)
+{
+    extended = skip = 0;
 }
 
 /* with Alt, ESC before what the key sends */
@@ -141,8 +182,38 @@ static int control(char c)
     return c;
 }
 
+/* Shift, Ctrl and Alt, in every mode: they may be held while it changes */
+static int modifier(int code, int release, int ext)
+{
+    switch (code) {
+        case SC_LSHIFT:
+        case SC_RSHIFT:
+            /* E0 2A and E0 36 come with other keys, as if shift was used */
+            if (!ext)
+                shift = !release;
+            return 1;
+        case SC_CTRL:
+            ctrl = !release;
+            return 1;
+        case SC_ALT:
+            alt = !release;
+            return 1;
+    }
+
+    return 0;
+}
+
 void vt_scancode(int scancode)
 {
+    /* the modes of a program that is gone are undone first */
+    vt_keypress();
+
+    struct vt *vt = vt_foreground();
+    int mode = vt ? vt->kb_mode : K_XLATE;
+
+    if (mode == K_RAW)
+        send_byte(scancode);
+
     if (skip) {
         --skip;
         return;
@@ -153,27 +224,38 @@ void vt_scancode(int scancode)
         return;
     }
 
+    /* Pause, E1 1D 45 E1 9D C5: pressed and released at once */
     if (scancode == 0xE1) {
         skip = 5;
+
+        if (mode == K_MEDIUMRAW) {
+            send_byte(KEY_PAUSE);
+            send_byte(KEY_PAUSE | 0x80);
+        }
         return;
     }
 
     int code = scancode & 0x7f, release = scancode & 0x80, ext = extended;
     extended = 0;
 
+    if (mode != K_XLATE && mode != K_UNICODE) {
+        modifier(code, release, ext);
+
+        /* the fake shifts aren't keys */
+        if (mode != K_MEDIUMRAW || (ext && (code == SC_LSHIFT || code == SC_RSHIFT)))
+            return;
+
+        int keycode = ext ? e0_keycodes[code] : code;
+
+        if (keycode)
+            send_byte(keycode | release);
+        return;
+    }
+
+    if (modifier(code, release, ext))
+        return;
+
     switch (code) {
-        case SC_LSHIFT:
-        case SC_RSHIFT:
-            /* E0 2A and E0 36 come with other keys, as if shift was used */
-            if (!ext)
-                shift = !release;
-            return;
-        case SC_CTRL:
-            ctrl = !release;
-            return;
-        case SC_ALT:
-            alt = !release;
-            return;
         case SC_CAPS:
             if (!release)
                 caps = !caps;

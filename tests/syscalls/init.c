@@ -12,6 +12,7 @@
  * - select, poll and terminal read timeouts (VTIME)
  * - flock
  * - anonymous memory (mmap)
+ * - virtual terminals: KD* and VT_* ioctls, switching, VT_PROCESS
  */
 
 #include "../lib/aqtest.h"
@@ -22,9 +23,31 @@
 #include <aquila/wait.h>
 #include <aquila/poll.h>
 #include <aquila/reboot.h>
+#include <aquila/kd.h>
+#include <aquila/vt.h>
 
 static volatile int got_sig = 0;
 static void handler(int sig) { got_sig = sig; }
+
+/* VT_PROCESS: the signals asking to release the terminal, and telling it
+ * is back */
+static volatile int vt_rel = 0, vt_acq = 0;
+static void vt_handler(int sig) { if (sig == SIGUSR1) vt_rel++; else vt_acq++; }
+
+/* "/dev/tty<n>" */
+static char *vt_path(int n)
+{
+    static char path[] = "/dev/ttyN";
+    path[8] = '0' + n;
+    return path;
+}
+
+static int vt_active(int fd)
+{
+    struct vt_stat vs = {0};
+    SC(SYS_ioctl, fd, VT_GETSTATE, &vs);
+    return vs.v_active;
+}
 static void child_handler(int sig) { SC(SYS_exit, 7, 0, 0); (void) sig; }
 
 
@@ -1221,6 +1244,118 @@ void aq_main(void)
     SC(SYS_write, go[1], "g", 1);
     SC(SYS_waitpid, c, &st, 0);
     check("kernel write didn't leak into child", (st >> 8) & 0xff, 'p');
+
+    /* --- virtual terminals --- */
+    SC(SYS_mknod, "/dev/tty0", S_IFCHR | 0600, DEV(4, 0));
+    for (int i = 1; i <= 6; ++i)
+        SC(SYS_mknod, vt_path(i), S_IFCHR | 0600, DEV(4, i));
+
+    int vt0 = SC(SYS_open, "/dev/tty0", O_RDWR | O_NOCTTY, 0);
+    check("open /dev/tty0", vt0 >= 0, 1);
+
+    char kbtype = 0;
+    int vi = -1;
+    check("KDGKBTYPE", SC(SYS_ioctl, vt0, KDGKBTYPE, &kbtype), 0);
+    check("KDGKBTYPE KB_101", kbtype, KB_101);
+    check("KDGETMODE kaddr", SC(SYS_ioctl, vt0, KDGETMODE, KADDR), -EFAULT);
+    check("KDGETMODE", SC(SYS_ioctl, vt0, KDGETMODE, &vi), 0);
+    check("KDGETMODE text", vi, KD_TEXT);
+    check("KDSETMODE bad", SC(SYS_ioctl, vt0, KDSETMODE, 7), -EINVAL);
+    check("KDGKBMODE", SC(SYS_ioctl, vt0, KDGKBMODE, &vi), 0);
+    check("KDGKBMODE xlate", vi, K_XLATE);
+    check("KDSKBMODE bad", SC(SYS_ioctl, vt0, KDSKBMODE, 9), -EINVAL);
+    check("VT_GETSTATE kaddr", SC(SYS_ioctl, vt0, VT_GETSTATE, KADDR), -EFAULT);
+    check("VT_GETSTATE active", vt_active(vt0), 1);
+    check("VT_ACTIVATE 0", SC(SYS_ioctl, vt0, VT_ACTIVATE, 0), -ENXIO);
+    check("VT_ACTIVATE 7", SC(SYS_ioctl, vt0, VT_ACTIVATE, 7), -ENXIO);
+
+    /* a freevt terminal, in use once it is open */
+    int freevt = -1, again = -1;
+    check("VT_OPENQRY", SC(SYS_ioctl, vt0, VT_OPENQRY, &freevt), 0);
+    check("VT_OPENQRY found one", freevt > 1 && freevt <= 6, 1);
+    int tn = SC(SYS_open, vt_path(freevt), O_RDWR | O_NOCTTY, 0);
+    SC(SYS_ioctl, vt0, VT_OPENQRY, &again);
+    check("VT_OPENQRY skips open ones", again != freevt, 1);
+    struct vt_stat vs = {0};
+    SC(SYS_ioctl, vt0, VT_GETSTATE, &vs);
+    check("VT_GETSTATE open", (vs.v_state >> freevt) & 1, 1);
+
+    /* the modes of a process that is gone are undone */
+    int vc = SC(SYS_fork, 0, 0, 0);
+    if (!vc) {
+        int f = SC(SYS_open, "/dev/tty1", O_RDWR | O_NOCTTY, 0);
+        SC(SYS_ioctl, f, KDSETMODE, KD_GRAPHICS);
+        SC(SYS_ioctl, f, KDSKBMODE, K_MEDIUMRAW);
+        SC(SYS_exit, 0, 0, 0);
+    }
+    SC(SYS_waitpid, vc, &ast, 0);
+    int vt1 = SC(SYS_open, "/dev/tty1", O_RDWR | O_NOCTTY, 0);
+    SC(SYS_ioctl, vt1, KDGETMODE, &vi);
+    check("KD_GRAPHICS left by a child", vi, KD_GRAPHICS);
+    check("VT_ACTIVATE", SC(SYS_ioctl, vt0, VT_ACTIVATE, freevt), 0);
+    check("VT_WAITACTIVE", SC(SYS_ioctl, vt0, VT_WAITACTIVE, freevt), 0);
+    check("switched", vt_active(vt0), freevt);
+    SC(SYS_ioctl, vt1, KDGETMODE, &vi);
+    check("KD_TEXT once the child is gone", vi, KD_TEXT);
+    SC(SYS_ioctl, vt1, KDGKBMODE, &vi);
+    check("K_XLATE once the child is gone", vi, K_XLATE);
+
+    /* the foreground terminal's own modes */
+    check("KDSETMODE graphics", SC(SYS_ioctl, tn, KDSETMODE, KD_GRAPHICS), 0);
+    SC(SYS_ioctl, vt0, KDGETMODE, &vi);
+    check("/dev/tty0 is the foreground", vi, KD_GRAPHICS);
+    check("KDSKBMODE raw", SC(SYS_ioctl, tn, KDSKBMODE, K_RAW), 0);
+    SC(SYS_ioctl, tn, KDGKBMODE, &vi);
+    check("KDGKBMODE raw", vi, K_RAW);
+
+    /* VT_PROCESS: switching away waits for VT_RELDISP */
+    struct aquila_sigaction vsa = {(u32) vt_handler, 0, 0};
+    SC(SYS_sigaction, SIGUSR1, &vsa, 0);
+    SC(SYS_sigaction, SIGUSR2, &vsa, 0);
+    struct vt_mode vm = {VT_PROCESS, 0, SIGUSR1, SIGUSR2, 0}, vm2 = {0};
+    check("VT_SETMODE bad", SC(SYS_ioctl, tn, VT_SETMODE, &(struct vt_mode) {5}), -EINVAL);
+    check("VT_SETMODE", SC(SYS_ioctl, tn, VT_SETMODE, &vm), 0);
+    SC(SYS_ioctl, tn, VT_GETMODE, &vm2);
+    check("VT_GETMODE", vm2.mode == VT_PROCESS && vm2.relsig == SIGUSR1 && vm2.acqsig == SIGUSR2, 1);
+    check("VT_RELDISP nothing pending", SC(SYS_ioctl, tn, VT_RELDISP, 1), -EINVAL);
+    SC(SYS_ioctl, vt0, VT_ACTIVATE, 1);
+    check("relsig", vt_rel, 1);
+    check("not switched yet", vt_active(vt0), freevt);
+    check("VT_RELDISP refuse", SC(SYS_ioctl, tn, VT_RELDISP, 0), 0);
+    check("refused", vt_active(vt0), freevt);
+    SC(SYS_ioctl, vt0, VT_ACTIVATE, 1);
+    check("relsig again", vt_rel, 2);
+    check("VT_RELDISP release", SC(SYS_ioctl, tn, VT_RELDISP, 1), 0);
+    check("released", vt_active(vt0), 1);
+    check("VT_RELDISP in the background", SC(SYS_ioctl, tn, VT_RELDISP, 1), -EINVAL);
+    check("no acqsig yet", vt_acq, 0);
+    SC(SYS_ioctl, vt0, VT_ACTIVATE, freevt);
+    check("acqsig", vt_acq, 1);
+    check("VT_RELDISP VT_ACKACQ", SC(SYS_ioctl, tn, VT_RELDISP, VT_ACKACQ), 0);
+    vm.mode = VT_AUTO;
+    SC(SYS_ioctl, tn, VT_SETMODE, &vm);
+    SC(SYS_ioctl, tn, KDSKBMODE, K_XLATE);
+    SC(SYS_ioctl, tn, KDSETMODE, KD_TEXT);
+    SC(SYS_ioctl, vt0, VT_ACTIVATE, 1);
+    check("VT_AUTO", vt_active(vt0), 1);
+
+    /* a VT_PROCESS process that is gone doesn't hold the terminal */
+    vc = SC(SYS_fork, 0, 0, 0);
+    if (!vc) {
+        struct vt_mode cm = {VT_PROCESS, 0, SIGUSR1, SIGUSR2, 0};
+        SC(SYS_ioctl, vt1, VT_SETMODE, &cm);
+        SC(SYS_exit, 0, 0, 0);
+    }
+    SC(SYS_waitpid, vc, &ast, 0);
+    SC(SYS_ioctl, vt0, VT_ACTIVATE, freevt);
+    check("VT_PROCESS of a child that is gone", vt_active(vt0), freevt);
+    SC(SYS_ioctl, vt0, VT_ACTIVATE, 1);
+
+    SC(SYS_close, tn, 0, 0);
+    SC(SYS_ioctl, vt0, VT_OPENQRY, &again);
+    check("VT_OPENQRY once closed", again, freevt);
+    SC(SYS_close, vt1, 0, 0);
+    SC(SYS_close, vt0, 0, 0);
 
     aq_end();
 }

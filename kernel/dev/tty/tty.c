@@ -12,13 +12,14 @@
 #include <dev/vt.h>
 #include <fs/vfs.h>
 
-/* /dev/tty1 to /dev/tty6 are virtual terminals, /dev/ttyS0 and up uarts */
+/* /dev/tty1 to /dev/tty6 are virtual terminals (/dev/tty0 the foreground
+ * one), /dev/ttyS0 and up uarts */
 struct dev *sttydev_mux(struct devid *dd)
 {
     if (dd->minor >= 64)
         return &uart;
 
-    if (dd->minor >= 1 && dd->minor <= VT_COUNT)
+    if (dd->minor <= VT_COUNT)
         return &vtdev;
 
     return NULL;
