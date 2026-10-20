@@ -50,6 +50,9 @@ int vfs_mount_root(struct vnode *vnode)
     return 0;
 }
 
+/* maximum number of components in a canonicalized path */
+#define VFS_MAX_PATH_TOKENS 512
+
 char **tokenize_path(const char * const path)
 {
     /* Tokenize slash seperated words in path into tokens */
@@ -79,9 +82,12 @@ int vfs_parse_path(const char *path, struct uio *uio, char **abs_path)
 
     /* Tokenize slash seperated words in path into tokens */
     char **tokens = tokenize(buf, '/');
-    char *out = kmalloc(cwd_len + path_len + 1, &M_BUFFER, 0);
 
-    char *valid_tokens[512];
+    /* every token is emitted followed by a '/', so we need room for one
+     * extra byte compared to buf (leading '/' + tokens + separators + NUL) */
+    char *out = kmalloc(cwd_len + path_len + 3, &M_BUFFER, 0);
+
+    char *valid_tokens[VFS_MAX_PATH_TOKENS];
     size_t i = 0;
 
     for (char **token_p = tokens; *token_p; ++token_p) {
@@ -100,7 +106,18 @@ int vfs_parse_path(const char *path, struct uio *uio, char **abs_path)
 
         }
 
-        if (*token) valid_tokens[i++] = token;
+        if (!*token)
+            continue;
+
+        /* leave room for the terminating NULL entry */
+        if (i >= VFS_MAX_PATH_TOKENS - 1) {
+            free_tokens(tokens);
+            kfree(buf);
+            kfree(out);
+            return -ENAMETOOLONG;
+        }
+
+        valid_tokens[i++] = token;
     }
 
     valid_tokens[i] = NULL;
@@ -282,7 +299,7 @@ int vfs_perms_check(struct file *file, struct uio *uio)
 
 read_perms:
     /* Read permissions */
-    if ((file->flags & O_ACCMODE) == O_RDONLY && (file->flags & O_ACCMODE) != O_WRONLY) {
+    if ((file->flags & O_ACCMODE) == O_RDONLY || (file->flags & O_ACCMODE) == O_RDWR) {
         if (uid == uio->uid) {
             if (mode & S_IRUSR)
                 goto write_perms;
