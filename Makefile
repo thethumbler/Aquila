@@ -115,7 +115,7 @@ initrd: userland $(if $(filter $(BUILDDIR)/contrib/root,$(CONTRIB_ROOT)),contrib
 	@$(CP) -r $(SRCDIR)/rootfs/. $(ROOTFS)/
 	@if [ -n "$(ROOTFS_OVERLAY)" ]; then $(CP) -r $(ROOTFS_OVERLAY)/. $(ROOTFS)/; fi
 	@$(CP) $(BUILDDIR)/userland/bin/init $(ROOTFS)/init
-	@$(CP) $(BUILDDIR)/userland/bin/aqbox $(BUILDDIR)/userland/bin/fbterm $(ROOTFS)/bin/
+	@$(CP) $(BUILDDIR)/userland/bin/aqbox $(ROOTFS)/bin/
 	@chmod 600 $(ROOTFS)/etc/shadow
 	@for a in $(AQBOX_BIN); do $(LN) -s /bin/aqbox $(ROOTFS)/bin/$$a; done
 	@for a in $(AQBOX_SBIN); do $(LN) -s /bin/aqbox $(ROOTFS)/sbin/$$a; done

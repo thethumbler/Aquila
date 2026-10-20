@@ -15,11 +15,15 @@ mknod -m 600 /dev/console c 5 1
 mknod -m 666 /dev/ptmx c 5 2
 mknod -m 666 /dev/null c 1 3
 mknod -m 666 /dev/zero c 1 5
-mknod -m 600 /dev/kbd c 11 0
 mknod -m 600 /dev/fb0 c 29 0
 mknod -m 600 /dev/hda b 3 0
 mknod -m 600 /dev/hda1 b 3 1
 mknod -m 600 /dev/ttyS0 c 4 64
+for n in 1 2 3 4 5 6; do
+    mknod -m 600 /dev/tty$n c 4 $n
+    mknod -m 600 /dev/vcs$n c 7 $n
+    mknod -m 600 /dev/vcsa$n c 7 $((128 + n))
+done
 mknod -m 600 /dev/mouse c 10 1
 mknod -m 644 /dev/kmsg c 1 11
 mknod -m 600 /dev/fd0 b 2 0

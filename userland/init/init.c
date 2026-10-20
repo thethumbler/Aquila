@@ -43,6 +43,33 @@ int run(char **argv)
     return status;
 }
 
+/* login on a terminal, again whenever the session ends */
+void spawn_login(const char *tty, const char *term)
+{
+    if (fork())
+        return;
+
+    for (int i = 0; i < 3; ++i)
+        close(i);
+
+    /* a session of its own, the terminal becomes its controlling
+     * terminal when it is opened */
+    setsid();
+    setenv("TERM", term, 1);
+
+    /* read-write as usual, programs may write to standard input */
+    if (open(tty, O_RDWR) < 0) {
+        _log(1, "init: can't open %s: %s\n", tty, strerror(errno));
+        exit(1);
+    }
+
+    dup(0);
+    dup(0);
+
+    char *argp[] = {"/sbin/login", NULL};
+    while (1) run(argp);
+}
+
 void signal_handler(int sig)
 {
     switch (sig) {
@@ -75,7 +102,7 @@ int main(int argc, char **argv)
     char *argp[] = {"/bin/sh", "/etc/rc.init", NULL};
     run(argp);
 
-    int use_fbterm = 0, use_serial = 0;
+    int use_serial = 0;
 
     if (argc > 0) {
         char *cmdline = argv[0], *token;
@@ -83,43 +110,17 @@ int main(int argc, char **argv)
             cmdline = NULL;
             if (!strcmp(token, "--serial"))
                 use_serial = 1;
-            else if (!strcmp(token, "--fbterm"))
-                use_fbterm = 1;
         }
     }
 
-    if (use_fbterm || !use_serial) {
-        _log(1, "init: starting fbterm\n");
-        char *argp[] = {"/bin/fbterm", NULL};
-        if (!fork()) {
-            for (int i = 0; i < 3; ++i)
-                close(i);
+    /* logins on the first virtual terminals, and the serial port */
+    spawn_login("/dev/tty1", "linux");
+    spawn_login("/dev/tty2", "linux");
+    spawn_login("/dev/tty3", "linux");
 
-            execv(argp[0], argp);
-        }
-    }
-
-    if (use_serial) {
-        if (!fork()) {
-            for (int i = 0; i < 3; ++i)
-                close(i);
-
-            /* a session of its own, the serial port becomes its
-             * controlling terminal when it is opened */
-            setsid();
-
-            /* whatever is on the other end, vt100 is the safe guess */
-            setenv("TERM", "vt100", 0);
-            /* read-write as usual, programs may write to standard input */
-            open("/dev/ttyS0", O_RDWR);
-            dup(0);
-            dup(0);
-
-            char *argp[] = {"/sbin/login", NULL};
-            while (1) run(argp);
-            //execv(argp[0], argp);
-        }
-    }
+    /* whatever is on the other end, vt100 is the safe guess */
+    if (use_serial)
+        spawn_login("/dev/ttyS0", "vt100");
 
     /* init can't die */
 	for (;;);

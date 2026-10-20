@@ -30,7 +30,9 @@ is fetched from upstream and built by `make`. [ports/](ports/) is
 optional software, built with `make ports`.
 
 `make run` boots the kernel directly with the console on the serial port
-(log in as `root`, no password). `make iso` only builds
+(log in as `root`, no password). On the screen (`make run-iso`), the
+kernel's virtual terminals have logins on `/dev/tty1` to `/dev/tty3`,
+Alt+F1 to Alt+F6 switch between them. `make iso` only builds
 `build/aquila.iso`. See the top of the [Makefile](Makefile) for all
 targets.
 
@@ -51,7 +53,7 @@ from source, see [tests/](tests/README.md).
 | [include/uapi/](include/uapi/aquila) | user/kernel ABI: syscall numbers, errno, structures shared by the kernel and libc |
 | [libc/](libc/aquila)         | AquilaOS port of newlib                            |
 | [toolchain/](toolchain/)     | cross toolchain build script and patches           |
-| [userland/](userland/)       | init, aqbox (system tools: login, ps, mount, ...), fbterm |
+| [userland/](userland/)       | init, aqbox (system tools: login, ps, mount, ...)  |
 | [contrib/](contrib/)         | third-party software of the base system (recipes)  |
 | [ports/](ports/)             | optional third-party software (recipes)            |
 | [mk/](mk/)                   | build script for contrib/ and ports/ recipes       |
@@ -91,7 +93,7 @@ from source, see [tests/](tests/README.md).
 - [X] ps2kbd  (PS/2 keyboard)
 - [X] ps2mouse (PS/2 mouse)
 - [X] ramdev  (memory mapped devices)
-- [X] console
+- [X] vt      (virtual terminals on the framebuffer or VGA text mode)
 - [X] ata     (ATA hard disks, PIO mode)
 - [X] fbdev   (framebuffer, VESA)
 - [X] 8250    (UART)
@@ -101,7 +103,6 @@ from source, see [tests/](tests/README.md).
 - [X] dash    (shell, contrib)
 - [X] sbase   (core utilities, contrib)
 - [X] aqbox   (system tools)
-- [X] fbterm  (framebuffer terminal)
 - [X] kilo    (text editor, port)
 - [X] vis     (vi-like editor, port) on ncurses (port)
 - [X] Lua     (port)
@@ -117,8 +118,6 @@ Third-party code keeps its own license:
 
 | component | location | license |
 |-----------|----------|---------|
-| libvterm | [userland/fbterm/libvterm/](userland/fbterm/libvterm/LICENSE), `userland/fbterm/include/vterm.h` | MIT, Paul Evans |
-| NanoJPEG | [userland/fbterm/nanojpeg.c](userland/fbterm/nanojpeg.c) | MIT, Martin J. Fiedler |
 | multiboot.h | [kernel/arch/i386/include/boot/multiboot.h](kernel/arch/i386/include/boot/multiboot.h) | permissive, Free Software Foundation |
 
 The toolchain patches in [toolchain/patches/](toolchain/patches/) modify

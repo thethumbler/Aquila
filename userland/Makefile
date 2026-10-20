@@ -12,10 +12,9 @@ UCC     := i686-aquila-gcc
 UCFLAGS := -O2 -std=gnu11 -Wall -Wno-unused -Wno-unused-parameter -MMD -MP
 ULDLIBS := -lm
 
-PROGS := init aqbox fbterm
+PROGS := init aqbox
 
 aqbox_CFLAGS  := -I$(USRC)/aqbox/include
-fbterm_CFLAGS := -I$(USRC)/fbterm/include
 
 srcs = $(patsubst $(USRC)/%,%,$(shell find $(USRC)/$(1) -name '*.c'))
 objs = $(addprefix $(UBUILD)/,$(patsubst %.c,%.o,$(call srcs,$(1))))

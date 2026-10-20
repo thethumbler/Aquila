@@ -134,15 +134,6 @@ void __x86_isr(struct x86_regs *regs)
             return_from_signal((uintptr_t) arch->regs);
         }
 
-#if 0
-        const char *name = curthread->owner->name;
-        if (name && !strcmp(name, "/bin/fbterm")) {
-            x86_dump_registers(regs);
-            printk("page = %p\n", read_cr2());
-            for (;;);
-        }
-#endif
-
         //x86_dump_registers(regs);
         uintptr_t addr = read_cr2();
 
