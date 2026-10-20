@@ -324,6 +324,71 @@ static void sys_lseek(int fildes, off_t offset, int whence)
     arch_syscall_return(curthread, ret);
 }
 
+/*
+ * What O_CREAT creates for `path': the file a dangling symbolic link
+ * points to, through links to links. *ref is NULL for `path' itself.
+ */
+static int creat_path(const char *path, struct uio *uio, char **ref)
+{
+    struct uio nofollow = *uio;
+    nofollow.flags |= O_NOFOLLOW;
+
+    char *cur = NULL;
+    *ref = NULL;
+
+    for (int depth = 0; depth < 8; ++depth) {
+        const char *p = cur ? cur : path;
+        struct vnode *vnode = NULL;
+
+        if (vfs_lookup(p, &nofollow, &vnode, NULL)) {
+            *ref = cur;
+            return 0;
+        }
+
+        int link = S_ISLNK(vnode->mode);
+        vfs_close(vnode);
+
+        if (!link) {
+            kfree(cur);
+            return -EEXIST;
+        }
+
+        char target[256];
+        ssize_t len = vfs_readlink(p, &nofollow, target, sizeof(target) - 1);
+
+        if (len < 0) {
+            kfree(cur);
+            return len;
+        }
+
+        target[len] = '\0';
+
+        /* a relative target is relative to the link's directory */
+        size_t dirlen = 0;
+
+        if (target[0] != '/')
+            for (size_t i = 0; p[i]; ++i)
+                if (p[i] == '/')
+                    dirlen = i + 1;
+
+        char *next = kmalloc(dirlen + len + 1, &M_BUFFER, 0);
+
+        if (!next) {
+            kfree(cur);
+            return -ENOMEM;
+        }
+
+        memcpy(next, p, dirlen);
+        memcpy(next + dirlen, target, len + 1);
+
+        kfree(cur);
+        cur = next;
+    }
+
+    kfree(cur);
+    return -ELOOP;
+}
+
 static int do_openat(int dirfd, const char *path, int oflags, mode_t mode)
 {
     struct uio uio;
@@ -359,7 +424,16 @@ static int do_openat(int dirfd, const char *path, int oflags, mode_t mode)
     }
 
     if (ret == -ENOENT && (oflags & O_CREAT)) {
-        if ((ret = vfs_creat(path, mode & 07777, &uio, &vnode)))
+        /* through a dangling symbolic link, what it points to */
+        char *target = NULL;
+
+        if (!excl && (ret = creat_path(path, &uio, &target)))
+            goto done;
+
+        ret = vfs_creat(target ? target : path, mode & 07777, &uio, &vnode);
+        kfree(target);
+
+        if (ret)
             goto done;
 
         created = 1;

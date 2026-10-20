@@ -706,6 +706,27 @@ void aq_main(void)
     check("link to a link's directory", SC(SYS_stat, "/tmp/dl/s", sb, 0), 0);
     check("create through a link", SC(SYS_mkdir, "/tmp/dl/viadl", 0755, 0), 0);
     check("made in the target", SC(SYS_rmdir, "/tmp/d/viadl", 0, 0), 0);
+    /* O_CREAT through a dangling link creates what it points to */
+    SC(SYS_symlinkat, "/tmp/d/made", AT_FDCWD, "/tmp/dangling");
+    fd = SC(SYS_open, "/tmp/dangling", O_CREAT | O_WRONLY, 0644);
+    check("create through a dangling link", fd >= 0, 1);
+    SC(SYS_close, fd, 0, 0);
+    check("created the target", SC(SYS_stat, "/tmp/d/made", sb, 0), 0);
+    SC(SYS_symlinkat, "rel", dirfd, "rl");
+    SC(SYS_symlinkat, "/tmp/d/rl", AT_FDCWD, "/tmp/chain");
+    fd = SC(SYS_open, "/tmp/chain", O_CREAT | O_WRONLY, 0644);
+    check("create through links to a relative link", fd >= 0, 1);
+    SC(SYS_close, fd, 0, 0);
+    check("relative to the link's directory", SC(SYS_stat, "/tmp/d/rel", sb, 0), 0);
+    SC(SYS_symlinkat, "/tmp/d/excl", AT_FDCWD, "/tmp/dangling2");
+    check("O_EXCL doesn't create through a link", SC(SYS_open, "/tmp/dangling2", O_CREAT | O_EXCL | O_WRONLY, 0644), -EEXIST);
+    check("nothing created", SC(SYS_stat, "/tmp/d/excl", sb, 0), -ENOENT);
+    SC(SYS_unlink, "/tmp/d/made", 0, 0);
+    SC(SYS_unlink, "/tmp/d/rel", 0, 0);
+    SC(SYS_unlink, "/tmp/d/rl", 0, 0);
+    SC(SYS_unlink, "/tmp/dangling", 0, 0);
+    SC(SYS_unlink, "/tmp/dangling2", 0, 0);
+    SC(SYS_unlink, "/tmp/chain", 0, 0);
 
     /* rename */
     check("rename", SC5(SYS_renameat, dirfd, "b", AT_FDCWD, "/tmp/c", 0), 0);
