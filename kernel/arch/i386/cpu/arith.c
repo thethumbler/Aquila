@@ -105,7 +105,7 @@ static uint64_t udiv64(uint64_t n, uint64_t d)
 
 /* Divides unsigned 64-bit N by unsigned 64-bit D and returns the
      remainder. */
-static uint32_t umod64(uint64_t n, uint64_t d)
+static uint64_t umod64(uint64_t n, uint64_t d)
 {
     return n - d * udiv64(n, d);
 }
@@ -122,7 +122,7 @@ static int64_t sdiv64(int64_t n, int64_t d)
 
 /* Divides signed 64-bit N by signed 64-bit D and returns the
      remainder. */
-static int32_t smod64(int64_t n, int64_t d)
+static int64_t smod64(int64_t n, int64_t d)
 {
     return n - d * sdiv64(n, d);
 }
@@ -133,6 +133,7 @@ long long __divdi3(long long n, long long d);
 long long __moddi3(long long n, long long d);
 unsigned long long __udivdi3(unsigned long long n, unsigned long long d);
 unsigned long long __umoddi3(unsigned long long n, unsigned long long d);
+unsigned long long __udivmoddi4(unsigned long long n, unsigned long long d, unsigned long long *rem);
 
 /* Signed 64-bit division. */
 long long __divdi3(long long n, long long d) 
@@ -156,4 +157,15 @@ unsigned long long __udivdi3(unsigned long long n, unsigned long long d)
 unsigned long long __umoddi3(unsigned long long n, unsigned long long d) 
 {
     return umod64 (n, d);
+}
+
+/* Unsigned 64-bit division and remainder (x / y and x % y together). */
+unsigned long long __udivmoddi4(unsigned long long n, unsigned long long d, unsigned long long *rem)
+{
+    uint64_t q = udiv64(n, d);
+
+    if (rem)
+        *rem = n - d * q;
+
+    return q;
 }
