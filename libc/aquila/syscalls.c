@@ -15,12 +15,14 @@
 #include <sys/mount.h>
 #include <sys/utsname.h>
 #include <sys/wait.h>
+#include <sys/resource.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #include <utime.h>
 
@@ -77,6 +79,11 @@ pid_t getpid(void)
     return SYSCALL(SYS_getpid, 0, 0, 0);
 }
 
+pid_t getppid(void)
+{
+    return SYSCALL(SYS_getppid, 0, 0, 0);
+}
+
 /* newlib's posix/ provides isatty() on top of this */
 int _isatty(int fildes)
 {
@@ -93,6 +100,16 @@ int _isatty(int fildes)
 int kill(pid_t pid, int sig)
 {
     return SYSCALL(SYS_kill, pid, sig, 0);
+}
+
+int killpg(pid_t pgrp, int sig)
+{
+    if (pgrp < 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    return kill(-pgrp, sig);
 }
 
 int link(const char *old, const char *new)
@@ -162,6 +179,15 @@ pid_t wait(int *stat_loc)
     return waitpid(-1, stat_loc, 0);
 }
 
+/* BSD wait3(), the kernel doesn't track resource usage */
+pid_t wait3(int *stat_loc, int options, struct rusage *rusage)
+{
+    if (rusage)
+        memset(rusage, 0, sizeof(*rusage));
+
+    return waitpid(-1, stat_loc, options);
+}
+
 int sigaction(int sig, const struct sigaction *act, struct sigaction *oact)
 {
     return SYSCALL(SYS_sigaction, sig, act, oact);
@@ -182,6 +208,12 @@ _sig_func_ptr signal(int sig, _sig_func_ptr handler)
 int sigprocmask(int how, const sigset_t *set, sigset_t *oldset)
 {
     return SYSCALL(SYS_sigmask, how, set, oldset);
+}
+
+int sigsuspend(const sigset_t *mask)
+{
+    /* always fails with EINTR once a signal handler ran */
+    return SYSCALL(SYS_sigsuspend, mask, 0, 0);
 }
 
 int ioctl(int fildes, int request, ...)
@@ -300,6 +332,17 @@ gid_t getgid(void)
 gid_t getegid(void)
 {
     return getgid();
+}
+
+int getgroups(int size, gid_t list[])
+{
+    /* no supplementary groups */
+    if (size < 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    return 0;
 }
 
 /* there are no separate effective ids */
@@ -495,16 +538,25 @@ int getentropy(void *buf, size_t len)
     return -1;
 }
 
-int truncate(const char *path, off_t len)
-{
-    errno = ENOSYS;
-    return -1;
-}
-
 int ftruncate(int fildes, off_t len)
 {
-    errno = ENOSYS;
-    return -1;
+    return SYSCALL(SYS_ftruncate, fildes, len, 0);
+}
+
+int truncate(const char *path, off_t len)
+{
+    int fd = open(path, O_WRONLY);
+
+    if (fd == -1)
+        return -1;
+
+    int ret = ftruncate(fd, len);
+    int err = errno;
+
+    close(fd);
+    errno = err;
+
+    return ret;
 }
 
 /* POSIX names for newlib's line reading functions */
