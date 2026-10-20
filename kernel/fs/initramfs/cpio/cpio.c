@@ -12,6 +12,18 @@
 
 MALLOC_DEFINE(M_CPIO, "cpio", "CPIO structure");
 
+/* bounded copy of an entry name into a struct dirent */
+static void cpio_dirent_name(struct dirent *dirent, const char *name)
+{
+    size_t len = strlen(name);
+
+    if (len >= MAXNAMELEN)
+        len = MAXNAMELEN - 1;
+
+    memcpy(dirent->d_name, name, len);
+    dirent->d_name[len] = '\0';
+}
+
 static int cpio_root_node(struct vnode *super, struct vnode **ref)
 {
     int err = 0;
@@ -201,7 +213,7 @@ static int cpio_finddir(struct vnode *root, const char *name, struct dirent *dir
                 !strcmp(((struct cpio *) e->p)->name, name)) {
             if (dirent) {
                 dirent->d_ino = (vino_t) e;
-                strcpy(dirent->d_name, name);
+                cpio_dirent_name(dirent, name);
             }
 
             return 0;
@@ -244,8 +256,12 @@ static int cpio_load(struct vnode *dev, struct vnode **super)
         
         data_offset += sizeof(struct cpio_hdr);
         
+        /* namesize comes from the archive, don't trust it */
+        size_t namesize = MIN(hdr.namesize, MAX_NAMESIZE - 1);
+
         char path[MAX_NAMESIZE];
-        vfs_read(dev, data_offset, hdr.namesize, path);
+        vfs_read(dev, data_offset, namesize, path);
+        path[namesize] = '\0';
 
         if (!strcmp(path, ".")) continue;
         if (!strcmp(path, "TRAILER!!!")) break; /* End of archive */
@@ -254,7 +270,7 @@ static int cpio_load(struct vnode *dev, struct vnode **super)
         char *name = NULL;
 
         /* TODO implement strrchr */
-        for (int i = hdr.namesize - 1; i >= 0; --i) {
+        for (int i = (int) namesize - 1; i >= 0; --i) {
             if (path[i] == '/') {
                 path[i] = '\0';
                 name = &path[i+1];
@@ -320,7 +336,7 @@ static ssize_t cpio_readdir(struct vnode *node, off_t offset, struct dirent *dir
     for (struct vnode *e = dir; e; e = ((struct cpio *) e->p)->next) {
         if (i == offset) {
             dirent->d_ino = (size_t) e;
-            strcpy(dirent->d_name, ((struct cpio *) e->p)->name);   // FIXME
+            cpio_dirent_name(dirent, ((struct cpio *) e->p)->name);
             break;
         }
         ++i;

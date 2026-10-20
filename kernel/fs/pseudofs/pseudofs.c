@@ -5,11 +5,26 @@
 
 MALLOC_DEFINE(M_PSEUDOFS_DENT, "pseudofs-dirent", "pseudofs directory entry");
 
+/* bounded copy of an entry name into a struct dirent */
+static void pseudofs_dirent_name(struct dirent *dirent, const char *name)
+{
+    size_t len = strlen(name);
+
+    if (len >= MAXNAMELEN)
+        len = MAXNAMELEN - 1;
+
+    memcpy(dirent->d_name, name, len);
+    dirent->d_name[len] = '\0';
+}
+
 int pseudofs_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, struct uio *uio, struct vnode **ref)
 {
     int err = 0;
     struct vnode *vnode = NULL;
     struct pseudofs_dirent *dirent = NULL;
+
+    if (strlen(fn) >= MAXNAMELEN)
+        return -ENAMETOOLONG;
 
     struct dirent dirent_tmp;
     if (!pseudofs_finddir(dir, fn, &dirent_tmp)) {
@@ -143,7 +158,7 @@ ssize_t pseudofs_readdir(struct vnode *dir, off_t offset, struct dirent *dirent)
         if (i == offset) {
             found = 1;
             dirent->d_ino = e->d_ino->ino;
-            strcpy(dirent->d_name, e->d_name);
+            pseudofs_dirent_name(dirent, e->d_name);
             break;
         }
         ++i;
@@ -166,7 +181,7 @@ int pseudofs_finddir(struct vnode *dir, const char *name, struct dirent *dirent)
     for (struct pseudofs_dirent *e = _dirent; e; e = e->next) {
         if (!strcmp(name, e->d_name)) {
             dirent->d_ino = e->d_ino->ino;
-            strcpy(dirent->d_name, e->d_name);
+            pseudofs_dirent_name(dirent, e->d_name);
             return 0;
         }
     }
