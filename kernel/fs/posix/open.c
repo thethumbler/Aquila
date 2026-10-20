@@ -5,7 +5,8 @@
 
 int posix_file_open(struct file *file)
 {
-    if (file->flags & O_TRUNC) {
+    /* O_TRUNC is for regular files, devices and FIFOs ignore it */
+    if ((file->flags & O_TRUNC) && S_ISREG(file->vnode->mode)) {
         return vfs_file_trunc(file, 0);
     }
 
