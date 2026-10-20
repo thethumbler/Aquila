@@ -60,6 +60,10 @@ __x86_isr\v:
 
 .macro push_context
 #if ARCH_BITS==32
+    push %ds
+    push %es
+    push %fs
+    push %gs
     push %eax
     push %edx
     push %ecx
@@ -95,6 +99,10 @@ __x86_isr\v:
     pop %ecx
     pop %edx
     pop %eax
+    pop %gs
+    pop %fs
+    pop %es
+    pop %ds
 #else
     pop %r15
     pop %r14
@@ -111,6 +119,24 @@ __x86_isr\v:
     pop %rcx
     pop %rdx
     pop %rax
+#endif
+.endm
+
+/*
+ * Prepare the kernel environment on entry from an interrupt/exception:
+ * user code may have left any data segment selectors loaded (or set the
+ * direction flag), so load the kernel data segments and clear DF. The
+ * interrupted context's selectors are saved by push_context and restored
+ * by pop_context.
+ */
+.macro kernel_entry
+    cld
+#if ARCH_BITS==32
+    mov $0x10, %ax
+    mov %ax, %ds
+    mov %ax, %es
+    mov %ax, %fs
+    mov %ax, %gs
 #endif
 .endm
 
@@ -158,6 +184,7 @@ ISR_NOERR 128
 isr_handler:
 #if ARCH_BITS==32
     push_context
+    kernel_entry
     push %esp
     mov $0, %ebp
     call __x86_isr
@@ -166,6 +193,7 @@ isr_handler:
     iret
 #else
     push_context
+    kernel_entry
     mov %rsp, %rdi
     call __x86_isr
     pop_context
@@ -211,6 +239,7 @@ IRQ 15, 47
 irq_stub:
 #if ARCH_BITS==32
     push_context
+    kernel_entry
     push %esp
     call __x86_irq_handler
     pop %eax
@@ -218,6 +247,7 @@ irq_stub:
     iret
 #else
     push_context
+    kernel_entry
     mov %rsp, %rdi
     call __x86_irq_handler
     pop_context
@@ -319,9 +349,9 @@ gdt_pointer:
 x86_lgdt:
 #if ARCH_BITS==32
     movw 4(%esp), %ax
-    movl 8(%esp), %ebx
+    movl 8(%esp), %ecx
     movw %ax, (gdt_pointer)
-    movl %ebx, (gdt_pointer + 2)
+    movl %ecx, (gdt_pointer + 2)
     lgdt (gdt_pointer)
     ljmp $0x8, $1f
 #else

@@ -8,6 +8,7 @@ struct x86_regs {
 #if ARCH_BITS==32
     uint32_t
     edi, esi, ebp, ebx, ecx, edx, eax,
+    gs, fs, es, ds,
     eip, cs, eflags, esp, ss;
 #else
     uint64_t
@@ -28,6 +29,10 @@ static inline void x86_dump_registers(struct x86_regs *regs)
     printk("ecx = %p\n", regs->ecx);
     printk("edx = %p\n", regs->edx);
     printk("eax = %p\n", regs->eax);
+    printk("gs  = %p\n", regs->gs );
+    printk("fs  = %p\n", regs->fs );
+    printk("es  = %p\n", regs->es );
+    printk("ds  = %p\n", regs->ds );
     printk("eip = %p\n", regs->eip);
     printk("cs  = %p\n", regs->cs );
     printk("eflags = %p\n", regs->eflags);
