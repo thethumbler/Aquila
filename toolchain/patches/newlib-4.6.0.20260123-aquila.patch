@@ -158,6 +158,19 @@ diff -ruN a/newlib/libc/include/stdio.h b/newlib/libc/include/stdio.h
  
  #if __MISC_VISIBLE
  void	clearerr_unlocked (FILE *);
+diff -ruN a/newlib/libc/include/sys/cdefs.h b/newlib/libc/include/sys/cdefs.h
+--- a/newlib/libc/include/sys/cdefs.h
++++ b/newlib/libc/include/sys/cdefs.h
+@@ -52,6 +52,9 @@
+ 
+ #ifdef __GNUC__
+ # define __ASMNAME(cname)  __XSTRING (__USER_LABEL_PREFIX__) cname
++#elif defined(__TINYC__)
++/* tcc has asm labels too, and no prefix (ELF) */
++# define __ASMNAME(cname)  cname
+ #endif
+ 
+ #define __ptr_t void *
 diff -ruN a/newlib/libc/include/sys/features.h b/newlib/libc/include/sys/features.h
 --- a/newlib/libc/include/sys/features.h
 +++ b/newlib/libc/include/sys/features.h
