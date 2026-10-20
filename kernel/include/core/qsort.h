@@ -24,7 +24,7 @@ static inline void qsort(void *base, size_t nmemb, size_t size, int (*compar)(co
     void *wall = base;
 
     for (size_t i = 0; i < nmemb - 1; ++i) {
-        if (compar(cur, pivot)) {
+        if (compar(cur, pivot) < 0) {
             __qsort_swap(cur, wall, size);
             wall = (char *) wall + size;
         }
@@ -36,7 +36,7 @@ static inline void qsort(void *base, size_t nmemb, size_t size, int (*compar)(co
     size_t idx = ((char *) wall - (char *) base) / size;
 
     qsort(base, idx, size, compar);
-    qsort((char *) wall + size, nmemb - idx, size, compar);
+    qsort((char *) wall + size, nmemb - idx - 1, size, compar);
 }
 
 #endif /* ! _QSORT_H */

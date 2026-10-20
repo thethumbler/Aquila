@@ -51,7 +51,7 @@ void kmain(struct boot *boot)
         panic("failed to allocate process structure for init");
     }
 
-    curthread = (struct thread *) init->threads.head;
+    curthread = (struct thread *) init->threads.head->value;
     curproc   = init;
 
     pmap_switch(init->vm_space.pmap);

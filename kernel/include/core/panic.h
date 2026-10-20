@@ -11,7 +11,7 @@
 {\
     printk("KERNEL PANIC:\n%s [%d] %s: %s\n" __PANIC_MSG, \
         __FILE__, __LINE__, __func__, s);\
-    arch_stacktrace(); \
+    arch_stack_trace(); \
     arch_disable_interrupts(); \
     for(;;); \
 }\
