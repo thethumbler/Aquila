@@ -24,6 +24,12 @@ int arch_proc_fork(struct thread *thread, struct proc *fork)
 
     /* Setup kstack */
     uintptr_t fkstack_base = (uintptr_t) kmalloc(KERN_STACK_SIZE, &M_KERN_STACK, 0);
+
+    if (!fkstack_base) {
+        err = -ENOMEM;
+        goto free_resources;
+    }
+
     ftarch->kstack = fkstack_base + KERN_STACK_SIZE;
 
     /* Copy registers */
@@ -37,9 +43,11 @@ int arch_proc_fork(struct thread *thread, struct proc *fork)
 #if ARCH_BITS==32
     ftarch->eip = (uintptr_t) x86_fork_return;
     ftarch->esp = (uintptr_t) fork_regs;
+    ftarch->eflags = ptarch->eflags;
 #else
     ftarch->rip = (uintptr_t) x86_fork_return;
     ftarch->rsp = (uintptr_t) fork_regs;
+    ftarch->rflags = ptarch->rflags;
 #endif
 
     struct thread *fthread = (struct thread *) fork->threads.head->value;

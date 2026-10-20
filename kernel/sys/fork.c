@@ -3,6 +3,7 @@
 #include <core/arch.h>
 #include <mm/mm.h>
 #include <mm/vm.h>
+#include <mm/pmap.h>
 #include <sys/proc.h>
 #include <ds/queue.h>
 #include <bits/errno.h>
@@ -78,7 +79,11 @@ int proc_fork(struct thread *thread, struct proc **ref)
     }
 
     /* Allocate a new PID */
-    fork->pid = proc_pid_alloc();
+    if ((fork->pid = proc_pid_alloc()) == -1) {
+        fork->pid = 0;
+        err = -EAGAIN;
+        goto error;
+    }
 
     /* Set fork parent */
     fork->parent = proc;
@@ -128,16 +133,13 @@ int proc_fork(struct thread *thread, struct proc **ref)
     /* Call arch specific fork handler */
     err = arch_proc_fork(thread, fork);
 
-    if (!err) {
-        /* Return 0 to child */
-        arch_syscall_return(fork_thread, 0);
-        /* And PID to parent */
-        arch_syscall_return(thread, fork->pid);
-    } else {
-        /* Return error to parent */
-        arch_syscall_return(thread, err);
+    if (err)
         goto error;
-    }
+
+    /* Return 0 to child */
+    arch_syscall_return(fork_thread, 0);
+    /* And PID to parent */
+    arch_syscall_return(thread, fork->pid);
 
     if (ref)
         *ref = fork;
@@ -145,7 +147,22 @@ int proc_fork(struct thread *thread, struct proc **ref)
     return 0;
 
 error:
+    /* the caller returns err to the parent */
     if (fork) {
+        /* close copied file descriptors (drops the references we took) */
+        if (fork->fds) {
+            for (int i = 0; i < FDS_COUNT; ++i) {
+                struct file *file = &fork->fds[i];
+                if (file->vnode && file->vnode != (void *) -1)
+                    vfs_file_close(file);
+            }
+
+            kfree(fork->fds);
+        }
+
+        vm_space_destroy(&fork->vm_space);
+        pmap_decref(fork->vm_space.pmap);
+
         if (fork->name)
             kfree(fork->name);
         if (fork->cwd)
@@ -153,8 +170,18 @@ error:
         if (fork->sig_queue)
             kfree(fork->sig_queue);
 
-        /* TODO free VMRs */
+        /* free main thread (it never ran, no arch data) */
+        struct thread *_thread = NULL;
+        while ((_thread = dequeue(&fork->threads)))
+            kfree(_thread);
 
+        if (fork->pgrp_node)
+            queue_node_remove(fork->pgrp->procs, fork->pgrp_node);
+
+        if (fork->pid > 0)
+            proc_pid_free(fork->pid);
+
+        queue_remove(procs, fork);
         kfree(fork);
     }
 
