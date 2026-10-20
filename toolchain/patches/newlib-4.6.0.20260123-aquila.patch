@@ -45,6 +45,18 @@ diff -ruN a/newlib/libc/acinclude.m4 b/newlib/libc/acinclude.m4
    sh sysmec sysnec810 sysnecv850 sysvi386 sysvnecv70
    tic80 tirtos
    w65
+diff -ruN a/newlib/libc/include/limits.h b/newlib/libc/include/limits.h
+--- a/newlib/libc/include/limits.h
++++ b/newlib/libc/include/limits.h
+@@ -145,3 +145,8 @@
+ #ifndef PATH_MAX
+ #define PATH_MAX	4096
+ #endif
++
++#if defined(__aquila__) && !defined(SSIZE_MAX)
++/* ssize_t is the signed type of the size of size_t, as is ptrdiff_t */
++#define SSIZE_MAX	__PTRDIFF_MAX__
++#endif
 diff -ruN a/newlib/libc/include/stdio.h b/newlib/libc/include/stdio.h
 --- a/newlib/libc/include/stdio.h
 +++ b/newlib/libc/include/stdio.h

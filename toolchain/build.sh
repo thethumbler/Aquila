@@ -159,6 +159,15 @@ stage_gcc()
         --disable-libatomic --disable-libstdcxx
     make -j"$JOBS" all-gcc all-target-libgcc
     make install-gcc install-target-libgcc
+
+    # gcc's <limits.h> only includes the C library's (PATH_MAX, SSIZE_MAX,
+    # ...) if the sysroot had one when gcc was built, newlib comes later:
+    # install the version gcc would have made
+    local inc
+    inc=$($TARGET-gcc -print-file-name=include)
+    cat "$SRC/$GCC/gcc/limitx.h" "$SRC/$GCC/gcc/glimits.h" "$SRC/$GCC/gcc/limity.h" \
+        > "$inc/limits.h"
+    cp "$SRC/$GCC/gcc/gsyslimits.h" "$inc/syslimits.h"
 }
 
 stage_headers()
