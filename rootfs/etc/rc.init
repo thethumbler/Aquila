@@ -24,3 +24,13 @@ mknod /dev/fd0 b 2 0
 echo mounting devpts on /dev/pts
 mkdir /dev/pts
 mount -t devpts /dev/pts
+
+# Mount procfs on /proc
+echo mounting procfs on /proc
+mount -t procfs /proc
+
+# The initramfs is read-only, use tmpfs for writable directories
+echo mounting tmpfs on /tmp /root /home/live
+mount -t tmpfs /tmp
+mount -t tmpfs /root
+mount -t tmpfs /home/live
