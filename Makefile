@@ -10,7 +10,8 @@
 #   make userland     build/userland/bin/
 #   make ports        third-party software in ports/ (build/ports/root),
 #                     included in the initrd once built
-#   make initrd       build/rootfs/ and build/initrd.img
+#   make initrd       build/rootfs/ and build/initrd.img, ROOTFS_OVERLAY=<dir>
+#                     is copied over rootfs/ (e.g. etc/passwd and etc/shadow)
 #   make iso          build/aquila.iso, boots with Limine (needs xorriso)
 #   make run          boot the kernel and initrd in QEMU, console on stdio
 #   make run-iso      boot the ISO in QEMU (framebuffer console)
@@ -88,6 +89,7 @@ initrd: userland
 	@$(MKDIR) $(ROOTFS)
 	@cd $(ROOTFS) && $(MKDIR) bin sbin dev mnt proc tmp root home/live
 	@$(CP) -r $(SRCDIR)/rootfs/. $(ROOTFS)/
+	@if [ -n "$(ROOTFS_OVERLAY)" ]; then $(CP) -r $(ROOTFS_OVERLAY)/. $(ROOTFS)/; fi
 	@$(CP) $(BUILDDIR)/userland/bin/init $(ROOTFS)/init
 	@$(CP) $(BUILDDIR)/userland/bin/aqbox $(BUILDDIR)/userland/bin/fbterm \
 		$(BUILDDIR)/userland/bin/kilo $(ROOTFS)/bin/
@@ -95,6 +97,7 @@ initrd: userland
 		$(CP) -r $(BUILDDIR)/ports/root/. $(ROOTFS)/; \
 		$(STRIP) $(ROOTFS)/usr/bin/*; fi
 	@$(STRIP) $(ROOTFS)/init $(ROOTFS)/bin/*
+	@chmod 600 $(ROOTFS)/etc/shadow
 	@for a in $(AQBOX_BIN); do $(LN) -s /bin/aqbox $(ROOTFS)/bin/$$a; done
 	@for a in $(AQBOX_SBIN); do $(LN) -s /bin/aqbox $(ROOTFS)/sbin/$$a; done
 	@$(ECHO) "  CPIO    " $(patsubst $(BUILDDIR)/%,build/%,$(INITRD))

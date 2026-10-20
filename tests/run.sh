@@ -93,8 +93,14 @@ build_initrd()
             > "$OUT/$name/gcc.log" 2>&1 || { cat "$OUT/$name/gcc.log"; return 1; }
     fi
 
+    # extra files for the test (e.g. etc/passwd)
+    if [ -d "$TESTS/$name/rootfs" ]; then
+        cp -r "$TESTS/$name/rootfs/." "$root/"
+        [ -f "$root/etc/shadow" ] && chmod 600 "$root/etc/shadow"
+    fi
+
     # the kernel's initramfs reads old binary cpio archives
-    (cd "$root" && find . | cpio -o -H bin --quiet) > "$OUT/$name/initrd.img"
+    (cd "$root" && find . | cpio -o -H bin -R 0:0 --quiet) > "$OUT/$name/initrd.img"
 }
 
 # run_qemu <log> <seconds> <stop pattern> [qemu args...]
@@ -292,7 +298,9 @@ test_libc()
     aqtest_result "$OUT/libc/serial.log"
 }
 
-# the system built from source: log in on the serial console, run commands
+# the system built from source: logins on the serial console, run commands
+#
+# tests/system/rootfs adds a root password and an unprivileged guest user
 test_system()
 {
     local log=$OUT/system/serial.log
@@ -305,20 +313,27 @@ test_system()
 
     mkdir -p "$OUT/system"
     make -C "$ROOT" initrd BUILDDIR="$OUT/system/build" TOOLCHAIN="$ROOT/build/toolchain" \
-        > "$OUT/system/build.log" 2>&1 || {
+        ROOTFS_OVERLAY="$TESTS/system/rootfs" > "$OUT/system/build.log" 2>&1 || {
         tail -20 "$OUT/system/build.log"
         return 1
     }
     cp "$OUT/system/build/initrd.img" "$initrd"
 
-    # type on the serial console after the login prompt shows up
+    # "seconds input": wait, then type the line on the serial console
+    local session=(
+        "6 root" "1 wrong-password"
+        "6 guest" "1 guest-password" "5 cat /etc/shadow" "1 exit"
+        "4 root" "1 root-password" "5 uname -a" "1 ls /bin" "1 ps"
+        "1 cat /proc/meminfo" "1 touch /tmp/f" "1 ls /tmp" "1 cat /etc/shadow"
+    )
+
     {
-        sleep 6
-        for line in root "" "uname -a" "ls /bin" "ps" "cat /proc/meminfo" "touch /tmp/f" "ls /tmp"; do
-            printf '%s\r' "$line"
-            sleep 1.5
+        for step in "${session[@]}"; do
+            sleep "${step%% *}"
+            printf '%s\r' "${step#* }"
         done
-    } | timeout 25 qemu-system-i386 -kernel "$KERNEL" -initrd "$initrd --serial" \
+        sleep 2
+    } | timeout 60 qemu-system-i386 -kernel "$KERNEL" -initrd "$initrd --serial" \
         -append earlycon=ttyS0 -m 256 -display none -no-reboot -serial stdio \
         2>/dev/null | tr -d '\r' > "$log"
 
@@ -329,14 +344,16 @@ test_system()
     fi
 
     local missing=0
-    for want in 'login:' 'Welcome to AquilaOS!' 'AquilaOS aquila' 'aqbox' '/bin/ps' 'MemTotal' '^f *$'; do
+    for want in 'Login incorrect' '\[guest@aquila' 'shadow: Permission denied' \
+                '\[root@aquila' 'AquilaOS aquila' 'aqbox' '/bin/ps' 'MemTotal' \
+                '(^| )f( |$)' 'guest:\$6\$'; do
         if ! grep -a -q -E -- "$want" "$log"; then
             echo "missing output: $want"
             missing=1
         fi
     done
 
-    [ $missing = 0 ] && echo "logged in, ran uname, ls, ps, cat, touch"
+    [ $missing = 0 ] && echo "wrong password rejected, guest denied /etc/shadow, root ran uname, ls, ps, cat, touch"
 }
 
 #

@@ -15,7 +15,6 @@
 #include <sys/mount.h>
 #include <sys/utsname.h>
 #include <sys/wait.h>
-#include <sys/aq_auth.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -303,9 +302,25 @@ gid_t getegid(void)
     return getgid();
 }
 
-int aquila_auth(uid_t uid, const char *pw)
+/* there are no separate effective ids */
+int setuid(uid_t uid)
 {
-    return SYSCALL(SYS_auth, uid, pw, 0);
+    return SYSCALL(SYS_setuid, uid, 0, 0);
+}
+
+int seteuid(uid_t uid)
+{
+    return setuid(uid);
+}
+
+int setgid(gid_t gid)
+{
+    return SYSCALL(SYS_setgid, gid, 0, 0);
+}
+
+int setegid(gid_t gid)
+{
+    return setgid(gid);
 }
 
 void *mmap(void *addr, size_t len, int prot, int flags, int fildes, off_t off)

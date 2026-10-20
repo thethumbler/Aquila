@@ -45,7 +45,7 @@
 #define SYS_setpgid         32
 #define SYS_mknod           33
 #define SYS_lstat           34
-#define SYS_auth            35  /* deprecated */
+/* 35 was auth, removed: login checks /etc/shadow and uses setuid() */
 #define SYS_getuid          36
 #define SYS_getgid          37
 #define SYS_mmap            38
@@ -70,8 +70,10 @@
 #define SYS_lchown          57
 #define SYS_utime           58
 #define SYS_rmdir           59
+#define SYS_setuid          60
+#define SYS_setgid          61
 
-#define SYS_MAX             59
+#define SYS_MAX             61
 
 /*
  * Arguments of system calls that take more than three, passed as a

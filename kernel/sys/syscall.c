@@ -995,11 +995,33 @@ static void sys_lstat(const char *path, struct aquila_stat *buf)
     arch_syscall_return(curthread, ret);
 }
 
-static void sys_auth(uint32_t uid, const char *pw)
+/*
+ * There are no separate effective or saved ids, setuid() and setgid()
+ * set the process ids: root may set any id, other users only their own.
+ */
+static void sys_setuid(uid_t uid)
 {
-    syscall_log(LOG_DEBUG, "auth(uid=%d, pw=%s)\n", uid, pw);
+    syscall_log(LOG_DEBUG, "setuid(uid=%d)\n", uid);
 
-    curproc->uid = uid;   /* XXX */
+    if (curproc->uid != 0 && uid != curproc->uid) {
+        arch_syscall_return(curthread, -EPERM);
+        return;
+    }
+
+    curproc->uid = uid;
+    arch_syscall_return(curthread, 0);
+}
+
+static void sys_setgid(gid_t gid)
+{
+    syscall_log(LOG_DEBUG, "setgid(gid=%d)\n", gid);
+
+    if (curproc->uid != 0 && gid != curproc->gid) {
+        arch_syscall_return(curthread, -EPERM);
+        return;
+    }
+
+    curproc->gid = gid;
     arch_syscall_return(curthread, 0);
 }
 
@@ -1559,7 +1581,6 @@ void (*syscall_table[])() = {
     [SYS_setpgid]       = sys_setpgid,
     [SYS_mknod]         = sys_mknod,
     [SYS_lstat]         = sys_lstat,
-    [SYS_auth]          = sys_auth, /* deprecated */
     [SYS_getuid]        = sys_getuid,
     [SYS_getgid]        = sys_getgid,
     [SYS_mmap]          = sys_mmap,
@@ -1584,6 +1605,8 @@ void (*syscall_table[])() = {
     [SYS_lchown]        = sys_lchown,
     [SYS_utime]         = sys_utime,
     [SYS_rmdir]         = sys_rmdir,
+    [SYS_setuid]        = sys_setuid,
+    [SYS_setgid]        = sys_setgid,
 };
 
 const size_t syscall_cnt = sizeof(syscall_table)/sizeof(syscall_table[0]);

@@ -9,9 +9,12 @@
  * Reports in the aqtest format on the serial port.
  */
 
+#include <crypt.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <pwd.h>
+#include <shadow.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -129,6 +132,36 @@ int main(void)
     check("uname", uname(&uts), 0);
     check("sysname", strcmp(uts.sysname, "AquilaOS"), 0);
     check("time", time(NULL) > 1500000000, 1);
+
+    /* crypt: vectors from the SHA-512 crypt specification */
+    const char *h = crypt("Hello world!", "$6$saltstring");
+    check("crypt default rounds", h && !strcmp(h, "$6$saltstring$svn8UoSVapNtMuq1ukKS4tPQd8iKwSMHWjl/"
+        "O817G3uBnIFNjnQJuesI68u4OTLiBFdcbYEdFCoEOfaS35inz1"), 1);
+    h = crypt("the minimum number is still observed", "$6$rounds=10$roundstoolow");
+    check("crypt minimum rounds", h && !strcmp(h, "$6$rounds=1000$roundstoolow$kUMsbe306n21p9R.FRkW3IGn."
+        "S9NPN0x50YhH1xhLsPuWGsUSklZt58jaTfF4ZEQpyUNGc0dqbpBYYBaHHrsX."), 1);
+    errno = 0;
+    check("crypt unsupported -> EINVAL", crypt("x", "$1$salt") == NULL ? errno : 0, EINVAL);
+
+    /* passwd and shadow (etc/ comes from tests/libc/rootfs) */
+    struct passwd *pw = getpwnam("tester");
+    check("getpwnam", pw != NULL, 1);
+    check("pw_uid", pw ? (long) pw->pw_uid : -1, 1000);
+
+    struct spwd *sp = getspnam("tester");
+    check("getspnam", sp != NULL, 1);
+    check("sp_lstchg", sp ? sp->sp_lstchg : -2, 19000);
+    check("sp_inact empty", sp ? sp->sp_inact : -2, -1);
+    check("password verifies", sp && !strcmp(crypt("tester-password", sp->sp_pwdp), sp->sp_pwdp), 1);
+    check("wrong password fails", sp && strcmp(crypt("tester-passwore", sp->sp_pwdp), sp->sp_pwdp) != 0, 1);
+    check("getspnam unknown", getspnam("nobody") == NULL, 1);
+
+    /* dropping privileges */
+    pid = fork();
+    if (pid == 0)
+        _exit(setgid(100) || setuid(1000) || getuid() != 1000 || setuid(0) == 0 ||
+              getspnam("tester") != NULL);
+    check("privilege drop", waitpid(pid, &status, 0) == pid && WEXITSTATUS(status) == 0, 1);
 
     fprintf(out, "aqtest: done, fails=%d\n", fails);
 

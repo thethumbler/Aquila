@@ -213,5 +213,29 @@ void aq_main(void)
     check("bad elf wait", SC(SYS_waitpid, c, &st, 0), c);
     check("bad elf status", st, (SIGSEGV << 8) | SIGSEGV);
 
+    /* user ids: the removed auth syscall, setuid/setgid rules */
+    check("auth syscall removed", SC(35, 0, 0, 0), -ENOSYS);
+
+    int fd2 = SC(SYS_open, "/tmp/secret", O_CREAT | O_RDWR, 0600);
+    check("create root-only file", fd2 >= 0, 1);
+    SC(SYS_close, fd2, 0, 0);
+
+    c = SC(SYS_fork, 0, 0, 0);
+    if (!c) {
+        /* exit with the number of the first failed step */
+        if (SC(SYS_setgid, 1000, 0, 0) != 0) SC(SYS_exit, 1, 0, 0);
+        if (SC(SYS_setuid, 1000, 0, 0) != 0) SC(SYS_exit, 2, 0, 0);
+        if (SC(SYS_getuid, 0, 0, 0) != 1000) SC(SYS_exit, 3, 0, 0);
+        if (SC(SYS_getgid, 0, 0, 0) != 1000) SC(SYS_exit, 4, 0, 0);
+        if (SC(SYS_setuid, 0, 0, 0) != -EPERM) SC(SYS_exit, 5, 0, 0);
+        if (SC(SYS_setgid, 0, 0, 0) != -EPERM) SC(SYS_exit, 6, 0, 0);
+        if (SC(SYS_setuid, 1000, 0, 0) != 0) SC(SYS_exit, 7, 0, 0);
+        if (SC(SYS_open, "/tmp/secret", O_RDONLY, 0) != -EACCES) SC(SYS_exit, 8, 0, 0);
+        SC(SYS_exit, 0, 0, 0);
+    }
+    check("setuid wait", SC(SYS_waitpid, c, &st, 0), c);
+    check("setuid/setgid rules (failed step)", st >> 8, 0);
+    check("root still root", SC(SYS_getuid, 0, 0, 0), 0);
+
     aq_end();
 }
