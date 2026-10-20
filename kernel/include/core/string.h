@@ -92,6 +92,15 @@ static inline char *strcpy(char *dst, const char *src)
     return retval;
 }
 
+/* strcpy() returning the end of dst (its NUL terminator) */
+static inline char *stpcpy(char *dst, const char *src)
+{
+    while ((*dst = *src++))
+        ++dst;
+
+    return dst;
+}
+
 static inline char **tokenize(const char *s, char c)
 {
     if (s == NULL || *s == '\0')

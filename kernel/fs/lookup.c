@@ -7,50 +7,61 @@
 
 static int lookup(const char *path, struct uio *uio, struct vnode **ref, char **abs_path, int depth);
 
-/* resolve the symbolic link `vnode' found at absolute path `link' */
-static int vfs_follow(struct vnode *vnode, const char *link, struct uio *uio, struct vnode **ref, int depth)
+/*
+ * The path that continues through the symbolic link `link', found as
+ * tokens[at] of an absolute path: the directory containing the link
+ * (tokens[0..at)) unless the link is absolute, the link's contents, then
+ * the components after the link.
+ */
+static char *link_path(struct vnode *link, char **tokens, size_t at, int *err)
 {
-    int err = 0;
-    char *target = NULL, *path = NULL;
+    char *target = kmalloc(1024, &M_BUFFER, M_ZERO);
+    char *path = NULL;
 
-    if (depth >= SYMLOOP_MAX)
-        return -ELOOP;
-
-    target = kmalloc(1024, &M_BUFFER, M_ZERO);
-    if (!target) goto e_nomem;
-
-    /* leave room for the NUL terminator (buffer is zeroed) */
-    if ((err = vfs_read(vnode, 0, 1023, target)) < 0)
-        goto error;
-
-    if (target[0] == '/') {
-        path = target;
-        target = NULL;
-    } else {
-        /* relative to the directory containing the link */
-        size_t dir_len = strlen(link);
-        while (dir_len && link[dir_len - 1] != '/')
-            --dir_len;
-
-        path = kmalloc(dir_len + strlen(target) + 1, &M_BUFFER, 0);
-        if (!path) goto e_nomem;
-
-        memcpy(path, link, dir_len);
-        strcpy(path + dir_len, target);
+    if (!target) {
+        *err = -ENOMEM;
+        return NULL;
     }
 
-    err = lookup(path, uio, ref, NULL, depth + 1);
+    /* leave room for the NUL terminator (buffer is zeroed) */
+    ssize_t len = vfs_read(link, 0, 1023, target);
 
-    goto done;
+    if (len < 0 || !*target) {
+        *err = len < 0 ? len : -ENOENT;
+        goto done;
+    }
 
-e_nomem:
-    err = -ENOMEM;
+    size_t size = strlen(target) + 2;
 
-error:
+    for (size_t i = 0; tokens[i]; ++i)
+        size += strlen(tokens[i]) + 1;
+
+    if (!(path = kmalloc(size, &M_BUFFER, 0))) {
+        *err = -ENOMEM;
+        goto done;
+    }
+
+    char *p = path;
+    *p = '\0';
+
+    if (target[0] != '/') {
+        for (size_t i = 0; i < at; ++i) {
+            *p++ = '/';
+            p = stpcpy(p, tokens[i]);
+        }
+    }
+
+    *p++ = '/';
+    p = stpcpy(p, target);
+
+    for (size_t i = at + 1; tokens[i]; ++i) {
+        *p++ = '/';
+        p = stpcpy(p, tokens[i]);
+    }
+
 done:
-    if (target) kfree(target);
-    if (path) kfree(path);
-    return err;
+    kfree(target);
+    return path;
 }
 
 int vfs_lookup(const char *path, struct uio *uio, struct vnode **ref, char **abs_path)
@@ -58,6 +69,12 @@ int vfs_lookup(const char *path, struct uio *uio, struct vnode **ref, char **abs
     return lookup(path, uio, ref, abs_path, 0);
 }
 
+/*
+ * Symbolic links are followed wherever they appear in the path, the last
+ * component is not followed with O_NOFOLLOW. `abs_path' is the path that
+ * was resolved, after following links. `*ref' is only set on success,
+ * callers close it on errors.
+ */
 static int lookup(const char *path, struct uio *uio, struct vnode **ref, char **abs_path, int depth)
 {
     vfs_log(LOG_DEBUG, "vfs_lookup(path=%s, uio=%p, ref=%p, abs_path=%p)\n", path, uio, ref, abs_path);
@@ -65,6 +82,7 @@ static int lookup(const char *path, struct uio *uio, struct vnode **ref, char **
     int ret = 0;
     struct vfs_path *vfs_path = NULL;
     char **tokens = NULL;
+    char *next_path = NULL;
 
     if (!path || !*path)
         return -ENOENT;
@@ -100,30 +118,39 @@ static int lookup(const char *path, struct uio *uio, struct vnode **ref, char **
         /* release the intermediate directory */
         vfs_close(dir);
         dir = next;
-    }
 
-    free_tokens(tokens);
-    kfree(vfs_path);
+        int last = !token_p[1];
+
+        if (S_ISLNK(dir->mode) && !(last && (uio->flags & O_NOFOLLOW))) {
+            if (depth >= SYMLOOP_MAX) {
+                vfs_close(dir);
+                ret = -ELOOP;
+                goto error;
+            }
+
+            next_path = link_path(dir, tokens, token_p - tokens, &ret);
+            vfs_close(dir);
+
+            if (!next_path)
+                goto error;
+
+            ret = lookup(next_path, uio, ref, abs_path, depth + 1);
+            goto done;
+        }
+    }
 
     if (abs_path) *abs_path = strdup(rpath);
 
-    /* resolve symbolic links, *ref is only set on success: the link is
-     * released here and callers close *ref on errors */
-    if (S_ISLNK(dir->mode) && !(uio->flags & O_NOFOLLOW)) {
-        ret = vfs_follow(dir, rpath, uio, ref, depth);
-
-        /* the link itself is no longer needed */
+    if (ref)
+        *ref = dir;
+    else
         vfs_close(dir);
-        kfree(rpath);
-        return ret;
-    }
 
-    if (ref) *ref = dir;
+    ret = 0;
 
-    kfree(rpath);
-    return 0;
-
+done:
 error:
+    if (next_path) kfree(next_path);
     if (tokens) free_tokens(tokens);
     if (vfs_path) kfree(vfs_path);
     if (rpath) kfree(rpath);
