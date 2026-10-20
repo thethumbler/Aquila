@@ -11,6 +11,7 @@
  * - stopping and continuing processes, the terminal line discipline
  * - select, poll and terminal read timeouts (VTIME)
  * - flock
+ * - anonymous memory (mmap)
  */
 
 #include "../lib/aqtest.h"
@@ -469,6 +470,31 @@ void aq_main(void)
     struct aquila_mmap_args ma = {(void *) 0xC0000000, 0x1000, PROT_READ | PROT_WRITE, MAP_FIXED | MAP_PRIVATE, aq_out, 0};
     check("mmap fixed kernel", SC(SYS_mmap, &ma, &mret, 0), -EINVAL);
     check("mmap kret", SC(SYS_mmap, &ma, KADDR, 0), -EFAULT);
+
+    /* anonymous memory: zero-filled pages, private to the process */
+    struct aquila_mmap_args aa = {0, 100, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0};
+    check("mmap anonymous", SC(SYS_mmap, &aa, &mret, 0), 0);
+    volatile char *anon = mret;
+    check("mmap anonymous page aligned", (u32) anon & 0xfff, 0);
+    check("mmap anonymous zero", anon[0] | anon[99] | anon[4095], 0);
+    anon[0] = 'p';
+    int ac = SC(SYS_fork, 0, 0, 0);
+    if (!ac) {
+        int ok = anon[0] == 'p';
+        anon[0] = 'c';
+        SC(SYS_exit, ok, 0, 0);
+    }
+    int ast = 0;
+    SC(SYS_waitpid, ac, &ast, 0);
+    check("mmap anonymous copied by fork", ast >> 8, 1);
+    check("mmap anonymous private", anon[0], 'p');
+    check("munmap anonymous", SC(SYS_munmap, anon, 100, 0), 0);
+    check("munmap again", SC(SYS_munmap, anon, 100, 0), -EINVAL);
+    aa.flags = MAP_SHARED | MAP_ANONYMOUS;
+    check("mmap anonymous shared", SC(SYS_mmap, &aa, &mret, 0), -EINVAL);
+    aa.flags = MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED;
+    aa.addr = (void *) 0x40000100;
+    check("mmap fixed unaligned", SC(SYS_mmap, &aa, &mret, 0), -EINVAL);
 
     /* threads */
     struct aquila_thread_args ut = {KADDR, (u32) thr, 0, 0, 0};

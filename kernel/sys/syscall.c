@@ -1327,15 +1327,22 @@ static void sys_mmap(struct aquila_mmap_args *args, void **ret)
             args->addr, args->len, args->prot, args->flags, args->fildes, args->off, ret);
 
     int err = 0;
+    int anon = args->flags & MAP_ANONYMOUS;
 
-    struct file *file = fd_file(args->fildes);
+    /* anonymous memory is the process's own (fork() copies it) */
+    if (anon && (args->flags & MAP_SHARED)) {
+        arch_syscall_return(curthread, -EINVAL);
+        return;
+    }
 
-    if (!file) {    /* Invalid File Descriptor */
+    struct file *file = anon ? NULL : fd_file(args->fildes);
+
+    if (!anon && !file) {    /* Invalid File Descriptor */
         arch_syscall_return(curthread, -EBADF);
         return;
     }
 
-    if (file->flags & FILE_SOCKET) {
+    if (file && (file->flags & FILE_SOCKET)) {
         arch_syscall_return(curthread, -ENODEV);
         return;
     }
@@ -1345,8 +1352,9 @@ static void sys_mmap(struct aquila_mmap_args *args, void **ret)
         return;
     }
 
-    /* a fixed mapping must lie entirely in user space */
-    if ((args->flags & MAP_FIXED) && uaccess_check(args->addr, args->len)) {
+    /* a fixed mapping must lie entirely in user space, on pages */
+    if ((args->flags & MAP_FIXED) && (((uintptr_t) args->addr & PAGE_MASK) ||
+                uaccess_check(args->addr, args->len))) {
         arch_syscall_return(curthread, -EINVAL);
         return;
     }
@@ -1362,14 +1370,15 @@ static void sys_mmap(struct aquila_mmap_args *args, void **ret)
 
     /* Initialize VM entry */
     vm_entry->base   = (uintptr_t) args->addr;
-    vm_entry->size   = args->len;
+    vm_entry->size   = PAGE_ROUND(args->len);
     vm_entry->flags  = args->prot & PROT_READ  ? VM_UR : 0;
     vm_entry->flags |= args->prot & PROT_WRITE ? VM_UW : 0;
     vm_entry->flags |= args->prot & PROT_EXEC  ? VM_UX : 0;
     vm_entry->flags |= args->flags & MAP_SHARED ? VM_SHARED : 0;
-    vm_entry->off    = args->off;
+    vm_entry->off    = anon ? 0 : args->off;
 
-    vm_entry->vm_object = vm_object_vnode(file->vnode);
+    /* without an object, pages are zero-filled when first used */
+    vm_entry->vm_object = anon ? NULL : vm_object_vnode(file->vnode);
 
     if (!(args->flags & MAP_FIXED))
         vm_entry->base = 0;  /* Allocate memory region */
@@ -1378,7 +1387,7 @@ static void sys_mmap(struct aquila_mmap_args *args, void **ret)
     if ((err = vm_space_insert(vm_space, vm_entry)))
         goto error;
 
-    if (!(args->flags & MAP_PRIVATE) && (err = vfs_map(vm_space, vm_entry)))
+    if (!anon && !(args->flags & MAP_PRIVATE) && (err = vfs_map(vm_space, vm_entry)))
         goto error;
 
     *ret = (void *) vm_entry->base;
@@ -1416,9 +1425,10 @@ static void sys_munmap(void *addr, size_t len)
         if (vm_entry == curproc->heap_vm || vm_entry == curproc->stack_vm)
             continue;
 
-        if (vm_entry->base == (uintptr_t) addr && vm_entry->size == len) {
+        if (vm_entry->base == (uintptr_t) addr && vm_entry->size == PAGE_ROUND(len)) {
             queue_node_remove(&vm_space->vm_entries, vm_entry->qnode);
             vm_unmap_full(vm_space, vm_entry);
+            vm_entry_destroy(vm_entry);
             kfree(vm_entry);
             arch_syscall_return(curthread, 0);
             return;
