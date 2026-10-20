@@ -24,6 +24,7 @@
 #include <aquila/fcntl.h>
 #include <aquila/mman.h>
 #include <aquila/time.h>
+#include <aquila/wait.h>
 
 #include <fs/devpts.h>
 #include <fs/pipe.h>
@@ -553,98 +554,73 @@ static void sys_unlinkat(int dirfd, const char *path, int flags)
     arch_syscall_return(curthread, do_unlinkat(dirfd, path, flags));
 }
 
-#define WNOHANG 1
 static void sys_waitpid(int pid, int *stat_loc, int options)
 {
     syscall_log(LOG_DEBUG, "waitpid(pid=%d, stat_loc=%p, options=0x%x)\n", pid, stat_loc, options);
-
-    int nohang = options & WNOHANG;
 
     if (stat_loc && uaccess_check(stat_loc, sizeof(int))) {
         arch_syscall_return(curthread, -EFAULT);
         return;
     }
 
-    if (pid <= 0) {
-        /* pid == -1: wait for any child process
-         * pid == 0:  wait for any child process whose process group ID
-         *            is equal to that of the calling process
-         * pid < -1:  wait for any child process whose process group ID
-         *            is equal to the absolute value of pid */
-        pid_t pgid = pid == 0? curproc->pgrp->pgid : -pid;
+    /* pid > 0:   that child
+     * pid == -1: any child
+     * pid == 0:  any child in the caller's process group
+     * pid < -1:  any child in the process group -pid */
+    pid_t pgid = pid == 0 ? curproc->pgrp->pgid : -pid;
 
-        for (;;) {
-            int found = 0;
+    for (;;) {
+        int found = 0;
 
-            queue_for (node, procs) {
-                struct proc *proc = node->value;
+        queue_for (node, procs) {
+            struct proc *proc = node->value;
+            int status;
 
-                if (proc->parent != curproc)
-                    continue;
+            if (proc->parent != curproc)
+                continue;
 
-                if (pid != -1 && proc->pgrp->pgid != pgid)
-                    continue;
+            if (pid > 0 ? proc->pid != pid : pid != -1 && proc->pgrp->pgid != pgid)
+                continue;
 
-                found = 1;
+            found = 1;
 
-                if (!proc->running) {
-                    if (stat_loc)
-                        *stat_loc = proc->exit;
-
-                    arch_syscall_return(curthread, proc->pid);
-                    proc_reap(proc);
-                    return;
-                }
+            if (!proc->running) {
+                status = proc->exit;
+            } else if ((options & WUNTRACED) && (proc->wait_event & WAIT_STOPPED)) {
+                proc->wait_event &= ~WAIT_STOPPED;
+                status = (proc->stopped << 8) | 0x7f;
+            } else if ((options & WCONTINUED) && (proc->wait_event & WAIT_CONTINUED)) {
+                proc->wait_event &= ~WAIT_CONTINUED;
+                status = 0xffff;
+            } else {
+                continue;
             }
 
-            if (nohang) {
-                arch_syscall_return(curthread, found? 0 : -ECHILD);
-                return;
-            }
+            if (stat_loc)
+                *stat_loc = status;
 
-            if (thread_queue_sleep(&curproc->wait_queue)) {
-                arch_syscall_return(curthread, -EINTR);
-                return;
-            }
+            arch_syscall_return(curthread, proc->pid);
+
+            if (!proc->running)
+                proc_reap(proc);
+
+            return;
         }
 
-    } else {
-        /* wait for the child whose process ID is equal to the
-              value of pid */
-        struct proc *child = proc_pid_find(pid);
-
-        /* If pid is invalid or current process is not parent of child */
-        if (child == NULL || child->parent != curproc) {
+        if (!found) {
             arch_syscall_return(curthread, -ECHILD);
             return;
         }
 
-        if (!(child->running)) {  /* Child is killed */
-            if (stat_loc)
-                *stat_loc = child->exit;
-
-            arch_syscall_return(curthread, child->pid);
-            proc_reap(child);
-            return;
-        }
-
-        if (nohang) {
+        if (options & WNOHANG) {
             arch_syscall_return(curthread, 0);
             return;
         }
 
-        while (child->running) {
-            if (thread_queue_sleep(&curproc->wait_queue)) {
-                arch_syscall_return(curthread, -EINTR);
-                return;
-            }
+        if (thread_queue_sleep(&curproc->wait_queue)) {
+            arch_syscall_return(curthread, -EINTR);
+            return;
         }
-
-        if (stat_loc)
-            *stat_loc = child->exit;
-
-        arch_syscall_return(curthread, child->pid);
-        proc_reap(child);
     }
 }
 

@@ -183,7 +183,24 @@ diff -ruN a/newlib/libc/include/sys/stat.h b/newlib/libc/include/sys/stat.h
 diff -ruN a/newlib/libc/include/sys/wait.h b/newlib/libc/include/sys/wait.h
 --- a/newlib/libc/include/sys/wait.h
 +++ b/newlib/libc/include/sys/wait.h
-@@ -28,6 +28,10 @@
+@@ -9,6 +9,9 @@
+ 
+ #define WNOHANG 1
+ #define WUNTRACED 2
++#ifdef __aquila__
++#define WCONTINUED 8
++#endif
+ 
+ /* A status looks like:
+       <1 byte info> <1 byte code>
+@@ -25,9 +28,17 @@
+ #define WEXITSTATUS(w)	(((w) >> 8) & 0xff)
+ #define WTERMSIG(w)	((w) & 0x7f)
+ #define WSTOPSIG	WEXITSTATUS
++#ifdef __aquila__
++/* a continued child (WCONTINUED) */
++#define WIFCONTINUED(w)	((w) == 0xffff)
++#endif
  
  pid_t wait (int *);
  pid_t waitpid (pid_t, int *, int);

@@ -86,6 +86,15 @@ struct proc {
     /** File mode creation mask */
     mode_t mask;
 
+    /** stopped by this signal, 0 if not; a stop signal the thread takes
+     *  at its next safe point; what waitpid() has to report (WAIT_*) */
+    int stopped;
+    int stop_pending;
+    int wait_event;
+
+    /** stopped threads sleep here */
+    struct queue stop_queue;
+
     /** CPU time in user mode and in the kernel (ns), and that of the
      *  children it waited for */
     uint64_t utime, stime;

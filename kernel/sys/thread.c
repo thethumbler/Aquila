@@ -3,6 +3,7 @@
 #include <core/panic.h>
 #include <sys/proc.h>
 #include <sys/sched.h>
+#include <sys/signal.h>
 #include <ds/queue.h>
 
 MALLOC_DEFINE(M_THREAD, "thread", "thread structure");
@@ -54,6 +55,9 @@ int thread_queue_sleep(struct queue *queue)
     curthread->sleep_node  = sleep_node;
     curthread->state = ISLEEP;
     arch_sleep();
+
+    /* a stop signal came while sleeping: stop now, then carry on */
+    signal_stop_pending();
 
     /* Woke up */
     if (curthread->state != ISLEEP) {

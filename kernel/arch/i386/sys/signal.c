@@ -52,9 +52,14 @@ void arch_handle_signal(int sig)
             case SIGACT_TERMINATE:
                 signal_terminate(sig);
                 return;  /* We should never reach this anyway */
+            case SIGACT_STOP:
+                /* sleeps until continued (called from the thread itself,
+                 * arch_thread_switch() leaves stops for later) */
+                signal_stop(sig);
+                return;
             default:
-                /* SIGACT_IGNORE, and stop/continue which are not
-                 * implemented yet, are ignored */
+                /* SIGACT_IGNORE, and SIGACT_CONTINUE: continuing is done
+                 * when SIGCONT is sent */
                 return;
         }
     }

@@ -11,6 +11,8 @@
 
 #include <core/arch.h>
 #include <platform/misc.h>
+#include <sys/sched.h>
+#include <sys/signal.h>
 #include <cpu/cpu.h>
 
 #define PIC_CMD   0x00
@@ -182,6 +184,18 @@ void __x86_irq_handler(struct x86_regs *r)
 
     if (handler)
         handler(r);
+
+    /* back to user mode (maybe after other threads ran): signals queued
+     * meanwhile (by drivers) are delivered, a stop that was left for the
+     * thread is taken now */
+    if ((r->cs & 3) == 3 && curthread && curthread->arch) {
+        int sig = curthread->sig_defer ? 0 : signal_next(curproc);
+
+        if (sig)
+            arch_handle_signal(sig);
+
+        signal_stop_pending();
+    }
 }
 
 static void x86_irq_gates_setup(void)

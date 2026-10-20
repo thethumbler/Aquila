@@ -28,10 +28,20 @@ extern int sig_default_action[SIG_MAX+1];
 int signal_send(int pid, int sig);
 int signal_proc_send(struct proc *proc, int signal);
 int signal_pgrp_send(struct pgroup *pg, int signal);
+int signal_proc_post(struct proc *proc, int signal);
+int signal_pgrp_post(struct pgroup *pg, int signal);
 int signal_next(struct proc *proc);
 
 /* whether a signal signal_next() would return is pending */
 int signal_pending(struct proc *proc);
+
+/* stopping and continuing (job control) */
+#define WAIT_STOPPED    1
+#define WAIT_CONTINUED  2
+
+int  signal_stops(struct proc *proc, int sig);
+void signal_stop(int sig);
+void signal_stop_pending(void);
 
 /* signals that can't be blocked */
 #define SIG_UNMASKABLE  ((1UL << SIGKILL) | (1UL << SIGSTOP))

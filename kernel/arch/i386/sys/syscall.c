@@ -36,6 +36,8 @@ void arch_syscall(struct x86_regs *r)
     int sig = signal_next(curproc);
     if (sig)
         arch_handle_signal(sig);
+
+    signal_stop_pending();
 }
 
 void arch_syscall_return(struct thread *thread, uintptr_t val)

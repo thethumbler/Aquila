@@ -48,6 +48,11 @@
 #define SIG_BLOCK   1   /* set of signals to block */
 #define SIG_UNBLOCK 2   /* set of signals to unblock */
 
+/* sigaction(2) flags */
+#ifndef SA_NOCLDSTOP
+#define SA_NOCLDSTOP 0x1    /* no SIGCHLD when a child stops or continues */
+#endif
+
 /* sigaction(2) argument, same layout as newlib's struct sigaction */
 struct aquila_sigaction {
     unsigned long sa_handler;

@@ -13,12 +13,14 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/times.h>
+#include <sys/wait.h>
 #include <time.h>
 
 #include <aquila/errno.h>
 #include <aquila/signal.h>
 #include <aquila/stat.h>
 #include <aquila/time.h>
+#include <aquila/wait.h>
 
 #define SAME_FIELD(a, b, f) \
     _Static_assert(offsetof(struct a, f) == offsetof(struct b, f) && \
@@ -68,3 +70,9 @@ _Static_assert(CLOCK_REALTIME == 1 && CLOCK_MONOTONIC == 4, "clock ids do not ma
 SAME_SIZE(tms, aquila_tms);
 SAME_FIELD(tms, aquila_tms, tms_utime);
 SAME_FIELD(tms, aquila_tms, tms_cstime);
+
+/* waitpid(2) options and the status of a continued child, <aquila/wait.h>
+ * skips its definitions after the C library's */
+_Static_assert(WNOHANG == 1 && WUNTRACED == 2 && WCONTINUED == 8, "waitpid options do not match the kernel");
+_Static_assert(WIFCONTINUED(0xffff) && WIFSTOPPED((SIGTSTP << 8) | 0x7f) &&
+               WSTOPSIG((SIGTSTP << 8) | 0x7f) == SIGTSTP, "wait status does not match the kernel");

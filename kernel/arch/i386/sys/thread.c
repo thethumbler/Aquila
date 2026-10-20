@@ -46,6 +46,13 @@ void arch_thread_switch(struct thread *thread)
 
     int sig = thread->sig_defer ? 0 : signal_next(thread->owner);
 
+    /* the thread can't stop here, it takes the stop when it can sleep:
+     * when it wakes up, or before returning to user mode */
+    if (sig && signal_stops(thread->owner, sig)) {
+        thread->owner->stop_pending = sig;
+        sig = 0;
+    }
+
     if (sig) {
         /* interrupting sigsuspend(), the handler runs with the old mask */
         if (thread->sigsuspend) {
