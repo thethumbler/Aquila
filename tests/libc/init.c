@@ -19,6 +19,7 @@
 #include <grp.h>
 #include <limits.h>
 #include <poll.h>
+#include <pthread.h>
 #include <pwd.h>
 #include <shadow.h>
 #include <setjmp.h>
@@ -176,6 +177,97 @@ static void test_x_support(void)
     pause();
     check("alarm fired", alarms, 1);
     signal(SIGALRM, SIG_DFL);
+}
+
+/* pthreads: a counter two threads add to under a mutex, a condition one
+ * waits on, a key with a value each */
+static pthread_mutex_t pt_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t pt_cond = PTHREAD_COND_INITIALIZER;
+static pthread_key_t pt_key;
+static volatile int pt_count, pt_ready, pt_once_runs;
+static volatile pthread_t pt_self;
+static void *pt_key_seen;
+
+static void pt_once_init(void) { pt_once_runs++; }
+
+static void *pt_thread(void *arg)
+{
+    pt_self = pthread_self();
+    pthread_setspecific(pt_key, arg);
+    pt_key_seen = pthread_getspecific(pt_key);
+
+    for (int i = 0; i < 2000; ++i) {
+        pthread_mutex_lock(&pt_lock);
+        int v = pt_count;
+        if (i % 100 == 0)
+            usleep(100);    /* the other thread tries meanwhile */
+        pt_count = v + 1;
+        pthread_mutex_unlock(&pt_lock);
+    }
+
+    pthread_mutex_lock(&pt_lock);
+    pt_ready = 1;
+    pthread_cond_signal(&pt_cond);
+    pthread_mutex_unlock(&pt_lock);
+    return arg;
+}
+
+static void test_pthread(void)
+{
+    static pthread_once_t once = PTHREAD_ONCE_INIT;
+    pthread_once(&once, pt_once_init);
+    pthread_once(&once, pt_once_init);
+    check("pthread_once", pt_once_runs, 1);
+
+    check("pthread_key_create", pthread_key_create(&pt_key, NULL), 0);
+    pthread_setspecific(pt_key, (void *) 1);
+
+    pthread_t t;
+    check("pthread_create", pthread_create(&t, NULL, pt_thread, (void *) 2), 0);
+
+    for (int i = 0; i < 2000; ++i) {
+        pthread_mutex_lock(&pt_lock);
+        int v = pt_count;
+        if (i % 100 == 0)
+            usleep(100);
+        pt_count = v + 1;
+        pthread_mutex_unlock(&pt_lock);
+    }
+
+    pthread_mutex_lock(&pt_lock);
+    while (!pt_ready)
+        pthread_cond_wait(&pt_cond, &pt_lock);
+    pthread_mutex_unlock(&pt_lock);
+
+    void *ret = NULL;
+    check("pthread_join", pthread_join(t, &ret), 0);
+    check("thread's result", (long) ret, 2);
+    check("mutex kept the count", pt_count, 4000);
+    check("pthread_self of the thread", pthread_equal(pt_self, t), 1);
+    check("pthread_self differs", pthread_equal(pthread_self(), t), 0);
+    check("key value per thread", (long) pt_key_seen * 10 + (long) pthread_getspecific(pt_key), 21);
+    check("trylock held -> EBUSY", pthread_mutex_lock(&pt_lock) == 0 && pthread_mutex_trylock(&pt_lock) == EBUSY, 1);
+    pthread_mutex_unlock(&pt_lock);
+
+    struct timespec past = {0, 0};
+    pthread_mutex_lock(&pt_lock);
+    check("cond_timedwait past -> ETIMEDOUT", pthread_cond_timedwait(&pt_cond, &pt_lock, &past), ETIMEDOUT);
+    pthread_mutex_unlock(&pt_lock);
+
+    /* the reentrant functions of <pwd.h> and <dirent.h> */
+    struct passwd pw, *pwp = NULL;
+    char pwbuf[256];
+    check("getpwuid_r", getpwuid_r(0, &pw, pwbuf, sizeof(pwbuf), &pwp) == 0 && pwp == &pw && !strcmp(pw.pw_name, "root"), 1);
+    check("getpwuid_r small -> ERANGE", getpwuid_r(0, &pw, pwbuf, 3, &pwp), ERANGE);
+    check("getpwnam_r missing", getpwnam_r("nobody-here", &pw, pwbuf, sizeof(pwbuf), &pwp) == 0 && pwp == NULL, 1);
+
+    DIR *d = opendir("/");
+    struct dirent de, *dep = NULL;
+    int entries = 0;
+    while (readdir_r(d, &de, &dep) == 0 && dep)
+        entries++;
+    closedir(d);
+    check("readdir_r", entries > 2, 1);
 }
 
 static int vt, vcs;
@@ -646,6 +738,7 @@ int main(void)
     check("reboot unprivileged -> EPERM", WEXITSTATUS(rb_status), 0);
 
     test_x_support();
+    test_pthread();
 
     /* virtual terminals */
     test_vt();

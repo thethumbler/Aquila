@@ -7,6 +7,7 @@
  */
 
 #include <netinet/in.h>
+#include <sys/param.h>      /* MAXHOSTNAMELEN, as programs expect */
 #include <sys/socket.h>
 
 #ifdef __cplusplus

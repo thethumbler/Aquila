@@ -189,13 +189,19 @@ diff -ruN a/newlib/libc/include/sys/features.h b/newlib/libc/include/sys/feature
  #if !defined(_POSIX_SOURCE) && !defined(_POSIX_C_SOURCE) && \
    ((!defined(__STRICT_ANSI__) && !defined(_ANSI_SOURCE)) || \
    (defined(_XOPEN_SOURCE) && (_XOPEN_SOURCE - 0) >= 500))
-@@ -440,6 +448,11 @@
+@@ -440,6 +448,17 @@
  #endif
  
  
 +#ifdef __aquila__
 +/* clock_gettime(CLOCK_MONOTONIC) */
 +#define _POSIX_MONOTONIC_CLOCK	200809L
++/* threads, mutexes (and their types), condition variables, keys
++ * (libc/aquila/pthread.c) */
++#define _POSIX_THREADS		1
++#define _UNIX98_THREAD_MUTEX_ATTRIBUTES	1
++/* the *_r functions of POSIX (getpwnam_r(), readdir_r(), ...) */
++#define _POSIX_THREAD_SAFE_FUNCTIONS	200809L
 +#endif
 +
  #ifdef __svr4__

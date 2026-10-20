@@ -10,6 +10,7 @@ libc_a_SOURCES += \
 	%D%/inet.c \
 	%D%/nanosleep.c \
 	%D%/netdb.c \
+	%D%/passwd_r.c \
 	%D%/pthread.c \
 	%D%/realpath.c \
 	%D%/shadow.c \

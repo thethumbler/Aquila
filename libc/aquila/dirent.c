@@ -59,6 +59,15 @@ struct dirent *readdir(DIR *dir)
     return &dir->dirent;
 }
 
+/* into the caller's entry, *result NULL at the end of the directory */
+int readdir_r(DIR *dir, struct dirent *entry, struct dirent **result)
+{
+    long ret = __syscall(SYS_readdir, dir->fd, (long) entry, 0);
+
+    *result = ret > 0 ? entry : NULL;
+    return ret < 0 ? -ret : 0;
+}
+
 void rewinddir(DIR *dir)
 {
     lseek(dir->fd, 0, SEEK_SET);
