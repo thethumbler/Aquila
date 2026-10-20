@@ -72,12 +72,46 @@ void aq_main(void)
         SC(SYS_waitpid, pid, &st, 0);
         check("pipe close r", SC(SYS_close, p[0], 0, 0), 0);
 
-        /* EPIPE: write with no readers left */
+        /* EPIPE: write with no readers left, SIGPIPE ignored */
+        struct aquila_sigaction ign = {1 /* SIG_IGN */, 0, 0}, dfl = {0 /* SIG_DFL */, 0, 0};
+        SC(SYS_sigaction, SIGPIPE, &ign, 0);
         check("pipe3 ok", SC(SYS_pipe, p, 0, 0), 0);
         check("pipe3 close r", SC(SYS_close, p[0], 0, 0), 0);
         check("pipe3 write epipe", SC(SYS_write, p[1], "x", 1), -EPIPE);
+        SC(SYS_sigaction, SIGPIPE, &dfl, 0);
+
+        /* by default SIGPIPE kills the writer */
+        int pc = SC(SYS_fork, 0, 0, 0);
+        if (!pc) {
+            SC(SYS_write, p[1], "x", 1);
+            SC(SYS_exit, 0, 0, 0);
+        }
+        int pst = 0;
+        SC(SYS_waitpid, pc, &pst, 0);
+        check("pipe3 SIGPIPE", pst & 0x7f, SIGPIPE);
         check("pipe3 close w", SC(SYS_close, p[1], 0, 0), 0);
     }
+
+    /* a write larger than a pipe holds, with the reader asleep */
+    int bp[2];
+    SC(SYS_pipe, bp, 0, 0);
+    int bc = SC(SYS_fork, 0, 0, 0);
+    if (!bc) {
+        int total = 0, n;
+        SC(SYS_close, bp[1], 0, 0);
+        while ((n = SC(SYS_read, bp[0], buf, sizeof(buf))) > 0)
+            total += n;
+        SC(SYS_exit, total == 3000 ? 0 : 1, 0, 0);
+    }
+    SC(SYS_close, bp[0], 0, 0);
+    aq_spin(10000000);  /* let the reader block first */
+    static char big[3000];
+    check("big pipe write", SC(SYS_write, bp[1], big, sizeof(big)), 3000);
+    SC(SYS_close, bp[1], 0, 0);
+    int bst = 0;
+    SC(SYS_waitpid, bc, &bst, 0);
+    check("reader got it all", bst >> 8, 0);
+
     check("read badfd", SC(SYS_read, 50, buf, 1), -EBADF);
 
     /* signals */

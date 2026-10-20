@@ -110,8 +110,9 @@ off_t vfs_file_lseek(struct file *file, off_t offset, int whence)
     if (!file->vnode->fs)
         return -EINVAL;
 
+    /* pipes can't seek */
     if (!file->vnode->fs->fops.lseek)
-        return -ENOSYS;
+        return -ESPIPE;
 
     return file->vnode->fs->fops.lseek(file, offset, whence);
 }

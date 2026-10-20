@@ -6,6 +6,7 @@
 #include <core/system.h>
 #include <dev/dev.h>
 #include <fs/vfs.h>
+#include <fs/posix.h>
 
 MALLOC_DEFINE(M_KDEV_BLK, "kdev-blk", "kdev block buffer");
 
@@ -303,8 +304,9 @@ off_t kdev_file_lseek(struct devid *dd, struct file *file, off_t offset, int whe
     if (!(dev = kdev_get(dd)))
         return -ENXIO;
 
+    /* terminals and other streams can't seek */
     if (!dev->fops.lseek)
-        return -ENXIO;
+        return -ESPIPE;
 
     return dev->fops.lseek(file, offset, whence);
 }
@@ -316,8 +318,9 @@ ssize_t kdev_file_close(struct devid *dd, struct file *file)
     if (!(dev = kdev_get(dd)))
         return -ENXIO;
 
+    /* by default, release the reference to the device's vnode */
     if (!dev->fops.close)
-        return -EINVAL;
+        return posix_file_close(file);
 
     return dev->fops.close(file);
 }

@@ -181,12 +181,13 @@ static void sys_isatty(int fildes)
         return;
     }
 
-    if (file->flags & FILE_SOCKET) {
+    /* only character devices can be terminals (libc's isatty() asks the
+     * device with TCGETS instead) */
+    if ((file->flags & FILE_SOCKET) || !S_ISCHR(file->vnode->mode)) {
         arch_syscall_return(curthread, -ENOTTY);
         return;
     }
 
-    //arch_syscall_return(curthread, node->rdev & (136 << 8));
     arch_syscall_return(curthread, 1);
 }
 
@@ -505,7 +506,12 @@ static void sys_write(int fd, void *buf, size_t nbytes)
 
     int ret = vfs_file_write(file, buf, nbytes);
     arch_syscall_return(curthread, ret);
-    return;
+
+    /* writing to a pipe no one reads: SIGPIPE, the write fails with
+     * EPIPE if it is caught or ignored (the return value is set first,
+     * a handler may run right away) */
+    if (ret == -EPIPE)
+        signal_proc_send(curproc, SIGPIPE);
 }
 
 static void sys_ioctl(int fd, int request, void *argp)

@@ -67,6 +67,11 @@ ssize_t posix_file_write(struct file *file, void *buf, size_t size)
             if (!size || vfs_file_eof(file))    /* Done writting */
                 break;
 
+            /* readers may be asleep waiting for what was just written
+             * (a pipe's ring holds less than one stdio buffer) */
+            if (file->vnode->read_queue)
+                thread_queue_wakeup(file->vnode->read_queue);
+
             /* Sleep on the file writers queue */
             thread_queue_sleep(file->vnode->write_queue);
         }

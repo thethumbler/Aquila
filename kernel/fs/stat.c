@@ -21,6 +21,11 @@ int vfs_stat(struct vnode *vnode, struct aquila_stat *buf)
     buf->st_ctim.tv_sec  = vnode->ctime.tv_sec;
     buf->st_ctim.tv_nsec = vnode->ctime.tv_nsec;
 
+    /* filesystems don't report their allocation, count the size in
+     * 512-byte blocks */
+    buf->st_blksize = 512;
+    buf->st_blocks  = (vnode->size + 511) / 512;
+
     return 0;
 }
 
