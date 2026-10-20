@@ -24,13 +24,18 @@
 struct vm_page pages[768*1024];
 #define PAGE(addr)    (pages[(addr)/PAGE_SIZE])
 
+/* pages[] tracks memory, not what is past it (device memory, such as a
+ * framebuffer mapped by a process): no reference counts for those */
+#define TRACKED(addr) ((addr)/PAGE_SIZE < sizeof(pages) / sizeof(pages[0]))
+
 /** 
  * \ingroup mm
  * \brief increment references count of a physical page
  */
 void mm_page_incref(paddr_t paddr)
 {
-    PAGE(paddr).ref++;
+    if (TRACKED(paddr))
+        PAGE(paddr).ref++;
 }
 
 /**
@@ -39,7 +44,8 @@ void mm_page_incref(paddr_t paddr)
  */
 void mm_page_decref(paddr_t paddr)
 {
-    PAGE(paddr).ref--;
+    if (TRACKED(paddr))
+        PAGE(paddr).ref--;
 }
 
 /**
@@ -48,7 +54,7 @@ void mm_page_decref(paddr_t paddr)
  */
 size_t mm_page_ref(paddr_t paddr)
 {
-    return PAGE(paddr).ref;
+    return TRACKED(paddr) ? PAGE(paddr).ref : 0;
 }
 
 /**

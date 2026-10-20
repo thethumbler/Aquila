@@ -27,14 +27,10 @@ void vm_unmap(struct vm_space *vm_space, struct vm_entry *vm_entry)
     }
 }
 
+/* the pages stay with their objects (anon, file, device), only the
+ * mappings go */
 void vm_unmap_full(struct vm_space *vm_space, struct vm_entry *vm_entry)
 {
-    printk("vm_unmap(vm_space=%p, vm_entry=%p)\n", vm_space, vm_entry);
-
-    if (vm_entry->flags & VM_SHARED) {
-        /* TODO */
-    } else {
-        mm_unmap_full(vm_space->pmap, vm_entry->base, vm_entry->size);
-    }
+    mm_unmap_full(vm_space->pmap, vm_entry->base, vm_entry->size);
 }
 
