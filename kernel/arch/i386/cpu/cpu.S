@@ -19,6 +19,10 @@ x86_cpuid_check:
 
 /*
  * ISRs -- Interrupt Service Routines
+ *
+ * Until kernel_entry loads them, the data segment registers are what user
+ * code left, maybe a null selector: the stubs reach memory through SS,
+ * which the CPU loads with the kernel's on entry.
  */
 
 .global __x86_isr_int_num, __x86_isr_err_num
@@ -30,8 +34,8 @@ __x86_isr_err_num: .long 0
 __x86_isr\v:
     cli
 #if ARCH_BITS==32
-    movl $0,  (__x86_isr_err_num)
-    movl $\v, (__x86_isr_int_num)
+    movl $0,  %ss:(__x86_isr_err_num)
+    movl $\v, %ss:(__x86_isr_int_num)
 #else
     movl $0,  __x86_isr_err_num(%rip)
     movl $\v, __x86_isr_int_num(%rip)
@@ -44,8 +48,8 @@ __x86_isr\v:
 __x86_isr\v:
     cli
 #if ARCH_BITS==32
-    popl (__x86_isr_err_num)
-    movl $\v, (__x86_isr_int_num)
+    popl %ss:(__x86_isr_err_num)
+    movl $\v, %ss:(__x86_isr_int_num)
     jmp isr_handler
 #else
     push %rbx
@@ -208,7 +212,7 @@ isr_handler:
 __x86_irq\n:
 #if ARCH_BITS==32
     cli
-    movl $\i, (__x86_isr_int_num)
+    movl $\i, %ss:(__x86_isr_int_num)
     jmp irq_stub
 #else
     cli
