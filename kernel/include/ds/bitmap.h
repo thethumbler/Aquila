@@ -37,21 +37,24 @@ static inline size_t bitmap_size(size_t n)
 
 static inline void bitmap_set(struct bitmap *bitmap, size_t index)
 {
-    bitmap->map[BITMAP_BLOCK_OFFSET(index)] |= 1 << BITMAP_BIT_OFFSET(index);
+    bitmap->map[BITMAP_BLOCK_OFFSET(index)] |= 1U << BITMAP_BIT_OFFSET(index);
 }
 
 static inline void bitmap_clear(struct bitmap *bitmap, size_t index)
 {
-    bitmap->map[BITMAP_BLOCK_OFFSET(index)] &= ~(1 << BITMAP_BIT_OFFSET(index));
+    bitmap->map[BITMAP_BLOCK_OFFSET(index)] &= ~(1U << BITMAP_BIT_OFFSET(index));
 }
 
 static inline int bitmap_check(struct bitmap *bitmap, size_t index)
 {
-    return bitmap->map[BITMAP_BLOCK_OFFSET(index)] & (1 << BITMAP_BIT_OFFSET(index));
+    return bitmap->map[BITMAP_BLOCK_OFFSET(index)] & (1U << BITMAP_BIT_OFFSET(index));
 }
 
 static inline void bitmap_set_range(struct bitmap *bitmap, size_t findex, size_t lindex)
 {
+    if (findex > lindex)
+        return;
+
     size_t i = findex;
 
     /* Set non block-aligned indices */
@@ -59,6 +62,9 @@ static inline void bitmap_set_range(struct bitmap *bitmap, size_t findex, size_t
         bitmap_set(bitmap, i);
         ++i;
     }
+
+    if (i > lindex)
+        return;
 
     /* Set block-aligned indices */
     if (i < lindex) 
@@ -74,6 +80,9 @@ static inline void bitmap_set_range(struct bitmap *bitmap, size_t findex, size_t
 
 static inline void bitmap_clear_range(struct bitmap *bitmap, size_t findex, size_t lindex)
 {
+    if (findex > lindex)
+        return;
+
     size_t i = findex;
 
     /* Set non block-aligned indices */
@@ -81,6 +90,9 @@ static inline void bitmap_clear_range(struct bitmap *bitmap, size_t findex, size
         bitmap_clear(bitmap, i);
         ++i;
     }
+
+    if (i > lindex)
+        return;
 
     /* Set block-aligned indices */
     if (i < lindex) 

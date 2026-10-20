@@ -200,11 +200,20 @@ void mm_setup(struct boot *boot)
 {
     printk("kernel: total memory: %d KiB, %d MiB\n", boot->total_mem, boot->total_mem / 1024);
 
-    buddy_setup(boot->total_mem * 1024);
+    /* We can only track as many physical pages as pages[] holds */
+    size_t total_mem = boot->total_mem;
+    size_t max_mem   = sizeof(pages) / sizeof(pages[0]) * (PAGE_SIZE / 1024);
+
+    if (total_mem > max_mem) {
+        printk("kernel: only using %d MiB of memory\n", max_mem / 1024);
+        total_mem = max_mem;
+    }
+
+    buddy_setup(total_mem * 1024);
 
     /* Setup memory regions */
     for (int i = 0; i < boot->mmap_count; ++i) {
-        if (boot->mmap[i].type == MMAP_RESERVED) {
+        if (boot->mmap[i].type != MMAP_USABLE) {
             size_t size = boot->mmap[i].end - boot->mmap[i].start;
             buddy_set_unusable(boot->mmap[i].start, size);
         }

@@ -24,6 +24,10 @@ static char *alloc_mark = alloc_area;
 static inline void *alloc(size_t size, size_t align)
 {
     char *ret = (char *)((uintptr_t)(alloc_mark + align - 1) & (~(align - 1)));
+
+    if (ret + size > alloc_area + sizeof(alloc_area))
+        panic("buddy: out of boot allocation area");
+
     alloc_mark = ret + size;
     memset(ret, 0, size);
     return ret;
@@ -164,36 +168,53 @@ void buddy_free(int zone, paddr_t addr, size_t size)
 
 void buddy_set_unusable(paddr_t addr, size_t size)
 {
+    if (!size) return;
 
     printk("buddy: set unusable: %p-%p\n", addr, addr+size-1);
 
-    for (int zone = 0; size && zone < BUDDY_ZONE_NR; ++zone) {
+    /* End of region (exclusive), clamped on wrap-around */
+    uintptr_t end = addr + size;
+    if (end < addr)
+        end = (uintptr_t) -1;
+
+    for (int zone = 0; zone < BUDDY_ZONE_NR; ++zone) {
 
         uintptr_t zone_start = buddy_zone_offset[zone];
         uintptr_t zone_end   = buddy_zone_offset[zone+1];
 
-        if (addr + size < zone_start || addr >= zone_end)
+        if (end <= zone_start || addr >= zone_end)
             continue;
 
+        struct buddy *buddy = &buddies[zone][BUDDY_MAX_ORDER];
+
         uintptr_t zone_addr = MAX(addr, zone_start) - zone_start;
-        uintptr_t zone_size = MIN(addr + size, zone_end) - zone_start - zone_addr;
+        uintptr_t zone_size = MIN(end, zone_end) - zone_start - zone_addr;
 
+        /* Indices of first and last (inclusive) blocks touched */
         size_t start_idx = zone_addr / BUDDY_MAX_BS;
-        size_t end_idx   = (zone_addr + zone_size + BUDDY_MAX_BS - 1) / BUDDY_MAX_BS;
+        size_t end_idx   = (zone_addr + zone_size - 1) / BUDDY_MAX_BS;
 
-        if (end_idx > buddies[zone][BUDDY_MAX_ORDER].bitmap.max_idx)
-            end_idx = buddies[zone][BUDDY_MAX_ORDER].bitmap.max_idx;
+        /* Region lies beyond available memory in this zone */
+        if (start_idx > buddy->bitmap.max_idx)
+            continue;
 
-        bitmap_set_range(&buddies[zone][BUDDY_MAX_ORDER].bitmap, start_idx, end_idx);
+        if (end_idx > buddy->bitmap.max_idx)
+            end_idx = buddy->bitmap.max_idx;
 
-        size_t ffidx = buddies[zone][BUDDY_MAX_ORDER].first_free_idx;
+        for (size_t idx = start_idx; idx <= end_idx; ++idx) {
+            /* Block may already be marked by an overlapping region */
+            if (!bitmap_check(&buddy->bitmap, idx)) {
+                bitmap_set(&buddy->bitmap, idx);
+                buddy->usable--;
+            }
+        }
+
+        size_t ffidx = buddy->first_free_idx;
 
         if (ffidx >= start_idx && ffidx <= end_idx)
-            buddies[zone][BUDDY_MAX_ORDER].first_free_idx = end_idx + 1;
+            buddy->first_free_idx = end_idx + 1;
 
-        buddies[zone][BUDDY_MAX_ORDER].usable -= (end_idx - start_idx + 1);
-
-        k_used_mem += size;
+        k_used_mem += zone_size;
     }
 }
 
@@ -207,11 +228,23 @@ int buddy_setup(size_t total_mem)
     for (int zone = 0; zone < BUDDY_ZONE_NR; ++zone) {
         size_t bits_cnt = 0;
 
-        if (zone < BUDDY_ZONE_NR - 1) {
-            bits_cnt = (buddy_zone_offset[zone+1] - buddy_zone_offset[zone]) / BUDDY_MAX_BS;
-        } else {
-            /* Last zone */
-            bits_cnt = (total_mem - buddy_zone_offset[zone]) / BUDDY_MAX_BS;
+        uintptr_t zone_start = buddy_zone_offset[zone];
+        uintptr_t zone_end   = MIN(buddy_zone_offset[zone+1], total_mem);
+
+        if (zone_end > zone_start)
+            bits_cnt = (zone_end - zone_start) / BUDDY_MAX_BS;
+
+        if (!bits_cnt) {
+            /* No memory in this zone, keep a single block marked as used */
+            for (int i = BUDDY_MAX_ORDER; i >= 0; --i) {
+                buddies[zone][i].bitmap.map = alloc(bitmap_size(1), 4);
+                buddies[zone][i].bitmap.max_idx = 0;
+                bitmap_set(&buddies[zone][i].bitmap, 0);
+                buddies[zone][i].first_free_idx = -1;
+                buddies[zone][i].usable = 0;
+            }
+
+            continue;
         }
 
         for (int i = BUDDY_MAX_ORDER; i >= 0; --i) {
