@@ -102,6 +102,17 @@ void x86_tss_setup(uintptr_t sp)
 #endif
     tss_entry.sp = sp;
 
+    /*
+     * I/O map base (upper half of the dword at offset 100) must point past
+     * the TSS limit, otherwise the TSS bytes themselves are used as I/O
+     * permission bitmap and ring 3 is granted access to random I/O ports
+     */
+#if ARCH_BITS==32
+    tss_entry._[22]  = (uint32_t) sizeof(tss_entry) << 16;
+#else
+    tss_entry.__[22] = (uint32_t) sizeof(tss_entry) << 16;
+#endif
+
     /* TSS Segment */
 #if 0
     gdt[5] = (struct gdt_entry){TSS_LIMIT & 0xFFFF, TSS_BASE & 0xFFFF,
