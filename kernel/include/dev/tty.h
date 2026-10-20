@@ -19,6 +19,9 @@ struct tty {
     /** cooking buffer */
     char *cook;
 
+    /** size of cooking buffer */
+    size_t size;
+
     /** current position in cooking buffer */
     size_t pos;
 

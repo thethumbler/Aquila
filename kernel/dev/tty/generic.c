@@ -57,6 +57,12 @@ ssize_t tty_master_write(struct tty *tty, size_t size, void *buf)
                 ret = ret - size + 1;
                 return ret;
             } else {
+                /* Always keep room for the terminating '\n', drop
+                 * input that does not fit in the cooking buffer
+                 */
+                if (tty->pos + 1 >= tty->size)
+                    goto skip_echo;
+
                 tty->cook[tty->pos++] = *c;
             }
 
@@ -106,7 +112,10 @@ ssize_t tty_slave_write(struct tty *tty, size_t size, void *_buf)
                 /* If ONOCR is set, no CR character shall be
                  * transmitted when at column 0 (first position)
                  */
-                if (tty->pos % tty->ws.ws_row)
+                /* FIXME should track the output column, not the
+                 * cooking buffer position
+                 */
+                if (tty->ws.ws_row && (tty->pos % tty->ws.ws_row))
                     if (tty->master_write(tty, 1, &c) != 1)
                         break;
             } else if (c == '\n' && (tty->tios.c_oflag & ONLRET)) {
@@ -143,10 +152,26 @@ int tty_ioctl(struct tty *tty, int request, void *argp)
         case TIOCGPGRP:
             *(pid_t *) argp = tty->fg->pgid;
             break;
-        case TIOCSPGRP:
-            /* XXX */
-            tty->fg = curproc->pgrp;
+        case TIOCSPGRP: {
+            /* process group must be in the caller's session */
+            pid_t pgid = *(pid_t *) argp;
+            struct session *session = curproc->pgrp->session;
+            struct pgroup *pgrp = NULL;
+
+            queue_for (node, session->pgps) {
+                struct pgroup *pg = node->value;
+                if (pg->pgid == pgid) {
+                    pgrp = pg;
+                    break;
+                }
+            }
+
+            if (!pgrp)
+                return -EPERM;
+
+            tty->fg = pgrp;
             break;
+        }
         case TIOCGWINSZ:
             memcpy(argp, &tty->ws, sizeof(struct winsize));
             break;
@@ -187,6 +212,7 @@ int tty_new(struct proc *proc, size_t buf_size, ttyio master,
         return -ENOMEM;
     }
 
+    tty->size = buf_size;
     tty->pos  = 0;
 
     /* Defaults */
