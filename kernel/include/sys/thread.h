@@ -39,6 +39,11 @@ struct thread {
     /** Executing a system call (it may be sleeping in it) */
     int in_syscall;
 
+    /** Signals are not delivered when the thread is switched to: a system
+     *  call that must clean up after being interrupted checks for them and
+     *  returns EINTR, they are delivered on the way out */
+    int sig_defer;
+
     /** In sigsuspend(): the signal mask to restore when a signal is delivered */
     int      sigsuspend;
     sigset_t sigsuspend_mask;

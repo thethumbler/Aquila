@@ -1,6 +1,7 @@
 #include <core/system.h>
 #include <fs/vfs.h>
 #include <fs/posix.h>
+#include <fs/pipe.h>
 #include <dev/dev.h>
 #include <net/socket.h>
 #include <aquila/fcntl.h>
@@ -20,6 +21,10 @@ int vfs_file_open(struct file *file)
 
     if (ISDEV(file->vnode))
         return kdev_file_open(&VNODE_DEV(file->vnode), file);
+
+    /* becomes an end of the FIFO's pipe */
+    if (S_ISFIFO(file->vnode->mode))
+        return pipefs_fifo_open(file);
 
     if (!file->vnode->fs->fops.open)
         return -ENOSYS;

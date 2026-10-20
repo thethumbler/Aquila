@@ -78,6 +78,18 @@ int signal_proc_send(struct proc *proc, int signal)
  * \brief remove and return the first pending signal that is not blocked,
  * 0 if there is none
  */
+int signal_pending(struct proc *proc)
+{
+    queue_for (node, proc->sig_queue) {
+        int signal = (int)(intptr_t) node->value;
+
+        if (!(proc->sigmask & (1UL << signal)))
+            return 1;
+    }
+
+    return 0;
+}
+
 int signal_next(struct proc *proc)
 {
     queue_for (node, proc->sig_queue) {

@@ -3,6 +3,7 @@
 #include <sys/proc.h>
 #include <sys/sched.h>
 #include <sys/syscall.h>
+#include <sys/signal.h>
 #include <aquila/errno.h>
 
 void arch_syscall(struct x86_regs *r)
@@ -30,6 +31,11 @@ void arch_syscall(struct x86_regs *r)
 #endif
 
     curthread->in_syscall = 0;
+
+    /* signals that came during the call (deferred, or sent to itself) */
+    int sig = signal_next(curproc);
+    if (sig)
+        arch_handle_signal(sig);
 }
 
 void arch_syscall_return(struct thread *thread, uintptr_t val)

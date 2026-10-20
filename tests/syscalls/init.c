@@ -6,6 +6,7 @@
  * - signals, wait, threads, pipes, unix sockets, exec of bad ELF files
  * - files: the *at() calls, links, rename, permissions and attributes
  * - nanosleep and clocks
+ * - FIFOs
  */
 
 #include "../lib/aqtest.h"
@@ -507,6 +508,58 @@ void aq_main(void)
     SC(SYS_waitpid, c, &st, 0);
     check("setsid (failed step)", st >> 8, 0);
     check("setsid as a group leader", SC(SYS_setsid, 0, 0, 0), -EPERM);
+
+    /* --- FIFOs --- */
+    check("mkfifo", SC(SYS_mknod, "/tmp/fifo", S_IFIFO | 0666, 0), 0);
+    SC(SYS_stat, "/tmp/fifo", sb, 0);
+    check("stat fifo", ST(sb)->st_mode & S_IFMT, S_IFIFO);
+    c = SC(SYS_fork, 0, 0, 0);
+    if (!c) {
+        /* waits for the reader */
+        int w = SC(SYS_open, "/tmp/fifo", O_WRONLY, 0);
+        SC(SYS_write, w, "fifo", 4);
+        SC(SYS_exit, w >= 0 ? 0 : 1, 0, 0);
+    }
+    aq_spin(10000000);
+    fd = SC(SYS_open, "/tmp/fifo", O_RDONLY, 0);
+    check("open fifo for reading", fd >= 0, 1);
+    char fbuf[8] = {0};
+    check("read fifo", SC(SYS_read, fd, fbuf, 8), 4);
+    check("fifo data", fbuf[0] == 'f' && fbuf[3] == 'o', 1);
+    check("fifo EOF after the writer", SC(SYS_read, fd, fbuf, 8), 0);
+    SC(SYS_close, fd, 0, 0);
+    SC(SYS_waitpid, c, &st, 0);
+    check("fifo writer", st >> 8, 0);
+    check("nonblocking writer without readers", SC(SYS_open, "/tmp/fifo", O_WRONLY | O_NONBLOCK, 0), -ENXIO);
+    fd = SC(SYS_open, "/tmp/fifo", O_RDONLY | O_NONBLOCK, 0);
+    check("nonblocking reader", fd >= 0, 1);
+    check("nonblocking reader EOF", SC(SYS_read, fd, fbuf, 8), 0);
+    SC(SYS_close, fd, 0, 0);
+    fd = SC(SYS_open, "/tmp/fifo", O_RDWR, 0);
+    check("fifo O_RDWR", fd >= 0, 1);
+    check("O_RDWR write", SC(SYS_write, fd, "rw", 2), 2);
+    check("O_RDWR read", SC(SYS_read, fd, fbuf, 8), 2);
+    SC(SYS_close, fd, 0, 0);
+
+    /* a reader interrupted while waiting leaves no reader behind */
+    sa.sa_handler = (u32) handler;
+    SC(SYS_sigaction, SIGUSR1, &sa, 0);
+    c = SC(SYS_fork, 0, 0, 0);
+    if (!c)
+        SC(SYS_exit, SC(SYS_open, "/tmp/fifo", O_RDONLY, 0) == -EINTR && got_sig == SIGUSR1 ? 0 : 1, 0, 0);
+    aq_spin(10000000);
+    SC(SYS_kill, c, SIGUSR1, 0);
+    SC(SYS_waitpid, c, &st, 0);
+    check("fifo open interrupted", st >> 8, 0);
+    check("no reader left", SC(SYS_open, "/tmp/fifo", O_WRONLY | O_NONBLOCK, 0), -ENXIO);
+    check("unlink fifo", SC(SYS_unlink, "/tmp/fifo", 0, 0), 0);
+
+    int fp[2];
+    SC(SYS_pipe, fp, 0, 0);
+    SC(SYS_fstat, fp[0], sb, 0);
+    check("pipe is a FIFO", ST(sb)->st_mode & S_IFMT, S_IFIFO);
+    SC(SYS_close, fp[0], 0, 0);
+    SC(SYS_close, fp[1], 0, 0);
 
     /* --- clocks and nanosleep --- */
     struct aquila_timespec ts = {0, 0}, left = {0, 0};

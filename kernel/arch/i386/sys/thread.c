@@ -44,7 +44,7 @@ void arch_thread_switch(struct thread *thread)
     x86_kernel_stack_set(arch->kstack);
     x86_fpu_disable();
 
-    int sig = signal_next(thread->owner);
+    int sig = thread->sig_defer ? 0 : signal_next(thread->owner);
 
     if (sig) {
         /* interrupting sigsuspend(), the handler runs with the old mask */

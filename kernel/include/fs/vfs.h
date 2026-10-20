@@ -140,6 +140,9 @@ struct vnode {
 
     /** virtual memory object associated with vnode */
     struct vm_object *vm_object;
+
+    /** the pipe of a FIFO while it is open */
+    struct pipe *fifo;
 };
 
 struct file {

@@ -5,14 +5,37 @@
 
 #include <fs/pipe.h>
 #include <fs/posix.h>
+#include <sys/sched.h>
+#include <sys/signal.h>
 
 MALLOC_DEFINE(M_PIPE, "pipe", "pipe structure");
+
+/*
+ * A pipe has a vnode for each end, the open files of the end reference
+ * it; when the last one is closed the end is gone. Anonymous pipes
+ * (pipe()) have both ends from the start, a FIFO creates them as it is
+ * opened, and a third one for opening it read-write, which is both.
+ */
+
+enum { END_READ, END_WRITE, END_RDWR };
+
+static int has_readers(struct pipe *pipe)
+{
+    return pipe->r_node || pipe->rw_node;
+}
+
+static int has_writers(struct pipe *pipe)
+{
+    return pipe->w_node || pipe->rw_node;
+}
 
 static void pipefs_pfree(struct pipe *pipe)
 {
     if (pipe) {
         if (pipe->ring)
             ringbuf_free(pipe->ring);
+        if (pipe->queue)
+            kfree(pipe->queue);
         kfree(pipe);
     }
 }
@@ -28,7 +51,7 @@ static ssize_t pipefs_write(struct vnode *node, off_t offset __unused, size_t si
     struct pipe *pipe = node->p;
 
     /* no one left to read the data */
-    if (!pipe->r_ref)
+    if (!has_readers(pipe))
         return -EPIPE;
 
     return ringbuf_write(pipe->ring, size, buf);
@@ -37,24 +60,30 @@ static ssize_t pipefs_write(struct vnode *node, off_t offset __unused, size_t si
 static int pipefs_close(struct vnode *node)
 {
     struct pipe *pipe = node->p;
-    struct queue *queue = node->read_queue;  /* shared by both ends */
 
     /* called when the last descriptor of one end is closed */
     if (node == pipe->w_node)
-        pipe->w_ref = 0;
+        pipe->w_node = NULL;
+    else if (node == pipe->rw_node)
+        pipe->rw_node = NULL;
     else
-        pipe->r_ref = 0;
+        pipe->r_node = NULL;
 
     kfree(node);
 
-    if (!pipe->r_ref && !pipe->w_ref) {
-        kfree(queue);
+    if (!has_readers(pipe) && !has_writers(pipe)) {
+        /* a FIFO loses its data once no one has it open */
+        if (pipe->fifo) {
+            pipe->fifo->fifo = NULL;
+            vfs_close(pipe->fifo);
+        }
+
         pipefs_pfree(pipe);
         return 0;
     }
 
     /* wake up the other end so it can see EOF/EPIPE */
-    thread_queue_wakeup(queue);
+    thread_queue_wakeup(pipe->queue);
     return 0;
 }
 
@@ -63,7 +92,7 @@ static int pipefs_eof(struct file *file)
     struct pipe *pipe = file->vnode->p;
 
     /* end-of-file once all writers are gone and the pipe is drained */
-    return !pipe->w_ref && !ringbuf_available(pipe->ring);
+    return !has_writers(pipe) && !ringbuf_available(pipe->ring);
 }
 
 static int pipefs_can_read(struct file *file, size_t size)
@@ -71,7 +100,7 @@ static int pipefs_can_read(struct file *file, size_t size)
     struct vnode *node = file->vnode;
     struct pipe *pipe = node->p;
 
-    if (!pipe->w_ref)   /* read will not block, returns EOF */
+    if (!has_writers(pipe)) /* read will not block, returns EOF */
         return 1;
 
     return size <= ringbuf_available(pipe->ring);
@@ -83,7 +112,7 @@ static int pipefs_can_write(struct file *file, size_t size)
     struct pipe *pipe = node->p;
     size_t avail = ringbuf_available(pipe->ring);
 
-    if (!pipe->r_ref)   /* write will not block, returns EPIPE */
+    if (!has_readers(pipe)) /* write will not block, returns EPIPE */
         return 1;
 
     /* ring buffer holds at most size - 1 bytes */
@@ -100,10 +129,11 @@ static int pipefs_mkpipe(struct pipe **ref)
     pipe = kmalloc(sizeof(struct pipe), &M_PIPE, M_ZERO);
     if (!pipe) return -ENOMEM;
 
-    pipe->ring = ringbuf_new(PIPE_BUFLEN);
-    
-    if (!pipe->ring) {
-        kfree(pipe);
+    pipe->ring  = ringbuf_new(PIPE_BUFLEN);
+    pipe->queue = queue_new();
+
+    if (!pipe->ring || !pipe->queue) {
+        pipefs_pfree(pipe);
         return -ENOMEM;
     }
 
@@ -112,6 +142,34 @@ static int pipefs_mkpipe(struct pipe **ref)
     return 0;
 }
 
+/* a new reference to an end of pipe (END_*), created if needed */
+static struct vnode *pipefs_end(struct pipe *pipe, int which)
+{
+    struct vnode **end = which == END_READ  ? &pipe->r_node :
+                         which == END_WRITE ? &pipe->w_node : &pipe->rw_node;
+
+    if (*end) {
+        (*end)->ref++;
+        return *end;
+    }
+
+    struct vnode *node = kmalloc(sizeof(struct vnode), &M_VNODE, M_ZERO);
+    if (!node)
+        return NULL;
+
+    /* readers and writers share a single wait queue: readers sleep on
+     * read_queue and wake write_queue, writers do the opposite */
+    node->read_queue  = pipe->queue;
+    node->write_queue = pipe->queue;
+
+    node->fs   = &pipefs;
+    node->p    = pipe;
+    node->ref  = 1;
+    node->mode = S_IFIFO | 0600;
+
+    *end = node;
+    return node;
+}
 
 int pipefs_pipe(struct file *read, struct file *write)
 {
@@ -121,50 +179,99 @@ int pipefs_pipe(struct file *read, struct file *write)
     if (!read || !write)
         return -EINVAL;
 
-    err = pipefs_mkpipe(&pipe);
-    if (err) return err;
+    if ((err = pipefs_mkpipe(&pipe)))
+        return err;
 
-    read->vnode  = kmalloc(sizeof(struct vnode), &M_VNODE, M_ZERO);
+    read->vnode = pipefs_end(pipe, END_READ);
     if (!read->vnode) {
         pipefs_pfree(pipe);
         return -ENOMEM;
     }
 
-    write->vnode = kmalloc(sizeof(struct vnode), &M_VNODE, M_ZERO);
+    write->vnode = pipefs_end(pipe, END_WRITE);
     if (!write->vnode) {
         kfree(read->vnode);
         pipefs_pfree(pipe);
         return -ENOMEM;
     }
 
-    read->vnode->read_queue   = queue_new();
-    if (!read->vnode->read_queue) {
-        kfree(read->vnode);
-        kfree(write->vnode);
-        pipefs_pfree(pipe);
-        return -ENOMEM;
+    write->flags = O_WRONLY;
+    return 0;
+}
+
+/*
+ * Open the FIFO file->vnode refers to: file->vnode becomes an end of its
+ * pipe. Opening for reading waits for a writer and opening for writing
+ * for a reader, unless O_NONBLOCK (then a writer without readers fails
+ * with ENXIO) or O_RDWR (which is both). On failure file->vnode is left
+ * as it was.
+ */
+int pipefs_fifo_open(struct file *file)
+{
+    struct vnode *fifo = file->vnode;
+    struct pipe *pipe = fifo->fifo;
+    int accmode = file->flags & O_ACCMODE;
+    int err;
+
+    if (!pipe) {
+        if ((err = pipefs_mkpipe(&pipe)))
+            return err;
+
+        /* the pipe holds the reference the open came with */
+        pipe->fifo = fifo;
+        fifo->fifo = pipe;
+        fifo->ref++;
     }
 
-    /* readers and writers share a single wait queue: readers sleep on
-     * read_queue and wake write_queue, writers do the opposite */
-    read->vnode->write_queue  = read->vnode->read_queue;
-    write->vnode->read_queue  = read->vnode->read_queue;
-    write->vnode->write_queue = read->vnode->read_queue;
+    if (accmode == O_WRONLY && (file->flags & O_NONBLOCK) && !has_readers(pipe)) {
+        err = -ENXIO;
+        goto error;
+    }
 
-    read->vnode->fs  = &pipefs;
-    read->vnode->p   = pipe;
-    read->vnode->ref = 1;
+    int which = accmode == O_RDONLY ? END_READ : accmode == O_WRONLY ? END_WRITE : END_RDWR;
+    struct vnode *end = pipefs_end(pipe, which);
 
-    write->vnode->fs  = &pipefs;
-    write->vnode->p   = pipe;
-    write->vnode->ref = 1;
-    write->flags      = O_WRONLY;
+    if (!end)
+        goto e_nomem;
 
-    pipe->r_ref  = 1;
-    pipe->w_ref  = 1;
-    pipe->w_node = write->vnode;
+    /* the other end may be waiting for this one */
+    thread_queue_wakeup(pipe->queue);
 
+    if (!(file->flags & O_NONBLOCK)) {
+        /* a signal must not abandon this, the end would stay open */
+        curthread->sig_defer = 1;
+
+        while (which == END_READ ? !has_writers(pipe) :
+               which == END_WRITE ? !has_readers(pipe) : 0) {
+            if (signal_pending(curproc)) {
+                curthread->sig_defer = 0;
+
+                /* releases the pipe too if it was the only end */
+                vfs_close(end);
+                return -EINTR;
+            }
+
+            thread_queue_sleep(pipe->queue);
+        }
+
+        curthread->sig_defer = 0;
+    }
+
+    vfs_close(fifo);
+    file->vnode = end;
     return 0;
+
+e_nomem:
+    err = -ENOMEM;
+error:
+    /* nothing else uses the pipe: drop it */
+    if (!has_readers(pipe) && !has_writers(pipe)) {
+        fifo->fifo = NULL;
+        vfs_close(fifo);
+        pipefs_pfree(pipe);
+    }
+
+    return err;
 }
 
 struct fs pipefs = {

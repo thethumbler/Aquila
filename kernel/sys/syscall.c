@@ -825,10 +825,8 @@ static int do_mknodat(int dirfd, const char *path, mode_t mode, dev_t dev)
     switch (mode & S_IFMT) {
         case S_IFREG:
         case S_IFDIR:
-            break;
         case S_IFIFO:
-            /* opening one wouldn't make a pipe */
-            return -ENOSYS;
+            break;
         case S_IFCHR:
         case S_IFBLK:
             /* device files give access to the device */

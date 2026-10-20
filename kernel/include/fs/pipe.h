@@ -15,14 +15,16 @@ struct pipe;
  * \brief unix pipe
  */
 struct pipe {
-    /** readers reference count */
-    unsigned r_ref;
-
-    /** writers reference count */
-    unsigned w_ref;
-
-    /** write end vnode, used to tell the two ends apart on close */
+    /** the ends, NULL once closed (rw_node: a FIFO opened read-write) */
+    struct vnode *r_node;
     struct vnode *w_node;
+    struct vnode *rw_node;
+
+    /** readers and writers sleep here */
+    struct queue *queue;
+
+    /** the FIFO this is the pipe of, NULL for pipe() */
+    struct vnode *fifo;
 
     /** ring buffer */
     struct ringbuf *ring;
@@ -30,5 +32,6 @@ struct pipe {
 
 extern struct fs pipefs;
 int pipefs_pipe(struct file *read, struct file *write);
+int pipefs_fifo_open(struct file *file);
 
 #endif /* ! _FS_PIPE_H */

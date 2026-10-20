@@ -30,6 +30,9 @@ int signal_proc_send(struct proc *proc, int signal);
 int signal_pgrp_send(struct pgroup *pg, int signal);
 int signal_next(struct proc *proc);
 
+/* whether a signal signal_next() would return is pending */
+int signal_pending(struct proc *proc);
+
 /* signals that can't be blocked */
 #define SIG_UNMASKABLE  ((1UL << SIGKILL) | (1UL << SIGSTOP))
 
