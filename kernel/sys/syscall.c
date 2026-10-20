@@ -1145,7 +1145,7 @@ static void sys_thread_exit(void *value_ptr)
 {
     syscall_log(LOG_DEBUG, "thread_exit(value_ptr=%p)\n", value_ptr);
 
-    //curthread->value_ptr = value_ptr;
+    curthread->exit_value = value_ptr;
     struct proc *owner = curproc;
 
     /* last live thread exiting terminates the process */
@@ -1178,6 +1178,11 @@ static void sys_thread_join(int tid, void **value_ptr)
     struct proc *owner = curproc;
     struct thread *thread = NULL;
 
+    if (value_ptr && uaccess_check(value_ptr, sizeof(void *))) {
+        arch_syscall_return(curthread, -EFAULT);
+        return;
+    }
+
     queue_for (node, &owner->threads) {
         struct thread *_thread = node->value;
         if (_thread->tid == tid)
@@ -1191,7 +1196,8 @@ static void sys_thread_join(int tid, void **value_ptr)
     }
 
     if (thread->state == ZOMBIE) {  /* Thread is terminated */
-        //*value_ptr = thread->value_ptr;
+        if (value_ptr)
+            *value_ptr = thread->exit_value;
         arch_syscall_return(curthread, thread->tid);
         return;
     }
@@ -1203,7 +1209,8 @@ static void sys_thread_join(int tid, void **value_ptr)
         }
     }
 
-    //*value_ptr = thread->value_ptr;
+    if (value_ptr)
+        *value_ptr = thread->exit_value;
     arch_syscall_return(curthread, thread->tid);
 }
 
@@ -2274,6 +2281,12 @@ static void sys_setitimer(int which, const struct aquila_itimer *new, struct aqu
     arch_syscall_return(curthread, 0);
 }
 
+/* the calling thread's id (pthread_self) */
+static void sys_thread_self(void)
+{
+    arch_syscall_return(curthread, curthread->tid);
+}
+
 static void sys_reboot(unsigned cmd)
 {
     syscall_log(LOG_DEBUG, "reboot(cmd=0x%x)\n", cmd);
@@ -2505,6 +2518,7 @@ void (*syscall_table[])() = {
     [SYS_sync]          = sys_sync,
     [SYS_shutdown]      = sys_shutdown,
     [SYS_setitimer]     = sys_setitimer,
+    [SYS_thread_self]   = sys_thread_self,
 };
 
 const size_t syscall_cnt = sizeof(syscall_table)/sizeof(syscall_table[0]);

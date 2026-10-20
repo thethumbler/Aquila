@@ -6,6 +6,8 @@
 #include <sys/uaccess.h>
 #include <unix.h>
 
+#include <aquila/fcntl.h>
+
 #define SOCKBUF 8192
 
 MALLOC_DEFINE(M_SOCKET, "socket", "socket struct");
@@ -68,6 +70,9 @@ static int socket_unix_accept(struct file *file, struct file *conn, const struct
 
     /* Sleep until a connection request is present */
     while (!socket->requests.count) {
+        if (file->flags & O_NONBLOCK)
+            return -EAGAIN;
+
         if (thread_queue_sleep(&socket->accept))
             return -EINTR;
     }
@@ -299,6 +304,10 @@ static ssize_t socket_unix_send(struct file *file, void *buf, size_t len, int fl
         if ((size_t) retval == len)
             return retval;
 
+        /* full: don't wait if the descriptor doesn't */
+        if (file->flags & O_NONBLOCK)
+            return retval ? retval : -EAGAIN;
+
         if (thread_queue_sleep(send_queue))
             return -EINTR;
     }
@@ -358,6 +367,10 @@ static ssize_t socket_unix_recv(struct file *file, void *buf, size_t len, int fl
 
         if ((size_t) retval == len)
             return retval;
+
+        /* empty: don't wait if the descriptor doesn't */
+        if (file->flags & O_NONBLOCK)
+            return retval ? retval : -EAGAIN;
 
         if (thread_queue_sleep(recv_queue))
             return -EINTR;

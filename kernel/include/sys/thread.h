@@ -39,6 +39,9 @@ struct thread {
     /** Executing a system call (it may be sleeping in it) */
     int in_syscall;
 
+    /** What the thread exited with (thread_exit), for thread_join */
+    void *exit_value;
+
     /** Signals are not delivered when the thread is switched to: a system
      *  call that must clean up after being interrupted checks for them and
      *  returns EINTR, they are delivered on the way out */

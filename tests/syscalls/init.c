@@ -56,8 +56,8 @@ static int vt_active(int fd)
 static void child_handler(int sig) { SC(SYS_exit, 7, 0, 0); (void) sig; }
 
 
-static volatile int thread_ran = 0;
-static void thr(void *u, void *a) { (void) u; (void) a; thread_ran = 1; SC(SYS_thread_exit, 0, 0, 0); for (;;); }
+static volatile int thread_ran = 0, thread_self = 0;
+static void thr(void *u, void *a) { (void) u; (void) a; thread_self = SC(SYS_thread_self, 0, 0, 0); thread_ran = 1; SC(SYS_thread_exit, 7, 0, 0); for (;;); }
 static char tstack[8192] __attribute__((aligned(16)));
 
 static unsigned char bad_elf[52 + 32];
@@ -529,8 +529,12 @@ void aq_main(void)
     check("thread kstack", SC(SYS_thread_create, &ut, 0, 0), -EFAULT);
     ut.stack = (u32) &tstack[8192];
     int tid = SC(SYS_thread_create, &ut, 0, 0);
-    check("thread join", SC(SYS_thread_join, tid, 0, 0), tid);
+    void *tval = 0;
+    check("thread join", SC(SYS_thread_join, tid, &tval, 0), tid);
+    check("thread join value", (int) (long) tval, 7);
     check("thread ran", thread_ran, 1);
+    check("thread_self in the thread", thread_self, tid);
+    check("thread_self", SC(SYS_thread_self, 0, 0, 0) != tid && SC(SYS_thread_self, 0, 0, 0) > 0, 1);
 
     /* sockets */
     int s = SC(SYS_socket, AF_UNIX, SOCK_STREAM, 0);
@@ -586,6 +590,16 @@ void aq_main(void)
             SC(SYS_exit, 0, 0, 0);
         }
         int conn = SC(SYS_accept, ls, 0, 0);
+
+        /* non-blocking: nothing to read, no connection to accept */
+        char nb;
+        SC(SYS_fcntl, conn, F_SETFL, O_NONBLOCK);
+        check("recv nonblocking empty", SC(SYS_read, conn, &nb, 1), -EAGAIN);
+        SC(SYS_fcntl, conn, F_SETFL, 0);
+        SC(SYS_fcntl, ls, F_SETFL, O_NONBLOCK);
+        check("accept nonblocking none", SC(SYS_accept, ls, 0, 0), -EAGAIN);
+        SC(SYS_fcntl, ls, F_SETFL, 0);
+
         check("shutdown bad how", SC(SYS_shutdown, conn, 0, 0), -EINVAL);
         check("shutdown SHUT_WR", SC(SYS_shutdown, conn, SHUT_WR, 0), 0);
         char c = 0;
