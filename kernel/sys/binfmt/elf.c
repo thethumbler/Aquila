@@ -11,6 +11,7 @@
 
 #include <core/system.h>
 #include <core/panic.h>
+#include <core/arch.h>
 
 #include <sys/proc.h>
 #include <sys/sched.h>
@@ -28,12 +29,15 @@ static int binfmt_elf32_load(struct proc *proc, struct vnode *vnode)
     if (vfs_read(vnode, 0, sizeof(hdr), &hdr) != sizeof(hdr))
         goto e_inval;
 
+    if (hdr.e_phentsize < sizeof(struct elf32_phdr))
+        goto e_inval;
+
     uintptr_t proc_heap = 0;
     size_t offset = hdr.e_phoff;
-    
+
     for (int i = 0; i < hdr.e_phnum; ++i) {
         struct elf32_phdr phdr;
-        
+
         if (vfs_read(vnode, offset, sizeof(phdr), &phdr) != sizeof(phdr))
             goto e_inval;
 
@@ -42,6 +46,17 @@ static int binfmt_elf32_load(struct proc *proc, struct vnode *vnode)
             size_t filesz = phdr.p_filesz;
             size_t memsz  = phdr.p_memsz;
             size_t off    = phdr.p_offset;
+
+            /* the segment must lie entirely below the user stack (the
+             * kernel writes to it below to clear the bss) and its file
+             * offset must be congruent to its address modulo page size */
+            if (filesz > memsz ||
+                base + memsz < base ||
+                PAGE_ROUND(base + memsz) > USER_STACK_BASE ||
+                PAGE_ROUND(base + memsz) < base + memsz ||
+                (off & PAGE_MASK) != (base & PAGE_MASK) ||
+                PAGE_ALIGN(base) < proc_heap)  /* sorted, non overlapping */
+                goto e_inval;
 
             /* make sure vaddr is aligned */
             if (base & PAGE_MASK) {
@@ -70,8 +85,10 @@ static int binfmt_elf32_load(struct proc *proc, struct vnode *vnode)
 
             vm_entry->qnode = enqueue(&vm_space->vm_entries, vm_entry);
 
-            if (!vm_entry->qnode)
+            if (!vm_entry->qnode) {
+                kfree(vm_entry);
                 goto e_nomem;
+            }
 
             vm_entry->vm_object = vm_object_vnode(vnode);
 
@@ -96,6 +113,7 @@ static int binfmt_elf32_load(struct proc *proc, struct vnode *vnode)
                     size_t sz = bss_init_end - vm_entry->base;
 
                     struct vm_entry *split = vm_entry_new();
+                    if (!split) goto e_nomem;
 
                     split->base = bss_init_end;
                     split->size = vm_entry->size - sz;
@@ -104,11 +122,18 @@ static int binfmt_elf32_load(struct proc *proc, struct vnode *vnode)
 
                     split->qnode = enqueue(&vm_space->vm_entries, split);
 
+                    if (!split->qnode) {
+                        kfree(split);
+                        goto e_nomem;
+                    }
+
                     vm_entry->size = sz;
                 }
 
-                /* fault in the page */
-                memset((void *) bss, 0, bss_init_end-bss);
+                /* fault in the page -- only writable segments, otherwise
+                 * we would be writing to a read-only (shared) page */
+                if (vm_entry->flags & VM_UW)
+                    memset((void *) bss, 0, bss_init_end-bss);
             }
         }
 
@@ -130,8 +155,8 @@ e_inval:
     goto error;
 
 error:
-    printk("err %d\n", -err);
-    panic("TODO");
+    /* entries already added are released by the caller */
+    return err;
 }
 
 #if 0
@@ -192,7 +217,9 @@ static int binfmt_elf64_load(struct proc *proc, struct vnode *file)
 int binfmt_elf_check(struct vnode *vnode)
 {
     struct elf32_hdr hdr;
-    vfs_read(vnode, 0, sizeof(hdr), &hdr);
+
+    if (vfs_read(vnode, 0, sizeof(hdr), &hdr) != sizeof(hdr))
+        return -ENOEXEC;
 
     /* Check header */
     if (hdr.e_ident[EI_MAG0] == ELFMAG0 &&

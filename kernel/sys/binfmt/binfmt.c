@@ -13,6 +13,8 @@ static int binfmt_fmt_load(struct proc *proc, const char *path, struct vnode *vn
 {
     int err = 0;
 
+    /* point of no return: the old image is gone after this, on failure
+     * the vm space is left empty and the caller has to kill the process */
     vm_space_destroy(&proc->vm_space);
 
     if ((err = binfmt->load(proc, path, vnode)))
@@ -28,7 +30,8 @@ static int binfmt_fmt_load(struct proc *proc, const char *path, struct vnode *vn
     /* Create heap vm_entry */
     struct vm_entry *heap_vm = kmalloc(sizeof(struct vm_entry), &M_VM_ENTRY, M_ZERO);
     if (!heap_vm) {
-        /* TODO */
+        err = -ENOMEM;
+        goto error;
     }
 
     heap_vm->base  = proc->heap_start;
@@ -44,7 +47,8 @@ static int binfmt_fmt_load(struct proc *proc, const char *path, struct vnode *vn
     /* Create stack vm_entry */
     struct vm_entry *stack_vm = kmalloc(sizeof(struct vm_entry), &M_VM_ENTRY, M_ZERO);
     if (!stack_vm) {
-        /* TODO */
+        err = -ENOMEM;
+        goto error;
     }
 
     stack_vm->base  = USER_STACK_BASE;
@@ -59,11 +63,13 @@ static int binfmt_fmt_load(struct proc *proc, const char *path, struct vnode *vn
 
     struct thread *thread = (struct thread *) proc->threads.head->value;
     thread->stack_base = USER_STACK_BASE;
-    thread->stack_size = USER_STACK_BASE;
+    thread->stack_size = USER_STACK_SIZE;
 
     return 0;
 
 error:
+    /* drop whatever was partially loaded */
+    vm_space_destroy(&proc->vm_space);
     return err;
 }
 
@@ -82,11 +88,14 @@ int binfmt_load(struct proc *proc, const char *path, struct proc **ref)
     if ((err = vfs_lookup(path, &uio, &vnode, NULL)))
         return err;
 
+    if (!vnode)
+        return -ENOENT;
+
     for (size_t i = 0; i < NR_BINFMT; ++i) {
         if (!binfmt_list[i].check(vnode)) {
-            binfmt_fmt_load(proc, path, vnode, &binfmt_list[i], ref);
+            err = binfmt_fmt_load(proc, path, vnode, &binfmt_list[i], ref);
             //vfs_close(vnode);
-            return 0;
+            return err;
         }
     }
 

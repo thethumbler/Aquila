@@ -3,65 +3,138 @@
 #include <core/arch.h>
 #include <sys/proc.h>
 #include <sys/binfmt.h>
+#include <sys/uaccess.h>
 #include <mm/mm.h>
+
+/* maximum total size of arguments and environment (strings + pointers) */
+#define EXEC_ARG_MAX    (128 * 1024)
+
+/* count the entries of a NULL-terminated user array of user strings,
+ * validating every pointer and accounting their size into `total' */
+static int exec_strings_count(char * const u_strs[], int *count, size_t *total)
+{
+    int cnt = 0;
+
+    if (u_strs) {
+        for (;; ++cnt) {
+            if (uaccess_check(&u_strs[cnt], sizeof(char *)))
+                return -EFAULT;
+
+            const char *str = u_strs[cnt];
+
+            if (!str)
+                break;
+
+            if (uaccess_str_check(str))
+                return -EFAULT;
+
+            *total += strlen(str) + 1 + sizeof(char *);
+
+            if (*total > EXEC_ARG_MAX)
+                return -E2BIG;
+        }
+    }
+
+    *count = cnt;
+    return 0;
+}
+
+static void exec_strings_free(char **strs, int count)
+{
+    if (!strs)
+        return;
+
+    for (int i = 0; i < count; ++i)
+        kfree(strs[i]);
+
+    kfree(strs);
+}
+
+/* copy `count' validated user strings into a NULL-terminated kernel array */
+static int exec_strings_copy(char * const u_strs[], int count, char ***ref)
+{
+    char **strs = kmalloc((count + 1) * sizeof(char *), &M_BUFFER, M_ZERO);
+
+    if (!strs)
+        return -ENOMEM;
+
+    for (int i = 0; i < count; ++i) {
+        /* revalidate, the user may have changed the array meanwhile */
+        if (!u_strs[i] || uaccess_str_check(u_strs[i])) {
+            exec_strings_free(strs, count);
+            return -EFAULT;
+        }
+
+        if (!(strs[i] = strdup(u_strs[i]))) {
+            exec_strings_free(strs, count);
+            return -ENOMEM;
+        }
+    }
+
+    *ref = strs;
+    return 0;
+}
 
 int proc_execve(struct thread *thread, const char *fn, char * const _argp[], char * const _envp[])
 {
+    int err = 0;
     struct proc *proc = thread->owner;
-    char **u_argp = (char **) _argp;
-    char **u_envp = (char **) _envp;
 
     int argc = 0, envc = 0;
-    
-    if (u_argp)
-        for (char **arg_p = u_argp; *arg_p; ++arg_p)
-            ++argc;
+    size_t total = 0;
 
-    if (u_envp)
-        for (char **env_p = u_envp; *env_p; ++env_p)
-            ++envc;
+    char **argp = NULL;
+    char **envp = NULL;
 
-    char **argp = kmalloc((argc + 1) * sizeof(char *), &M_BUFFER, 0);
-    char **envp = kmalloc((envc + 1) * sizeof(char *), &M_BUFFER, 0);
-
-    argp[argc] = NULL;
-    envp[envc] = NULL;
-
-    for (int i = 0; i < argc; ++i)
-        argp[i] = strdup(u_argp[i]);
-
-    for (int i = 0; i < envc; ++i)
-        envp[i] = strdup(u_envp[i]);
-
-    int err;
-    if ((err = binfmt_load(proc, fn, NULL))) {
-        /* Free used resources */
-        for (int i = 0; i < argc + 1; ++i)
-            kfree(argp[i]);
-        kfree(argp);
-
-        for (int i = 0; i < envc + 1; ++i)
-            kfree(envp[i]);
-        kfree(envp);
-
+    if ((err = exec_strings_count(_argp, &argc, &total)))
         return err;
+
+    if ((err = exec_strings_count(_envp, &envc, &total)))
+        return err;
+
+    if ((err = exec_strings_copy(_argp, argc, &argp)))
+        goto free_resources;
+
+    if ((err = exec_strings_copy(_envp, envc, &envp)))
+        goto free_resources;
+
+    /* strings may have grown since they were counted */
+    total = 0;
+    for (int i = 0; i < argc; ++i)
+        total += strlen(argp[i]) + 1 + sizeof(char *);
+    for (int i = 0; i < envc; ++i)
+        total += strlen(envp[i]) + 1 + sizeof(char *);
+
+    if (total > EXEC_ARG_MAX) {
+        err = -E2BIG;
+        goto free_resources;
+    }
+
+    if ((err = binfmt_load(proc, fn, NULL))) {
+        if (!proc->vm_space.vm_entries.count) {
+            /* the failure happened after the old image was destroyed,
+             * there is nothing to return to, kill the process */
+            exec_strings_free(argp, argc);
+            exec_strings_free(envp, envc);
+
+            proc->exit = PROC_EXIT(SIGSEGV, SIGSEGV);
+            proc_kill(proc);
+            arch_sleep();
+        }
+
+        goto free_resources;
     }
 
     thread->spawned = 0;
-    
+
     arch_sys_execve(proc, argc + 1, argp, envc + 1, envp);
     memset(proc->sigaction, 0, sizeof(proc->sigaction));
 
-    /* Free used resources */
-    for (int i = 0; i < argc + 1; ++i)
-        kfree(argp[i]);
-    kfree(argp);
+free_resources:
+    exec_strings_free(argp, argc);
+    exec_strings_free(envp, envc);
 
-    for (int i = 0; i < envc + 1; ++i)
-        kfree(envp[i]);
-    kfree(envp);
-    
-    return 0;
+    return err;
 }
 
 int thread_execve(struct thread *thread, char * const _argp[], char * const _envp[])

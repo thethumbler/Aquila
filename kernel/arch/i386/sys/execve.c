@@ -17,44 +17,53 @@ void arch_sys_execve(struct proc *proc, int argc, char * const _argp[], int envc
 #endif
 
     char **argp = (char **) _argp;
-    char **u_argp = kmalloc(argc * sizeof(char *), &M_BUFFER, 0);
-
     char **envp = (char **) _envp;
-    char **u_envp = kmalloc(envc * sizeof(char *), &M_BUFFER, 0);
+
+    /* argc and envc include the terminating NULL entry, the total size
+     * of the strings is bounded by the caller (well below the stack size) */
+    size_t strings_size = 0;
+
+    for (int i = 0; i < argc - 1; ++i)
+        strings_size += strlen(argp[i]) + 1;
+
+    for (int i = 0; i < envc - 1; ++i)
+        strings_size += strlen(envp[i]) + 1;
 
     /* Start at the top of user stack */
     volatile char *stack = (volatile char *) USER_STACK;
     tlb_flush();
 
-    /* Push envp strings */
-    int tmp_envc = envc;
-    u_envp[--tmp_envc] = NULL;
-
-    for (int i = envc - 2; i >= 0; --i) {
-        stack -= strlen(envp[i]) + 1;
-        strcpy((char *) stack, envp[i]);
-        u_envp[--tmp_envc] = (char *) stack;
-    }
-
-    /* Push argp strings */
-    int tmp_argc = argc;
-    u_argp[--tmp_argc] = NULL;
-
-    for (int i = argc - 2; i >= 0; --i) {
-        stack -= strlen(argp[i]) + 1;
-        strcpy((char *) stack, argp[i]);
-        u_argp[--tmp_argc] = (char *) stack;
-    }
+    /* Layout (from the top): envp strings, argp strings, envp array,
+     * argp array -- the pointer arrays are written directly on the stack */
+    char *str = (char *) (stack - strings_size);
+    stack = (volatile char *) ((uintptr_t) str & ~(sizeof(uintptr_t) - 1));
 
     stack -= envc * sizeof(char *);
-    memcpy((void *) stack, u_envp, envc * sizeof(char *));
-
-    uintptr_t env_ptr = (uintptr_t) stack;
+    char **u_envp = (char **) stack;
 
     stack -= argc * sizeof(char *);
-    memcpy((void *) stack, u_argp, argc * sizeof(char *));
+    char **u_argp = (char **) stack;
 
-    uintptr_t arg_ptr = (uintptr_t) stack;
+    /* Push argp strings */
+    for (int i = 0; i < argc - 1; ++i) {
+        strcpy(str, argp[i]);
+        u_argp[i] = str;
+        str += strlen(argp[i]) + 1;
+    }
+
+    u_argp[argc - 1] = NULL;
+
+    /* Push envp strings */
+    for (int i = 0; i < envc - 1; ++i) {
+        strcpy(str, envp[i]);
+        u_envp[i] = str;
+        str += strlen(envp[i]) + 1;
+    }
+
+    u_envp[envc - 1] = NULL;
+
+    uintptr_t env_ptr = (uintptr_t) u_envp;
+    uintptr_t arg_ptr = (uintptr_t) u_argp;
 
     /* main(int argc, char **argv, char **envp) */
     stack -= sizeof(uintptr_t);
@@ -70,9 +79,6 @@ void arch_sys_execve(struct proc *proc, int argc, char * const _argp[], int envc
     stack -= sizeof(int64_t);
     *(volatile int64_t *) stack = argc - 1;
 #endif
-
-    kfree(u_envp);
-    kfree(u_argp);
 
 #if ARCH_BITS==32
     arch->esp = (uintptr_t) stack;
