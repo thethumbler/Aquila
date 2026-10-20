@@ -44,7 +44,7 @@ void arch_thread_switch(struct thread *thread)
     x86_kernel_stack_set(arch->kstack);
     x86_fpu_disable();
 
-    int sig = thread->sig_defer ? 0 : signal_next(thread->owner);
+    int sig = thread->sig_defer || thread->in_fault ? 0 : signal_next(thread->owner);
 
     /* the thread can't stop here, it takes the stop when it can sleep:
      * when it wakes up, or before returning to user mode */

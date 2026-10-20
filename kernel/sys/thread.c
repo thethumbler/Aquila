@@ -56,8 +56,10 @@ int thread_queue_sleep(struct queue *queue)
     curthread->state = ISLEEP;
     arch_sleep();
 
-    /* a stop signal came while sleeping: stop now, then carry on */
-    signal_stop_pending();
+    /* a stop signal came while sleeping: stop now, then carry on (not in
+     * a page fault, which would stop holding the disk) */
+    if (!curthread->in_fault)
+        signal_stop_pending();
 
     /* Woke up */
     if (curthread->state != ISLEEP) {

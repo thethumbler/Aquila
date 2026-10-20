@@ -137,7 +137,13 @@ void __x86_isr(struct x86_regs *regs)
         //x86_dump_registers(regs);
         uintptr_t addr = read_cr2();
 
+        if (curthread)
+            curthread->in_fault++;
+
         arch_mm_page_fault(addr, __x86_isr_err_num);
+
+        if (curthread)
+            curthread->in_fault--;
         return;
     }
 

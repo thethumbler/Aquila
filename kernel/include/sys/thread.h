@@ -44,6 +44,11 @@ struct thread {
      *  returns EINTR, they are delivered on the way out */
     int sig_defer;
 
+    /** Handling a page fault (it may be sleeping in it, reading the page
+     *  from a disk): signals wait until it is done, the kernel code can't
+     *  be left halfway (holding the disk) */
+    int in_fault;
+
     /** In sigsuspend(): the signal mask to restore when a signal is delivered */
     int      sigsuspend;
     sigset_t sigsuspend_mask;
