@@ -8,17 +8,19 @@ SECTIONS {
 
     kernel_start = .;
 
+    /* the boot code (arch/i386/boot/), run before paging, at its
+     * physical address; not other objects with "boot" in their name */
     .boot.text : ALIGN(0x1000) {
-        *boot*.o(.text*)
-        *boot*.o(.rodata*)
+        */arch/i386/boot/*.o(.text*)
+        */arch/i386/boot/*.o(.rodata*)
     }
 
     .boot.data : ALIGN(0x1000) {
-        *boot*.o(.data)
+        */arch/i386/boot/*.o(.data)
     }
 
     .boot.bss (NOLOAD) : ALIGN(0x1000) {
-        *boot*.o(*)
+        */arch/i386/boot/*.o(*)
     }
 
     boot_end = .;
