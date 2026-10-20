@@ -8,12 +8,15 @@
  * - nanosleep and clocks
  * - FIFOs
  * - sessions and controlling terminals, on a pty
+ * - stopping and continuing processes, the terminal line discipline
  */
 
 #include "../lib/aqtest.h"
 
 #include <aquila/mman.h>
 #include <aquila/un.h>
+#include <aquila/termios.h>
+#include <aquila/wait.h>
 
 static volatile int got_sig = 0;
 static void handler(int sig) { got_sig = sig; }
@@ -97,6 +100,89 @@ static void pty_session(void)
     SC(SYS_exit, 0, 0, 0);
 }
 
+static void spin_forever(void)
+{
+    for (;;)
+        SC(SYS_getpid, 0, 0, 0);
+}
+
+static void sigtstp_handler(int sig) { SC(SYS_exit, 9, 0, 0); (void) sig; }
+
+/* the line discipline of a pty that is the controlling terminal of a new
+ * session; exits with the failed step */
+static void line_discipline(void)
+{
+    int n = -1, me = SC(SYS_getpid, 0, 0, 0), st;
+    char buf[32];
+
+    SC(SYS_setsid, 0, 0, 0);
+    int master = SC(SYS_open, "/dev/ptmx", O_RDWR, 0);
+    SC(SYS_ioctl, master, TIOCGPTN, &n);
+    int slave = SC(SYS_open, pts_path(n), O_RDWR, 0);
+    if (master < 0 || slave < 0) SC(SYS_exit, 1, 0, 0);
+
+    /* ^D: the line so far without a newline, then end-of-file */
+    SC(SYS_write, master, "ab\x04", 3);
+    if (SC(SYS_read, slave, buf, sizeof(buf)) != 2 || buf[1] != 'b') SC(SYS_exit, 2, 0, 0);
+    SC(SYS_write, master, "\x04", 1);
+    if (SC(SYS_read, slave, buf, sizeof(buf)) != 0) SC(SYS_exit, 3, 0, 0);
+
+    /* erase (DEL) and kill (^U) */
+    SC(SYS_write, master, "q\x7fz\x15xy\n", 7);
+    if (SC(SYS_read, slave, buf, sizeof(buf)) != 3 || buf[0] != 'x' || buf[2] != '\n') SC(SYS_exit, 4, 0, 0);
+
+    /* more than one line in a write: nothing is lost */
+    SC(SYS_write, master, "1\n2\n", 4);
+    int got = 0, r;
+    while (got < 4 && (r = SC(SYS_read, slave, buf + got, sizeof(buf) - got)) > 0)
+        got += r;
+    if (got != 4 || buf[2] != '2') SC(SYS_exit, 5, 0, 0);
+
+    /* non-canonical with VMIN 0 doesn't wait */
+    struct termios t, raw;
+    SC(SYS_ioctl, slave, TCGETS, &t);
+    raw = t;
+    raw.c_lflag &= ~ICANON;
+    raw.c_cc[VMIN] = 0;
+    SC(SYS_ioctl, slave, TCSETS, &raw);
+    if (SC(SYS_read, slave, buf, sizeof(buf)) != 0) SC(SYS_exit, 6, 0, 0);
+    SC(SYS_write, master, "k", 1);
+    if (SC(SYS_read, slave, buf, sizeof(buf)) != 1 || buf[0] != 'k') SC(SYS_exit, 7, 0, 0);
+    SC(SYS_ioctl, slave, TCSETS, &t);
+
+    /* a background reader is stopped by SIGTTIN */
+    int c = SC(SYS_fork, 0, 0, 0);
+    if (!c) {
+        SC(SYS_setpgid, 0, 0, 0);
+        SC(SYS_read, slave, buf, 1);
+        SC(SYS_exit, 0, 0, 0);
+    }
+    SC(SYS_waitpid, c, &st, WUNTRACED);
+    if ((st & 0xff) != 0x7f || (st >> 8) != SIGTTIN) SC(SYS_exit, 8, 0, 0);
+    SC(SYS_kill, c, SIGKILL, 0);
+    SC(SYS_waitpid, c, &st, 0);
+
+    /* ^Z stops the foreground group, ^C kills it */
+    c = SC(SYS_fork, 0, 0, 0);
+    if (!c) {
+        SC(SYS_setpgid, 0, 0, 0);
+        spin_forever();
+    }
+    SC(SYS_setpgid, c, c, 0);
+    SC(SYS_ioctl, slave, TIOCSPGRP, &c);
+    SC(SYS_write, master, "\x1a", 1);
+    SC(SYS_waitpid, c, &st, WUNTRACED);
+    if ((st & 0xff) != 0x7f || (st >> 8) != SIGTSTP) SC(SYS_exit, 10, 0, 0);
+    SC(SYS_kill, c, SIGCONT, 0);
+    SC(SYS_write, master, "\x03", 1);
+    SC(SYS_waitpid, c, &st, 0);
+    if ((st & 0x7f) != SIGINT) SC(SYS_exit, 11, 0, 0);
+    SC(SYS_ioctl, slave, TIOCSPGRP, &me);
+
+    SC(SYS_exit, 0, 0, 0);
+}
+
+/* CLOCK_MONOTONIC in milliseconds */
 static int now_ms(void)
 {
     struct aquila_timespec ts;
@@ -659,6 +745,58 @@ void aq_main(void)
     check("TIOCSPGRP not our terminal", SC(SYS_ioctl, ptm, TIOCSPGRP, &c), -ENOTTY);
     SC(SYS_close, ptm, 0, 0);
     check("closed pty removed", SC(SYS_stat, "/dev/pts/0", sb, 0), -ENOENT);
+
+    /* --- stopping and continuing --- */
+    c = SC(SYS_fork, 0, 0, 0);
+    if (!c) {
+        SC(SYS_kill, SC(SYS_getpid, 0, 0, 0), SIGSTOP, 0);
+        SC(SYS_exit, 3, 0, 0);
+    }
+    check("waitpid stopped", SC(SYS_waitpid, c, &st, WUNTRACED), c);
+    check("stopped by SIGSTOP", st, (SIGSTOP << 8) | 0x7f);
+    check("not reported twice", SC(SYS_waitpid, c, &st, WUNTRACED | WNOHANG), 0);
+    check("SIGCONT", SC(SYS_kill, c, SIGCONT, 0), 0);
+    check("waitpid continued", SC(SYS_waitpid, c, &st, WCONTINUED), c);
+    check("continued status", st, 0xffff);
+    SC(SYS_waitpid, c, &st, 0);
+    check("ran on after continuing", st >> 8, 3);
+
+    /* signals to a stopped process wait until it continues */
+    c = SC(SYS_fork, 0, 0, 0);
+    if (!c)
+        spin_forever();
+    SC(SYS_kill, c, SIGSTOP, 0);
+    SC(SYS_waitpid, c, &st, WUNTRACED);
+    SC(SYS_kill, c, SIGTERM, 0);
+    aq_spin(10000000);
+    check("stopped process keeps signals pending", SC(SYS_waitpid, c, &st, WNOHANG), 0);
+    SC(SYS_kill, c, SIGCONT, 0);
+    SC(SYS_waitpid, c, &st, 0);
+    check("delivered once continued", st & 0x7f, SIGTERM);
+
+    /* SIGKILL ends a stopped process */
+    c = SC(SYS_fork, 0, 0, 0);
+    if (!c)
+        spin_forever();
+    SC(SYS_kill, c, SIGSTOP, 0);
+    SC(SYS_waitpid, c, &st, WUNTRACED);
+    SC(SYS_kill, c, SIGKILL, 0);
+    check("kill a stopped process", SC(SYS_waitpid, c, &st, 0) == c && (st & 0x7f) == SIGKILL, 1);
+
+    /* a caught SIGTSTP doesn't stop */
+    c = SC(SYS_fork, 0, 0, 0);
+    if (!c) {
+        struct aquila_sigaction tsa = {(u32) sigtstp_handler, 0, 0};
+        SC(SYS_sigaction, SIGTSTP, &tsa, 0);
+        spin_forever();
+    }
+    aq_spin(10000000);
+    SC(SYS_kill, c, SIGTSTP, 0);
+    SC(SYS_waitpid, c, &st, WUNTRACED);
+    check("SIGTSTP handler", st, 9 << 8);
+
+    /* the terminal's line discipline and job control, on a pty */
+    check("line discipline (failed step)", aq_child_status(line_discipline) >> 8, 0);
 
     /* --- clocks and nanosleep --- */
     struct aquila_timespec ts = {0, 0}, left = {0, 0};

@@ -1,4 +1,5 @@
 #include <core/system.h>
+#include <core/arch.h>
 #include <sys/sched.h>
 #include <dev/tty.h>
 #include <sys/uaccess.h>
@@ -8,85 +9,185 @@
 MALLOC_DEFINE(M_TTY, "tty", "tty structure");
 MALLOC_DEFINE(M_TTY_COOK, "tty-cook", "tty cooking buffer");
 
-ssize_t tty_master_write(struct tty *tty, size_t size, void *buf)
+/* a special character, not disabled (_POSIX_VDISABLE is 0) */
+#define IS_CC(tty, c, cc) ((tty)->tios.c_cc[cc] && (c) == (tty)->tios.c_cc[cc])
+
+/* echo a character, control characters as ^X */
+static void tty_echo(struct tty *tty, char c)
 {
-    ssize_t ret = size;
-
-    /* Process Slave Input */
-    if (tty->tios.c_lflag & ICANON) {   /* Canonical mode */
-        int echo = tty->tios.c_lflag & ECHO;
-        char *c = buf;
-
-        while (size) {
-            if (*c == tty->tios.c_cc[VEOF]) {
-                /* TODO */
-            } else if (*c == tty->tios.c_cc[VEOL]) {
-                /* TODO */
-            } else if (*c == tty->tios.c_cc[VERASE]) {
-                /* The ERASE character shall delete the last character in
-                 * the current line, if there is one.
-                 */
-                if (tty->pos > 0) {
-                    --tty->pos;
-                    tty->cook[tty->pos] = '\0';
-
-                    if (tty->tios.c_lflag & ECHOE)
-                        tty_slave_write(tty, 3, "\b \b");
-                }
-
-                goto skip_echo;
-            } else if (*c == tty->tios.c_cc[VINTR]) {
-                if (tty->fg)
-                    signal_pgrp_send(tty->fg, SIGINT);
-                char cc[] = {'^', *c + '@', '\n'};
-                tty_slave_write(tty, 3, cc);
-                goto skip_echo;
-            } else if (*c == tty->tios.c_cc[VKILL]) {
-                /* The KILL character shall delete all data in the current
-                 * line, if there is any.
-                 */
-            } else if (*c == tty->tios.c_cc[VQUIT]) {
-            } else if (*c == tty->tios.c_cc[VSTART]) {
-            } else if (*c == tty->tios.c_cc[VSUSP]) {
-            } else if (*c == '\n' ||
-                    (*c == '\r' && (tty->tios.c_iflag & ICRNL))) {
-                tty->cook[tty->pos++] = '\n';
-
-                if (echo)
-                    tty_slave_write(tty, 1, "\n");
-
-                tty->slave_write(tty, tty->pos, tty->cook);
-
-                tty->pos = 0;
-                ret = ret - size + 1;
-                return ret;
-            } else {
-                /* Always keep room for the terminating '\n', drop
-                 * input that does not fit in the cooking buffer
-                 */
-                if (tty->pos + 1 >= tty->size)
-                    goto skip_echo;
-
-                tty->cook[tty->pos++] = *c;
-            }
-
-            if (echo) {
-                if (*c < ' ') { /* Non-printable */
-                    char cc[] = {'^', *c + '@'};
-                    tty_slave_write(tty, 2, cc);
-                } else {
-                    tty_slave_write(tty, 1, c);
-                }
-            }
-skip_echo:
-            ++c;
-            --size;
-        }
+    if ((unsigned char) c < ' ' && c != '\n' && c != '\t') {
+        char cc[] = {'^', c + '@'};
+        tty_slave_write(tty, 2, cc);
+    } else if (c == 0x7f) {
+        tty_slave_write(tty, 2, "^?");
     } else {
-        return tty->slave_write(tty, size, buf);
+        tty_slave_write(tty, 1, &c);
+    }
+}
+
+/* erase the last character of the line being edited */
+static void tty_erase(struct tty *tty)
+{
+    if (!tty->pos)
+        return;
+
+    char c = tty->cook[--tty->pos];
+
+    if ((tty->tios.c_lflag & ECHO) && (tty->tios.c_lflag & ECHOE)) {
+        /* control characters were echoed as two */
+        int width = ((unsigned char) c < ' ' && c != '\t') || c == 0x7f ? 2 : 1;
+
+        while (width--)
+            tty_slave_write(tty, 3, "\b \b");
+    }
+}
+
+/* the line is ready to be read */
+static void tty_deliver(struct tty *tty)
+{
+    if (tty->pos)
+        tty->slave_write(tty, tty->pos, tty->cook);
+
+    tty->pos = 0;
+}
+
+/* signal characters (ISIG): the foreground group gets the signal */
+static int tty_signal(struct tty *tty, char c)
+{
+    int sig = IS_CC(tty, c, VINTR) ? SIGINT :
+              IS_CC(tty, c, VQUIT) ? SIGQUIT :
+              IS_CC(tty, c, VSUSP) ? SIGTSTP : 0;
+
+    if (!sig)
+        return 0;
+
+    if (!(tty->tios.c_lflag & NOFLSH))
+        tty->pos = 0;
+
+    if (tty->tios.c_lflag & ECHO) {
+        tty_echo(tty, c);
+        tty_slave_write(tty, 1, "\n");
     }
 
-    return ret;
+    /* only queued: this runs from the driver, maybe in an interrupt */
+    if (tty->fg)
+        signal_pgrp_post(tty->fg, sig);
+
+    return 1;
+}
+
+/*
+ * Input from the terminal (the keyboard, or the master side of a pty),
+ * through the line discipline to what programs read. Canonical mode
+ * collects lines with erase (VERASE), kill (VKILL) and end-of-file
+ * (VEOF), others get the characters as they come.
+ */
+ssize_t tty_master_write(struct tty *tty, size_t size, void *buf)
+{
+    struct termios *tios = &tty->tios;
+    char *in = buf;
+
+    for (size_t i = 0; i < size; ++i) {
+        char c = in[i];
+
+        /* input translation */
+        if (c == '\r') {
+            if (tios->c_iflag & IGNCR)
+                continue;
+            if (tios->c_iflag & ICRNL)
+                c = '\n';
+        } else if (c == '\n' && (tios->c_iflag & INLCR)) {
+            c = '\r';
+        }
+
+        if ((tios->c_lflag & ISIG) && tty_signal(tty, c))
+            continue;
+
+        if (!(tios->c_lflag & ICANON)) {
+            tty->slave_write(tty, 1, &c);
+
+            if (tios->c_lflag & ECHO)
+                tty_echo(tty, c);
+
+            continue;
+        }
+
+        if (IS_CC(tty, c, VERASE)) {
+            tty_erase(tty);
+        } else if (IS_CC(tty, c, VKILL)) {
+            while (tty->pos)
+                tty_erase(tty);
+        } else if (IS_CC(tty, c, VEOF)) {
+            /* the line so far without a newline, at the start of a line
+             * the next read returns 0 */
+            if (!tty->pos)
+                tty->eof++;
+
+            tty_deliver(tty);
+        } else if (c == '\n' || IS_CC(tty, c, VEOL)) {
+            tty->cook[tty->pos++] = c;
+
+            if ((tios->c_lflag & ECHO) || (c == '\n' && (tios->c_lflag & ECHONL)))
+                tty_echo(tty, c);
+
+            tty_deliver(tty);
+        } else {
+            /* keep room for the terminating newline, drop what doesn't fit */
+            if (tty->pos + 1 >= tty->size)
+                continue;
+
+            tty->cook[tty->pos++] = c;
+
+            if (tios->c_lflag & ECHO)
+                tty_echo(tty, c);
+        }
+    }
+
+    return size;
+}
+
+/*
+ * A read that found nothing to return: 1 if it returns 0, at an
+ * end-of-file (VEOF at the start of a line) or with VMIN 0 in
+ * non-canonical mode.
+ */
+int tty_eof(struct tty *tty)
+{
+    if (!(tty->tios.c_lflag & ICANON))
+        return !tty->tios.c_cc[VMIN];
+
+    if (tty->eof) {
+        tty->eof--;
+        return 1;
+    }
+
+    return 0;
+}
+
+/*
+ * A process of the terminal's session that is not in its foreground
+ * group reads it (SIGTTIN) or writes or changes it (SIGTTOU, writes only
+ * with TOSTOP): its group is stopped until it is in the foreground.
+ * Returns -EIO for a read with SIGTTIN ignored or blocked; a write goes
+ * on then.
+ */
+int tty_background(struct tty *tty, int sig)
+{
+    struct proc *proc = curproc;
+
+    while (tty->session && proc->pgrp->session == tty->session &&
+           tty->fg && proc->pgrp != tty->fg) {
+        if ((proc->sigmask & (1UL << sig)) || proc->sigaction[sig].sa_handler == SIG_IGN)
+            return sig == SIGTTIN ? -EIO : 0;
+
+        /* a handler interrupts the call (it returns to user mode) */
+        arch_syscall_return(curthread, -EINTR);
+
+        /* stops this process right away, it goes on here once continued */
+        signal_pgrp_send(proc->pgrp, sig);
+    }
+
+    return 0;
 }
 
 ssize_t tty_slave_write(struct tty *tty, size_t size, void *_buf)
@@ -173,6 +274,7 @@ int tty_ioctl(struct tty *tty, int request, void *argp)
             memcpy(argp, &tty->tios, sizeof(struct termios));
             break;
         case TCSETS:
+            tty_background(tty, SIGTTOU);
             memcpy(&tty->tios, argp, sizeof(struct termios));
             break;
         case TIOCGPGRP:
@@ -187,6 +289,8 @@ int tty_ioctl(struct tty *tty, int request, void *argp)
 
             if (session->ctty != tty)
                 return -ENOTTY;
+
+            tty_background(tty, SIGTTOU);
 
             queue_for (node, session->pgps) {
                 struct pgroup *pg = node->value;
@@ -258,7 +362,9 @@ int tty_new(struct proc *proc, size_t buf_size, ttyio master,
     tty->tios.c_oflag = OPOST | ONLCR;
     tty->tios.c_lflag = ISIG | ICANON | ECHO | ECHOE | ECHOK;
     //tty->tios.c_cc[VEOL]   = ;
-    tty->tios.c_cc[VERASE] = 0x08;  /* BS */
+    tty->tios.c_cc[VERASE] = 0x7f;  /* DEL, what backspace sends */
+    tty->tios.c_cc[VEOF]   = 0x04;  /* ^D */
+    tty->tios.c_cc[VMIN]   = 1;
     tty->tios.c_cc[VINTR]  = 0x03;  /* ^C */
     tty->tios.c_cc[VKILL]  = 0x15;  /* ^U */
     tty->tios.c_cc[VQUIT]  = 0x1C;  /* ^\ */

@@ -71,6 +71,10 @@ ssize_t uart_read(struct devid *dd, off_t offset __unused, size_t size, void *bu
 {
     struct uart *u = uart_get(dd->minor);
     if (!u) return -EIO;
+
+    int err = tty_background(u->tty, SIGTTIN);
+    if (err) return err;
+
     return ringbuf_read(u->in, size, buf);
 }
 
@@ -78,7 +82,18 @@ ssize_t uart_write(struct devid *dd, off_t offset __unused, size_t size, void *b
 {
     struct uart *u = uart_get(dd->minor);
     if (!u) return -EIO;
+
+    if (u->tty->tios.c_lflag & TOSTOP)
+        tty_background(u->tty, SIGTTOU);
+
     return tty_slave_write(u->tty, size, buf);
+}
+
+/* a read found no data */
+static int uart_file_eof(struct file *file)
+{
+    struct uart *u = uart_get(DEV_MINOR(file->vnode->rdev));
+    return !u || tty_eof(u->tty);
 }
 
 int uart_ioctl(struct devid *dd, int request, void *argp)
@@ -149,6 +164,6 @@ struct dev uart = {
         .ioctl = posix_file_ioctl,
 
         .can_write = __vfs_can_always,  /* XXX */
-        .eof       = __vfs_eof_never,
+        .eof       = uart_file_eof,
     },
 };

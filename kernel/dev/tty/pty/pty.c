@@ -198,6 +198,9 @@ ssize_t pts_read(struct devid *dd, off_t offset __unused, size_t size, void *buf
     struct pty *pty = pty_get(dd);
     if (!pty) return -ENXIO;
 
+    int err = tty_background(pty->tty, SIGTTIN);
+    if (err) return err;
+
     return ringbuf_read(pty->in, size, buf);
 }
 
@@ -206,7 +209,17 @@ ssize_t pts_write(struct devid *dd, off_t offset __unused, size_t size, void *bu
     struct pty *pty = pty_get(dd);
     if (!pty) return -ENXIO;
 
+    if (pty->tty->tios.c_lflag & TOSTOP)
+        tty_background(pty->tty, SIGTTOU);
+
     return tty_slave_write(pty->tty, size, buf);
+}
+
+/* a read found no data */
+static int pts_eof(struct file *file)
+{
+    struct pty *pty = pty_get(&VNODE_DEV(file->vnode));
+    return !pty || tty_eof(pty->tty);
 }
 
 int pts_can_read(struct file *file, size_t size)
@@ -387,7 +400,7 @@ struct dev ptsdev = {
 
         .can_read  = pts_can_read,
         .can_write = __vfs_can_always,
-        .eof       = __vfs_eof_never,
+        .eof       = pts_eof,
     }
 };
 

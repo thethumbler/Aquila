@@ -25,6 +25,9 @@ struct tty {
     /** current position in cooking buffer */
     size_t pos;
 
+    /** end-of-files (VEOF at the start of a line) reads have to return */
+    int eof;
+
     struct termios tios;
     struct winsize ws;
 
@@ -61,5 +64,7 @@ ssize_t tty_slave_write(struct tty *tty, size_t size, void *buf);
 int     tty_ioctl(struct tty *tty, int request, void *argp);
 void    tty_open(struct tty *tty, struct file *file);
 void    tty_hangup(struct tty *tty);
+int     tty_eof(struct tty *tty);
+int     tty_background(struct tty *tty, int sig);
 
 #endif /* ! _DEV_TTY_H */

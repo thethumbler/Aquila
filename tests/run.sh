@@ -330,6 +330,7 @@ test_system()
         "1 cd /tmp; mkdir d; echo sbase > d/f; cp -r d e; mv e/f e/g; ls e"
         "1 ln -s d/f l; cat l; rm -r d e; ls -l l"
         "1 seq 3 | sort -r | paste -sd, -" "1 yes | head -n 2 | wc -l"
+        "1 sleep 30" "1 "$'\x1a' "1 jobs" "1 kill -9 %1"
     )
 
     {
@@ -353,14 +354,15 @@ test_system()
                 'user=root' 'AquilaOS aquila' 'aqbox' '/bin/ps' 'MemTotal' \
                 '(^| )f( |$)' 'guest:\$6\$' 'pipe-42' 'subst=inner' \
                 "long:root:$long:end" 'status=130' 'guest +guest .* /tmp/g' \
-                '^g$' '^sbase$' 'l -> d/f' '^3,2,1$' '^2$' '^via-2-tty$'; do
+                '^g$' '^sbase$' 'l -> d/f' '^3,2,1$' '^2$' '^via-2-tty$' \
+                'Stopped +sleep 30'; do
         if ! grep -a -q -E -- "$want" "$log"; then
             echo "missing output: $want"
             missing=1
         fi
     done
 
-    [ $missing = 0 ] && echo "wrong password rejected, guest denied /etc/shadow, root ran uname, ls, ps, cat, touch, pipelines, \$(...), a long line, ^C, /dev/tty and sbase"
+    [ $missing = 0 ] && echo "wrong password rejected, guest denied /etc/shadow, root ran uname, ls, ps, cat, touch, pipelines, \$(...), a long line, ^C, ^Z, /dev/tty and sbase"
 }
 
 #
