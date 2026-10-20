@@ -12,7 +12,10 @@
 #define RTC_SA     0x0A      /* Status Register A */
 #define RTC_SB     0x0B      /* Status Register B */
 
-#define RTC_BIN    0x04      /* Binary mode */
+#define RTC_UIP    0x80      /* Update in progress (Status A) */
+#define RTC_24H    0x02      /* 24-hour mode (Status B) */
+#define RTC_BIN    0x04      /* Binary mode (Status B) */
+#define RTC_PM     0x80      /* PM flag in hours (12-hour mode) */
 
 static struct ioaddr cmos;
 
@@ -41,6 +44,11 @@ static int cmos_time(struct cmos_rtc *rtc)
 {
     uint8_t  fmt = cmos_reg_read(RTC_SB);
 
+    /* wait for any update in progress to finish, so we don't read
+     * inconsistent values */
+    while (cmos_reg_read(RTC_SA) & RTC_UIP)
+        ;
+
     rtc->yr   = cmos_reg_read(RTC_YR);
     rtc->mon  = cmos_reg_read(RTC_MON);
     rtc->mday = cmos_reg_read(RTC_DOM);
@@ -48,6 +56,10 @@ static int cmos_time(struct cmos_rtc *rtc)
     rtc->min  = cmos_reg_read(RTC_MIN);
     rtc->sec  = cmos_reg_read(RTC_SEC);
     rtc->wday = cmos_reg_read(RTC_WD);
+
+    /* PM flag is only meaningful in 12-hour mode */
+    int pm = !(fmt & RTC_24H) && (rtc->hrs & RTC_PM);
+    rtc->hrs &= ~RTC_PM;
 
     if (!(fmt & RTC_BIN)) {
         /* convert all values to binary */
@@ -58,6 +70,12 @@ static int cmos_time(struct cmos_rtc *rtc)
         rtc->min  = bcd_to_bin(rtc->min);
         rtc->sec  = bcd_to_bin(rtc->sec);
         rtc->wday = bcd_to_bin(rtc->wday);
+    }
+
+    if (!(fmt & RTC_24H)) {
+        /* 12-hour mode: 12AM is 0, 12PM is 12 */
+        rtc->hrs %= 12;
+        if (pm) rtc->hrs += 12;
     }
 
     return 0;
@@ -71,11 +89,19 @@ int arch_time_get(struct timespec *ts)
 
     time_t time = 0;
     uint32_t yr = rtc.yr + 2000;
+    uint32_t mon = rtc.mon;
+
+    /* The formula below counts months starting from March, so January
+     * and February are months 13 and 14 of the previous year */
+    if (mon <= 2) {
+        mon += 12;
+        yr  -= 1;
+    }
 
     /* Convert years to days */
     time = (365 * yr) + (yr / 4) - (yr / 100) + (yr / 400);
     /* Convert months to days */
-    time += (30 * rtc.mon) + (3 * (rtc.mon + 1) / 5) + rtc.mday;
+    time += (30 * mon) + (3 * (mon + 1) / 5) + rtc.mday;
     /* UNIX time starts on January 1st, 1970 */
     time -= 719561;
     /* Convert days to seconds */
