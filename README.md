@@ -118,6 +118,7 @@ Third-party code keeps its own license:
 
 | component | location | license |
 |-----------|----------|---------|
+| unscii-16 font | [kernel/arch/i386/earlycon/font.h](kernel/arch/i386/earlycon/font.h) | public domain, Viznut |
 | multiboot.h | [kernel/arch/i386/include/boot/multiboot.h](kernel/arch/i386/include/boot/multiboot.h) | permissive, Free Software Foundation |
 
 The toolchain patches in [toolchain/patches/](toolchain/patches/) modify

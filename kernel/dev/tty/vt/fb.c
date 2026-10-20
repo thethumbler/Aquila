@@ -12,7 +12,7 @@
 #define FONT_H  16
 
 /* code page 437, from the early console */
-extern unsigned char vga_font[];
+extern const unsigned char font_8x16[];
 
 /* the framebuffer device, if the kernel has one */
 extern struct fbdev *fbdev_primary(void) __attribute__((weak));
@@ -58,7 +58,7 @@ static void fb_draw(int row, int col, struct vt_cell cell)
     if (cell.attr & VT_INVISIBLE)
         fg_rgb = bg_rgb;
 
-    const uint8_t *glyph = &vga_font[cell.ch * FONT_H];
+    const uint8_t *glyph = &font_8x16[cell.ch * FONT_H];
     uint8_t *line = fb + row * FONT_H * pitch + col * FONT_W * bytes_pp;
 
     for (int y = 0; y < FONT_H; ++y, line += pitch) {

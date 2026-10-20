@@ -119,8 +119,8 @@ static void test_vt(void)
     check("vt dch ech", strcmp(vt_row(5), "a ef"), 0);
 
     /* DEC line drawing, UTF-8 to code page 437, REP */
-    vt_write("\033[7;1H\033(0lqk\033(B caf\303\251 \342\224\200x\033[2b");
-    check("vt charsets", strcmp(vt_row(6), "\xda\xc4\xbf caf\x82 \xc4xxx"), 0);
+    vt_write("\033[7;1H\033(0lqk\033(B caf\303\251 \342\224\200x\033[2b \342\231\245\342\214\202");
+    check("vt charsets", strcmp(vt_row(6), "\xda\xc4\xbf caf\x82 \xc4xxx \x03\x7f"), 0);
 
     /* lines scroll within the scrolling region */
     vt_write("\033[9;1Htop\033[10;12r\033[10;1HA\033[11;1HB\033[12;1HC\n\033[r");

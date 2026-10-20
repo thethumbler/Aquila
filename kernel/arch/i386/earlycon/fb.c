@@ -54,7 +54,7 @@ static void fb_putc(int row, int col, char c)
         for (int j = 0; j < 8; ++j) {
             char b = 0;
 
-            if (vga_font[(unsigned) c * 16 + i] & (1 << (7 - j)))
+            if (font_8x16[(unsigned) c * 16 + i] & (1 << (7 - j)))
                 b = 0xA0;
 
             cursor[0] = b;
