@@ -271,6 +271,10 @@ static ssize_t socket_unix_send(struct file *file, void *buf, size_t len, int fl
         send_queue = &conn->client_send;
     }
 
+    /* shut for writing */
+    if (file->offset == 0 ? conn->soci_end : conn->sico_end)
+        return -EPIPE;
+
     ssize_t retval = 0;
     ssize_t incr   = 0;
 
@@ -315,12 +319,16 @@ static ssize_t socket_unix_recv(struct file *file, void *buf, size_t len, int fl
     struct queue *recv_queue = NULL;
     struct queue *send_queue = NULL;
 
+    int *end_p;
+
     if (file->offset == 0) {  /* Server */
         ring_p     = &conn->sico;
+        end_p      = &conn->sico_end;
         recv_queue = &conn->server_recv;
         send_queue = &conn->client_send;
     } else {    /* Client */
         ring_p     = &conn->soci;
+        end_p      = &conn->soci_end;
         recv_queue = &conn->client_recv;
         send_queue = &conn->server_send;
     }
@@ -338,6 +346,10 @@ static ssize_t socket_unix_recv(struct file *file, void *buf, size_t len, int fl
 
         if (incr > 0)
             thread_queue_wakeup(send_queue);
+
+        /* nothing more will come */
+        if (!incr && *end_p)
+            return retval;
 
         if (incr > 0 && !(flags & MSG_WAITALL))
             return incr;
@@ -371,18 +383,24 @@ static int socket_unix_can_read(struct file *file, size_t len)
 
     struct ringbuf *ring = NULL;
 
+    int end;
+
     if (file->offset == 0) {
         /* Server */
         ring = conn->sico;
+        end  = conn->sico_end;
     } else {
         /* Client */
         ring = conn->soci;
+        end  = conn->soci_end;
     }
 
     if (!ring)
         return -ENOTCONN; /* ??? */
 
-    return ringbuf_available(ring);
+    /* the end can be read */
+    size_t available = ringbuf_available(ring);
+    return available ? (int) available : end;
 }
 
 static int socket_unix_can_write(struct file *file, size_t len)
@@ -411,6 +429,42 @@ static int socket_unix_can_write(struct file *file, size_t len)
 }
 
 
+/* a connection is shut for reading or writing (or both): the ring read
+ * goes (the peer can't write), the ring written ends (the peer reads what
+ * is left, then the end) */
+static void unix_conn_shut(struct file *file, int how)
+{
+    struct un_conn *conn = file->socket->p;
+    int client = file->offset;
+
+    struct ringbuf **in = client ? &conn->soci : &conn->sico;
+    int *out_end = client ? &conn->sico_end : &conn->soci_end;
+
+    if ((how & SHUT_RD) && *in) {
+        ringbuf_free(*in);
+        *in = NULL;
+    }
+
+    if (how & SHUT_WR)
+        *out_end = 1;
+
+    /* wake up the peer, blocked on a ring that went or ended */
+    unix_conn_wakeup(conn);
+}
+
+/* shutdown(), of a connection only */
+static int socket_unix_shut(struct file *file, int how)
+{
+    if (!file || !file->socket)
+        return -EINVAL;
+
+    if (file->socket->domain != AF_UNIX_CONN)
+        return -ENOTCONN;
+
+    unix_conn_shut(file, how);
+    return 0;
+}
+
 static int socket_unix_shutdown(struct file *file, int how)
 {
     //printk("socket_unix_shutdown(file=%p, how=%d)\n", file, how);
@@ -422,31 +476,15 @@ static int socket_unix_shutdown(struct file *file, int how)
         /* Connected socket */
         struct un_conn *conn = file->socket->p;
 
-        int client = file->offset;
+        unix_conn_shut(file, how);
 
-        if ((client && (how & SHUT_RD)) || (!client && (how & SHUT_WR))) {
-            if (conn->soci) {
-                ringbuf_free(conn->soci);
-                conn->soci = NULL;
-            }
-        }
+        /* this side is gone; the connection once both are (each frees
+         * the ring it read) */
+        if (!conn->soci && !conn->sico)
+            kfree(conn);
 
-        if ((client && (how & SHUT_WR)) || (!client && (how & SHUT_RD))) {
-            if (conn->sico) {
-                ringbuf_free(conn->sico);
-                conn->sico = NULL;
-            }
-        }
-
-        /* wake up the peer if it is blocked on a ring we just freed */
-        unix_conn_wakeup(conn);
-
-        if (!conn->soci && !conn->sico) {
-            /* Free resources */
-            //kfree(conn);  /* FIXME */
-            kfree(file->socket);
-            file->socket = NULL;
-        }
+        kfree(file->socket);
+        file->socket = NULL;
 
         return 0;
     }
@@ -485,4 +523,5 @@ static struct sock_ops socket_unix_ops = {
     .can_read  = socket_unix_can_read,
     .can_write = socket_unix_can_write,
     .shutdown  = socket_unix_shutdown,
+    .shut      = socket_unix_shut,
 };

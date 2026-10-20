@@ -7,6 +7,10 @@ struct un_conn {
     struct ringbuf *soci;   /* Server Out, Client In */
     struct ringbuf *sico;   /* Server In, Client Out */
 
+    /* the writer of the ring is done (shutdown, close): what is left is
+     * read, then the end; the reader frees the ring */
+    int soci_end, sico_end;
+
     struct queue server_recv;
     struct queue server_send;
     struct queue client_recv;

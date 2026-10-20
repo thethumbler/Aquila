@@ -11,7 +11,7 @@
  * - stopping and continuing processes, the terminal line discipline
  * - select, poll and terminal read timeouts (VTIME)
  * - flock
- * - anonymous memory (mmap)
+ * - anonymous memory (mmap), shutdown() of sockets, the interval timer
  * - virtual terminals: KD* and VT_* ioctls, switching, VT_PROCESS
  */
 
@@ -25,6 +25,7 @@
 #include <aquila/reboot.h>
 #include <aquila/kd.h>
 #include <aquila/vt.h>
+#include <aquila/time.h>
 
 static volatile int got_sig = 0;
 static void handler(int sig) { got_sig = sig; }
@@ -32,6 +33,9 @@ static void handler(int sig) { got_sig = sig; }
 /* VT_PROCESS: the signals asking to release the terminal, and telling it
  * is back */
 static volatile int vt_rel = 0, vt_acq = 0;
+
+static volatile int alarms = 0;
+static void alarm_handler(int sig) { alarms++; (void) sig; }
 static void vt_handler(int sig) { if (sig == SIGUSR1) vt_rel++; else vt_acq++; }
 
 /* "/dev/tty<n>" */
@@ -559,6 +563,38 @@ void aq_main(void)
         int ls2 = SC(SYS_socket, AF_UNIX, SOCK_STREAM, 0);
         check("connect after close", SC(SYS_connect, ls2, &la, sizeof(la)), -ECONNREFUSED);
         SC(SYS_close, ls2, 0, 0);
+    }
+
+    /* shutdown(): one direction ends, the other still works */
+    {
+        struct sockaddr_un la = {AF_UNIX, "/tmp/shut"};
+        int ls = SC(SYS_socket, AF_UNIX, SOCK_STREAM, 0);
+        SC(SYS_bind, ls, &la, sizeof(la));
+        SC(SYS_listen, ls, 1, 0);
+        check("shutdown listening", SC(SYS_shutdown, ls, SHUT_RDWR, 0), -ENOTCONN);
+        check("shutdown not a socket", SC(SYS_shutdown, aq_out, SHUT_WR, 0), -ENOTSOCK);
+        check("shutdown bad fd", SC(SYS_shutdown, 99, SHUT_WR, 0), -EBADF);
+        int cpid = SC(SYS_fork, 0, 0, 0);
+        if (cpid == 0) {
+            int cs = SC(SYS_socket, AF_UNIX, SOCK_STREAM, 0);
+            char c = 0;
+            if (SC(SYS_connect, cs, &la, sizeof(la))) SC(SYS_exit, 1, 0, 0);
+            /* the end of what the server sends, then an answer */
+            if (SC(SYS_read, cs, &c, 1) != 0) SC(SYS_exit, 2, 0, 0);
+            SC(SYS_write, cs, "a", 1);
+            SC(SYS_exit, 0, 0, 0);
+        }
+        int conn = SC(SYS_accept, ls, 0, 0);
+        check("shutdown bad how", SC(SYS_shutdown, conn, 0, 0), -EINVAL);
+        check("shutdown SHUT_WR", SC(SYS_shutdown, conn, SHUT_WR, 0), 0);
+        char c = 0;
+        check("read after shutdown SHUT_WR", SC(SYS_read, conn, &c, 1), 1);
+        check("read the answer", c, 'a');
+        int st = 0;
+        SC(SYS_waitpid, cpid, &st, 0);
+        check("peer read the end", st >> 8, 0);
+        SC(SYS_close, conn, 0, 0);
+        SC(SYS_close, ls, 0, 0);
     }
 
     /* execve */
@@ -1097,6 +1133,54 @@ void aq_main(void)
     check("nanosleep", SC(SYS_nanosleep, &ts, 0, 0), 0);
     int slept = now_ms() - t0;
     check("slept 200ms", slept >= 200 && slept < 1000, 1);
+    /* the real time clock counts below the second */
+    struct aquila_timespec r0, r1;
+    SC(SYS_clock_gettime, CLOCK_REALTIME, &r0, 0);
+    ts = (struct aquila_timespec) {0, 100000000};
+    SC(SYS_nanosleep, &ts, 0, 0);
+    SC(SYS_clock_gettime, CLOCK_REALTIME, &r1, 0);
+    long long rns = (long long) (r1.tv_sec - r0.tv_sec) * 1000000000 + r1.tv_nsec - r0.tv_nsec;
+    check("realtime ns", rns >= 90000000 && rns < 900000000, 1);
+
+    /* the interval timer: SIGALRM every 50ms, read, then disarmed */
+    struct aquila_sigaction asa = {(u32) alarm_handler, 0, 0};
+    SC(SYS_sigaction, SIGALRM, &asa, 0);
+    struct aquila_itimer it = {50000000, 50000000}, iold = {1, 1};
+    check("setitimer kaddr", SC(SYS_setitimer, AQUILA_ITIMER_REAL, KADDR, 0), -EFAULT);
+    check("setitimer virtual", SC(SYS_setitimer, 1, &it, 0), -EINVAL);
+    check("setitimer", SC(SYS_setitimer, AQUILA_ITIMER_REAL, &it, &iold), 0);
+    check("setitimer none before", (int) (iold.value | iold.interval), 0);
+    int a0 = now_ms();
+    while (now_ms() - a0 < 330) {
+        ts = (struct aquila_timespec) {0, 10000000};
+        SC(SYS_nanosleep, &ts, 0, 0);
+    }
+    check("SIGALRM every 50ms", alarms >= 4 && alarms <= 8, 1);
+    check("getitimer", SC(SYS_setitimer, AQUILA_ITIMER_REAL, 0, &iold), 0);
+    check("getitimer left", iold.value > 0 && iold.value <= 50000000, 1);
+    check("getitimer interval", (int) (iold.interval == 50000000), 1);
+    it = (struct aquila_itimer) {0, 0};
+    SC(SYS_setitimer, AQUILA_ITIMER_REAL, &it, 0);
+    int a1 = alarms;
+    ts = (struct aquila_timespec) {0, 150000000};
+    SC(SYS_nanosleep, &ts, 0, 0);
+    check("disarmed", alarms, a1);
+
+    /* once, in a child: not inherited by fork() */
+    it = (struct aquila_itimer) {30000000, 0};
+    SC(SYS_setitimer, AQUILA_ITIMER_REAL, &it, 0);
+    int apid = SC(SYS_fork, 0, 0, 0);
+    if (!apid) {
+        SC(SYS_setitimer, AQUILA_ITIMER_REAL, 0, &iold);
+        SC(SYS_exit, iold.value != 0, 0, 0);
+    }
+    int ast2 = 0;
+    SC(SYS_waitpid, apid, &ast2, 0);
+    check("timer not inherited", ast2 >> 8, 0);
+    ts = (struct aquila_timespec) {0, 100000000};
+    SC(SYS_nanosleep, &ts, 0, 0);
+    check("one shot", alarms, a1 + 1);
+
     ts.tv_nsec = 1000000000;
     check("nanosleep bad nsec", SC(SYS_nanosleep, &ts, 0, 0), -EINVAL);
 

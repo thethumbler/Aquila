@@ -32,21 +32,26 @@ struct sock_ops {
     int (*can_read)(struct file *socket, size_t len);
     int (*can_write)(struct file *socket, size_t len);
 
+    /* the last descriptor is closed */
     int (*shutdown) (struct file *socket, int how);
+
+    /* shutdown(): no more reading or writing (SHUT_*), it stays open */
+    int (*shut) (struct file *socket, int how);
 };
 
 #define FILE_SOCKET     0x80000000
 
 int socket_create(struct file *file, int domain, int type, int protocol);
-int socket_bind(struct file *file, const struct sockaddr *addr, uint32_t len);
+int socket_bind(struct file *file, const struct sockaddr *addr, socklen_t len);
 int socket_accept(struct file *file, struct file *conn, const struct sockaddr *addr, socklen_t *len);
-int socket_connect(struct file *file, const struct sockaddr *addr, uint32_t len);
+int socket_connect(struct file *file, const struct sockaddr *addr, socklen_t len);
 int socket_listen(struct file *file, int backlog);
 int socket_send(struct file *file, void *buf, size_t len, int flags);
 int socket_recv(struct file *file, void *buf, size_t len, int flags);
 int socket_can_read(struct file *file, size_t len);
 int socket_can_write(struct file *file, size_t len);
 int socket_shutdown(struct file *file, int how);
+int socket_shutdown_dir(struct file *file, int how);
 
 /* AF_UNIX */
 int socket_unix_create(struct file *file, int domain, int type, int protocol);

@@ -30,7 +30,7 @@ int socket_accept(struct file *file, struct file *conn, const struct sockaddr *a
     return file->socket->ops->accept(file, conn, addr, len);
 }
 
-int socket_bind(struct file *file, const struct sockaddr *addr, uint32_t len)
+int socket_bind(struct file *file, const struct sockaddr *addr, socklen_t len)
 {
     if (!(file->flags & FILE_SOCKET))
         return -ENOTSOCK;
@@ -41,7 +41,7 @@ int socket_bind(struct file *file, const struct sockaddr *addr, uint32_t len)
     return file->socket->ops->bind(file, addr, len);
 }
 
-int socket_connect(struct file *file, const struct sockaddr *addr, uint32_t len)
+int socket_connect(struct file *file, const struct sockaddr *addr, socklen_t len)
 {
     if (!(file->flags & FILE_SOCKET))
         return -ENOTSOCK;
@@ -111,6 +111,21 @@ int socket_can_write(struct file *file, size_t len)
         return -EOPNOTSUPP;
 
     return file->socket->ops->can_write(file, len);
+}
+
+/* shutdown(): no more reading or writing, the socket stays open */
+int socket_shutdown_dir(struct file *file, int how)
+{
+    if (!(file->flags & FILE_SOCKET))
+        return -ENOTSOCK;
+
+    if (how & ~SHUT_RDWR || !how)
+        return -EINVAL;
+
+    if (!file->socket->ops || !file->socket->ops->shut)
+        return -EOPNOTSUPP;
+
+    return file->socket->ops->shut(file, how);
 }
 
 int socket_shutdown(struct file *file, int how)

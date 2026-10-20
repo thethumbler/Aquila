@@ -3,6 +3,7 @@
 #include <core/arch.h>
 #include <sys/proc.h>
 #include <sys/sched.h>
+#include <sys/signal.h>
 #include <ds/queue.h>
 
 #include <aquila/stat.h>
@@ -15,6 +16,9 @@ static struct queue *timed = QUEUE_NEW();
 
 /* nanosleep() sleeps here, only the timer wakes it */
 static struct queue *naps = QUEUE_NEW();
+
+/* processes with a real time timer armed (proc->alarm_at) */
+static struct queue *alarms = QUEUE_NEW();
 
 /*
  * called on every timer tick, `period' ns after the last one, which
@@ -46,6 +50,67 @@ void sched_timer_tick(uint32_t period, int user)
 
         node = next;
     }
+
+    for (node = alarms->head; node; ) {
+        struct qnode *next = node->next;
+        struct proc *proc = node->value;
+
+        if (now >= proc->alarm_at) {
+            if (proc->alarm_interval) {
+                /* the next expiry, not every one that was missed */
+                proc->alarm_at += proc->alarm_interval;
+                if (proc->alarm_at <= now)
+                    proc->alarm_at = now + proc->alarm_interval;
+            } else {
+                queue_node_remove(alarms, proc->alarm_node);
+                proc->alarm_node = NULL;
+            }
+
+            signal_proc_post(proc, SIGALRM);
+        }
+
+        node = next;
+    }
+}
+
+/* what is left of the real time timer of `proc', 0 if it isn't armed */
+void sched_alarm_get(struct proc *proc, uint64_t *value, uint64_t *interval)
+{
+    uint64_t now = arch_rtime_ns();
+
+    *value = !proc->alarm_node ? 0 : proc->alarm_at > now ? proc->alarm_at - now : 1;
+    *interval = proc->alarm_node ? proc->alarm_interval : 0;
+}
+
+/*
+ * The real time timer of `proc' (setitimer, alarm): SIGALRM in `value' ns,
+ * then every `interval' ns (0: once), value 0 disarms it. What was left of
+ * the previous one is returned in old_value and old_interval if set.
+ */
+void sched_alarm(struct proc *proc, uint64_t value, uint64_t interval,
+                 uint64_t *old_value, uint64_t *old_interval)
+{
+    uint64_t now = arch_rtime_ns(), v, i;
+
+    sched_alarm_get(proc, &v, &i);
+
+    if (old_value)
+        *old_value = v;
+
+    if (old_interval)
+        *old_interval = i;
+
+    if (proc->alarm_node) {
+        queue_node_remove(alarms, proc->alarm_node);
+        proc->alarm_node = NULL;
+    }
+
+    if (!value)
+        return;
+
+    proc->alarm_at = now + value;
+    proc->alarm_interval = interval;
+    proc->alarm_node = enqueue(alarms, proc);
 }
 
 /* the thread no longer waits with a deadline (woken, or killed) */

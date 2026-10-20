@@ -100,6 +100,11 @@ struct proc {
     uint64_t utime, stime;
     uint64_t cutime, cstime;
 
+    /** ITIMER_REAL: SIGALRM when arch_rtime_ns() reaches alarm_at, then
+     *  every alarm_interval ns (0: once); alarm_node is set while armed */
+    uint64_t alarm_at, alarm_interval;
+    struct qnode *alarm_node;
+
     /** User ID */
     uid_t uid;
 

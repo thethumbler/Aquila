@@ -19,4 +19,13 @@ struct aquila_tms {
     uint32_t tms_cstime;    /* system time of waited for children */
 };
 
+/* setitimer(2): the real time timer (SIGALRM) of a process, in ns; 0 is
+ * none (value), or only once (interval) */
+#define AQUILA_ITIMER_REAL  0
+
+struct aquila_itimer {
+    uint64_t value;     /* until it expires */
+    uint64_t interval;  /* then again every interval */
+};
+
 #endif /* ! _AQUILA_TIME_H */

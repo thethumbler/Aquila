@@ -1466,7 +1466,7 @@ static void sys_socket(int domain, int type, int protocol)
     return;
 }
 
-static void sys_accept(int fd, const struct sockaddr *addr, uint32_t *len)
+static void sys_accept(int fd, const struct sockaddr *addr, socklen_t *len)
 {
     syscall_log(LOG_DEBUG, "accept(fd=%d, addr=%p, len=%p)\n",
             fd, addr, len);
@@ -1498,7 +1498,7 @@ static void sys_accept(int fd, const struct sockaddr *addr, uint32_t *len)
     return;
 }
 
-static void sys_bind(int fd, const struct sockaddr *addr, uint32_t len)
+static void sys_bind(int fd, const struct sockaddr *addr, socklen_t len)
 {
     syscall_log(LOG_DEBUG, "bind(fd=%d, addr=%p, len=%d)\n",
             fd, addr, len);
@@ -1521,7 +1521,7 @@ static void sys_bind(int fd, const struct sockaddr *addr, uint32_t len)
     return;
 }
 
-static void sys_connect(int fd, const struct sockaddr *addr, uint32_t len)
+static void sys_connect(int fd, const struct sockaddr *addr, socklen_t len)
 {
     syscall_log(LOG_DEBUG, "connect(fd=%d, addr=%p, len=%d)\n",
             fd, addr, len);
@@ -2232,6 +2232,48 @@ static void sys_sync(void)
     arch_syscall_return(curthread, kdev_sync());
 }
 
+static void sys_shutdown(int fd, int how)
+{
+    syscall_log(LOG_DEBUG, "shutdown(fd=%d, how=%d)\n", fd, how);
+
+    struct file *file = fd_file(fd);
+
+    if (!file) {
+        arch_syscall_return(curthread, -EBADF);
+        return;
+    }
+
+    arch_syscall_return(curthread, socket_shutdown_dir(file, how));
+}
+
+static void sys_setitimer(int which, const struct aquila_itimer *new, struct aquila_itimer *old)
+{
+    syscall_log(LOG_DEBUG, "setitimer(which=%d, new=%p, old=%p)\n", which, new, old);
+
+    if ((new && uaccess_check(new, sizeof(*new))) || (old && uaccess_check(old, sizeof(*old)))) {
+        arch_syscall_return(curthread, -EFAULT);
+        return;
+    }
+
+    /* only the real time timer, the kernel doesn't count virtual time */
+    if (which != AQUILA_ITIMER_REAL) {
+        arch_syscall_return(curthread, -EINVAL);
+        return;
+    }
+
+    struct aquila_itimer prev;
+
+    if (new)
+        sched_alarm(curproc, new->value, new->interval, &prev.value, &prev.interval);
+    else
+        sched_alarm_get(curproc, &prev.value, &prev.interval);
+
+    if (old)
+        *old = prev;
+
+    arch_syscall_return(curthread, 0);
+}
+
 static void sys_reboot(unsigned cmd)
 {
     syscall_log(LOG_DEBUG, "reboot(cmd=0x%x)\n", cmd);
@@ -2461,6 +2503,8 @@ void (*syscall_table[])() = {
     [SYS_flock]         = sys_flock,
     [SYS_reboot]        = sys_reboot,
     [SYS_sync]          = sys_sync,
+    [SYS_shutdown]      = sys_shutdown,
+    [SYS_setitimer]     = sys_setitimer,
 };
 
 const size_t syscall_cnt = sizeof(syscall_table)/sizeof(syscall_table[0]);

@@ -174,6 +174,9 @@ void proc_kill(struct proc *proc)
 
     proc->running = 0;
 
+    /* no more SIGALRM */
+    sched_alarm(proc, 0, 0, NULL, NULL);
+
     int kill_curthread = 0;
 
     /* Kill all threads */

@@ -3,7 +3,8 @@
 
 #include <stdint.h>
 
-typedef uint32_t socklen_t;
+/* unsigned int, as programs expect (uint32_t is unsigned long here) */
+typedef unsigned int socklen_t;
 typedef uint32_t sa_family_t;
 
 struct sockaddr {
@@ -21,7 +22,7 @@ struct sockaddr {
 #define AF_INET         0x0001
 #define AF_INET6        0x0002
 #define AF_UNIX         0x0003
-#define AF_UNSPEC       0x0004
+#define AF_UNSPEC       0x0000  /* any, 0 as programs expect (zeroed hints) */
 
 #define MSG_CTRUNC      0x0001
 #define MSG_DONTROUTE   0x0002
