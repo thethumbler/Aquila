@@ -139,7 +139,8 @@ static int socket_unix_bind(struct file *file, const struct sockaddr *addr, sock
     }
 
     /* Create socket */
-    if ((err = vfs_mknod(addr_un->sun_path, S_IFSOCK, 0, &uio, NULL)))
+    /* like Linux: 0777 less the umask */
+    if ((err = vfs_mknod(addr_un->sun_path, S_IFSOCK | 0777, 0, &uio, NULL)))
         return err;
 
     /* Get vnode -- FIXME */

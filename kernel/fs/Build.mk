@@ -1,6 +1,8 @@
+obj-y  += attr.o
 obj-y  += close.o
 obj-y  += fops.o
 obj-y  += ioctl.o
+obj-y  += link.o
 obj-y  += lookup.o
 obj-y  += mknod.o
 obj-y  += mount.o

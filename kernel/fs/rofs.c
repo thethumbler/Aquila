@@ -21,3 +21,18 @@ int rofs_vunlink(struct vnode *dir, const char *fn, struct uio *uio)
 {
     return -EROFS;
 }
+
+int rofs_vlink(struct vnode *dir, const char *fn, struct vnode *vnode, struct uio *uio)
+{
+    return -EROFS;
+}
+
+int rofs_vrename(struct vnode *odir, const char *ofn, struct vnode *ndir, const char *nfn, struct uio *uio)
+{
+    return -EROFS;
+}
+
+int rofs_setattr(struct vnode *vnode)
+{
+    return -EROFS;
+}

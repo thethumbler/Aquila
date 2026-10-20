@@ -158,3 +158,79 @@ error:
     return ret;
 }
 
+/*
+ * The directory that contains the last component of `path' (symbolic
+ * links followed), and the name of that component. `abs_path' is the
+ * absolute path of the component. -EBUSY if path is a mountpoint, which
+ * has no entry in a directory of its filesystem.
+ */
+int vfs_lookup_parent(const char *path, struct uio *uio, struct vnode **dir, char **name, char **abs_path)
+{
+    int ret = 0;
+    char *rpath = NULL, *dname = NULL;
+    char **tokens = NULL;
+    struct vfs_path *vfs_path = NULL;
+
+    if (!path || !*path)
+        return -ENOENT;
+
+    if ((ret = vfs_parse_path(path, uio, &rpath)))
+        return ret;
+
+    tokens = tokenize_path(rpath);
+    vfs_path = vfs_get_mountpoint(tokens);
+
+    int is_mountpoint = !vfs_path->tokens[0];
+
+    free_tokens(tokens);
+    kfree(vfs_path);
+
+    if (is_mountpoint) {
+        ret = -EBUSY;
+        goto done;
+    }
+
+    char *slash = rpath;
+    for (char *p = rpath; *p; ++p)
+        if (*p == '/')
+            slash = p;
+
+    if (!(dname = strdup(slash + 1))) {
+        ret = -ENOMEM;
+        goto done;
+    }
+
+    /* the parent path, "/" for an entry of the root directory */
+    char saved = slash[slash == rpath];
+    slash[slash == rpath] = '\0';
+
+    struct uio parent_uio = *uio;
+    parent_uio.flags &= ~O_NOFOLLOW;
+
+    struct vnode *vnode = NULL;
+    ret = lookup(rpath, &parent_uio, &vnode, NULL, 0);
+    slash[slash == rpath] = saved;
+
+    if (ret)
+        goto done;
+
+    if (!S_ISDIR(vnode->mode)) {
+        vfs_close(vnode);
+        ret = -ENOTDIR;
+        goto done;
+    }
+
+    *dir = vnode;
+    *name = dname;
+    dname = NULL;
+
+    if (abs_path) {
+        *abs_path = rpath;
+        rpath = NULL;
+    }
+
+done:
+    if (dname) kfree(dname);
+    if (rpath) kfree(rpath);
+    return ret;
+}

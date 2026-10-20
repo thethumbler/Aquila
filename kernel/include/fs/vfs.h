@@ -70,6 +70,11 @@ struct vops {
 
     int     (*vmknod)  (struct vnode *dir, const char *fn, uint32_t mode, dev_t dev, struct uio *uio, struct vnode **ref);
     int     (*vunlink) (struct vnode *dir, const char *fn, struct uio *uio);
+    int     (*vlink)   (struct vnode *dir, const char *fn, struct vnode *vnode, struct uio *uio);
+    int     (*vrename) (struct vnode *odir, const char *ofn, struct vnode *ndir, const char *nfn, struct uio *uio);
+
+    /* store the vnode's mode, owner and times after they were changed */
+    int     (*setattr) (struct vnode *vnode);
 
     int     (*vget)    (struct vnode *super, ino_t ino, struct vnode **vnode);
 
@@ -146,6 +151,10 @@ struct file {
     off_t offset;
     int flags;      /* open flags (O_*) */
     int fdflags;    /* descriptor flags (FD_CLOEXEC) */
+
+    /* absolute path of an open directory, for the *at() system calls;
+     * owned by the descriptor (freed by vfs_file_close) */
+    char *path;
 };
 
 /**
@@ -190,6 +199,9 @@ int     vfs_vmknod(struct vnode *dir, const char *fn, uint32_t mode, dev_t dev, 
 int     vfs_vcreat(struct vnode *dir, const char *fn, struct uio *uio, struct vnode **ref);
 int     vfs_vmkdir(struct vnode *dir, const char *dname, struct uio *uio, struct vnode **ref);
 int     vfs_vunlink(struct vnode *dir, const char *fn, struct uio *uio);
+int     vfs_vlink(struct vnode *dir, const char *fn, struct vnode *vnode, struct uio *uio);
+int     vfs_vrename(struct vnode *odir, const char *ofn, struct vnode *ndir, const char *nfn, struct uio *uio);
+int     vfs_setattr(struct vnode *vnode);
 int     vfs_vget(struct vnode *super, ino_t ino, struct vnode **vnode);
 
 int     vfs_map(struct vm_space *vm_space, struct vm_entry *vm_entry);
@@ -211,6 +223,7 @@ int vfs_sync(int mode);
 
 ssize_t vfs_readdir(struct vnode *dir, off_t offset, struct dirent *dirent);
 int     vfs_finddir(struct vnode *dir, const char *name, struct dirent *dirent);
+int     vfs_dir_empty(struct vnode *dir);
 
 /* file operations mappings */
 int     vfs_file_open(struct file *file);
@@ -230,14 +243,31 @@ int     vfs_file_eof(struct file *);
 /* Path resolution and lookup */
 int     vfs_relative(const char * const rel, const char * const path, char **abs_path);
 int     vfs_lookup(const char *path, struct uio *uio, struct vnode **vnode, char **abs_path);
+int     vfs_lookup_parent(const char *path, struct uio *uio, struct vnode **dir, char **name, char **abs_path);
 
 /* Higher level functions */
 int     vfs_creat(const char *path, mode_t mode, struct uio *uio, struct vnode **ref);
 int     vfs_mkdir(const char *path, mode_t mode, struct uio *uio, struct vnode **ref);
 int     vfs_mknod(const char *path, uint32_t mode, dev_t dev, struct uio *uio, struct vnode **ref);
 int     vfs_unlink(const char *path, struct uio *uio);
+int     vfs_rmdir(const char *path, struct uio *uio);
+int     vfs_link(const char *oldpath, const char *newpath, struct uio *uio);
+int     vfs_symlink(const char *target, const char *path, struct uio *uio);
+ssize_t vfs_readlink(const char *path, struct uio *uio, char *buf, size_t size);
+int     vfs_rename(const char *oldpath, const char *newpath, struct uio *uio);
 int     vfs_stat(struct vnode *vnode, struct aquila_stat *buf);
 int     vfs_perms_check(struct file *file, struct uio *uio);
+
+/* access modes for vfs_access() */
+#define VFS_R   4
+#define VFS_W   2
+#define VFS_X   1
+int     vfs_access(struct vnode *vnode, struct uio *uio, int mode);
+
+/* changing attributes, `times' is atime then mtime (UTIME_NOW/UTIME_OMIT) */
+int     vfs_chmod(struct vnode *vnode, mode_t mode, struct uio *uio);
+int     vfs_chown(struct vnode *vnode, uid_t uid, gid_t gid, struct uio *uio);
+int     vfs_utimens(struct vnode *vnode, const struct aquila_timespec times[2], struct uio *uio);
 
 /* XXX */
 

@@ -46,6 +46,51 @@ int vfs_vunlink(struct vnode *dir, const char *fn, struct uio *uio)
     return dir->fs->vops.vunlink(dir, fn, uio);
 }
 
+int vfs_vlink(struct vnode *dir, const char *fn, struct vnode *vnode, struct uio *uio)
+{
+    if (!dir || !dir->fs || !vnode)
+        return -EINVAL;
+
+    if (!S_ISDIR(dir->mode))
+        return -ENOTDIR;
+
+    if (vnode->fs != dir->fs)
+        return -EXDEV;
+
+    if (!dir->fs->vops.vlink)
+        return -ENOSYS;
+
+    return dir->fs->vops.vlink(dir, fn, vnode, uio);
+}
+
+int vfs_vrename(struct vnode *odir, const char *ofn, struct vnode *ndir, const char *nfn, struct uio *uio)
+{
+    if (!odir || !odir->fs || !ndir)
+        return -EINVAL;
+
+    if (!S_ISDIR(odir->mode) || !S_ISDIR(ndir->mode))
+        return -ENOTDIR;
+
+    if (odir->fs != ndir->fs)
+        return -EXDEV;
+
+    if (!odir->fs->vops.vrename)
+        return -ENOSYS;
+
+    return odir->fs->vops.vrename(odir, ofn, ndir, nfn, uio);
+}
+
+int vfs_setattr(struct vnode *vnode)
+{
+    if (!vnode || !vnode->fs)
+        return -EINVAL;
+
+    if (!vnode->fs->vops.setattr)
+        return -ENOSYS;
+
+    return vnode->fs->vops.setattr(vnode);
+}
+
 int vfs_vget(struct vnode *super, ino_t ino, struct vnode **ref)
 {
     int err = 0;

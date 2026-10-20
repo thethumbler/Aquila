@@ -33,7 +33,7 @@ void sched_init_spawn(struct proc *init)
     proc_init(init);
 
     /* init defaults */
-    init->mask = 0775;
+    init->mask = 022;   /* umask */
     init->cwd = strdup("/");
 
     arch_sched_init();

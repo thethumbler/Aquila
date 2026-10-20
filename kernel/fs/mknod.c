@@ -4,81 +4,25 @@
 int vfs_mknod(const char *path, mode_t mode, dev_t dev, struct uio *uio, struct vnode **ref)
 {
     int ret = 0;
-    struct vfs_path *p = NULL;
-    char **tokens = NULL;
-
-    /* if path is NULL pointer, or path is empty string, return NULL */
-    if (!path ||  !*path)
-        return -ENOENT;
-
-    char *_path = NULL;
-    if ((ret = vfs_parse_path(path, uio, &_path)))
-        goto error;
-
-    /* Canonicalize Path */
-    tokens = tokenize_path(_path);
-
-    /* Get mountpoint & path */
-    p = vfs_get_mountpoint(tokens);
-
-    struct vnode *dir = p->root;
+    struct vnode *dir = NULL;
     char *name = NULL;
-    char **tok = p->tokens;
 
-    /* hold a reference to the directory we are walking through */
-    dir->ref++;
+    if ((ret = vfs_lookup_parent(path, uio, &dir, &name, NULL)))
+        return ret == -EBUSY ? -EEXIST : ret;
 
-    while (*tok) {
-        char *token = *tok;
+    /* creating an entry needs write and search permission on the directory */
+    if ((ret = vfs_access(dir, uio, VFS_W | VFS_X)))
+        goto done;
 
-        if (!*(tok + 1)) {
-            name = token;
-            break;
-        }
-
-        struct dirent dirent;
-        if ((ret = vfs_finddir(dir, token, &dirent))) {
-            vfs_close(dir);
-            goto error;
-        }
-
-        struct vnode *next = NULL;
-        if ((ret = vfs_vget(p->root, dirent.d_ino, &next))) {
-            vfs_close(dir);
-            goto error;
-        }
-
-        /* release the intermediate directory */
-        vfs_close(dir);
-        dir = next;
-
-        ++tok;
-    }
-
-    if (!name) {    /* path refers to a mountpoint root */
-        vfs_close(dir);
-        ret = -EEXIST;
-        goto error;
-    }
+    /* symbolic links are always 0777 */
+    if (!S_ISLNK(mode))
+        mode &= ~(uio->mask & 0777);
 
     ret = vfs_vmknod(dir, name, mode, dev, uio, ref);
+
+done:
     vfs_close(dir);
-
-    if (ret)
-        goto error;
-
-    free_tokens(tokens);
-    kfree(p);
-    kfree(_path);
-    return 0;
-
-error:
-    if (tokens)
-        free_tokens(tokens);
-    if (p)
-        kfree(p);
-    if (_path)
-        kfree(_path);
+    kfree(name);
     return ret;
 }
 

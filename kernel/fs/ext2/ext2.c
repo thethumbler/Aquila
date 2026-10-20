@@ -207,6 +207,7 @@ struct fs ext2fs = {
         
         .vmknod  = ext2_vmknod,
         .vget    = ext2_vget,
+        .setattr = ext2_setattr,
     },
 
     .fops = {

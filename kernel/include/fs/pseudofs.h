@@ -12,6 +12,9 @@ struct pseudofs_dirent {
 
 int pseudofs_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, struct uio *uio, struct vnode **ref);
 int pseudofs_vunlink(struct vnode *dir, const char *fn, struct uio *uio);
+int pseudofs_vlink(struct vnode *dir, const char *fn, struct vnode *vnode, struct uio *uio);
+int pseudofs_vrename(struct vnode *odir, const char *ofn, struct vnode *ndir, const char *nfn, struct uio *uio);
+int pseudofs_setattr(struct vnode *vnode);
 
 ssize_t pseudofs_readdir(struct vnode *dir, off_t offset, struct dirent *dirent);
 int pseudofs_finddir(struct vnode *dir, const char *name, struct dirent *dirent);

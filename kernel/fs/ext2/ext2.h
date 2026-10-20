@@ -218,6 +218,7 @@ int ext2_trunc(struct vnode *inode, off_t len);
 int ext2_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, struct uio *uio, struct vnode **ref);
 
 int ext2_vget(struct vnode *super, ino_t ino, struct vnode **ref);
+int ext2_setattr(struct vnode *vnode);
 
 int ext2_inode_build(struct ext2 *desc, ino_t ino, struct vnode **ref_inode);  /* XXX */
 int ext2_inode_sync(struct vnode *inode);

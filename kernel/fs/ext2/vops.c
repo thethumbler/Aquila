@@ -270,6 +270,8 @@ int ext2_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, struc
     memset(&inode, 0, sizeof(struct ext2_inode));
 
     inode.mode = mode;
+    inode.uid  = uio->uid;
+    inode.gid  = uio->gid;
 
     struct timespec ts;
     gettime(&ts);
@@ -348,4 +350,23 @@ int ext2_vget(struct vnode *super, ino_t ino, struct vnode **ref)
     }
 
     return 0;
+}
+
+int ext2_setattr(struct vnode *vnode)
+{
+    struct ext2 *desc = vnode->p;
+    struct ext2_inode inode;
+    int err;
+
+    if ((err = ext2_inode_read(desc, vnode->ino, &inode)))
+        return err;
+
+    inode.mode  = vnode->mode;
+    inode.uid   = vnode->uid;
+    inode.gid   = vnode->gid;
+    inode.atime = vnode->atime.tv_sec;
+    inode.mtime = vnode->mtime.tv_sec;
+    inode.ctime = vnode->ctime.tv_sec;
+
+    return ext2_inode_write(desc, vnode->ino, &inode);
 }

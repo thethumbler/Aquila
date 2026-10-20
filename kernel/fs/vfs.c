@@ -287,67 +287,37 @@ int vfs_install(struct fs *fs)
 
 /* ================== VFS high level mappings ================== */
 
-int vfs_perms_check(struct file *file, struct uio *uio)
+/* check `mode' (VFS_R, VFS_W, VFS_X) access to vnode by the user of uio */
+int vfs_access(struct vnode *vnode, struct uio *uio, int mode)
 {
-    if (uio->uid == 0) {    /* Root */
+    /* root may do anything, but only execute files that have an execute bit */
+    if (uio->uid == 0) {
+        if ((mode & VFS_X) && !S_ISDIR(vnode->mode) && !(vnode->mode & 0111))
+            return -EACCES;
+
         return 0;
     }
 
-    mode_t mode = file->vnode->mode;
-    uid_t  uid  = file->vnode->uid;
-    gid_t  gid  = file->vnode->gid;
+    /* the owner's permissions apply to the owner, then the group's */
+    int shift = vnode->uid == uio->uid ? 6 : vnode->gid == uio->gid ? 3 : 0;
+    int allowed = (vnode->mode >> shift) & 7;
 
-read_perms:
-    /* Read permissions */
-    if ((file->flags & O_ACCMODE) == O_RDONLY || (file->flags & O_ACCMODE) == O_RDWR) {
-        if (uid == uio->uid) {
-            if (mode & S_IRUSR)
-                goto write_perms;
-        } else if (gid == uio->gid) {
-            if (mode & S_IRGRP)
-                goto write_perms;
-        } else {
-            if (mode & S_IROTH)
-                goto write_perms;
-        }
+    return (mode & ~allowed) ? -EACCES : 0;
+}
 
-        return -EACCES;
-    }
+int vfs_perms_check(struct file *file, struct uio *uio)
+{
+    int mode = 0;
+    int accmode = file->flags & O_ACCMODE;
 
-write_perms:
-    /* Write permissions */
-    if (file->flags & (O_WRONLY | O_RDWR)) { 
-        if (uid == uio->uid) {
-            if (mode & S_IWUSR)
-                goto exec_perms;
-        } else if (gid == uio->gid) {
-            if (mode & S_IWGRP)
-                goto exec_perms;
-        } else {
-            if (mode & S_IWOTH)
-                goto exec_perms;
-        }
+    if (accmode == O_RDONLY || accmode == O_RDWR)
+        mode |= VFS_R;
 
-        return -EACCES;
-    }
+    if (file->flags & (O_WRONLY | O_RDWR))
+        mode |= VFS_W;
 
-exec_perms:
-    /* Execute permissions */
-    if (file->flags & O_EXEC) { 
-        if (uid == uio->uid) {
-            if (mode & S_IXUSR)
-                goto done;
-        } else if (gid == uio->gid) {
-            if (mode & S_IXGRP)
-                goto done;
-        } else {
-            if (mode & S_IXOTH)
-                goto done;
-        }
+    if (file->flags & O_EXEC)
+        mode |= VFS_X;
 
-        return -EACCES;
-    }
-    
-done:
-    return 0;
+    return vfs_access(file->vnode, uio, mode);
 }

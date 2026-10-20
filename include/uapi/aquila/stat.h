@@ -66,6 +66,10 @@ struct aquila_stat {
 #define S_ISREG(m)  (((m) & S_IFMT) == S_IFREG)
 #define S_ISLNK(m)  (((m) & S_IFMT) == S_IFLNK)
 #define S_ISSOCK(m) (((m) & S_IFMT) == S_IFSOCK)
+
+/* tv_nsec values for utimensat(2) */
+#define UTIME_NOW   -2L     /* the current time */
+#define UTIME_OMIT  -1L     /* leave the time unchanged */
 #endif
 
 #endif /* ! _AQUILA_STAT_H */

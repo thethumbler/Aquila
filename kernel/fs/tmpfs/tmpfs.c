@@ -201,6 +201,9 @@ struct fs tmpfs = {
 
         .vmknod  = pseudofs_vmknod,
         .vunlink = pseudofs_vunlink,
+        .vlink   = pseudofs_vlink,
+        .vrename = pseudofs_vrename,
+        .setattr = pseudofs_setattr,
         .vget    = tmpfs_vget,
     },
     

@@ -22,8 +22,7 @@ AQBOX_APPLET(mknod)(int argc, char **argv)
     char *major = argv[3];
     char *minor = argv[4];
 
-    umask(0660);
-    mode_t mode = umask(0660);
+    mode_t mode = 0666;     /* less the umask */
 
     switch (type[0]) {
         case 'b': mode |= S_IFBLK; break;

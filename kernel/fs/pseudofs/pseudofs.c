@@ -65,6 +65,10 @@ int pseudofs_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, s
     dirent->next  = cur_dir;
     dir->p        = dirent;
 
+    /* the new directory's .. */
+    if (S_ISDIR(mode))
+        dir->nlink++;
+
     if (ref)
         *ref = vnode;
 
@@ -88,47 +92,139 @@ error:
     return err;
 }
 
+/* the entry `fn' of directory `dir', and the entry before it (NULL if first) */
+static struct pseudofs_dirent *entry_find(struct vnode *dir, const char *fn, struct pseudofs_dirent **prev)
+{
+    *prev = NULL;
+
+    for (struct pseudofs_dirent *e = dir->p; e; e = e->next) {
+        if (!strcmp(e->d_name, fn))
+            return e;
+
+        *prev = e;
+    }
+
+    return NULL;
+}
+
+/* remove `entry' (after `prev') from directory `dir' and drop a link to its vnode */
+static void entry_remove(struct vnode *dir, struct pseudofs_dirent *entry, struct pseudofs_dirent *prev)
+{
+    struct vnode *vnode = entry->d_ino;
+
+    if (prev)
+        prev->next = entry->next;
+    else
+        dir->p = entry->next;
+
+    kfree((void *) entry->d_name);
+    kfree(entry);
+
+    if (S_ISDIR(vnode->mode)) {
+        /* its . and the parent's link through its .. */
+        vnode->nlink = 0;
+        dir->nlink--;
+    } else {
+        vnode->nlink--;
+    }
+
+    /* free it if nothing references it anymore */
+    if (!vnode->nlink && !vnode->ref) {
+        vnode->ref = 1; /* vfs_close will decrement ref */
+        vfs_close(vnode);
+    }
+}
+
 int pseudofs_vunlink(struct vnode *vnode, const char *fn, struct uio *uio)
 {
-    int err = 0;
-    struct pseudofs_dirent *dir;
-    struct vnode *next;
-    struct pseudofs_dirent *prev, *cur;
+    struct pseudofs_dirent *prev;
 
     if (!S_ISDIR(vnode->mode))
         return -ENOTDIR;
 
-    dir   = (struct pseudofs_dirent *) vnode->p;
-    next  = NULL;
+    struct pseudofs_dirent *entry = entry_find(vnode, fn, &prev);
 
-    if (!dir)  /* Directory not initialized */
+    if (!entry)
         return -ENOENT;
 
-    prev = cur = NULL;
-    for (struct pseudofs_dirent *dirent = dir; dirent; dirent = dirent->next) {
-        if (!strcmp(dirent->d_name, fn)) {
-            cur = dirent;
-            goto found;
-        }
+    entry_remove(vnode, entry, prev);
+    return 0;
+}
 
-        prev = dirent;
+int pseudofs_vlink(struct vnode *dir, const char *fn, struct vnode *vnode, struct uio *uio)
+{
+    struct pseudofs_dirent *prev;
+
+    if (strlen(fn) >= MAXNAMELEN)
+        return -ENAMETOOLONG;
+
+    if (entry_find(dir, fn, &prev))
+        return -EEXIST;
+
+    struct pseudofs_dirent *entry = kmalloc(sizeof(struct pseudofs_dirent), &M_PSEUDOFS_DENT, 0);
+    if (!entry)
+        return -ENOMEM;
+
+    if (!(entry->d_name = strdup(fn))) {
+        kfree(entry);
+        return -ENOMEM;
     }
 
-    return -ENOENT;    /* File not found */
+    entry->d_ino = vnode;
+    entry->next  = dir->p;
+    dir->p       = entry;
 
-found:
-    if (prev)
-        prev->next = cur->next;
+    vnode->nlink++;
+    return 0;
+}
+
+/* the checks of the new entry (type, empty directory) are done by the vfs */
+int pseudofs_vrename(struct vnode *odir, const char *ofn, struct vnode *ndir, const char *nfn, struct uio *uio)
+{
+    struct pseudofs_dirent *oprev, *nprev;
+
+    if (strlen(nfn) >= MAXNAMELEN)
+        return -ENAMETOOLONG;
+
+    struct pseudofs_dirent *entry = entry_find(odir, ofn, &oprev);
+    if (!entry)
+        return -ENOENT;
+
+    char *name = strdup(nfn);
+    if (!name)
+        return -ENOMEM;
+
+    /* replace an existing entry */
+    struct pseudofs_dirent *old = entry_find(ndir, nfn, &nprev);
+    if (old) {
+        entry_remove(ndir, old, nprev);
+
+        /* removing it may have unlinked the entry before ours */
+        entry_find(odir, ofn, &oprev);
+    }
+
+    if (oprev)
+        oprev->next = entry->next;
     else
-        vnode->p   = cur->next;
+        odir->p = entry->next;
 
-    cur->d_ino->nlink = 0;   /* XXX */
+    kfree((void *) entry->d_name);
+    entry->d_name = name;
+    entry->next   = ndir->p;
+    ndir->p       = entry;
 
-    if (cur->d_ino->ref == 0) {
-        cur->d_ino->ref = 1; /* vfs_close will decrement ref */
-        vfs_close(cur->d_ino);
+    /* a directory's .. now links to the new parent */
+    if (S_ISDIR(entry->d_ino->mode)) {
+        odir->nlink--;
+        ndir->nlink++;
     }
 
+    return 0;
+}
+
+/* attributes only live in the vnode */
+int pseudofs_setattr(struct vnode *vnode)
+{
     return 0;
 }
 

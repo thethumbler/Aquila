@@ -37,3 +37,20 @@ int vfs_finddir(struct vnode *dir, const char *name, struct dirent *dirent)
 
     return dir->fs->vops.finddir(dir, name, dirent);
 }
+
+/* whether directory `dir' has no entries besides . and .. */
+int vfs_dir_empty(struct vnode *dir)
+{
+    struct dirent dirent;
+    off_t off = 0;
+    ssize_t ret;
+
+    while ((ret = vfs_readdir(dir, off, &dirent)) > 0) {
+        if (strcmp(dirent.d_name, ".") && strcmp(dirent.d_name, ".."))
+            return 0;
+
+        off += ret;
+    }
+
+    return ret == 0;
+}

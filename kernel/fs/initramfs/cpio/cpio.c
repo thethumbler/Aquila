@@ -379,6 +379,9 @@ struct fs cpiofs = {
         .trunc   = rofs_trunc,
         .vmknod  = rofs_vmknod,
         .vunlink = rofs_vunlink,
+        .vlink   = rofs_vlink,
+        .vrename = rofs_vrename,
+        .setattr = rofs_setattr,
     },
     
     .fops = {
