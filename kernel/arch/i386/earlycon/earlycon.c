@@ -8,6 +8,8 @@ extern struct earlycon earlycon_uart;
 extern struct earlycon earlycon_vga;
 extern struct earlycon earlycon_fb;
 
+extern int earlycon_fb_available(void);
+
 int earlycon_puts(char *s)
 {
     return earlycon->puts(s);
@@ -27,14 +29,15 @@ void earlycon_init()
 void earlycon_reinit()
 {
     const char *arg_earlycon = NULL;
-    earlycon = &earlycon_fb; /* default */
+    /* default to framebuffer if we have one, otherwise stay on uart */
+    earlycon = earlycon_fb_available() ? &earlycon_fb : &earlycon_uart;
 
     if (!kargs_get("earlycon", &arg_earlycon) && arg_earlycon) {
         if (!strcmp(arg_earlycon, "ttyS0"))
             earlycon = &earlycon_uart;
         else if (!strcmp(arg_earlycon, "vga"))
             earlycon = &earlycon_vga;
-        else if (!strcmp(arg_earlycon, "fb"))
+        else if (!strcmp(arg_earlycon, "fb") && earlycon_fb_available())
             earlycon = &earlycon_fb;
     }
 

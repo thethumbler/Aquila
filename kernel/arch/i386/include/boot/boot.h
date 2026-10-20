@@ -10,128 +10,151 @@
 #include <video/vesa.h>
 #endif
 
-static inline int get_multiboot_mmap_count(multiboot_info_t *info)
+#define MULTIBOOT_MMAP_MAX      32
+#define MULTIBOOT_MODULES_MAX   32
+
+/*
+ * Convert the multiboot memory map into the generic mmap_t array, storing
+ * at most `max' entries and returning the number of entries stored.
+ * Regions starting above 4 GiB are skipped and regions crossing the 4 GiB
+ * boundary are clamped, since we can't address them anyway.
+ */
+static inline int
+build_multiboot_mmap(multiboot_info_t *info, mmap_t *boot_mmap, int max)
 {
     int count = 0;
-    uint32_t _mmap = info->mmap_addr;
-    multiboot_mmap_t *mmap = (multiboot_mmap_t *)(uintptr_t)_mmap;
-    uint32_t mmap_end = _mmap + info->mmap_length;
-
-    while (_mmap < mmap_end) {
-        //if (mmap->type == MULTIBOOT_MEMORY_AVAILABLE)
-        ++count;
-        _mmap += mmap->size + sizeof(uint32_t);
-        mmap   = (multiboot_mmap_t *)(uintptr_t) _mmap;
-    }
-    return count;
-}
-
-static inline void 
-build_multiboot_mmap(multiboot_info_t *info, mmap_t *boot_mmap)
-{
     uint32_t _mmap = info->mmap_addr;
     multiboot_mmap_t *mmap = (multiboot_mmap_t *)(uintptr_t) _mmap;
     uint32_t mmap_end = _mmap + info->mmap_length;
 
-    while (_mmap < mmap_end) {
+    while (_mmap < mmap_end && count < max) {
+        uint64_t start = mmap->addr;
+        uint64_t end   = mmap->addr + mmap->len;
 
-        *boot_mmap = (mmap_t) {
-            .type  = mmap->type,
-            .start = mmap->addr,
-            .end = mmap->addr + mmap->len
-        };
+        if (start < 0x100000000ULL) {
+            if (end > 0xFFFFFFFFULL || end < start)
+                end = 0xFFFFFFFFULL;
 
-        ++boot_mmap;
+            boot_mmap[count++] = (mmap_t) {
+                .type  = mmap->type,
+                .start = (uintptr_t) start,
+                .end   = (uintptr_t) end,
+            };
+        }
+
         _mmap += mmap->size + sizeof(uint32_t);
         mmap   = (multiboot_mmap_t *)(uintptr_t) _mmap;
     }
+
+    return count;
 }
 
-static inline void 
-build_multiboot_modules(multiboot_info_t *info, module_t *modules)
+static inline int
+build_multiboot_modules(multiboot_info_t *info, module_t *modules, int max)
 {
     multiboot_module_t *mods = (multiboot_module_t *)(uintptr_t) info->mods_addr;
+    int count = 0;
 
-    for (unsigned i = 0; i < info->mods_count; ++i) {
-        modules[i] = (module_t) {
+    for (unsigned i = 0; i < info->mods_count && count < max; ++i) {
+        modules[count++] = (module_t) {
             .addr = (void *) VMA((uintptr_t) mods[i].mod_start),
             .size = mods[i].mod_end - mods[i].mod_start,
-            .cmdline = (char *) VMA((uintptr_t) mods[i].cmdline)
+            .cmdline = mods[i].cmdline ?
+                (char *) VMA((uintptr_t) mods[i].cmdline) : "",
         };
     }
+
+    return count;
 }
 
 static inline struct boot *process_multiboot_info(multiboot_info_t *info)
 {
     static struct boot boot;
 
-    boot.cmdline = (char *) VMA((uintptr_t) info->cmdline);
-    boot.total_mem = info->mem_lower + info->mem_upper;
+    if ((info->flags & MULTIBOOT_INFO_CMDLINE) && info->cmdline)
+        boot.cmdline = (char *) VMA((uintptr_t) info->cmdline);
+    else
+        boot.cmdline = "";
+
+    if (info->flags & MULTIBOOT_INFO_MEMORY)
+        boot.total_mem = info->mem_lower + info->mem_upper;
 
     if (info->flags & MULTIBOOT_INFO_ELF_SHDR) {
         boot.shdr = (struct elf32_shdr *) VMA((uintptr_t) info->u.elf_sec.addr);
         boot.shdr_num = info->u.elf_sec.num;
 
-        struct elf32_shdr *symtab = NULL;
-        struct elf32_shdr *strtab = NULL;
-
         for (size_t i = 0; i < boot.shdr_num; ++i) {
             struct elf32_shdr *shdr = &boot.shdr[i];
 
-            if (shdr->sh_type == SHT_SYMTAB) {
-                symtab = shdr;
-                symtab->sh_addr = VMA((uintptr_t) symtab->sh_addr);
-                boot.symtab = symtab;
+            if (shdr->sh_type == SHT_SYMTAB && !boot.symtab) {
+                shdr->sh_addr = VMA((uintptr_t) shdr->sh_addr);
+                boot.symtab = shdr;
                 boot.symnum = shdr->sh_size / sizeof(struct elf32_sym);
-            }
 
-            if (shdr->sh_type == SHT_STRTAB && !strtab) {
-                strtab = shdr;
-                strtab->sh_addr = VMA((uintptr_t) strtab->sh_addr);
-                boot.strtab = strtab;
+                /* The symbol names live in the string table linked to the
+                 * symbol table, which isn't necessarily the first one */
+                if (shdr->sh_link && shdr->sh_link < boot.shdr_num) {
+                    struct elf32_shdr *strtab = &boot.shdr[shdr->sh_link];
+                    strtab->sh_addr = VMA((uintptr_t) strtab->sh_addr);
+                    boot.strtab = strtab;
+                }
             }
+        }
+
+        /* Symbols are useless without their string table */
+        if (!boot.strtab) {
+            boot.symtab = NULL;
+            boot.symnum = 0;
         }
     }
 
-    boot.mmap_count = get_multiboot_mmap_count(info);
-    static mmap_t mmap[32];
+    /* One extra entry for the framebuffer region */
+    static mmap_t mmap[MULTIBOOT_MMAP_MAX + 1];
     boot.mmap = mmap;
-    build_multiboot_mmap(info, boot.mmap);
+    boot.mmap_count = 0;
+
+    if (info->flags & MULTIBOOT_INFO_MEM_MAP)
+        boot.mmap_count = build_multiboot_mmap(info, boot.mmap, MULTIBOOT_MMAP_MAX);
 
 #ifdef MULTIBOOT_GFX
-    /* We report video memory as mmap region */
-    boot.mmap[boot.mmap_count].type = MMAP_RESERVED;
+    /* VBE info is only valid if the bootloader actually set a video mode */
+    if ((info->flags & MULTIBOOT_INFO_VIDEO_INFO) && info->vbe_mode_info) {
+        struct vbe_info_block  *vinfo = (struct vbe_info_block *)(uintptr_t)  info->vbe_control_info;
+        struct mode_info_block *minfo = (struct mode_info_block *)(uintptr_t) info->vbe_mode_info;
 
-    struct vbe_info_block  *vinfo = (struct vbe_info_block *)(uintptr_t)  info->vbe_control_info;
-    struct mode_info_block *minfo = (struct mode_info_block *)(uintptr_t) info->vbe_mode_info;
+        uintptr_t vaddr    = minfo->phys_base_ptr;
+        uint32_t  scanline = minfo->lin_bytes_per_scanline;
+        uint32_t  yres     = minfo->y_resolution;
+        uint32_t  xres     = minfo->x_resolution;
+        uint32_t  depth    = minfo->bits_per_pixel;
 
-    boot.mmap[boot.mmap_count].start = minfo->phys_base_ptr;
-    boot.mmap[boot.mmap_count].end   = minfo->phys_base_ptr + minfo->y_resolution * minfo->lin_bytes_per_scanline;
+        /* We report video memory as mmap region */
+        boot.mmap[boot.mmap_count] = (mmap_t) {
+            .type  = MMAP_RESERVED,
+            .start = vaddr,
+            .end   = vaddr + yres * scanline,
+        };
 
-    boot.mmap_count++;
+        boot.mmap_count++;
 
-    extern void earlycon_fb_register(uintptr_t, uint32_t, uint32_t, uint32_t, uint32_t);
+        extern void earlycon_fb_register(uintptr_t, uint32_t, uint32_t, uint32_t, uint32_t);
+        earlycon_fb_register(vaddr, scanline, yres, xres, depth);
 
-    uintptr_t vaddr    = minfo->phys_base_ptr;
-    uint32_t  scanline = minfo->lin_bytes_per_scanline;
-    uint32_t  yres     = minfo->y_resolution;
-    uint32_t  xres     = minfo->x_resolution;
-    uint32_t  depth    = minfo->bits_per_pixel;
+        static struct fbdev_vesa data;
+        data.vbe_info  = (struct vbe_info_block *) VMA(vinfo);
+        data.mode_info = (struct mode_info_block *) VMA(minfo);
 
-    earlycon_fb_register(vaddr, scanline, yres, xres, depth);
-
-    static struct fbdev_vesa data;
-    data.vbe_info  = (struct vbe_info_block *) VMA(vinfo);
-    data.mode_info = (struct mode_info_block *) VMA(minfo);
-
-    /* And register fbdev of type `vesa' */
-    fbdev_register(FBDEV_TYPE_VESA, &data);
+        /* And register fbdev of type `vesa' */
+        fbdev_register(FBDEV_TYPE_VESA, &data);
+    }
 #endif
 
-    boot.modules_count = info->mods_count;
-    static module_t modules[32];
+    static module_t modules[MULTIBOOT_MODULES_MAX];
     boot.modules = modules;
-    build_multiboot_modules(info, boot.modules);
+    boot.modules_count = 0;
+
+    if (info->flags & MULTIBOOT_INFO_MODS)
+        boot.modules_count = build_multiboot_modules(info, boot.modules, MULTIBOOT_MODULES_MAX);
 
     return &boot;
 }
