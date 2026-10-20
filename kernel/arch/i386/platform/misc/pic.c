@@ -103,8 +103,9 @@ void x86_irq_unmask(int irq)
         io_out8(&master,  PIC_DATA, pic_mask & 0xFF);
     } else if (irq < 16) {  /* Slave */
         pic_mask &= ~(1 << irq);
-        pic_mask &= ~(1 << 2);  /* Unmask slave */
+        pic_mask &= ~(1 << 2);  /* Unmask slave cascade on master */
         io_out8(&slave,  PIC_DATA, (pic_mask >> 8) & 0xFF);
+        io_out8(&master, PIC_DATA, pic_mask & 0xFF);
     } else {
         panic("Invalid IRQ number\n");
     }
@@ -214,10 +215,10 @@ static int x86_pic_probe(void)
     io_out8(&slave, PIC_DATA, 0xFF);
 
     /* Mask all master IRQs -- except slave cascade */
-    io_out8(&master, PIC_DATA, 0xDF);
+    io_out8(&master, PIC_DATA, 0xFB);
 
     /* Check if there is a devices listening to port */
-    if (io_in8(&master, PIC_DATA) != 0xDF)
+    if (io_in8(&master, PIC_DATA) != 0xFB)
         return -1;
 
     return 0;
