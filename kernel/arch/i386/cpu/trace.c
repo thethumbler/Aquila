@@ -22,16 +22,18 @@ void arch_stack_trace()
 
     printk("stack trace:\n");
 
-    const char *strs = (const char *) __kboot->strtab->sh_addr;
+    /* symbols are not always provided by the bootloader */
+    int have_syms = __kboot && __kboot->symtab && __kboot->strtab;
+    const char *strs = have_syms ? (const char *) __kboot->strtab->sh_addr : NULL;
 
     for (int frame = 0; stk && frame < 20; ++frame) {
 
         /* find symbol */
-        struct elf32_sym *sym = (struct elf32_sym *) __kboot->symtab->sh_addr;
+        struct elf32_sym *sym = have_syms ? (struct elf32_sym *) __kboot->symtab->sh_addr : NULL;
 
         int found = 0;
 
-        for (size_t i = 0; i < __kboot->symnum; ++i) {
+        for (size_t i = 0; have_syms && i < __kboot->symnum; ++i) {
             if (ELF32_ST_TYPE(sym->st_info) == STT_FUNC) {
                 if (stk->ip > sym->st_value && stk->ip < sym->st_value + sym->st_size) {
                     found = 1;
