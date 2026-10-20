@@ -28,7 +28,18 @@ static ssize_t kmsgdev_write(struct devid *dd __unused, off_t offset, size_t siz
     //printk("\n");
     //return ringbuf_write(kmsg, size, buf);
 
-    printk("%s", buf);
+    /* buf is not NUL-terminated, print exactly `size' bytes */
+    char tmp[65];
+    size_t done = 0;
+
+    while (done < size) {
+        size_t len = MIN(size - done, sizeof(tmp) - 1);
+        memcpy(tmp, (char *) buf + done, len);
+        tmp[len] = '\0';
+        printk("%s", tmp);
+        done += len;
+    }
+
     return size;
 }
 
