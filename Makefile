@@ -8,6 +8,8 @@
 #   make              kernel, user space programs and initrd image
 #   make kernel       build/kernel/kernel-$(VERSION).$(ARCH)
 #   make userland     build/userland/bin/
+#   make ports        third-party software in ports/ (build/ports/root),
+#                     included in the initrd once built
 #   make initrd       build/rootfs/ and build/initrd.img
 #   make iso          build/aquila.iso, boots with Limine (needs xorriso)
 #   make run          boot the kernel and initrd in QEMU, console on stdio
@@ -49,7 +51,7 @@ MAKEFLAGS += --no-print-directory
 
 export
 
-.PHONY: all toolchain kernel userland initrd iso run run-iso test clean distclean check-toolchain
+.PHONY: all toolchain kernel userland ports initrd iso run run-iso test clean distclean check-toolchain
 
 all: kernel userland initrd
 
@@ -69,6 +71,9 @@ kernel:
 userland: check-toolchain
 	@$(MAKE) -f $(SRCDIR)/userland/Makefile
 
+ports: check-toolchain
+	@BUILDDIR=$(BUILDDIR) TOOLCHAIN=$(TOOLCHAIN) $(SRCDIR)/ports/build.sh
+
 #
 # Root filesystem and initrd
 #
@@ -86,6 +91,9 @@ initrd: userland
 	@$(CP) $(BUILDDIR)/userland/bin/init $(ROOTFS)/init
 	@$(CP) $(BUILDDIR)/userland/bin/aqbox $(BUILDDIR)/userland/bin/fbterm \
 		$(BUILDDIR)/userland/bin/kilo $(ROOTFS)/bin/
+	@if [ -d $(BUILDDIR)/ports/root ]; then \
+		$(CP) -r $(BUILDDIR)/ports/root/. $(ROOTFS)/; \
+		$(STRIP) $(ROOTFS)/usr/bin/*; fi
 	@$(STRIP) $(ROOTFS)/init $(ROOTFS)/bin/*
 	@for a in $(AQBOX_BIN); do $(LN) -s /bin/aqbox $(ROOTFS)/bin/$$a; done
 	@for a in $(AQBOX_SBIN); do $(LN) -s /bin/aqbox $(ROOTFS)/sbin/$$a; done
