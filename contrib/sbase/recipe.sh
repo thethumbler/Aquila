@@ -9,9 +9,9 @@ COMMIT=eb749d1c88c0557ed06733de89efda1e252facc2
 build()
 {
     # these need what AquilaOS doesn't have yet: chroot (root directory),
-    # cron and logger (syslog), flock (file locks), nice and renice
-    # (priorities), tftp (IP networking)
-    local skip="chroot cron flock logger nice renice tftp"
+    # cron and logger (syslog), nice and renice (priorities), tftp (IP
+    # networking)
+    local skip="chroot cron logger nice renice tftp"
     local bin tool
 
     rm -f $(printf '%s.c ' $skip)

@@ -11,7 +11,7 @@ software is in [ports/](../ports/).
 |--------|----------|----------------------------------------------------|
 | dash   | 0.5.13.5 | `/bin/dash`, also `/bin/sh`                        |
 | runit  | 2.3.1    | `/sbin/runit` (init, `/init` links to `/sbin/runit-init`), `runsv`, `runsvdir`, `sv`, `chpst` and `runsvchdir` in `/bin`; without `svlogd` (needs IP sockets) and `utmpset` (no utmp) |
-| sbase  | 0.1      | `/bin/sbase-box`, linked as `ls`, `cp`, `sed`, `grep`, ...; without `chroot`, `cron`, `flock`, `logger`, `nice`, `renice` and `tftp`, which need what the kernel doesn't have yet |
+| sbase  | 0.1      | `/bin/sbase-box`, linked as `ls`, `cp`, `sed`, `grep`, ...; without `chroot`, `cron`, `logger`, `nice`, `renice` and `tftp`, which need what the kernel doesn't have yet |
 
 A recipe is rebuilt when its files, `mk/recipes.sh` or libc change.
 `make contrib` builds only these.
