@@ -11,7 +11,7 @@ struct file;
 struct uio;
 struct vops;
 
-#include <bits/dirent.h>
+#include <aquila/dirent.h>
 
 /**
  * \ingroup vfs
@@ -33,7 +33,7 @@ struct fops {
     int         (*eof)       (struct file *);
 };
 
-#include <bits/errno.h>
+#include <aquila/errno.h>
 #include <sys/proc.h>
 #include <ds/queue.h>
 #include <fs/stat.h>
@@ -236,7 +236,7 @@ int     vfs_creat(const char *path, mode_t mode, struct uio *uio, struct vnode *
 int     vfs_mkdir(const char *path, mode_t mode, struct uio *uio, struct vnode **ref);
 int     vfs_mknod(const char *path, uint32_t mode, dev_t dev, struct uio *uio, struct vnode **ref);
 int     vfs_unlink(const char *path, struct uio *uio);
-int     vfs_stat(struct vnode *vnode, struct stat *buf);
+int     vfs_stat(struct vnode *vnode, struct aquila_stat *buf);
 int     vfs_perms_check(struct file *file, struct uio *uio);
 
 /* XXX */

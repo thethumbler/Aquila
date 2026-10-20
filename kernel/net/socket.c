@@ -6,7 +6,7 @@
 #include <core/system.h>
 #include <core/string.h>
 #include <ds/queue.h>
-#include <bits/errno.h>
+#include <aquila/errno.h>
 #include <net/socket.h>
 
 int socket_create(struct file *file, int domain, int type, int protocol)

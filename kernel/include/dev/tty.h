@@ -5,8 +5,8 @@
 
 struct tty;
 
-#include <fs/termios.h>
-#include <fs/ioctl.h>
+#include <aquila/termios.h>
+#include <aquila/ioctl.h>
 #include <sys/proc.h>
 
 typedef ssize_t (*ttyio)(struct tty *tty, size_t size, void *buf);

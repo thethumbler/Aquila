@@ -5,7 +5,7 @@
 #include <sys/proc.h>
 #include <sys/sched.h>
 
-#include <bits/errno.h>
+#include <aquila/errno.h>
 
 int arch_proc_fork(struct thread *thread, struct proc *fork)
 {

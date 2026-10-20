@@ -1,7 +1,7 @@
-#ifndef _BITS_DIRENT_H
-#define _BITS_DIRENT_H
+#ifndef _AQUILA_DIRENT_H
+#define _AQUILA_DIRENT_H
 
-#include <stdint.h>
+#include <stddef.h>
 
 #define MAXNAMELEN 256
 
@@ -10,8 +10,8 @@
  * \brief directory entry
  */
 struct dirent {
-    size_t d_ino;   // FIXME 
+    size_t d_ino;
     char d_name[MAXNAMELEN];
 };
 
-#endif
+#endif /* ! _AQUILA_DIRENT_H */

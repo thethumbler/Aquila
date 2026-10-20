@@ -7,7 +7,7 @@
 #include <fs/vfs.h>
 #include <fs/posix.h>
 #include <fs/vcache.h>
-#include <bits/errno.h>
+#include <aquila/errno.h>
 #include <ds/bitmap.h>
 
 #include <ext2.h>

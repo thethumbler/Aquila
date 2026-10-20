@@ -3,7 +3,7 @@
 #include <fs/posix.h>
 #include <dev/dev.h>
 #include <net/socket.h>
-#include <bits/fcntl.h>
+#include <aquila/fcntl.h>
 
 /**
  * \ingroup vfs

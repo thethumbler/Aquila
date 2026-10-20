@@ -9,7 +9,7 @@
 #include <fs/posix.h>
 #include <fs/vcache.h>
 #include <fs/bcache.h>
-#include <bits/errno.h>
+#include <aquila/errno.h>
 #include <ds/bitmap.h>
 
 #include <minix.h>

@@ -16,8 +16,8 @@
 #include <fs/tmpfs.h>
 #include <fs/posix.h>
 
-#include <bits/errno.h>
-#include <bits/dirent.h>
+#include <aquila/errno.h>
+#include <aquila/dirent.h>
 
 static int tmpfs_vget(struct vnode *super, ino_t ino, struct vnode **vnode)
 {

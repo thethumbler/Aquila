@@ -14,7 +14,7 @@
 
 #include <core/system.h>
 #include <core/arch.h>
-#include <bits/errno.h>
+#include <aquila/errno.h>
 
 /** first address not accessible from user space */
 #define UACCESS_LIMIT   ((uintptr_t) USER_STACK)

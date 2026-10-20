@@ -18,49 +18,16 @@
 #ifndef _AQTEST_H
 #define _AQTEST_H
 
-typedef unsigned int u32;
+#include <stdint.h>
 
-/* syscall numbers, see kernel/sys/syscall.c */
-enum {
-    S_EXIT          = 1,
-    S_CLOSE         = 2,
-    S_EXECVE        = 3,
-    S_FORK          = 4,
-    S_FSTAT         = 5,
-    S_GETPID        = 6,
-    S_KILL          = 8,
-    S_LSEEK         = 10,
-    S_OPEN          = 11,
-    S_READ          = 12,
-    S_SBRK          = 13,
-    S_STAT          = 14,
-    S_WAITPID       = 17,
-    S_WRITE         = 18,
-    S_IOCTL         = 19,
-    S_SIGACTION     = 20,
-    S_MOUNT         = 22,
-    S_UNAME         = 24,
-    S_PIPE          = 25,
-    S_FCNTL         = 26,
-    S_GETCWD        = 28,
-    S_THREAD_CREATE = 29,
-    S_THREAD_EXIT   = 30,
-    S_THREAD_JOIN   = 31,
-    S_MKNOD         = 33,
-    S_MMAP          = 38,
-    S_MUNMAP        = 39,
-    S_SOCKET        = 40,
-    S_BIND          = 42,
-    S_CONNECT       = 43,
-    S_LISTEN        = 44,
-    S_SELECT        = 53,
-};
+typedef uint32_t u32;
 
-#define O_RDWR      0x0002
-#define O_CREAT     0x0200
-
-#define S_IFCHR     0020000
-#define S_IFBLK     0060000
+#include <aquila/errno.h>
+#include <aquila/fcntl.h>
+#include <aquila/ioctl.h>
+#include <aquila/signal.h>
+#include <aquila/stat.h>
+#include <aquila/syscall.h>
 
 #define DEV(major, minor)   (((major) << 8) | (minor))
 
@@ -76,17 +43,10 @@ static inline int sc3(int n, u32 a, u32 b, u32 c)
 
 #define SC(n, a, b, c) sc3(n, (u32)(a), (u32)(b), (u32)(c))
 
-struct aq_mount {
-    const char *type;
-    const char *dir;
-    int flags;
-    void *data;
-} __attribute__((packed));
-
 static inline int aq_mount(const char *type, const char *dir, void *data)
 {
-    struct aq_mount m = {type, dir, 0, data};
-    return SC(S_MOUNT, &m, 0, 0);
+    struct aquila_mount_args m = {type, dir, 0, data};
+    return SC(SYS_mount, &m, 0, 0);
 }
 
 /*
@@ -114,7 +74,7 @@ static int aq_strlen(const char *s)
 
 static void aq_puts(const char *s)
 {
-    SC(S_WRITE, aq_out, s, aq_strlen(s));
+    SC(SYS_write, aq_out, s, aq_strlen(s));
 }
 
 static void aq_putn(int v)
@@ -146,16 +106,16 @@ static void check(const char *name, int got, int want)
 /* fork, run fn in the child (exit 0x42 if it returns), return wait status */
 static int aq_child_status(void (*fn)(void))
 {
-    int pid = SC(S_FORK, 0, 0, 0);
+    int pid = SC(SYS_fork, 0, 0, 0);
 
     if (pid == 0) {
         fn();
-        SC(S_EXIT, 0x42, 0, 0);
+        SC(SYS_exit, 0x42, 0, 0);
         for (;;);
     }
 
     int status = -1;
-    SC(S_WAITPID, pid, &status, 0);
+    SC(SYS_waitpid, pid, &status, 0);
     return status;
 }
 
@@ -171,8 +131,8 @@ static void aq_begin(const char *name)
     static struct { char *dev, *opt; } no_args = {0, 0};
 
     aq_mount("devfs", "/dev", &no_args);
-    SC(S_MKNOD, "/dev/ttyS0", S_IFCHR | 0666, DEV(4, 64));
-    aq_out = SC(S_OPEN, "/dev/ttyS0", O_RDWR, 0);
+    SC(SYS_mknod, "/dev/ttyS0", S_IFCHR | 0666, DEV(4, 64));
+    aq_out = SC(SYS_open, "/dev/ttyS0", O_RDWR, 0);
 
     aq_puts("aqtest: ");
     aq_puts(name);
@@ -186,7 +146,7 @@ static void __attribute__((noreturn)) aq_end(void)
     aq_puts("\n");
 
     for (;;)
-        SC(S_GETPID, 0, 0, 0);
+        SC(SYS_getpid, 0, 0, 0);
 }
 
 #endif /* ! _AQTEST_H */

@@ -1,7 +1,7 @@
 #include <core/system.h>
 #include <fs/vfs.h>
 #include <fs/posix.h>
-#include <bits/errno.h>
+#include <aquila/errno.h>
 
 /**
  * posix_file_lseek

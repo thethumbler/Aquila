@@ -3,7 +3,7 @@
 #include <core/module.h>
 #include <core/string.h>
 #include <core/time.h>
-#include <bits/errno.h>
+#include <aquila/errno.h>
 #include <boot/boot.h>
 
 #include <fs/vfs.h>

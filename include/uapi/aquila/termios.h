@@ -1,7 +1,5 @@
-#ifndef _FS_TERMIOS_H
-#define _FS_TERMIOS_H
-
-#include <core/system.h>
+#ifndef _AQUILA_TERMIOS_H
+#define _AQUILA_TERMIOS_H
 
 typedef unsigned char cc_t;
 typedef unsigned int  speed_t;
@@ -166,4 +164,4 @@ struct termios {
 #define TCSADRAIN   1
 #define TCSAFLUSH   2
 
-#endif /* ! _FS_TERMIOS_H */
+#endif /* ! _AQUILA_TERMIOS_H */

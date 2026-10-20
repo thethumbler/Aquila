@@ -26,7 +26,7 @@
 #include <ds/ringbuf.h>
 #include <ds/queue.h>
 
-#include <bits/errno.h>
+#include <aquila/errno.h>
 
 #define BUFSIZE    128
 

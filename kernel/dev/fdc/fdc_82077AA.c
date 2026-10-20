@@ -5,7 +5,7 @@
 
 #include <cpu/io.h>
 #include <dev/dev.h>
-#include <bits/errno.h>
+#include <aquila/errno.h>
 #include <fdc_82077AA.h>
 
 static struct dev fdcdev;

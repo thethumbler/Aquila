@@ -1,7 +1,5 @@
-#ifndef _FCNTL_H
-#define _FCNTL_H
-
-#include <core/system.h>
+#ifndef _AQUILA_FCNTL_H
+#define _AQUILA_FCNTL_H
 
 #define O_ACCMODE   (O_RDONLY|O_WRONLY|O_RDWR)
 
@@ -42,4 +40,4 @@
 
 #define FD_CLOEXEC      1
 
-#endif
+#endif /* ! _AQUILA_FCNTL_H */

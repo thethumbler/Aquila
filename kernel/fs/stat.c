@@ -2,7 +2,7 @@
 #include <fs/vfs.h>
 #include <fs/stat.h>
 
-int vfs_stat(struct vnode *vnode, struct stat *buf)
+int vfs_stat(struct vnode *vnode, struct aquila_stat *buf)
 {
     vfs_log(LOG_DEBUG, "vfs_stat(vnode=%p, buf=%p)\n", vnode, buf);
 
@@ -14,9 +14,12 @@ int vfs_stat(struct vnode *vnode, struct stat *buf)
     buf->st_gid   = vnode->gid;
     buf->st_rdev  = vnode->rdev;
     buf->st_size  = vnode->size;
-    buf->st_mtime = vnode->mtime;
-    buf->st_atime = vnode->atime;
-    buf->st_ctime = vnode->ctime;
+    buf->st_mtim.tv_sec  = vnode->mtime.tv_sec;
+    buf->st_mtim.tv_nsec = vnode->mtime.tv_nsec;
+    buf->st_atim.tv_sec  = vnode->atime.tv_sec;
+    buf->st_atim.tv_nsec = vnode->atime.tv_nsec;
+    buf->st_ctim.tv_sec  = vnode->ctime.tv_sec;
+    buf->st_ctim.tv_nsec = vnode->ctime.tv_nsec;
 
     return 0;
 }

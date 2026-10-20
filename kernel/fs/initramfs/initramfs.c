@@ -18,7 +18,7 @@
 #include <fs/initramfs.h>
 #include <fs/devfs.h>
 #include <fs/posix.h>
-#include <bits/errno.h>
+#include <aquila/errno.h>
 
 #include <ds/queue.h>
 #include <boot/boot.h>

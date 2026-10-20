@@ -1,6 +1,6 @@
 #include <core/system.h>
 #include <fs/vfs.h>
-#include <bits/fcntl.h>
+#include <aquila/fcntl.h>
 
 static inline int vfs_follow(struct vnode *vnode, struct uio *uio, struct vnode **ref)
 {

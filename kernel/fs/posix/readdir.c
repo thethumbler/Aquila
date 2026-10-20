@@ -13,9 +13,9 @@
 
 #include <fs/vfs.h>
 
-#include <bits/fcntl.h>
-#include <bits/errno.h>
-#include <bits/dirent.h>
+#include <aquila/fcntl.h>
+#include <aquila/errno.h>
+#include <aquila/dirent.h>
 
 /**
  * posix_file_readdir

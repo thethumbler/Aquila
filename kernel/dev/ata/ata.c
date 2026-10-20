@@ -12,7 +12,7 @@
 #include <fs/devfs.h>
 #include <fs/posix.h>
 #include <fs/mbr.h>
-#include <bits/errno.h>
+#include <aquila/errno.h>
 
 #include <dev/pci.h>
 

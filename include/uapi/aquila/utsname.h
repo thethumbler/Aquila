@@ -1,5 +1,5 @@
-#ifndef _UTSNAME
-#define _UTSNAME
+#ifndef _AQUILA_UTSNAME_H
+#define _AQUILA_UTSNAME_H
 
 #define MAX_LENGTH 64
 
@@ -11,4 +11,4 @@ struct utsname {
     char  machine[MAX_LENGTH];
 };
 
-#endif /* ! _UTSNAME */
+#endif /* ! _AQUILA_UTSNAME_H */

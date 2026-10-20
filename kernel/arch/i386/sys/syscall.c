@@ -3,15 +3,15 @@
 #include <sys/proc.h>
 #include <sys/sched.h>
 #include <sys/syscall.h>
-#include <bits/errno.h>
+#include <aquila/errno.h>
 
 void arch_syscall(struct x86_regs *r)
 {
 #if ARCH_BITS==32
-    if (r->eax >= syscall_cnt) {
+    if (r->eax >= syscall_cnt || !syscall_table[r->eax]) {
         printk("[%d:%d] %s: undefined syscall %d\n", curproc->pid, curthread->tid, curproc->name, r->eax);
 #else
-    if (r->rax >= syscall_cnt) {
+    if (r->rax >= syscall_cnt || !syscall_table[r->rax]) {
         printk("[%d:%d] %s: undefined syscall %ld\n", curproc->pid, curthread->tid, curproc->name, r->rax);
 #endif
         arch_syscall_return(curthread,-ENOSYS);

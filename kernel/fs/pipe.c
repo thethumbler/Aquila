@@ -1,7 +1,7 @@
 #include <core/system.h>
 
 #include <ds/ringbuf.h>
-#include <bits/fcntl.h>
+#include <aquila/fcntl.h>
 
 #include <fs/pipe.h>
 #include <fs/posix.h>

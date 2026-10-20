@@ -1,7 +1,7 @@
 #include <core/system.h>
 #include <dev/dev.h>
 #include <fs/posix.h>
-#include <bits/errno.h>
+#include <aquila/errno.h>
 
 #include <memdev.h>
 

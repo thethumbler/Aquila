@@ -9,8 +9,8 @@
 #include <fs/vfs.h>
 #include <sys/proc.h>
 #include <sys/sched.h>
-#include <bits/fcntl.h>
-#include <bits/errno.h>
+#include <aquila/fcntl.h>
+#include <aquila/errno.h>
 #include <dev/dev.h>
 #include <net/socket.h>
 

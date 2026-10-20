@@ -1,6 +1,6 @@
 #include <core/system.h>
 #include <fs/vfs.h>
-#include <bits/errno.h>
+#include <aquila/errno.h>
 
 /**
  * \ingroup vfs

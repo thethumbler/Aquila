@@ -30,7 +30,7 @@ static int write_pattern(int fd, u32 start, u32 len)
         for (u32 i = 0; i < n; ++i)
             buf[i] = pat(start + i);
 
-        int w = SC(S_WRITE, fd, buf, n);
+        int w = SC(SYS_write, fd, buf, n);
         if (w != (int) n)
             return w < 0 ? w : -1;
 
@@ -46,11 +46,11 @@ static int verify(int fd, u32 len)
 {
     u32 off = 0;
 
-    SC(S_LSEEK, fd, 0, 0);
+    SC(SYS_lseek, fd, 0, 0);
 
     while (off < len) {
         u32 n = len - off > sizeof(buf) ? sizeof(buf) : len - off;
-        int r = SC(S_READ, fd, buf, n);
+        int r = SC(SYS_read, fd, buf, n);
 
         if (r <= 0)
             return off;
@@ -71,25 +71,25 @@ void aq_main(void)
 
     aq_begin("ext2");
 
-    check("mknod /dev/hda", SC(S_MKNOD, "/dev/hda", S_IFBLK | 0644, DEV(3, 0)), 0);
+    check("mknod /dev/hda", SC(SYS_mknod, "/dev/hda", S_IFBLK | 0644, DEV(3, 0)), 0);
     check("mount ext2", aq_mount("ext2", "/mnt", &args), 0);
 
-    int fd = SC(S_OPEN, "/mnt/big", O_RDWR | O_CREAT, 0644);
+    int fd = SC(SYS_open, "/mnt/big", O_RDWR | O_CREAT, 0644);
     check("create file", fd >= 0, 1);
     check("write through indirect blocks", write_pattern(fd, 0, FIRST), 0);
-    check("close", SC(S_CLOSE, fd, 0, 0), 0);
+    check("close", SC(SYS_close, fd, 0, 0), 0);
 
     /* append after reopening: used to wipe the inode block pointers */
-    fd = SC(S_OPEN, "/mnt/big", O_RDWR, 0);
+    fd = SC(SYS_open, "/mnt/big", O_RDWR, 0);
     check("reopen", fd >= 0, 1);
-    check("seek to end", SC(S_LSEEK, fd, FIRST, 0), FIRST);
+    check("seek to end", SC(SYS_lseek, fd, FIRST, 0), FIRST);
     check("append", write_pattern(fd, FIRST, EXTRA), 0);
     check("read back", verify(fd, FIRST + EXTRA), -1);
-    check("close", SC(S_CLOSE, fd, 0, 0), 0);
+    check("close", SC(SYS_close, fd, 0, 0), 0);
 
-    fd = SC(S_OPEN, "/mnt/small", O_RDWR | O_CREAT, 0644);
-    check("small file", SC(S_WRITE, fd, "hello aquila\n", 13), 13);
-    SC(S_CLOSE, fd, 0, 0);
+    fd = SC(SYS_open, "/mnt/small", O_RDWR | O_CREAT, 0644);
+    check("small file", SC(SYS_write, fd, "hello aquila\n", 13), 13);
+    SC(SYS_close, fd, 0, 0);
 
     aq_end();
 }

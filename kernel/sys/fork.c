@@ -6,7 +6,7 @@
 #include <mm/pmap.h>
 #include <sys/proc.h>
 #include <ds/queue.h>
-#include <bits/errno.h>
+#include <aquila/errno.h>
 #include <net/socket.h>
 
 MALLOC_DECLARE(M_FDS);

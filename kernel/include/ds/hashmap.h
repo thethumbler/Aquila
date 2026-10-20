@@ -7,7 +7,7 @@ struct hashmap;
 struct hashmap_node;
 
 #include <core/string.h>
-#include <bits/errno.h>
+#include <aquila/errno.h>
 #include <ds/queue.h>
 
 typedef uintptr_t hash_t;

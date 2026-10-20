@@ -8,6 +8,7 @@ PDIR := $(SRCDIR)/kernel
 
 CFLAGS += \
 	-I. \
+	-I$(SRCDIR)/include/uapi \
 	-I$(PDIR)/arch/$(ARCH_DIR)/platform/$(PLATFORM_DIR)/include \
 	-I$(PDIR)/arch/$(ARCH_DIR)/include \
 	-I$(PDIR)/include \
@@ -15,6 +16,7 @@ CFLAGS += \
 
 ASFLAGS += \
 	-I. \
+	-I$(SRCDIR)/include/uapi \
 	-I$(PDIR)/arch/$(ARCH_DIR)/platform/$(PLATFORM_DIR)/include \
 	-I$(PDIR)/arch/$(ARCH_DIR)/include \
 	-I$(PDIR)/include \

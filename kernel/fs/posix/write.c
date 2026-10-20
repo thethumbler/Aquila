@@ -12,8 +12,8 @@
 
 #include <fs/vfs.h>
 
-#include <bits/fcntl.h>
-#include <bits/errno.h>
+#include <aquila/fcntl.h>
+#include <aquila/errno.h>
 
 /**
  * posix_file_write

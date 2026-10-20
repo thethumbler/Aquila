@@ -120,7 +120,7 @@ struct proc {
     struct queue wait_queue;
 
     /** Registered signal handlers */
-    struct sigaction sigaction[SIG_MAX+1];
+    struct aquila_sigaction sigaction[SIG_MAX+1];
 
     /** Exit status of process */
     int exit;

@@ -1,5 +1,7 @@
-#ifndef _ERRNO_H
-#define _ERRNO_H
+#ifndef _AQUILA_ERRNO_H
+#define _AQUILA_ERRNO_H
+
+/* Error numbers returned by system calls (negated) */
 
 #define EPERM            1
 #define ENOENT           2
@@ -136,4 +138,4 @@
 #define ERFKILL         132
 #define EHWPOISON       133
 
-#endif /* ! _ERRNO_H */
+#endif /* ! _AQUILA_ERRNO_H */

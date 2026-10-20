@@ -7,7 +7,7 @@
 #include <dev/dev.h>
 #include <dev/tty.h>
 #include <sys/sched.h>
-#include <bits/errno.h>
+#include <aquila/errno.h>
 #include <ds/ringbuf.h>
 
 MALLOC_DEFINE(M_PTY, "pseudo-terminal", "pseudo-terminal structure");

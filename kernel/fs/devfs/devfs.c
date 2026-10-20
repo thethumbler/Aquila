@@ -17,7 +17,7 @@
 #include <fs/devfs.h>
 #include <fs/tmpfs.h>
 
-#include <bits/errno.h>
+#include <aquila/errno.h>
 
 /* devfs root directory (usually mounted on '/dev') */
 struct vnode *devfs_root = NULL;

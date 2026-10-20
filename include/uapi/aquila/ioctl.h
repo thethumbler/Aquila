@@ -1,5 +1,5 @@
-#ifndef _FS_IOCTL_H
-#define _FS_IOCTL_H
+#ifndef _AQUILA_IOCTL_H
+#define _AQUILA_IOCTL_H
 
 struct winsize {
     unsigned short ws_row;
@@ -199,4 +199,4 @@ struct winsize {
 #define SIOCDEVPRIVATE      0x89F0
 #define SIOCPROTOPRIVATE    0x89E0
 
-#endif  /* ! _FS_IOCTL_H */
+#endif /* ! _AQUILA_IOCTL_H */

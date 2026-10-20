@@ -29,7 +29,7 @@ static void t_sse(void)
                  "movups %%xmm0, (%0)" :: "r"(f) : "memory", "xmm0");
 
     if (f[3] != 8.0f)
-        SC(S_EXIT, 1, 0, 0);
+        SC(SYS_exit, 1, 0, 0);
 }
 
 void aq_main(void)
@@ -67,14 +67,14 @@ void aq_main(void)
         "mov %%cx, %%es\n"
         "mov %%cx, %%fs\n"
         "mov %%cx, %%gs\n"
-        : "=a"(r) : "i"(S_GETPID) : "ebx", "ecx", "memory");
+        : "=a"(r) : "i"(SYS_getpid) : "ebx", "ecx", "memory");
 
     check("syscall with null segments", r > 0, 1);
 
     /* user-mode exceptions and port I/O are signals, not panics */
-    check("port I/O -> SIGSEGV", aq_child_status(t_outb), SIGNALED(11));
-    check("ud2 -> SIGILL", aq_child_status(t_ud2), SIGNALED(4));
-    check("divide by zero -> SIGFPE", aq_child_status(t_div), SIGNALED(8));
+    check("port I/O -> SIGSEGV", aq_child_status(t_outb), SIGNALED(SIGSEGV));
+    check("ud2 -> SIGILL", aq_child_status(t_ud2), SIGNALED(SIGILL));
+    check("divide by zero -> SIGFPE", aq_child_status(t_div), SIGNALED(SIGFPE));
     check("SSE usable", aq_child_status(t_sse), EXITED(0x42));
 
     aq_end();

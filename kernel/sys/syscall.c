@@ -10,6 +10,7 @@
 
 
 #include <core/system.h>
+#include <aquila/syscall.h>
 #include <core/panic.h>
 #include <core/string.h>
 #include <core/arch.h>
@@ -23,11 +24,11 @@
 
 #include <net/socket.h>
 
-#include <bits/errno.h>
-#include <bits/dirent.h>
-#include <bits/utsname.h>
-#include <bits/fcntl.h>
-#include <bits/mman.h>
+#include <aquila/errno.h>
+#include <aquila/dirent.h>
+#include <aquila/utsname.h>
+#include <aquila/fcntl.h>
+#include <aquila/mman.h>
 
 #include <fs/devpts.h>
 #include <fs/pipe.h>
@@ -139,7 +140,7 @@ static void sys_fork(void)
     }
 }
 
-static void sys_fstat(int fildes, struct stat *buf)
+static void sys_fstat(int fildes, struct aquila_stat *buf)
 {
     syscall_log(LOG_DEBUG, "fstat(fildes=%d, buf=%p)\n", fildes, buf);
 
@@ -150,14 +151,14 @@ static void sys_fstat(int fildes, struct stat *buf)
         return;
     }
 
-    if (uaccess_check(buf, sizeof(struct stat))) {
+    if (uaccess_check(buf, sizeof(struct aquila_stat))) {
         arch_syscall_return(curthread, -EFAULT);
         return;
     }
 
     if (file->flags & FILE_SOCKET) {
         /* sockets have no vnode, report a minimal stat */
-        memset(buf, 0, sizeof(struct stat));
+        memset(buf, 0, sizeof(struct aquila_stat));
         buf->st_mode = S_IFSOCK;
         arch_syscall_return(curthread, 0);
         return;
@@ -354,7 +355,7 @@ static void sys_sbrk(ptrdiff_t incr)
     return;
 }
 
-static void sys_stat(const char *path, struct stat *buf)
+static void sys_stat(const char *path, struct aquila_stat *buf)
 {
     syscall_log(LOG_DEBUG, "stat(path=%s, buf=%p)\n", path, buf);
 
@@ -362,7 +363,7 @@ static void sys_stat(const char *path, struct stat *buf)
     int ret = 0;
     struct uio uio = PROC_UIO(curproc);
 
-    if (uaccess_str_check(path) || uaccess_check(buf, sizeof(struct stat))) {
+    if (uaccess_str_check(path) || uaccess_check(buf, sizeof(struct aquila_stat))) {
         arch_syscall_return(curthread, -EFAULT);
         return;
     }
@@ -534,7 +535,7 @@ static void sys_ioctl(int fd, int request, void *argp)
     return;
 }
 
-static void sys_sigaction(int sig, const struct sigaction *act, struct sigaction *oact)
+static void sys_sigaction(int sig, const struct aquila_sigaction *act, struct aquila_sigaction *oact)
 {
     syscall_log(LOG_DEBUG, "sigaction(sig=%d, act=%p, oact=%p)\n",
             sig, act, oact);
@@ -544,8 +545,8 @@ static void sys_sigaction(int sig, const struct sigaction *act, struct sigaction
         return;
     }
 
-    if ((act && uaccess_check(act, sizeof(struct sigaction))) ||
-        (oact && uaccess_check(oact, sizeof(struct sigaction)))) {
+    if ((act && uaccess_check(act, sizeof(struct aquila_sigaction))) ||
+        (oact && uaccess_check(oact, sizeof(struct aquila_sigaction)))) {
         arch_syscall_return(curthread, -EFAULT);
         return;
     }
@@ -567,10 +568,10 @@ static void sys_sigaction(int sig, const struct sigaction *act, struct sigaction
     }
 
     if (oact)
-        memcpy(oact, &curproc->sigaction[sig], sizeof(struct sigaction));
+        memcpy(oact, &curproc->sigaction[sig], sizeof(struct aquila_sigaction));
 
     if (act)
-        memcpy(&curproc->sigaction[sig], act, sizeof(struct sigaction));
+        memcpy(&curproc->sigaction[sig], act, sizeof(struct aquila_sigaction));
 
     arch_syscall_return(curthread, 0);
 }
@@ -601,21 +602,14 @@ static void sys_readdir(int fd, struct dirent *dirent)
     return;
 }
 
-struct mount_struct {
-    const char *type;
-    const char *dir;
-    int flags;
-    void *data;
-} __packed;
-
-static void sys_mount(struct mount_struct *args)
+static void sys_mount(struct aquila_mount_args *args)
 {
     if (curproc->uid != 0) {
         arch_syscall_return(curthread, -EACCES);
         return;
     }
 
-    if (uaccess_check(args, sizeof(struct mount_struct))) {
+    if (uaccess_check(args, sizeof(struct aquila_mount_args))) {
         arch_syscall_return(curthread, -EFAULT);
         return;
     }
@@ -853,17 +847,9 @@ static void sys_getcwd(char *buf, size_t size)
     arch_syscall_return(curthread, 0);
 }
 
-struct __uthread {
-    uintptr_t stack;
-    uintptr_t entry;    /* Sys entry */
-    uintptr_t uentry;   /* User entry */
-    uintptr_t arg;
-    uintptr_t attr;
-};
-
-static void sys_thread_create(struct __uthread *__uthread)
+static void sys_thread_create(struct aquila_thread_args *__uthread)
 {
-    if (uaccess_check(__uthread, sizeof(struct __uthread))) {
+    if (uaccess_check(__uthread, sizeof(struct aquila_thread_args))) {
         arch_syscall_return(curthread, -EFAULT);
         return;
     }
@@ -985,7 +971,7 @@ static void sys_mknod(const char *path, uint32_t mode, uint32_t dev)
     arch_syscall_return(curthread, ret);
 }
 
-static void sys_lstat(const char *path, struct stat *buf)
+static void sys_lstat(const char *path, struct aquila_stat *buf)
 {
     syscall_log(LOG_DEBUG, "lstat(path=%s, buf=%p)\n", path, buf);
 
@@ -994,7 +980,7 @@ static void sys_lstat(const char *path, struct stat *buf)
     struct uio uio = PROC_UIO(curproc);
     uio.flags = O_NOFOLLOW;
 
-    if (uaccess_str_check(path) || uaccess_check(buf, sizeof(struct stat))) {
+    if (uaccess_str_check(path) || uaccess_check(buf, sizeof(struct aquila_stat))) {
         arch_syscall_return(curthread, -EFAULT);
         return;
     }
@@ -1029,18 +1015,9 @@ static void sys_getgid(void)
     arch_syscall_return(curthread, curproc->gid);
 }
 
-struct mmap_args {
-    void    *addr;
-    size_t  len;
-    int     prot;
-    int     flags;
-    int     fildes;
-    off_t   off;
-} __packed;
-
-static void sys_mmap(struct mmap_args *args, void **ret)
+static void sys_mmap(struct aquila_mmap_args *args, void **ret)
 {
-    if (uaccess_check(args, sizeof(struct mmap_args)) || uaccess_check(ret, sizeof(void *))) {
+    if (uaccess_check(args, sizeof(struct aquila_mmap_args)) || uaccess_check(ret, sizeof(void *))) {
         arch_syscall_return(curthread, -EFAULT);
         return;
     }
@@ -1278,16 +1255,9 @@ static void sys_listen(int fd, int backlog)
     return;
 }
 
-struct socket_io_syscall {
-    int fd;
-    void *buf;
-    size_t len;
-    int flags;
-} __attribute__((packed));
-
-static void sys_send(struct socket_io_syscall *s)
+static void sys_send(struct aquila_socket_io_args *s)
 {
-    if (uaccess_check(s, sizeof(struct socket_io_syscall))) {
+    if (uaccess_check(s, sizeof(struct aquila_socket_io_args))) {
         arch_syscall_return(curthread, -EFAULT);
         return;
     }
@@ -1323,9 +1293,9 @@ static void sys_send(struct socket_io_syscall *s)
     return;
 }
 
-static void sys_recv(struct socket_io_syscall *s)
+static void sys_recv(struct aquila_socket_io_args *s)
 {
-    if (uaccess_check(s, sizeof(struct socket_io_syscall))) {
+    if (uaccess_check(s, sizeof(struct aquila_socket_io_args))) {
         arch_syscall_return(curthread, -EFAULT);
         return;
     }
@@ -1462,19 +1432,11 @@ typedef struct {
     fd_mask fds_bits[_howmany(FD_SETSIZE, NFDBITS)];
 } fd_set;
 
-struct select_args {
-    int nfds;
-    fd_set *readfds;
-    fd_set *writefds;
-    fd_set *exceptfds;
-    struct timeval *timeout;
-};
-
-static void sys_select(struct select_args *args)
+static void sys_select(struct aquila_select_args *args)
 {
     syscall_log(LOG_DEBUG, "select(args=%p)\n", args);
 
-    if (uaccess_check(args, sizeof(struct select_args))) {
+    if (uaccess_check(args, sizeof(struct aquila_select_args))) {
         arch_syscall_return(curthread, -EFAULT);
         return;
     }
@@ -1562,67 +1524,66 @@ static void sys_rmdir(const char *path)
     arch_syscall_return(curthread, -ENOSYS);
 }
 
-void (*syscall_table[])() =  {
-    /* 00 */    NULL,
-    /* 01 */    sys_exit,
-    /* 02 */    sys_close,
-    /* 03 */    sys_execve,
-    /* 04 */    sys_fork,
-    /* 05 */    sys_fstat,
-    /* 06 */    sys_getpid,
-    /* 07 */    sys_isatty,
-    /* 08 */    sys_kill,
-    /* 09 */    sys_link,
-    /* 10 */    sys_lseek,
-    /* 11 */    sys_open,
-    /* 12 */    sys_read,
-    /* 13 */    sys_sbrk,
-    /* 14 */    sys_stat,
-    /* 15 */    sys_times,
-    /* 16 */    sys_unlink,
-    /* 17 */    sys_waitpid,
-    /* 18 */    sys_write,
-    /* 19 */    sys_ioctl,
-    /* 20 */    sys_sigaction,
-    /* 21 */    sys_readdir,
-    /* 22 */    sys_mount,
-    /* 23 */    sys_mkdir,
-    /* 24 */    sys_uname,
-    /* 25 */    sys_pipe,
-    /* 26 */    sys_fcntl,
-    /* 27 */    sys_chdir,
-    /* 28 */    sys_getcwd,
-    /* 29 */    sys_thread_create,
-    /* 30 */    sys_thread_exit,
-    /* 31 */    sys_thread_join,
-    /* 32 */    sys_setpgid,
-    /* 33 */    sys_mknod,
-    /* 34 */    sys_lstat,
-    /* 35 */    sys_auth, /* deprecated */
-    /* 36 */    sys_getuid,
-    /* 37 */    sys_getgid,
-    /* 38 */    sys_mmap,
-    /* 39 */    sys_munmap,
-    /* 40 */    sys_socket,
-    /* 41 */    sys_accept,
-    /* 42 */    sys_bind,
-    /* 43 */    sys_connect,
-    /* 44 */    sys_listen,
-    /* 45 */    sys_send,
-    /* 46 */    sys_recv,
-    /* 47 */    sys_umask,
-    /* 48 */    sys_chmod,
-    /* 49 */    sys_sysconf,
-    /* 50 */    sys_gettimeofday,
-    /* 51 */    sys_access,
-    /* 52 */    sys_sigmask,
-    /* 53 */    sys_select,
-    /* 54 */    sys_getpgrp,
-    /* 55 */    sys_chown,
-    /* 56 */    sys_fchown,
-    /* 57 */    sys_lchown,
-    /* 58 */    sys_utime,
-    /* 59 */    sys_rmdir,
+void (*syscall_table[])() = {
+    [SYS_exit]          = sys_exit,
+    [SYS_close]         = sys_close,
+    [SYS_execve]        = sys_execve,
+    [SYS_fork]          = sys_fork,
+    [SYS_fstat]         = sys_fstat,
+    [SYS_getpid]        = sys_getpid,
+    [SYS_isatty]        = sys_isatty,
+    [SYS_kill]          = sys_kill,
+    [SYS_link]          = sys_link,
+    [SYS_lseek]         = sys_lseek,
+    [SYS_open]          = sys_open,
+    [SYS_read]          = sys_read,
+    [SYS_sbrk]          = sys_sbrk,
+    [SYS_stat]          = sys_stat,
+    [SYS_times]         = sys_times,
+    [SYS_unlink]        = sys_unlink,
+    [SYS_waitpid]       = sys_waitpid,
+    [SYS_write]         = sys_write,
+    [SYS_ioctl]         = sys_ioctl,
+    [SYS_sigaction]     = sys_sigaction,
+    [SYS_readdir]       = sys_readdir,
+    [SYS_mount]         = sys_mount,
+    [SYS_mkdir]         = sys_mkdir,
+    [SYS_uname]         = sys_uname,
+    [SYS_pipe]          = sys_pipe,
+    [SYS_fcntl]         = sys_fcntl,
+    [SYS_chdir]         = sys_chdir,
+    [SYS_getcwd]        = sys_getcwd,
+    [SYS_thread_create] = sys_thread_create,
+    [SYS_thread_exit]   = sys_thread_exit,
+    [SYS_thread_join]   = sys_thread_join,
+    [SYS_setpgid]       = sys_setpgid,
+    [SYS_mknod]         = sys_mknod,
+    [SYS_lstat]         = sys_lstat,
+    [SYS_auth]          = sys_auth, /* deprecated */
+    [SYS_getuid]        = sys_getuid,
+    [SYS_getgid]        = sys_getgid,
+    [SYS_mmap]          = sys_mmap,
+    [SYS_munmap]        = sys_munmap,
+    [SYS_socket]        = sys_socket,
+    [SYS_accept]        = sys_accept,
+    [SYS_bind]          = sys_bind,
+    [SYS_connect]       = sys_connect,
+    [SYS_listen]        = sys_listen,
+    [SYS_send]          = sys_send,
+    [SYS_recv]          = sys_recv,
+    [SYS_umask]         = sys_umask,
+    [SYS_chmod]         = sys_chmod,
+    [SYS_sysconf]       = sys_sysconf,
+    [SYS_gettimeofday]  = sys_gettimeofday,
+    [SYS_access]        = sys_access,
+    [SYS_sigmask]       = sys_sigmask,
+    [SYS_select]        = sys_select,
+    [SYS_getpgrp]       = sys_getpgrp,
+    [SYS_chown]         = sys_chown,
+    [SYS_fchown]        = sys_fchown,
+    [SYS_lchown]        = sys_lchown,
+    [SYS_utime]         = sys_utime,
+    [SYS_rmdir]         = sys_rmdir,
 };
 
 const size_t syscall_cnt = sizeof(syscall_table)/sizeof(syscall_table[0]);

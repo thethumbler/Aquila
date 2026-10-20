@@ -17,7 +17,7 @@
 #include <sys/signal.h>
 #include <sys/sched.h>
 
-#include <bits/errno.h>
+#include <aquila/errno.h>
 
 int sig_default_action[SIG_MAX+1] = {
     [SIGABRT] = SIGACT_ABORT,

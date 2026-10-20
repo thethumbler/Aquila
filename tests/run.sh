@@ -82,7 +82,7 @@ build_initrd()
 
     gcc -m32 -static -nostdlib -ffreestanding -fno-builtin -fno-pic -no-pie \
         -fno-stack-protector -fcf-protection=none -O1 -Wall -Wno-unused-function \
-        -Wl,--build-id=none -o "$root/init" "$TESTS/$name/init.c" \
+        -I"$ROOT/include/uapi" -Wl,--build-id=none -o "$root/init" "$TESTS/$name/init.c" \
         > "$OUT/$name/gcc.log" 2>&1 || { cat "$OUT/$name/gcc.log"; return 1; }
 
     # the kernel's initramfs reads old binary cpio archives
