@@ -126,38 +126,83 @@ size_t ext2_inode_block_read(struct ext2 *desc, struct ext2_inode *inode, size_t
     /* unreachable */
 }
 
-size_t ext2_inode_block_write(struct ext2 *desc, struct ext2_inode *inode, uint32_t inode_nr, size_t idx, void *buf)
+/* allocate a block owned by the inode, i_blocks counts 512-byte sectors */
+static int ext2_inode_block_alloc(struct ext2 *desc, struct ext2_inode *inode, uint32_t *block)
 {
-    size_t p = desc->bs / 4;    /* Pointers per block */
+    if (!(*block = ext2_block_alloc(desc)))
+        return -ENOSPC;
 
-    if (idx < EXT2_DIRECT_POINTERS) {
-        if (!inode->direct_pointer[idx]) {    /* Allocate */
-            inode->direct_pointer[idx] = ext2_block_alloc(desc);
-            ext2_inode_write(desc, inode_nr, inode);
+    inode->blocks += desc->bs / 512;
+    return 0;
+}
+
+/* get the block at idx of an indirect block, allocating it if needed */
+static int ext2_indirect_block_get(struct ext2 *desc, struct ext2_inode *inode, uint32_t table, size_t idx, uint32_t *block)
+{
+    int err = 0;
+    uint32_t *tmp = kmalloc(desc->bs, &M_BUFFER, 0);
+
+    if (!tmp)
+        return -ENOMEM;
+
+    ext2_block_read(desc, table, tmp);
+
+    if (!(*block = tmp[idx])) {    /* Allocate */
+        if (!(err = ext2_inode_block_alloc(desc, inode, block))) {
+            tmp[idx] = *block;
+            ext2_block_write(desc, table, tmp);
         }
-        ext2_block_write(desc, inode->direct_pointer[idx], buf);
-    } else if (idx < EXT2_DIRECT_POINTERS + p) {
-        if (!inode->singly_indirect_pointer) {    /* Allocate */
-            inode->singly_indirect_pointer = ext2_block_alloc(desc);
-            ext2_inode_write(desc, inode_nr, inode);
-        }
-
-        uint32_t *tmp = kmalloc(desc->bs, &M_BUFFER, 0);
-        ext2_block_read(desc, inode->singly_indirect_pointer, tmp);
-        uint32_t block = tmp[idx - EXT2_DIRECT_POINTERS];
-
-        if (!block) {   /* Allocate */
-            block = ext2_block_alloc(desc);
-            tmp[idx - EXT2_DIRECT_POINTERS] = block;
-            ext2_block_write(desc, inode->singly_indirect_pointer, tmp);
-        }
-
-        kfree(tmp);
-        ext2_block_write(desc, block, buf);
-    } else {
-        panic("Not impelemented\n");
     }
 
+    kfree(tmp);
+    return err;
+}
+
+ssize_t ext2_inode_block_write(struct ext2 *desc, struct ext2_inode *inode, uint32_t inode_nr, size_t idx, void *buf)
+{
+    size_t p = desc->bs / 4;    /* Pointers per block */
+    uint32_t nblocks = inode->blocks;
+    uint32_t block = 0;
+    int err = 0;
+
+    if (idx < EXT2_DIRECT_POINTERS) {
+        if (!(block = inode->direct_pointer[idx])) {    /* Allocate */
+            if (!(err = ext2_inode_block_alloc(desc, inode, &block)))
+                inode->direct_pointer[idx] = block;
+        }
+    } else if ((idx -= EXT2_DIRECT_POINTERS) < p) {
+        uint32_t table = inode->singly_indirect_pointer;
+
+        if (!table && !(err = ext2_inode_block_alloc(desc, inode, &table)))
+            inode->singly_indirect_pointer = table;
+
+        if (!err)
+            err = ext2_indirect_block_get(desc, inode, table, idx, &block);
+    } else if ((idx -= p) < p * p) {
+        uint32_t table = inode->doubly_indirect_pointer;
+        uint32_t indirect = 0;
+
+        if (!table && !(err = ext2_inode_block_alloc(desc, inode, &table)))
+            inode->doubly_indirect_pointer = table;
+
+        if (!err)
+            err = ext2_indirect_block_get(desc, inode, table, idx / p, &indirect);
+
+        if (!err)
+            err = ext2_indirect_block_get(desc, inode, indirect, idx % p, &block);
+    } else {
+        /* TODO triply indirect blocks */
+        return -EFBIG;
+    }
+
+    /* persist new block pointers and i_blocks */
+    if (inode->blocks != nblocks)
+        ext2_inode_write(desc, inode_nr, inode);
+
+    if (err)
+        return err;
+
+    ext2_block_write(desc, block, buf);
     return 0;
 }
 

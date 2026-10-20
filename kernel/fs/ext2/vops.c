@@ -86,9 +86,8 @@ ssize_t ext2_write(struct vnode *node, off_t offset, size_t size, void *buf)
     size_t bs = desc->bs;
     struct ext2_inode ext2_inode;
     
-    if ((err = ext2_inode_read(desc, node->ino, &ext2_inode))) {
-
-    }
+    if ((err = ext2_inode_read(desc, node->ino, &ext2_inode)))
+        return err;
 
     if ((size_t) offset + size > ext2_inode.size) {
         ext2_inode.size = (size_t) offset + size;
@@ -110,7 +109,9 @@ ssize_t ext2_write(struct vnode *node, off_t offset, size_t size, void *buf)
             write_buf = kmalloc(bs, &M_BUFFER, 0);
             ext2_inode_block_read(desc, &ext2_inode, offset/bs, write_buf);
             memcpy(write_buf + (offset % bs), _buf, start);
-            ext2_inode_block_write(desc, &ext2_inode, node->ino, offset/bs, write_buf);
+
+            if ((err = ext2_inode_block_write(desc, &ext2_inode, node->ino, offset/bs, write_buf)))
+                goto free_resources;
 
             ret += start;
             size -= start;
@@ -126,7 +127,8 @@ ssize_t ext2_write(struct vnode *node, off_t offset, size_t size, void *buf)
     size_t count = size/bs;
 
     while (count) {
-        ext2_inode_block_write(desc, &ext2_inode, node->ino, offset/bs, _buf);
+        if ((err = ext2_inode_block_write(desc, &ext2_inode, node->ino, offset/bs, _buf)))
+            goto free_resources;
 
         ret    += bs;
         size   -= bs;
@@ -146,7 +148,10 @@ ssize_t ext2_write(struct vnode *node, off_t offset, size_t size, void *buf)
 
         ext2_inode_block_read(desc, &ext2_inode, offset/bs, write_buf);
         memcpy(write_buf, _buf, end);
-        ext2_inode_block_write(desc, &ext2_inode, node->ino, offset/bs, write_buf);
+
+        if ((err = ext2_inode_block_write(desc, &ext2_inode, node->ino, offset/bs, write_buf)))
+            goto free_resources;
+
         ret += end;
     }
 
@@ -154,7 +159,8 @@ free_resources:
     if (write_buf)
         kfree(write_buf);
 
-    return ret;
+    /* report a short write if some data made it to disk */
+    return ret ? ret : err;
 }
 
 ssize_t ext2_readdir(struct vnode *dir, off_t offset, struct dirent *dirent)

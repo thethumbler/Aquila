@@ -201,7 +201,7 @@ int ext2_inode_read(struct ext2 *desc, ino_t inode, struct ext2_inode *ref);
 int ext2_inode_write(struct ext2 *desc, ino_t inode, struct ext2_inode *i);
 
 size_t ext2_inode_block_read(struct ext2 *desc, struct ext2_inode *inode, size_t idx, void *buf);
-size_t ext2_inode_block_write(struct ext2 *desc, struct ext2_inode *inode, uint32_t inode_nr, size_t idx, void *buf);
+ssize_t ext2_inode_block_write(struct ext2 *desc, struct ext2_inode *inode, uint32_t inode_nr, size_t idx, void *buf);
 ino_t ext2_inode_alloc(struct ext2 *desc);
 
 /* dentry.c */
