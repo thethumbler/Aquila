@@ -23,3 +23,6 @@ system/fbterm/fbterm
 system/aqbox/aqbox
 
 kernel/arch/*/kernel-*
+
+# test suite build output
+tests/out/

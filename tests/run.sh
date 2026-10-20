@@ -1,0 +1,319 @@
+#!/bin/bash
+#
+# Build the kernel with the host toolchain and run the QEMU test suite.
+#
+# usage: tests/run.sh [-n] [-v] [test...]
+#
+#   -n      don't rebuild the kernel, use the existing image
+#   -v      print the serial log of failed tests
+#
+# tests: boot ata cpu syscalls ext2 (default: all)
+#
+# Requires gcc with 32-bit support, ld, cpio and qemu-system-i386. The ext2
+# test also needs e2fsprogs (mke2fs, e2fsck, debugfs) and python3.
+#
+
+set -u
+
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+TESTS=$ROOT/tests
+OUT=$TESTS/out
+CONFIG=../tests/host/i386-pc
+
+ALL_TESTS="boot ata cpu syscalls ext2"
+
+build=1
+verbose=0
+
+while getopts "nvh" opt; do
+    case $opt in
+        n) build=0 ;;
+        v) verbose=1 ;;
+        *) sed -n '3,15p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+    esac
+done
+shift $((OPTIND - 1))
+
+selected=${*:-$ALL_TESTS}
+
+for tool in gcc ld cpio qemu-system-i386; do
+    if ! command -v $tool >/dev/null; then
+        echo "error: $tool not found" >&2
+        exit 2
+    fi
+done
+
+mkdir -p "$OUT"
+
+#
+# Kernel
+#
+
+if [ $build = 1 ]; then
+    echo "building kernel (CONFIG=$CONFIG)"
+    # the kernel makefiles don't track header dependencies, always rebuild
+    make -C "$ROOT" clean-kernel CONFIG=$CONFIG SRCDIR="$ROOT" >/dev/null 2>&1
+    if ! make -C "$ROOT" build-kernel CONFIG=$CONFIG SRCDIR="$ROOT" > "$OUT/build.log" 2>&1; then
+        grep -E -B2 -A6 'error|Error' "$OUT/build.log" | head -40
+        echo "error: kernel build failed, see $OUT/build.log" >&2
+        exit 1
+    fi
+fi
+
+KERNEL=$(ls "$ROOT"/kernel/arch/i386/kernel-*.i386 2>/dev/null | head -1)
+
+if [ -z "$KERNEL" ]; then
+    echo "error: no kernel image, run without -n" >&2
+    exit 1
+fi
+
+#
+# Helpers
+#
+
+# build tests/<name>/init.c into an initrd with /init
+build_initrd()
+{
+    local name=$1
+    local root=$OUT/$name/root
+
+    rm -rf "$root"
+    mkdir -p "$root/dev" "$root/mnt" "$root/tmp"
+
+    gcc -m32 -static -nostdlib -ffreestanding -fno-builtin -fno-pic -no-pie \
+        -fno-stack-protector -fcf-protection=none -O1 -Wall -Wno-unused-function \
+        -Wl,--build-id=none -o "$root/init" "$TESTS/$name/init.c" \
+        > "$OUT/$name/gcc.log" 2>&1 || { cat "$OUT/$name/gcc.log"; return 1; }
+
+    # the kernel's initramfs reads old binary cpio archives
+    (cd "$root" && find . | cpio -o -H bin --quiet) > "$OUT/$name/initrd.img"
+}
+
+# run_qemu <log> <seconds> <stop pattern> [qemu args...]
+#
+# Boots the kernel, stops once <stop pattern> or a kernel panic shows up
+# in the serial log, or after <seconds>. Sets qemu_exited=1 if QEMU went
+# away on its own, which with -no-reboot means the guest reset (e.g. a
+# triple fault).
+run_qemu()
+{
+    local log=$1 secs=$2 pattern=$3
+    shift 3
+
+    rm -f "$log"
+    qemu-system-i386 -kernel "$KERNEL" -m 256 -display none -no-reboot \
+        -serial file:"$log" "$@" >/dev/null 2>&1 &
+
+    local pid=$! ticks=0
+    qemu_exited=0
+
+    while kill -0 $pid 2>/dev/null; do
+        if grep -a -q -E "$pattern|Bailing out" "$log" 2>/dev/null; then
+            break
+        fi
+
+        if [ $ticks -ge $((secs * 10)) ]; then
+            break
+        fi
+
+        sleep 0.1
+        ticks=$((ticks + 1))
+    done
+
+    if kill -0 $pid 2>/dev/null; then
+        kill $pid
+    else
+        qemu_exited=1
+    fi
+
+    wait $pid 2>/dev/null
+}
+
+# common failure checks on a serial log, prints the reason
+log_problems()
+{
+    local log=$1
+
+    if grep -a -q 'Bailing out' "$log"; then
+        echo "kernel panic:"
+        grep -a -B3 'Bailing out' "$log" | sed 's/^/    /'
+    elif [ $qemu_exited = 1 ]; then
+        echo "QEMU exited, guest reset (triple fault?)"
+    else
+        return 1
+    fi
+}
+
+# check aqtest output: all checks passed and the test finished
+aqtest_result()
+{
+    local log=$1
+
+    log_problems "$log" && return 1
+
+    local pass fail
+    pass=$(grep -a -c '^PASS' "$log")
+    fail=$(grep -a -c '^FAIL' "$log")
+
+    grep -a '^FAIL' "$log" | sed 's/^/    /'
+
+    if ! grep -a -q 'aqtest: done' "$log"; then
+        echo "did not finish ($pass passed, $fail failed), last output:"
+        tail -3 "$log" | sed 's/^/    /'
+        return 1
+    fi
+
+    echo "$pass passed, $fail failed"
+    [ "$fail" = 0 ]
+}
+
+#
+# Tests
+#
+
+# stock initrd boots to /init and userland keeps running
+test_boot()
+{
+    local log=$OUT/boot/serial.log
+    mkdir -p "$OUT/boot"
+
+    if [ ! -f "$ROOT/initrd.img" ]; then
+        echo "SKIP: no initrd.img"
+        return 0
+    fi
+
+    run_qemu "$log" 10 'NEVER_STOP_EARLY' -initrd "$ROOT/initrd.img"
+
+    log_problems "$log" && return 1
+
+    if ! grep -a -q 'kernel: loading init process' "$log"; then
+        echo "init was not started"
+        return 1
+    fi
+
+    echo "booted to init, still running after 10s"
+}
+
+# a disk on the first ATA channel is detected reliably
+test_ata()
+{
+    local log=$OUT/ata/serial.log
+    local disk=$OUT/ata/disk.img
+    local runs=5 ok=0
+
+    mkdir -p "$OUT/ata"
+    rm -f "$disk"
+    truncate -s 16M "$disk"
+
+    for i in $(seq $runs); do
+        run_qemu "$log" 10 'registered blkdev 3: ata' -initrd "$OUT/cpu/initrd.img" \
+            -drive file="$disk",format=raw,index=0,media=disk
+
+        log_problems "$log" && return 1
+
+        grep -a -q 'ata0: model: QEMU HARDDISK' "$log" && ok=$((ok + 1))
+    done
+
+    echo "disk detected in $ok/$runs boots"
+    [ $ok = $runs ]
+}
+
+test_cpu()
+{
+    run_qemu "$OUT/cpu/serial.log" 30 'aqtest: done' -initrd "$OUT/cpu/initrd.img"
+    aqtest_result "$OUT/cpu/serial.log"
+}
+
+test_syscalls()
+{
+    run_qemu "$OUT/syscalls/serial.log" 60 'aqtest: done' -initrd "$OUT/syscalls/initrd.img"
+    aqtest_result "$OUT/syscalls/serial.log"
+}
+
+test_ext2()
+{
+    local img=$OUT/ext2/disk.img
+    local log=$OUT/ext2/serial.log
+
+    for tool in mke2fs e2fsck debugfs python3; do
+        if ! command -v $tool >/dev/null; then
+            echo "SKIP: $tool not found"
+            return 0
+        fi
+    done
+
+    rm -f "$img"
+    mke2fs -q -t ext2 -b 1024 -F "$img" 4M || return 1
+
+    run_qemu "$log" 60 'aqtest: done' -initrd "$OUT/ext2/initrd.img" \
+        -drive file="$img",format=raw,index=0,media=disk
+
+    aqtest_result "$log" || return 1
+
+    # check the image on the host
+    if ! e2fsck -fn "$img" > "$OUT/ext2/e2fsck.log" 2>&1; then
+        echo "e2fsck found errors:"
+        sed 's/^/    /' "$OUT/ext2/e2fsck.log"
+        return 1
+    fi
+
+    debugfs -R "dump /big $OUT/ext2/big.out" "$img" >/dev/null 2>&1
+
+    python3 -I - "$OUT/ext2/big.out" <<'EOF' || return 1
+import sys
+data = open(sys.argv[1], 'rb').read()
+want = bytes((i * 7 + (i >> 9)) & 0xff for i in range(305000))
+if data != want:
+    bad = next((i for i in range(min(len(data), len(want))) if data[i] != want[i]), None)
+    print("file contents differ on the host: size %d, first mismatch at %s" % (len(data), bad))
+    sys.exit(1)
+EOF
+
+    echo "e2fsck clean, file contents verified on the host"
+}
+
+#
+# Main
+#
+
+failed=0
+
+for name in $selected; do
+    case " $ALL_TESTS " in
+        *" $name "*) ;;
+        *) echo "unknown test: $name" >&2; exit 2 ;;
+    esac
+done
+
+# test programs (the ata test boots the cpu test's initrd)
+needed=" $selected "
+case "$needed" in *" ata "*) needed="$needed cpu " ;; esac
+
+for name in cpu syscalls ext2; do
+    case "$needed" in
+        *" $name "*)
+            mkdir -p "$OUT/$name"
+            build_initrd $name || { echo "error: failed to build $name test" >&2; exit 1; } ;;
+    esac
+done
+
+for name in $selected; do
+    printf '%-10s ' "$name"
+    result=$(test_$name 2>&1)
+    status=$?
+
+    if [ $status = 0 ]; then
+        echo "ok    $(echo "$result" | tail -1)"
+    else
+        echo "FAIL"
+        echo "$result" | sed 's/^/    /'
+        if [ $verbose = 1 ]; then
+            echo "    --- serial log:"
+            sed 's/^/    | /' "$OUT/$name/serial.log" 2>/dev/null | tail -40
+        fi
+        failed=$((failed + 1))
+    fi
+done
+
+[ $failed = 0 ] && echo "all tests passed" || echo "$failed test(s) failed"
+exit $failed
