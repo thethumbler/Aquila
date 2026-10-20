@@ -44,23 +44,46 @@ struct vm_object *vm_object_vnode(struct vnode *vnode)
 }
 
 
+/* where a page is mapped to be filled, while no other page-in can run */
 static char __load[PAGE_SIZE] __aligned(PAGE_SIZE);
+
 struct vm_page *vnode_page_in(struct vm_object *vm_object, size_t off)
 {
-    struct vm_page *vm_page = mm_page_alloc();
-    if (!vm_page) return NULL;
-
-    vm_page->vm_object = vm_object;
-    vm_page->off = PAGE_ALIGN(off);
-    vm_page->ref = 1;
-
     struct vnode *vnode = (struct vnode *) vm_object->p;
 
-    mm_page_map(kvm_space.pmap, (vaddr_t) __load, vm_page->paddr, VM_KW);
+    off = PAGE_ALIGN(off);
 
-    /* clear the page first, a short read must not expose stale memory */
-    memset(__load, 0, PAGE_SIZE);
-    vfs_read(vnode, vm_page->off, PAGE_SIZE, (void *) __load);
+    /* read into a buffer of its own: reading may sleep (on the disk), and
+     * other page-ins use __load meanwhile; a short read leaves zeros, not
+     * stale memory */
+    char *buf = kmalloc(PAGE_SIZE, &M_BUFFER, M_ZERO);
+    if (!buf) return NULL;
+
+    vfs_read(vnode, off, PAGE_SIZE, buf);
+
+    /* another thread may have paged it in meanwhile */
+    hash_t hash = hashmap_digest(&off, sizeof(off));
+    struct hashmap_node *node = hashmap_lookup(vm_object->pages, hash, &off);
+
+    if (node) {
+        kfree(buf);
+        return (struct vm_page *) node->entry;
+    }
+
+    struct vm_page *vm_page = mm_page_alloc();
+
+    if (!vm_page) {
+        kfree(buf);
+        return NULL;
+    }
+
+    vm_page->vm_object = vm_object;
+    vm_page->off = off;
+    vm_page->ref = 1;
+
+    mm_page_map(kvm_space.pmap, (vaddr_t) __load, vm_page->paddr, VM_KW);
+    memcpy(__load, buf, PAGE_SIZE);
+    kfree(buf);
 
     vm_object_page_insert(vm_object, vm_page);
 
