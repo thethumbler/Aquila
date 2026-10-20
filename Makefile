@@ -26,9 +26,12 @@
 #   make run-iso      boot the ISO in QEMU (framebuffer console)
 #   make hdd-kernel   put the kernel (and Limine's configuration) on
 #                     build/aquila.img, its root filesystem is kept as it is
-#   make run-hdd      boot the hard disk in QEMU with the kernel just built
-#                     (make hdd-kernel), made by make hdd if there is none;
-#                     what was written to it is kept
+#   make hdd-update   the kernel and the system just built (build/rootfs)
+#                     on build/aquila.img: what the build has replaces the
+#                     disk's, the rest is kept (/root, /home, and the
+#                     accounts in /etc if the disk has them)
+#   make run-hdd      boot the hard disk in QEMU with the system just built
+#                     (make hdd-update), made by make hdd if there is none
 #
 #   QEMU uses KVM when /dev/kvm can be used, KVM=0 turns it off (also for
 #   make test).
@@ -77,7 +80,7 @@ MAKEFLAGS += --no-print-directory
 
 export
 
-.PHONY: all toolchain kernel userland contrib ports initrd iso hdd hdd-kernel run run-iso run-hdd test clean distclean check-toolchain
+.PHONY: all toolchain kernel userland contrib ports initrd iso hdd hdd-kernel hdd-update run run-iso run-hdd test clean distclean check-toolchain
 
 all: kernel userland contrib initrd
 
@@ -180,6 +183,10 @@ hdd-kernel: kernel
 	@$(ECHO) "  KERNEL  " $(patsubst $(BUILDDIR)/%,build/%,$(HDD))
 	@$(SRCDIR)/mk/hdd-kernel.sh $(HDD) $(KERNEL) $(SRCDIR)/boot/limine-hdd.conf
 
+hdd-update: hdd-kernel initrd
+	@$(ECHO) "  UPDATE  " $(patsubst $(BUILDDIR)/%,build/%,$(HDD))
+	@$(SRCDIR)/mk/hdd-update.sh $(HDD) $(ROOTFS)
+
 run: kernel initrd
 	$(QEMU) -kernel $(KERNEL) -initrd "$(INITRD)" -append earlycon=ttyS0 \
 		-m 256 -serial mon:stdio -display none
@@ -188,7 +195,7 @@ run-iso: iso
 	$(QEMU) -cdrom $(ISO) -m 256 -serial stdio
 
 run-hdd:
-	@if [ -f $(HDD) ]; then $(MAKE) hdd-kernel; else $(MAKE) hdd; fi
+	@if [ -f $(HDD) ]; then $(MAKE) hdd-update; else $(MAKE) hdd; fi
 	$(QEMU) -hda $(HDD) -m 256 -serial stdio
 
 test:

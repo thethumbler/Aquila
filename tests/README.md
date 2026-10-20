@@ -30,7 +30,7 @@ Build output goes to `tests/out/`.
 | `ext2`     | writes through singly and doubly indirect blocks and appends on an ext2 image, then `e2fsck` and a byte compare on the host |
 | `libc`     | errno and signal numbers, stdio, directories, fork/wait, crypt, passwd/shadow and group, truncate, signal masks, the `*at()` calls, `realpath`, `ttyname`, sleeping, `SIGPIPE` and C99 `printf` formats through newlib (needs `make toolchain`) |
 | `system`   | the initrd built from source (with contrib/, without ports/): logins on the serial console, then dash runs commands, pipelines, `$(...)`, a long line, `^C`, `/dev/tty` and sbase tools (needs `make toolchain` and `make`) |
-| `disk`     | the system installed on a hard disk image (`mk/hdd.sh`): booted from it with Limine twice, a file written on the first boot is read on the second (`mk/hdd-kernel.sh` puts the kernel on it in between), `e2fsck` is clean (needs `make toolchain` and `make`) |
+| `disk`     | the system installed on a hard disk image (`mk/hdd.sh`): booted from it with Limine twice, a file written on the first boot is read on the second (`mk/hdd-kernel.sh` and `mk/hdd-update.sh` put the kernel and an updated system on it in between), `e2fsck` is clean (needs `make toolchain` and `make`) |
 
 A test fails on a `FAIL` line, a kernel panic, a guest reset (QEMU runs
 with `-no-reboot`) or if it doesn't finish in time.

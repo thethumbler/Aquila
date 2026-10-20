@@ -380,8 +380,8 @@ test_system()
 
 # the system installed on a hard disk (make hdd): booted from it with
 # Limine, a file written on the first boot is there on the second (after
-# make hdd-kernel's update of the kernel), and the root filesystem is clean
-# afterwards
+# make hdd-kernel's and hdd-update's update of the kernel and the system,
+# which adds a file), and the root filesystem is clean afterwards
 test_disk()
 {
     local img=$OUT/disk/aquila.img
@@ -397,7 +397,7 @@ test_disk()
         return 0
     fi
 
-    for tool in sfdisk mkfs.fat mcopy mke2fs fakeroot e2fsck; do
+    for tool in sfdisk mkfs.fat mcopy mke2fs fakeroot e2fsck debugfs python3; do
         if ! command -v $tool >/dev/null; then
             echo "SKIP: $tool not found"
             return 0
@@ -451,18 +451,28 @@ test_disk()
     # no sync: powering off writes what the block cache has
     boot "$OUT/disk/serial.log" 'echo disk-$((6 * 7)) > /root/kept'
 
-    # a new kernel leaves the root filesystem alone (make hdd-kernel)
-    "$ROOT/mk/hdd-kernel.sh" "$img" "$KERNEL" "$ROOT/boot/limine-hdd.conf" \
-        >> "$OUT/disk/build.log" 2>&1 || {
+    # a new kernel and system (make hdd-update): a file the system has now
+    # is on the disk, what was made on it is kept
+    rm -rf "$OUT/disk/rootfs2"
+    cp -a "$OUT/disk/build/rootfs" "$OUT/disk/rootfs2"
+    echo updated > "$OUT/disk/rootfs2/etc/updated"
+    { "$ROOT/mk/hdd-kernel.sh" "$img" "$KERNEL" "$ROOT/boot/limine-hdd.conf" &&
+      "$ROOT/mk/hdd-update.sh" "$img" "$OUT/disk/rootfs2"; } >> "$OUT/disk/build.log" 2>&1 || {
         tail -5 "$OUT/disk/build.log"
         return 1
     }
 
-    boot "$OUT/disk/serial2.log" 'cat /root/kept'
+    boot "$OUT/disk/serial2.log" 'cat /root/kept /etc/updated'
 
     local root_start
     root_start=$(sfdisk -d "$img" | sed -n 's/.*img2 : start= *\([0-9]*\).*/\1/p')
     dd if="$img" of="$OUT/disk/root.img" bs=512 skip="$root_start" status=none
+
+    if ! grep -a -q '^updated$' "$OUT/disk/serial2.log"; then
+        echo "the file the update added is missing"
+        tail -5 "$OUT/disk/serial2.log" | sed 's/^/    /'
+        return 1
+    fi
 
     if ! grep -a -q '^disk-42$' "$OUT/disk/serial2.log"; then
         echo "the file written on the first boot is missing"
@@ -476,7 +486,7 @@ test_disk()
         return 1
     fi
 
-    echo "booted from the disk twice, the file written on the first boot kept (a kernel update between), e2fsck clean"
+    echo "booted from the disk twice, the file written on the first boot kept (a kernel and system update between), e2fsck clean"
 }
 
 #

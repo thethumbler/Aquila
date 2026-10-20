@@ -41,8 +41,10 @@ The ISO and `make run` boot the ramdisk, read-only and the same on every
 boot. `make hdd` makes `build/aquila.img`, a hard disk with AquilaOS
 installed: Limine on a FAT32 `/boot`, the root filesystem on ext2
 (`root=/dev/hda2`), where what is written is kept. `make run-hdd` boots
-it (making it the first time) with the kernel just built: `make
-hdd-kernel` replaces only the kernel on it, `make hdd` the whole disk. See the top of the [Makefile](Makefile)
+it (making it the first time) with the system just built: `make
+hdd-update` puts the kernel and the system's files on it and keeps the
+rest (home directories, and the accounts in `/etc`), `make hdd-kernel`
+only the kernel, `make hdd` makes the whole disk anew. See the top of the [Makefile](Makefile)
 for all targets.
 
 ## Testing
