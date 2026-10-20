@@ -1,0 +1,95 @@
+diff -ruN a/config.sub b/config.sub
+--- a/config.sub
++++ b/config.sub
+@@ -1726,7 +1726,7 @@
+ 	     | os9* | macos* | osx* | ios* \
+ 	     | mpw* | magic* | mmixware* | mon960* | lnews* \
+ 	     | amigaos* | amigados* | msdos* | newsos* | unicos* | aof* \
+-	     | aos* | aros* | cloudabi* | sortix* | twizzler* \
++	     | aos* | aros* | cloudabi* | sortix* | twizzler* | aquila* \
+ 	     | nindy* | vxsim* | vxworks* | ebmon* | hms* | mvs* \
+ 	     | clix* | riscos* | uniplus* | iris* | isc* | rtu* | xenix* \
+ 	     | mirbsd* | netbsd* | dicos* | openedition* | ose* \
+diff -ruN a/newlib/configure.host b/newlib/configure.host
+--- a/newlib/configure.host
++++ b/newlib/configure.host
+@@ -592,6 +592,20 @@
+   z8k-*-coff)
+ 	sys_dir=z8ksim
+ 	;;
++  i[34567]86-*-aquila*)
++	sys_dir=aquila
++	posix_dir=posix
++	unix_dir=unix
++	# syscalls are provided without the leading underscore
++	newlib_cflags="${newlib_cflags} -DMISSING_SYSCALL_NAMES"
++	# provided by libc/sys/aquila
++	newlib_cflags="${newlib_cflags} -DSIGNAL_PROVIDED -DHAVE_OPENDIR -D_NO_GETCWD"
++	newlib_cflags="${newlib_cflags} -DHAVE_FCNTL -D_NO_GETLOGIN -D_NO_GETUT -D_NO_GETPASS -D_NO_TTYNAME"
++	# no scheduling API (sched_setparam, ...)
++	newlib_cflags="${newlib_cflags} -D_NO_POSIX_SPAWN"
++	# malloc only has sbrk
++	newlib_cflags="${newlib_cflags} -DHAVE_MMAP=0 -DHAVE_MREMAP=0"
++	;;
+ esac
+ 
+ # Host specific flag settings -- usually for features that are not
+diff -ruN a/newlib/libc/acinclude.m4 b/newlib/libc/acinclude.m4
+--- a/newlib/libc/acinclude.m4
++++ b/newlib/libc/acinclude.m4
+@@ -20,6 +20,7 @@
+   netware
+   or1k
+   rdos rtems
++  aquila
+   sh sysmec sysnec810 sysnecv850 sysvi386 sysvnecv70
+   tic80 tirtos
+   w65
+diff -ruN a/newlib/libc/include/stdio.h b/newlib/libc/include/stdio.h
+--- a/newlib/libc/include/stdio.h
++++ b/newlib/libc/include/stdio.h
+@@ -536,6 +536,10 @@
+ int	fpurge (FILE *);
+ ssize_t __getdelim (char **, size_t *, int, FILE *);
+ ssize_t __getline (char **, size_t *, FILE *);
++#if __POSIX_VISIBLE >= 200809 && defined(__aquila__)
++ssize_t getdelim (char **, size_t *, int, FILE *);
++ssize_t getline (char **, size_t *, FILE *);
++#endif
+ 
+ #if __MISC_VISIBLE
+ void	clearerr_unlocked (FILE *);
+diff -ruN a/newlib/libc/include/sys/stat.h b/newlib/libc/include/sys/stat.h
+--- a/newlib/libc/include/sys/stat.h
++++ b/newlib/libc/include/sys/stat.h
+@@ -54,7 +54,7 @@
+   struct timespec st_ctim;
+   blksize_t     st_blksize;
+   blkcnt_t	st_blocks;
+-#if !defined(__rtems__)
++#if !defined(__rtems__) && !defined(__aquila__)
+   long		st_spare4[2];
+ #endif
+ #endif
+@@ -157,7 +157,7 @@
+ int	stat (const char *__restrict __path, struct stat *__restrict __sbuf );
+ mode_t	umask (mode_t __mask );
+ 
+-#if defined (__SPU__) || defined(__rtems__) || defined(__CYGWIN__)
++#if defined (__SPU__) || defined(__rtems__) || defined(__CYGWIN__) || defined(__aquila__)
+ int	lstat (const char *__restrict __path, struct stat *__restrict __buf );
+ int	mknod (const char *__path, mode_t __mode, dev_t __dev );
+ #endif
+diff -ruN a/newlib/libc/sys/Makefile.inc b/newlib/libc/sys/Makefile.inc
+--- a/newlib/libc/sys/Makefile.inc
++++ b/newlib/libc/sys/Makefile.inc
+@@ -4,6 +4,9 @@
+ if HAVE_LIBC_SYS_AMDGCN_DIR
+ include %D%/amdgcn/Makefile.inc
+ endif
++if HAVE_LIBC_SYS_AQUILA_DIR
++include %D%/aquila/Makefile.inc
++endif
+ if HAVE_LIBC_SYS_ARM_DIR
+ include %D%/arm/Makefile.inc
+ endif

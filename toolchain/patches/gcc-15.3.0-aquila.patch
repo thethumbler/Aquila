@@ -1,0 +1,108 @@
+diff -ruN a/config.sub b/config.sub
+--- a/config.sub
++++ b/config.sub
+@@ -1726,7 +1726,7 @@
+ 	     | os9* | macos* | osx* | ios* \
+ 	     | mpw* | magic* | mmixware* | mon960* | lnews* \
+ 	     | amigaos* | amigados* | msdos* | newsos* | unicos* | aof* \
+-	     | aos* | aros* | cloudabi* | sortix* | twizzler* \
++	     | aos* | aros* | cloudabi* | sortix* | twizzler* | aquila* \
+ 	     | nindy* | vxsim* | vxworks* | ebmon* | hms* | mvs* \
+ 	     | clix* | riscos* | uniplus* | iris* | isc* | rtu* | xenix* \
+ 	     | mirbsd* | netbsd* | dicos* | openedition* | ose* \
+diff -ruN a/fixincludes/mkfixinc.sh b/fixincludes/mkfixinc.sh
+--- a/fixincludes/mkfixinc.sh
++++ b/fixincludes/mkfixinc.sh
+@@ -19,7 +19,8 @@
+     powerpcle-*-eabisim* | \
+     powerpcle-*-eabi* | \
+     *-*-vxworks7* | \
+-    *-musl* )
++    *-musl* | \
++    *-aquila* )
+ 	#  IF there is no include fixing,
+ 	#  THEN create a no-op fixer and exit
+ 	(echo "#! /bin/sh" ; echo "exit 0" ) > ${target}
+diff -ruN a/gcc/config/aquila.h b/gcc/config/aquila.h
+--- a/gcc/config/aquila.h
++++ b/gcc/config/aquila.h
+@@ -0,0 +1,39 @@
++/* Target definitions for AquilaOS.
++
++This file is part of GCC.
++
++GCC is free software; you can redistribute it and/or modify it under
++the terms of the GNU General Public License as published by the Free
++Software Foundation; either version 3, or (at your option) any later
++version.  */
++
++/* Same type sizes as the i386 SysV ABI used by the kernel.  */
++#undef  SIZE_TYPE
++#define SIZE_TYPE "unsigned int"
++
++#undef  PTRDIFF_TYPE
++#define PTRDIFF_TYPE "int"
++
++/* Only static linking is supported.  */
++#undef  LINK_SPEC
++#define LINK_SPEC "%{!shared:-static}"
++
++#undef  LIB_SPEC
++#define LIB_SPEC "-lc"
++
++/* crti/crtn come from the C library, crtbegin/crtend from libgcc.  */
++#undef  STARTFILE_SPEC
++#define STARTFILE_SPEC "crt0.o%s crti.o%s crtbegin.o%s"
++
++#undef  ENDFILE_SPEC
++#define ENDFILE_SPEC "crtend.o%s crtn.o%s"
++
++#undef  TARGET_OS_CPP_BUILTINS
++#define TARGET_OS_CPP_BUILTINS()		\
++  do {						\
++    builtin_define ("__aquila__");		\
++    builtin_define ("__unix__");		\
++    builtin_assert ("system=aquila");		\
++    builtin_assert ("system=unix");		\
++    builtin_assert ("system=posix");		\
++  } while (0)
+diff -ruN a/gcc/config.gcc b/gcc/config.gcc
+--- a/gcc/config.gcc
++++ b/gcc/config.gcc
+@@ -879,6 +879,12 @@
+   rust_target_objs="${rust_target_objs} freebsd-rust.o"
+   target_has_targetrustm=yes
+   ;;
++*-*-aquila*)
++  gas=yes
++  gnu_ld=yes
++  default_use_cxa_atexit=yes
++  use_gcc_stdint=wrap
++  ;;
+ *-*-fuchsia*)
+   native_system_header_dir=/include
+   tmake_file="t-fuchsia"
+@@ -1956,6 +1962,9 @@
+ i[34567]86-*-elfiamcu)
+ 	tm_file="${tm_file} i386/unix.h i386/att.h elfos.h newlib-stdint.h i386/iamcu.h"
+ 	;;
++i[34567]86-*-aquila*)
++	tm_file="${tm_file} i386/unix.h i386/att.h elfos.h newlib-stdint.h i386/i386elf.h aquila.h"
++	;;
+ i[34567]86-*-elf*)
+ 	tm_file="${tm_file} i386/unix.h i386/att.h elfos.h newlib-stdint.h i386/i386elf.h"
+ 	;;
+diff -ruN a/libgcc/config.host b/libgcc/config.host
+--- a/libgcc/config.host
++++ b/libgcc/config.host
+@@ -753,6 +753,10 @@
+ i[34567]86-*-elfiamcu)
+ 	tmake_file="$tmake_file i386/t-crtstuff t-softfp-sfdftf i386/32/t-softfp i386/32/t-iamcu i386/t-softfp t-softfp t-dfprules"
+ 	;;
++i[34567]86-*-aquila*)
++	extra_parts="$extra_parts crtbegin.o crtend.o"
++	tmake_file="$tmake_file i386/t-crtstuff t-crtstuff-pic t-libgcc-pic"
++	;;
+ i[34567]86-*-elf*)
+ 	tmake_file="$tmake_file i386/t-crtstuff t-crtstuff-pic t-libgcc-pic"
+ 	;;

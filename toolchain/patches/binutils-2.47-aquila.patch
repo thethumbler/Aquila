@@ -1,0 +1,46 @@
+diff -ruN a/bfd/config.bfd b/bfd/config.bfd
+--- a/bfd/config.bfd
++++ b/bfd/config.bfd
+@@ -568,7 +568,7 @@
+     targ_selvecs="i386_elf32_vec x86_64_elf64_sol2_vec x86_64_elf64_vec"
+     want64=true
+     ;;
+-  i[3-7]86-*-dicos* | i[3-7]86-*-dragonfly* |  i[3-7]86-*-netbsd* | i[3-7]86-*-knetbsd*-gnu | i[3-7]86-*-redox*)
++  i[3-7]86-*-dicos* | i[3-7]86-*-dragonfly* |  i[3-7]86-*-netbsd* | i[3-7]86-*-knetbsd*-gnu | i[3-7]86-*-redox* | i[3-7]86-*-aquila*)
+     targ_defvec=i386_elf32_vec
+     targ64_selvecs="x86_64_elf64_vec"
+     ;;
+diff -ruN a/config.sub b/config.sub
+--- a/config.sub
++++ b/config.sub
+@@ -2113,6 +2113,7 @@
+ 	| skyos* \
+ 	| solaris* \
+ 	| solidbsd* \
++	| aquila* \
+ 	| sortix* \
+ 	| storm-chaos* \
+ 	| sunos \
+diff -ruN a/gas/configure.tgt b/gas/configure.tgt
+--- a/gas/configure.tgt
++++ b/gas/configure.tgt
+@@ -243,6 +243,7 @@
+     esac ;;
+   i386-*-lynxos*)			fmt=elf em=lynx ;;
+   i386-*-redox*)			fmt=elf ;;
++  i386-*-aquila*)			fmt=elf ;;
+   i386-*-solaris*)			fmt=elf em=solaris ;;
+   i386-*-freebsd* \
+   | i386-*-kfreebsd*-gnu)		fmt=elf em=freebsd ;;
+diff -ruN a/ld/configure.tgt b/ld/configure.tgt
+--- a/ld/configure.tgt
++++ b/ld/configure.tgt
+@@ -363,6 +363,8 @@
+ i[3-7]86-*-redox*)	targ_emul=elf_i386
+ 			targ_extra_emuls=elf_x86_64
+ 			;;
++i[3-7]86-*-aquila*)	targ_emul=elf_i386
++			;;
+ i[3-7]86-*-solaris2*)
+ 			targ_emul=elf_i386_sol2
+ 			targ_extra_emuls=elf_i386
