@@ -1,0 +1,33 @@
+--- a/src/sv.c
++++ b/src/sv.c
+@@ -40,7 +40,7 @@
+ unsigned int rc =0;
+ unsigned int lsb;
+ unsigned int verbose =0;
+-unsigned long wait =7;
++unsigned long waitsec =7;
+ unsigned int kll =0;
+ unsigned int islog =0;
+ struct taia tstart, tnow, tdiff;
+@@ -292,10 +292,10 @@
+   services =1;
+   lsb =(str_diff(progname, "sv"));
+   if ((x =env_get("SVDIR"))) varservice =x;
+-  if ((x =env_get("SVWAIT"))) scan_ulong(x, &wait);
++  if ((x =env_get("SVWAIT"))) scan_ulong(x, &waitsec);
+   while ((i =getopt(argc, (char* const*)argv, "w:vV")) != opteof) {
+     switch(i) {
+-    case 'w': scan_ulong(optarg, &wait);
++    case 'w': scan_ulong(optarg, &waitsec);
+     case 'v': verbose =1; break;
+     case 'V': strerr_warn1(VERSION, 0);
+     case '?': usage();
+@@ -389,7 +389,7 @@
+             *service =0;
+           }
+         if (*service) { if (cbk(acts) != 0) *service =0; else done =0; }
+-        if (*service && taia_approx(&tdiff) > wait) {
++        if (*service && taia_approx(&tdiff) > waitsec) {
+           kll ? outs(KILL) : outs(TIMEOUT);
+           if (svstatus_get() > 0) { svstatus_print(*service); ++rc; }
+           flush("\n");
