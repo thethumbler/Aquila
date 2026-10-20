@@ -160,11 +160,15 @@ static inline int page_map(paddr_t paddr, size_t pdidx, size_t ptidx, int flags)
         table_map(table, pdidx, flags);
     }
 
+    int present = PAGE_TBL(pdidx)[ptidx] & PG_PRESENT;
+
     PAGE_TBL(pdidx)[ptidx] = page;
 
-    /* Increment references to table */
-    paddr_t table = PHYSADDR(PAGE_DIR[pdidx]);
-    mm_page_incref(table);
+    /* Increment references to table -- unless we replaced a present page */
+    if (!present) {
+        paddr_t table = PHYSADDR(PAGE_DIR[pdidx]);
+        mm_page_incref(table);
+    }
 
     return 0;
 }
@@ -265,7 +269,7 @@ struct pmap *pmap_switch(struct pmap *pmap)
     struct pmap *ret = cur_pmap;
 
     if (cur_pmap && cur_pmap->map == pmap->map) {
-        cur_pmap == pmap;
+        cur_pmap = pmap;
         return ret;
     }
 
@@ -552,7 +556,10 @@ paddr_t arch_page_get_mapping(struct pmap *pmap, vaddr_t vaddr)
 
 int pmap_page_read(paddr_t paddr, off_t off, size_t size, void *buf)
 {
-    size_t sz = MAX(PAGE_SIZE, size - off);
+    if (off < 0 || off >= PAGE_SIZE)
+        return -EINVAL;
+
+    size_t sz = MIN(size, PAGE_SIZE - (size_t) off);
     uintptr_t old = frame_mount(paddr);
     char *page = (char *) MOUNT_ADDR;
     memcpy(buf, page + off, sz);
@@ -562,7 +569,10 @@ int pmap_page_read(paddr_t paddr, off_t off, size_t size, void *buf)
 
 int pmap_page_write(paddr_t paddr, off_t off, size_t size, void *buf)
 {
-    size_t sz = MAX(PAGE_SIZE, size - off);
+    if (off < 0 || off >= PAGE_SIZE)
+        return -EINVAL;
+
+    size_t sz = MIN(size, PAGE_SIZE - (size_t) off);
     uintptr_t old = frame_mount(paddr);
     char *page = (char *) MOUNT_ADDR;
     memcpy(page + off, buf, sz);

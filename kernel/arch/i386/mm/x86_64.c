@@ -309,7 +309,7 @@ struct pmap *arch_pmap_switch(struct pmap *pmap)
     struct pmap *ret = cur_pmap;
 
     if (cur_pmap && cur_pmap->map == pmap->map) {
-        cur_pmap == pmap;
+        cur_pmap = pmap;
         return ret;
     }
 
