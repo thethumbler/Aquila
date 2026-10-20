@@ -303,9 +303,9 @@ static ssize_t procfs_proc_status(int pid, off_t off, size_t size, void *buf)
     if (!proc)
         return -ESRCH;
 
-    char status_buf[512];
+    char status_buf[1024];
 
-    int sz = snprintf(status_buf, 512,
+    int sz = snprintf(status_buf, sizeof(status_buf),
             "name: %s\n"
             "pid: %d\n"
             "ppid: %d\n"
@@ -314,7 +314,9 @@ static ssize_t procfs_proc_status(int pid, off_t off, size_t size, void *buf)
             "uid: %d\n"
             "gid: %d\n"
             "heap: 0x%x\n"
-            "threads_nr: %d\n",
+            "threads_nr: %d\n"
+            "sigmask: 0x%x\n"
+            "sigpending: %d\n",
             proc->name,
             proc->pid,
             proc->parent ? proc->parent->pid : 0,
@@ -323,8 +325,26 @@ static ssize_t procfs_proc_status(int pid, off_t off, size_t size, void *buf)
             proc->uid,
             proc->gid,
             proc->heap,
-            proc->threads.count
+            proc->threads.count,
+            (unsigned) proc->sigmask,
+            proc->sig_queue ? (int) proc->sig_queue->count : 0
             );
+
+    /* what each thread is doing: running (or ready to), sleeping (ISLEEP,
+     * signals wake it) or waiting (USLEEP), and with a deadline */
+    static const char *states[] = {"running", "sleeping", "waiting", "zombie"};
+
+    queue_for (node, &proc->threads) {
+        struct thread *thread = node->value;
+        const char *state = thread->state < sizeof(states) / sizeof(states[0]) ?
+                            states[thread->state] : "?";
+
+        sz += snprintf(status_buf + sz, sizeof(status_buf) - sz,
+                "thread %d: %s%s%s%s\n", thread->tid, state,
+                thread->sleep_node ? " on a queue" : "",
+                thread->timer_node ? " with a deadline" : "",
+                thread->sched_node ? " (ready)" : thread == curthread ? " (current)" : "");
+    }
 
     if (off < sz) {
         ssize_t ret = MIN(size, (size_t)(sz - off));
