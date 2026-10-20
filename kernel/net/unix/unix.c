@@ -3,6 +3,7 @@
 #include <fs/vfs.h>
 #include <ds/ringbuf.h>
 #include <net/socket.h>
+#include <sys/uaccess.h>
 #include <unix.h>
 
 #define SOCKBUF 8192
@@ -14,6 +15,26 @@ MALLOC_DEFINE(M_UN_CONN, "unix conn", "unix connection struct");
 static struct sock_ops socket_unix_ops;
 
 static struct queue *sockets = QUEUE_NEW();  /* Open sockets */
+
+/* validate a user supplied AF_UNIX address */
+static int unix_addr_check(const struct sockaddr *addr)
+{
+    struct sockaddr_un *addr_un = (struct sockaddr_un *) addr;
+
+    if (uaccess_check(addr_un, sizeof(sa_family_t)))
+        return -EFAULT;
+
+    return uaccess_str_check(addr_un->sun_path);
+}
+
+/* wake up everyone sleeping on a connection, so they notice state changes */
+static void unix_conn_wakeup(struct un_conn *conn)
+{
+    thread_queue_wakeup(&conn->server_recv);
+    thread_queue_wakeup(&conn->server_send);
+    thread_queue_wakeup(&conn->client_recv);
+    thread_queue_wakeup(&conn->client_send);
+}
 
 int socket_unix_create(struct file *file, int domain, int type, int protocol)
 {
@@ -42,32 +63,43 @@ static int socket_unix_accept(struct file *file, struct file *conn, const struct
 
     struct un_socket *socket = file->socket->p;
 
-    if (!socket)
+    if (file->socket->domain != AF_UNIX || !socket || !socket->listening)
         return -EINVAL;
 
-    if (!socket->requests.count) {
-        /* Sleep until a connection request is present */
+    /* Sleep until a connection request is present */
+    while (!socket->requests.count) {
         if (thread_queue_sleep(&socket->accept))
             return -EINTR;
     }
 
-    struct un_conn *request = dequeue(&socket->requests);
+    /* Allocate everything before taking the request off the queue */
+    struct socket *conn_socket = kmalloc(sizeof(struct socket), &M_SOCKET, 0);
+    struct ringbuf *soci = ringbuf_new(SOCKBUF);
+    struct ringbuf *sico = ringbuf_new(SOCKBUF);
 
-    /* Initialize connection */
-    conn->flags  |= FILE_SOCKET;
-    conn->socket  = kmalloc(sizeof(struct socket), &M_SOCKET, 0);
-    if (!conn->socket) {
-        /* TODO */
+    if (!conn_socket || !soci || !sico) {
+        kfree(conn_socket);
+        if (soci) ringbuf_free(soci);
+        if (sico) ringbuf_free(sico);
+        return -ENOMEM;
     }
 
-    memcpy(conn->socket, file->socket, sizeof(struct socket));
+    struct un_conn *request = dequeue(&socket->requests);
 
-    conn->socket->domain = AF_UNIX_CONN;
-    conn->socket->p      = request;
+    memcpy(conn_socket, file->socket, sizeof(struct socket));
+
+    conn_socket->domain = AF_UNIX_CONN;
+    conn_socket->p      = request;
+    conn_socket->ref    = 1;    /* only referenced by the new descriptor */
+
+    /* Initialize connection, offset 0 marks the server side */
+    conn->socket = conn_socket;
+    conn->flags  = FILE_SOCKET;
+    conn->offset = 0;
 
     /* Initialize buffers */
-    request->soci = ringbuf_new(SOCKBUF);
-    request->sico = ringbuf_new(SOCKBUF);
+    request->soci = soci;
+    request->sico = sico;
 
     /* Connection established */
     request->connected = 1;
@@ -87,14 +119,24 @@ static int socket_unix_bind(struct file *file, const struct sockaddr *addr, sock
     int err = 0;
     struct uio uio = PROC_UIO(curproc);
 
+    if ((err = unix_addr_check(addr)))
+        return err;
+
+    /* already bound or connected */
+    if (file->socket->domain != AF_UNIX || file->socket->p)
+        return -EINVAL;
+
     struct vnode *vnode = NULL;
     err = vfs_lookup(addr_un->sun_path, &uio, &vnode, NULL);
 
     if (err && err != -ENOENT)
         return err;
 
-    if (!err)
+    if (!err) {
+        if (vnode)
+            vfs_close(vnode);
         return -EEXIST;
+    }
 
     /* Create socket */
     if ((err = vfs_mknod(addr_un->sun_path, S_IFSOCK, 0, &uio, NULL)))
@@ -126,10 +168,19 @@ static int socket_unix_connect(struct file *file, const struct sockaddr *addr, s
     struct vnode *vnode = NULL;
     struct uio uio = PROC_UIO(curproc);
 
+    if ((err = unix_addr_check(addr)))
+        return err;
+
+    if (file->socket->domain != AF_UNIX)
+        return -EISCONN;
+
     /* Open socket */
     if ((err = vfs_lookup(addr_un->sun_path, &uio, &vnode, NULL))) {
         return err;
     }
+
+    if (!vnode)
+        return -ENOENT;
 
     struct un_socket *socket = NULL;
 
@@ -141,7 +192,11 @@ static int socket_unix_connect(struct file *file, const struct sockaddr *addr, s
         }
     }
 
-    if ((!socket->listening) || socket->requests.count > socket->backlog)
+    /* the bound socket holds its own reference to the vnode */
+    vfs_close(vnode);
+
+    /* path is not a bound socket, not listening, or backlog full */
+    if (!socket || !socket->listening || socket->requests.count >= socket->backlog)
         return -ECONNREFUSED;
 
     struct un_conn *request = kmalloc(sizeof(struct un_conn), &M_UN_CONN, M_ZERO);
@@ -153,8 +208,10 @@ static int socket_unix_connect(struct file *file, const struct sockaddr *addr, s
     thread_queue_wakeup(&socket->accept);
 
     /* Sleep until the connection is established */
-    if (!request->connected && thread_queue_sleep(&request->connect))
-        return -EINTR;
+    while (!request->connected) {
+        if (thread_queue_sleep(&request->connect))
+            return -EINTR;
+    }
 
     /* Initialize connection */
     file->socket->domain = AF_UNIX_CONN;
@@ -170,7 +227,12 @@ static int socket_unix_listen(struct file *file, int backlog)
 
     struct un_socket *socket = (struct un_socket *) file->socket->p;
 
-    socket->backlog = backlog;
+    /* must be bound (and not a connection) */
+    if (file->socket->domain != AF_UNIX || !socket)
+        return -EINVAL;
+
+    /* allow at least one pending connection */
+    socket->backlog = MIN(MAX(backlog, 1), SOMAXCONN);
     socket->listening = 1;
 
     return 0;
@@ -185,17 +247,19 @@ static ssize_t socket_unix_send(struct file *file, void *buf, size_t len, int fl
 
     struct un_conn *conn = file->socket->p;
 
-    struct ringbuf *ring = NULL;
+    /* the ring may be freed by the peer shutting down while we sleep, so
+     * keep a pointer to the conn field and re-read it every iteration */
+    struct ringbuf **ring_p = NULL;
 
     struct queue *recv_queue = NULL;
     struct queue *send_queue = NULL;
 
     if (file->offset == 0) {  /* Server */
-        ring       = conn->soci;
+        ring_p     = &conn->soci;
         recv_queue = &conn->client_recv;
         send_queue = &conn->server_send;
     } else {    /* Client */
-        ring       = conn->sico;
+        ring_p     = &conn->sico;
         recv_queue = &conn->server_recv;
         send_queue = &conn->client_send;
     }
@@ -204,6 +268,8 @@ static ssize_t socket_unix_send(struct file *file, void *buf, size_t len, int fl
     ssize_t incr   = 0;
 
     for (;;) {
+        struct ringbuf *ring = *ring_p;
+
         if (!ring)  /* Connection closed */
             return retval;
 
@@ -236,17 +302,18 @@ static ssize_t socket_unix_recv(struct file *file, void *buf, size_t len, int fl
 
     struct un_conn *conn = file->socket->p;
 
-    struct ringbuf *ring = NULL;
+    /* see socket_unix_send */
+    struct ringbuf **ring_p = NULL;
 
     struct queue *recv_queue = NULL;
     struct queue *send_queue = NULL;
 
     if (file->offset == 0) {  /* Server */
-        ring       = conn->sico;
+        ring_p     = &conn->sico;
         recv_queue = &conn->server_recv;
         send_queue = &conn->client_send;
     } else {    /* Client */
-        ring       = conn->soci;
+        ring_p     = &conn->soci;
         recv_queue = &conn->client_recv;
         send_queue = &conn->server_send;
     }
@@ -255,6 +322,8 @@ static ssize_t socket_unix_recv(struct file *file, void *buf, size_t len, int fl
     ssize_t incr   = 0;
 
     for (;;) {
+        struct ringbuf *ring = *ring_p;
+
         if (!ring)  /* Connection closed */
             return retval;
 
@@ -285,7 +354,7 @@ static int socket_unix_can_read(struct file *file, size_t len)
 
     if (file->socket->domain == AF_UNIX) {
         struct un_socket *socket = file->socket->p;
-        return socket->requests.count;
+        return socket? (int) socket->requests.count : 0;
     }
 
     if (file->socket->domain != AF_UNIX_CONN)
@@ -328,6 +397,9 @@ static int socket_unix_can_write(struct file *file, size_t len)
         ring = conn->sico;
     }
 
+    if (!ring)
+        return -ENOTCONN;
+
     return ring->size - ringbuf_available(ring);
 }
 
@@ -358,6 +430,9 @@ static int socket_unix_shutdown(struct file *file, int how)
                 conn->sico = NULL;
             }
         }
+
+        /* wake up the peer if it is blocked on a ring we just freed */
+        unix_conn_wakeup(conn);
 
         if (!conn->soci && !conn->sico) {
             /* Free resources */
