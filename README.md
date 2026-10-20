@@ -118,7 +118,7 @@ from source, see [tests/](tests/README.md).
 - [X] kilo    (text editor, port)
 - [X] vis     (vi-like editor, port) on ncurses (port)
 - [X] Lua     (port)
-- [ ] tcc
+- [X] tcc     (C compiler, port), building programs on AquilaOS
 
 ## License
 

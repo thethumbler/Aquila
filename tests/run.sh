@@ -10,7 +10,7 @@
 # QEMU uses KVM when /dev/kvm can be used, KVM=0 in the environment turns
 # it off.
 #
-# tests: ata cpu syscalls ext2 libc system disk (default: all)
+# tests: ata cpu syscalls ext2 libc system disk tcc (default: all)
 #
 # Requires gcc with 32-bit support, ld, cpio and qemu-system-i386. The ext2
 # test also needs e2fsprogs (mke2fs, e2fsck, debugfs) and python3. The libc,
@@ -26,7 +26,7 @@ TESTS=$ROOT/tests
 OUT=$TESTS/out
 CONFIG=../tests/host/i386-pc
 
-ALL_TESTS="ata cpu syscalls ext2 libc system disk"
+ALL_TESTS="ata cpu syscalls ext2 libc system disk tcc"
 
 CROSS_CC=$ROOT/build/toolchain/bin/i686-aquila-gcc
 
@@ -487,6 +487,74 @@ test_disk()
     fi
 
     echo "booted from the disk twice, the file written on the first boot kept (a kernel and system update between), e2fsck clean"
+}
+
+# the tcc port (make ports) on AquilaOS: compiling and running programs,
+# with the C library and libm
+test_tcc()
+{
+    local log=$OUT/tcc/serial.log
+    local ports=$ROOT/build/ports/root
+
+    if [ ! -x "$ports/usr/bin/tcc" ]; then
+        echo "SKIP: the tcc port isn't built, run make ports"
+        return 0
+    fi
+
+    mkdir -p "$OUT/tcc"
+    make -C "$ROOT" initrd BUILDDIR="$OUT/tcc/build" TOOLCHAIN="$ROOT/build/toolchain" \
+        CONTRIB_ROOT="$ROOT/build/contrib/root" PORTS_ROOT="$ports" \
+        > "$OUT/tcc/build.log" 2>&1 || {
+        tail -20 "$OUT/tcc/build.log"
+        return 1
+    }
+
+    local fifo=$OUT/tcc/input
+    rm -f "$fifo" "$log.raw"
+    mkfifo "$fifo"
+    timeout 120 qemu-system-i386 $ACCEL -kernel "$KERNEL" -initrd "$OUT/tcc/build/initrd.img" \
+        -append earlycon=ttyS0 -m 256 -display none -no-reboot -serial stdio \
+        < "$fifo" > "$log.raw" 2>/dev/null &
+    local pid=$!
+
+    prompts()
+    {
+        for _ in $(seq 600); do
+            [ "$(grep -a -c '^# ' "$log.raw")" -ge "$1" ] && return 0
+            sleep 0.1
+        done
+        return 1
+    }
+
+    exec 3> "$fifo"
+    local n=1 line
+    for _ in $(seq 600); do grep -a -q 'login: ' "$log.raw" && break; sleep 0.1; done
+    printf 'root\r' >&3
+    prompts 1
+    while IFS= read -r line; do
+        printf '%s\r' "$line" >&3
+        n=$((n + 1))
+        prompts $n || break
+    done <<'END'
+cd /tmp; printf '#include <stdio.h>\nint main(void) { printf("tcc-%%d\\n", 6 * 7); return 0; }\n' > a.c
+tcc -o a a.c && ./a
+printf '#include <stdio.h>\n#include <math.h>\nint main(void) { long long b = 1LL << 40; printf("sqrt=%%.1f div=%%lld\\n", sqrt(2.25), b / 3); return 0; }\n' > m.c
+tcc -o m m.c -lm && ./m
+END
+    printf 'poweroff\r' >&3
+    wait $pid
+    exec 3>&-
+    tr -d '\r' < "$log.raw" > "$log"
+
+    local missing=0 want
+    for want in '^tcc-42$' '^sqrt=1\.5 div=366503875925$'; do
+        if ! grep -a -q -E -- "$want" "$log"; then
+            echo "missing output: $want"
+            missing=1
+        fi
+    done
+
+    [ $missing = 0 ] && echo "compiled and ran programs on AquilaOS, with libc and libm"
 }
 
 #

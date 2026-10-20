@@ -1,0 +1,14 @@
+--- a/tcc.h
++++ b/tcc.h
+@@ -185,8 +185,9 @@
+ # endif
+ #endif
+ 
+-/* only native compiler supports -run */
+-#if defined _WIN32 == defined TCC_TARGET_PE \
++/* only native compiler supports -run (not on AquilaOS, which has no
++   mprotect() for the code it would run) */
++#if !defined CONFIG_TCC_NO_RUN && defined _WIN32 == defined TCC_TARGET_PE \
+     && defined __APPLE__ == defined TCC_TARGET_MACHO
+ # if defined __i386__ && defined TCC_TARGET_I386
+ #  define TCC_IS_NATIVE

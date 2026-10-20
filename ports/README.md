@@ -59,4 +59,5 @@ against go into `$STAGING`, which `CPPFLAGS` and `LDFLAGS` point at.
 | libtermkey | 0.22     | library only (for vis)                              |
 | lua        | 5.5.1    | `lua` and `luac` in `/usr/bin`                      |
 | ncurses    | 6.6      | library only, wide characters, the vt100, ansi, linux, xterm and xterm-256color descriptions built in (no terminfo database) |
+| tcc        | mob e23dabe | `tcc` (also `cc`) in `/usr/bin`, compiling static programs on AquilaOS; with the C library's headers in `/usr/include` and archives in `/usr/lib`; no `-run` (no `mprotect()`) |
 | vis        | 0.9      | `vis` in `/usr/bin`, without Lua (no syntax highlighting) |
