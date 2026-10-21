@@ -1,0 +1,65 @@
+/*
+ * Ethernet: frames to the protocols by their type, and the header of
+ * what is sent
+ */
+
+#include <core/system.h>
+#include <core/string.h>
+#include <net/byteorder.h>
+#include <net/inet.h>
+
+void ether_input(struct netif *netif, struct netbuf *nb)
+{
+    struct ether_hdr *eh = netbuf_pull(nb, sizeof(*eh));
+
+    if (!eh) {
+        netif->stats.rx_errors++;
+        netbuf_free(nb);
+        return;
+    }
+
+    switch (ntohs(eh->type)) {
+        case ETHER_TYPE_ARP:
+            arp_input(netif, nb);
+            return;
+        case ETHER_TYPE_IPV4:
+            ipv4_input(netif, nb, eh->src);
+            return;
+    }
+
+    netif->stats.rx_dropped++;
+    netbuf_free(nb);
+}
+
+/* the frame goes, the netbuf is freed */
+int ether_output(struct netif *netif, const uint8_t dst[6], uint16_t type, struct netbuf *nb)
+{
+    struct ether_hdr *eh = netbuf_push(nb, sizeof(*eh));
+
+    memcpy(eh->dst, dst, 6);
+    memcpy(eh->src, netif->mac, 6);
+    eh->type = htons(type);
+
+    int err = netif_output(netif, nb);
+    netbuf_free(nb);
+    return err;
+}
+
+/* the Internet checksum (RFC 1071): the ones' complement of the ones'
+ * complement sum of the 16-bit words */
+uint16_t inet_checksum(const void *data, size_t len)
+{
+    const uint8_t *p = data;
+    uint32_t sum = 0;
+
+    for (; len > 1; len -= 2, p += 2)
+        sum += (uint32_t) p[0] << 8 | p[1];
+
+    if (len)
+        sum += (uint32_t) p[0] << 8;
+
+    while (sum >> 16)
+        sum = (sum & 0xffff) + (sum >> 16);
+
+    return htons(~sum & 0xffff);
+}
