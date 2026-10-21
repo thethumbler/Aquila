@@ -12,6 +12,8 @@
 #   DEPENDS     recipes to build first (of the same tree, or of contrib)
 #   FILE        name of the downloaded archive (default: basename of URL)
 #   ARCHIVE_DIR directory the archive extracts to (default: NAME-VERSION)
+#   PLAIN       1: the download is a file, not an archive (it's put in an
+#               empty NAME-VERSION directory)
 #   ARCHS       the architectures it builds for (default: all), it is
 #               skipped on the others
 #
@@ -159,7 +161,7 @@ build_port()
 
     (
         # optional settings start unset
-        unset ARCHIVE_DIR FILE
+        unset ARCHIVE_DIR FILE PLAIN
 
         # shellcheck source=/dev/null
         source "$recipe"
@@ -200,7 +202,14 @@ build_port()
         echo "==> building $NAME-$VERSION"
         local srcdir=${ARCHIVE_DIR:-$NAME-$VERSION}
         rm -rf "${SRC:?}/$srcdir"
-        tar -xf "$archive" -C "$SRC"
+
+        if [ "${PLAIN:-0}" = 1 ]; then
+            mkdir -p "$SRC/$srcdir"
+            cp "$archive" "$SRC/$srcdir/"
+        else
+            tar -xf "$archive" -C "$SRC"
+        fi
+
         cd "$SRC/$srcdir"
 
         for p in "$ROOT/$tree/$1"/*.patch; do
