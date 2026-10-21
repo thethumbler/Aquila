@@ -266,15 +266,20 @@ void pmap_remove(struct pmap *pmap, vaddr_t sva, vaddr_t eva)
     }
 }
 
-/* the tables of the user half, from `level' down */
+/* the tables of the user half, from `level' down; the pages they map
+ * lose the reference the page fault handler gave them (mm_page_incref) */
 static void tables_free(paddr_t paddr, int level)
 {
     uint64_t *t = table(paddr);
 
-    if (level > 1) {
-        for (int i = 0; i < 512; ++i)
-            if (t[i] & PG_PRESENT)
-                tables_free(PG_ADDR(t[i]), level - 1);
+    for (int i = 0; i < 512; ++i) {
+        if (!(t[i] & PG_PRESENT))
+            continue;
+
+        if (level > 1)
+            tables_free(PG_ADDR(t[i]), level - 1);
+        else
+            mm_page_decref(PG_ADDR(t[i]));
     }
 
     table_free(paddr);
