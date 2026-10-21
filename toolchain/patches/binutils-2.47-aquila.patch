@@ -53,11 +53,12 @@ diff -ruN a/ld/configure.tgt b/ld/configure.tgt
  i[3-7]86-*-solaris2*)
  			targ_emul=elf_i386_sol2
  			targ_extra_emuls=elf_i386
-@@ -953,6 +955,8 @@
+@@ -953,6 +955,9 @@
  x86_64-*-redox*)	targ_emul=elf_x86_64
  			targ_extra_emuls=elf_i386
  			;;
 +x86_64-*-aquila*)	targ_emul=elf_x86_64
++			targ_extra_emuls=elf_i386
 +			;;
  x86_64-*-solaris2*)
  			targ_emul=elf_x86_64_sol2

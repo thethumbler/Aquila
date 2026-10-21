@@ -12,11 +12,11 @@
 #   gcc         i686-aquila gcc (C compiler and libgcc)
 #   headers     install the user/kernel ABI headers (include/uapi)
 #   libc        newlib with the aquila port (libc/) into the sysroot
-#   limine      Limine bootloader (BIOS) and its host tool, for the ISO image
-#               (i386 only, built with the i686-aquila toolchain)
+#   limine      Limine bootloader (BIOS) and its host tool, for the ISO and
+#               disk images (both toolchains build its 32-bit BIOS stages)
 #
 # environment:
-#   ARCH        i386 (default) or x86_64
+#   ARCH        x86_64 (default) or i386
 #   BUILDDIR    output directory (default: <repo>/build)
 #   JOBS        parallel jobs (default: nproc)
 #
@@ -39,7 +39,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 BUILDDIR=${BUILDDIR:-$ROOT/build}
 JOBS=${JOBS:-$(nproc)}
 
-ARCH=${ARCH:-i386}
+ARCH=${ARCH:-x86_64}
 
 PREFIX=$BUILDDIR/toolchain
 DOWNLOADS=$BUILDDIR/downloads
@@ -230,7 +230,8 @@ stage_limine()
     log "building $LIMINE"
     unpack $LIMINE
 
-    # the BIOS stages are built with the i686-aquila toolchain
+    # the BIOS stages are built with the cross toolchain (32-bit code,
+    # gcc -m32 and ld's elf_i386 emulation on x86-64)
     cd "$SRC/$LIMINE"
     ./configure --prefix="$PREFIX" --enable-bios --enable-bios-cd \
         TOOLCHAIN_FOR_TARGET=$TARGET-
@@ -240,11 +241,7 @@ stage_limine()
 
 ALL_STAGES="fetch autotools binutils gcc headers libc limine"
 
-if [ "$ARCH" = i386 ]; then
-    stages=${*:-$ALL_STAGES}
-else
-    stages=${*:-fetch autotools binutils gcc headers libc}
-fi
+stages=${*:-$ALL_STAGES}
 
 for stage in $stages; do
     case " $ALL_STAGES " in
