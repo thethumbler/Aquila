@@ -39,6 +39,13 @@ void arch_syscall(struct x86_regs *r)
 
     curthread->in_syscall = 0;
 
+    /* an urgent thread was woken during the call (the network's, by a
+     * packet to ourselves): it runs before returning to user mode */
+    if (sched_urgent) {
+        extern void x86_preempt(void);
+        x86_preempt();
+    }
+
     /* signals that came during the call (deferred, or sent to itself) */
     int sig = signal_next(curproc);
     if (sig)

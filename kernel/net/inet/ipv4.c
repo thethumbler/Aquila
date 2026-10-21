@@ -144,10 +144,12 @@ int ipv4_output(struct netif *netif, uint32_t src, uint32_t dst, uint8_t proto, 
     ih->dst      = dst;
     ih->checksum = inet_checksum(ih, sizeof(*ih));
 
-    /* to ourselves: in again, without the wire */
+    /* to ourselves: in again, without the wire, from the network's
+     * thread (not from here: TCP's answer would come back into the
+     * connection while it sends) */
     if (ipv4_is_local(dst)) {
         netif->stats.tx_packets++;
-        ipv4_input(netif, nb, netif->mac);
+        netif_loopback(netif, nb);
         return 0;
     }
 

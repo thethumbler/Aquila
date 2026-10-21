@@ -19,6 +19,8 @@ struct netbuf {
     uint8_t *data;
     size_t len;
 
+    int loopback;           /* sent to ourselves: an IPv4 packet */
+
     /* where a datagram came from (in a socket's queue) */
     uint32_t src_ip;
     uint16_t src_port;

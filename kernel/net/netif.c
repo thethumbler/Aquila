@@ -137,7 +137,11 @@ static void net_main(void *arg __unused)
 
             rx_count--;
             nb->next = NULL;
-            ether_input(nb->netif, nb);
+
+            if (nb->loopback)
+                ipv4_input(nb->netif, nb, nb->netif->mac);
+            else
+                ether_input(nb->netif, nb);
         }
 
         callout_list_run(&net_callouts, arch_rtime_ns());
@@ -190,13 +194,8 @@ int netif_register(struct netif *netif)
     return 0;
 }
 
-/* a frame the device received, the netbuf is the stack's from now on */
-void netif_input(struct netif *netif, struct netbuf *nb)
+static void rx_queue(struct netif *netif, struct netbuf *nb)
 {
-    netif->stats.rx_packets++;
-    netif->stats.rx_bytes += nb->len;
-    nb->netif = netif;
-
     if (!(netif->flags & NETIF_UP) || rx_count >= NET_BACKLOG) {
         netif->stats.rx_dropped++;
         netbuf_free(nb);
@@ -215,6 +214,28 @@ void netif_input(struct netif *netif, struct netbuf *nb)
     rx_count++;
 
     thread_wakeup(net_thread);
+}
+
+/* a frame the device received, the netbuf is the stack's from now on */
+void netif_input(struct netif *netif, struct netbuf *nb)
+{
+    netif->stats.rx_packets++;
+    netif->stats.rx_bytes += nb->len;
+    nb->netif = netif;
+    nb->loopback = 0;
+
+    rx_queue(netif, nb);
+}
+
+/* an IPv4 packet to ourselves, received as if it came through `netif' */
+void netif_loopback(struct netif *netif, struct netbuf *nb)
+{
+    netif->stats.rx_packets++;
+    netif->stats.rx_bytes += nb->len;
+    nb->netif = netif;
+    nb->loopback = 1;
+
+    rx_queue(netif, nb);
 }
 
 /* send a frame, the netbuf stays the caller's */
