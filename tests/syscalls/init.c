@@ -1190,6 +1190,21 @@ void aq_main(void)
     /* --- clocks and nanosleep --- */
     struct aquila_timespec ts = {0, 0}, left = {0, 0};
     check("clock_gettime realtime", SC(SYS_clock_gettime, CLOCK_REALTIME, &ts, 0), 0);
+
+    /* finer than the timer's tick (2 ms): the HPET or the TSC count it */
+    {
+        struct aquila_timespec a, b;
+        int finer = 0;
+
+        for (int i = 0; i < 100000 && !finer; ++i) {
+            SC(SYS_clock_gettime, CLOCK_MONOTONIC, &a, 0);
+            SC(SYS_clock_gettime, CLOCK_MONOTONIC, &b, 0);
+            long d = (b.tv_sec - a.tv_sec) * 1000000000L + (b.tv_nsec - a.tv_nsec);
+            finer = d > 0 && d < 1000000;
+        }
+
+        check("clock_gettime monotonic: finer than a tick", finer, 1);
+    }
     check("realtime is recent", ts.tv_sec > 1500000000, 1);
     check("clock_gettime bad clock", SC(SYS_clock_gettime, 99, &ts, 0), -EINVAL);
     check("clock_gettime EFAULT", SC(SYS_clock_gettime, CLOCK_MONOTONIC, KADDR, 0), -EFAULT);

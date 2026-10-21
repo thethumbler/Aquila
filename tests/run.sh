@@ -11,7 +11,7 @@
 # QEMU uses KVM when /dev/kvm can be used, KVM=0 in the environment turns
 # it off.
 #
-# tests: ata cpu syscalls memory net tcp ext2 libc system disk tcc (default: all)
+# tests: ata cpu syscalls memory clock net tcp ext2 libc system disk tcc (default: all)
 #
 # Requires gcc with 32-bit support, ld, cpio and qemu-system-i386 (or
 # qemu-system-x86_64). The ext2
@@ -26,7 +26,7 @@ set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 TESTS=$ROOT/tests
 
-ALL_TESTS="ata cpu syscalls memory net tcp ext2 libc system disk tcc"
+ALL_TESTS="ata cpu syscalls memory clock net tcp ext2 libc system disk tcc"
 
 ARCH=x86_64
 build=1
@@ -46,6 +46,7 @@ case $ARCH in
     i386)
         OUT=$TESTS/out
         QEMU=qemu-system-i386
+        CPU_MODEL=qemu32
         HOST_CC_ARCH=-m32
         # the memory test: more RAM than the direct map's 768 MiB, which
         # are used, 512 MiB of them filled
@@ -54,6 +55,7 @@ case $ARCH in
     x86_64)
         OUT=$TESTS/out/x86_64
         QEMU=qemu-system-x86_64
+        CPU_MODEL=qemu64
         HOST_CC_ARCH=-m64
         # more than 4 GiB filled: pages above 4 GiB are used
         MEMORY_TEST_RAM=6G MEMORY_TEST_FILL=4608
@@ -270,6 +272,83 @@ test_memory()
     QEMU_MEM=$MEMORY_TEST_RAM run_qemu "$OUT/memory/serial.log" 180 'aqtest: done' \
         -initrd "$OUT/memory/initrd.img"
     aqtest_result "$OUT/memory/serial.log"
+}
+
+# the clock, from each source: the TSC (invariant, QEMU's invtsc), the
+# HPET (QEMU's default), the PIT's ticks (no HPET); tests/clock/init.c
+# reads it, the host timestamps its lines (stamp.py) to compare
+test_clock()
+{
+    local fails=0 summary=""
+
+    # name, QEMU's options, the kernel's command line, the source, fine
+    # (finer than a tick)
+    local modes=(
+        "tsc|-cpu $CPU_MODEL,+invtsc||tsc|1"
+        "hpet|||hpet|1"
+        "pit|-machine hpet=off||pit|0"
+        "forced|-cpu $CPU_MODEL,+invtsc|clock=hpet|hpet|1"
+    )
+
+    for m in "${modes[@]}"; do
+        local name args karg want fine
+        IFS='|' read -r name args karg want fine <<< "$m"
+        local log=$OUT/clock/$name.log
+
+        timeout 60 $QEMU $ACCEL $args -kernel "$KERNEL" -initrd "$OUT/clock/initrd.img" -m 256 \
+            -display none -no-reboot -append "$karg" -serial stdio 2>/dev/null |
+            python3 "$TESTS/clock/stamp.py" > "$log" &
+        local pid=$!
+
+        for _ in $(seq 300); do
+            grep -a -q 'aqtest: done\|Bailing out' "$log" 2>/dev/null && break
+            sleep 0.1
+        done
+
+        pkill -P $pid 2>/dev/null; kill $pid 2>/dev/null
+        wait $pid 2>/dev/null
+
+        local problem
+        problem=$(python3 - "$log" "$want" "$fine" <<'PY'
+import re, sys
+log, want, fine = sys.argv[1], sys.argv[2], sys.argv[3] == "1"
+lines = open(log, errors="replace").read().splitlines()
+text = "\n".join(l.split(" ", 1)[1] if " " in l else l for l in lines)
+def mark(name):
+    for l in lines:
+        m = re.match(r"([0-9.]+) %s ns=(\d+)" % name, l)
+        if m:
+            return float(m.group(1)), int(m.group(2)) / 1e9
+out = []
+if "aqtest: done" not in text:
+    out.append("did not finish")
+if re.search(r"^FAIL", text, re.M):
+    out += re.findall(r"^FAIL.*", text, re.M)
+if not re.search(r"^clock: %s" % want, text, re.M):
+    out.append("not clock: %s (%s)" % (want, "; ".join(re.findall(r"^clock:.*", text, re.M))))
+r = re.search(r"resolution_ns=(\d+)", text)
+if r and fine and int(r.group(1)) >= 1000000:
+    out.append("resolution %s ns, not finer than a tick" % r.group(1))
+m0, m1 = mark("mark0"), mark("mark1")
+if m0 and m1:
+    host, guest = m1[0] - m0[0], m1[1] - m0[1]
+    if abs(guest - host) > 0.05 * host:
+        out.append("2 s: the guest counted %.3f s, the host %.3f s" % (guest, host))
+elif "did not finish" not in out:
+    out.append("no marks")
+print("; ".join(out))
+PY
+)
+        if [ -n "$problem" ]; then
+            echo "$name: $problem"
+            fails=$((fails + 1))
+        else
+            summary="$summary $name($(grep -a -o 'resolution_ns=[0-9]*' "$log" | cut -d= -f2) ns)"
+        fi
+    done
+
+    [ $fails = 0 ] && echo "sources and their resolution:$summary; monotonic, nanosleep, 2 s as the host counts them"
+    [ $fails = 0 ]
 }
 
 # the e1000 and the stack over it: QEMU gives its frames to a peer on the
@@ -741,7 +820,7 @@ needed=" $selected "
 case "$needed" in *" ata "*) needed="$needed cpu " ;; esac
 [ -x "$CROSS_CC" ] || needed=${needed/ libc / }
 
-for name in cpu syscalls memory net tcp ext2 libc; do
+for name in cpu syscalls memory clock net tcp ext2 libc; do
     case "$needed" in
         *" $name "*)
             mkdir -p "$OUT/$name"
