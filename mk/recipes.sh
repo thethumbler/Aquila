@@ -29,9 +29,10 @@
 # (CPPFLAGS and LDFLAGS point there, and pkg-config only looks there).
 #
 # environment:
-#   BUILDDIR    output directory (default: <repo>/build)
+#   BUILDDIR    output directory (default: <repo>/build/x86_64, <repo>/build
+#               for i386)
 #   TOOLCHAIN   the cross toolchain (default: <repo>/build/toolchain)
-#   ARCH        i386 (default) or x86_64, TARGET its toolchain's prefix
+#   ARCH        x86_64 (default) or i386, TARGET its toolchain's prefix
 #   DOWNLOADS   source archives (default: <repo>/build/downloads)
 #   JOBS        parallel jobs (default: nproc)
 #
@@ -49,13 +50,16 @@ case "$TREE" in
     *) echo "usage: $0 contrib|ports [name...]" >&2; exit 2 ;;
 esac
 
-BUILDDIR=${BUILDDIR:-$ROOT/build}
+# the architecture (make passes its configuration's)
+export ARCH=${ARCH:-x86_64}
+
+case $ARCH in
+    i386)   export TARGET=${TARGET:-i686-aquila}; BUILDDIR=${BUILDDIR:-$ROOT/build} ;;
+    *)      export TARGET=${TARGET:-$ARCH-aquila}; BUILDDIR=${BUILDDIR:-$ROOT/build/$ARCH} ;;
+esac
+
 TOOLCHAIN=${TOOLCHAIN:-$ROOT/build/toolchain}
 JOBS=${JOBS:-$(nproc)}
-
-# the architecture (make passes its configuration's)
-export ARCH=${ARCH:-i386}
-export TARGET=${TARGET:-i686-aquila}
 DOWNLOADS=${DOWNLOADS:-$ROOT/build/downloads}
 export STAGING=$BUILDDIR/staging
 

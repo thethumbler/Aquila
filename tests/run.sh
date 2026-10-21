@@ -4,7 +4,7 @@
 #
 # usage: tests/run.sh [-a arch] [-n] [-v] [test...]
 #
-#   -a      the architecture: i386 (default) or x86_64
+#   -a      the architecture: x86_64 (default) or i386
 #   -n      don't rebuild the kernel, use the existing image
 #   -v      print the serial log of failed tests
 #
@@ -28,7 +28,7 @@ TESTS=$ROOT/tests
 
 ALL_TESTS="ata cpu syscalls ext2 libc system disk tcc"
 
-ARCH=i386
+ARCH=x86_64
 build=1
 verbose=0
 

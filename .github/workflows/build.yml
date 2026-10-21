@@ -34,7 +34,7 @@ jobs:
         with:
           path: |
             build/toolchain
-            build/sysroot
+            build/sysroot-x86_64
           key: toolchain-${{ hashFiles('toolchain/**', 'libc/**', 'include/uapi/**') }}
 
       - name: Build toolchain
@@ -55,7 +55,7 @@ jobs:
         with:
           name: aquila
           path: |
-            build/aquila.iso
-            build/aquila.img
-            build/initrd.img
-            build/kernel/kernel-*.i386
+            build/x86_64/aquila.iso
+            build/x86_64/aquila.img
+            build/x86_64/initrd.img
+            build/x86_64/kernel/kernel-*.x86_64

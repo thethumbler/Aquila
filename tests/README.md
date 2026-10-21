@@ -8,17 +8,22 @@ tests/run.sh            # build the kernel and run everything
 tests/run.sh cpu ext2   # run some tests
 tests/run.sh -n         # reuse the kernel image from the last build
 tests/run.sh -v         # print the serial log of failed tests
+tests/run.sh -a i386    # the i386 kernel and system (default: x86_64)
 ```
 
 The kernel is built with the host compiler through
-[`host/i386-pc.mk`](host/i386-pc.mk), the regular `i386-pc` configuration
-with `gcc`/`ld` instead of the `i686-aquila` cross toolchain. Any gcc with
-32-bit support works.
+[`host/x86_64-pc.mk`](host/x86_64-pc.mk) (or
+[`host/i386-pc.mk`](host/i386-pc.mk)), the regular configuration with
+`gcc`/`ld` instead of the cross toolchain. Any gcc with 32-bit support
+works. The libc, system, disk and tcc tests use the system built with the
+cross toolchain (`make`, `make CONFIG=i386-pc`) and are skipped without
+it.
 
-Requirements: `gcc`, `ld`, `cpio`, `qemu-system-i386`, and for the ext2
-test `mke2fs`, `e2fsck`, `debugfs` and `python3`, for the disk test
-`sfdisk`, `mkfs.fat`, mtools and `fakeroot` (skipped if missing).
-Build output goes to `tests/out/`.
+Requirements: `gcc`, `ld`, `cpio`, `qemu-system-x86_64` (and
+`qemu-system-i386` for i386), and for the ext2 test `mke2fs`, `e2fsck`,
+`debugfs` and `python3`, for the disk test `sfdisk`, `mkfs.fat`, mtools
+and `fakeroot` (skipped if missing). Build output goes to
+`tests/out/x86_64` (`tests/out` for i386).
 
 ## Tests
 

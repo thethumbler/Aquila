@@ -41,13 +41,14 @@
 #                     and the hard disk (it has what was saved on it)
 #   make distclean    remove build/
 #
-# CONFIG selects the kernel configuration in configs/ (default: i386-pc),
-# and the architecture of everything: CONFIG=x86_64-pc builds x86-64 into
-# build/x86_64 (the toolchain is shared, in build/toolchain).
+# CONFIG selects the kernel configuration in configs/ (default: x86_64-pc),
+# and the architecture of everything: x86-64 is built into build/x86_64,
+# CONFIG=i386-pc builds i386 into build/ (the toolchains are both in
+# build/toolchain).
 #
 
 SRCDIR   := $(CURDIR)
-CONFIG   ?= i386-pc
+CONFIG   ?= x86_64-pc
 
 include $(SRCDIR)/configs/$(CONFIG).mk
 

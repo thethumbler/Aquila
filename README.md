@@ -5,10 +5,11 @@ tools. Intended to be fully **POSIX** compliant.
 
 ## Building
 
-Everything is built from source into `build/`. On a Linux host you need
-a C/C++ compiler with 32-bit support, `make`, `bison`, `flex`, `texinfo`,
-GMP, MPFR and MPC development headers, `wget`, `nasm`, `cpio`, `xorriso`
-and `qemu-system-i386` (and `gperf` for the ports). On Debian/Ubuntu:
+Everything is built from source into `build/` (the x86-64 system into
+`build/x86_64`). On a Linux host you need a C/C++ compiler with 32-bit
+support, `make`, `bison`, `flex`, `texinfo`, GMP, MPFR and MPC
+development headers, `wget`, `nasm`, `cpio`, `xorriso` and
+`qemu-system-x86_64` (and `gperf` for the ports). On Debian/Ubuntu:
 
 ```
 sudo apt install build-essential gcc-multilib bison flex texinfo libgmp-dev \
@@ -18,7 +19,7 @@ sudo apt install build-essential gcc-multilib bison flex texinfo libgmp-dev \
 Then:
 
 ```
-make toolchain      # i686-aquila gcc/binutils, newlib and Limine (once, ~15 min)
+make toolchain      # x86_64-aquila gcc/binutils, newlib and Limine (once, ~15 min)
 make                # kernel, user space programs, contrib/ and initrd
 make ports          # optional software (vis, kilo, Lua, ...), included in the initrd
 make run-iso        # build the ISO and boot it in QEMU
@@ -35,12 +36,12 @@ kernel's virtual terminals have logins on `/dev/tty1` to `/dev/tty3`,
 Alt+F1 to Alt+F6 switch between them. runit supervises the logins as
 services (`/etc/sv`, enabled in `/etc/service`, see `sv`); `poweroff` and
 `reboot` shut down through it, as does Ctrl+Alt+Del. `make iso` only builds
-`build/aquila.iso`. With the ports (`make ports`), `startx` on the screen
+`build/x86_64/aquila.iso`. With the ports (`make ports`), `startx` on the screen
 starts X: twm and an xterm (Ctrl+Alt+F1 to Ctrl+Alt+F6 switch terminals
 from it).
 
 The ISO and `make run` boot the ramdisk, read-only and the same on every
-boot. `make hdd` makes `build/aquila.img`, a hard disk with AquilaOS
+boot. `make hdd` makes `build/x86_64/aquila.img`, a hard disk with AquilaOS
 installed: Limine on a FAT32 `/boot`, the root filesystem on ext2
 (`root=/dev/hda2`), where what is written is kept. `make run-hdd` boots
 it (making it the first time) with the system just built: `make
@@ -49,19 +50,17 @@ rest (home directories, and the accounts in `/etc`), `make hdd-kernel`
 only the kernel, `make hdd` makes the whole disk anew. See the top of the [Makefile](Makefile)
 for all targets.
 
-### x86-64
+### i386
 
-AquilaOS also runs on x86-64 (in progress: the kernel, the C library,
-the base system and tcc pass the tests; the other ports build, X isn't
-tried yet). The x86-64 build
-goes into `build/x86_64`, with an x86_64-aquila toolchain next to the
-i686 one (which also builds Limine, used by both):
+The default is x86-64. AquilaOS also runs on i386, which is built into
+`build/` with an i686-aquila toolchain (next to the x86_64 one in
+`build/toolchain`), `CONFIG=i386-pc` selects it:
 
 ```
-make toolchain CONFIG=x86_64-pc     # x86_64-aquila gcc/binutils and newlib
-make CONFIG=x86_64-pc               # build/x86_64/
-make hdd CONFIG=x86_64-pc           # build/x86_64/aquila.img
-make test CONFIG=x86_64-pc          # or tests/run.sh -a x86_64
+make toolchain CONFIG=i386-pc       # i686-aquila gcc/binutils and newlib
+make CONFIG=i386-pc                 # build/
+make hdd CONFIG=i386-pc             # build/aquila.img
+make test CONFIG=i386-pc            # or tests/run.sh -a i386
 ```
 
 ## Testing
