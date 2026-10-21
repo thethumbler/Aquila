@@ -18,6 +18,8 @@
  *   sa_mask, SA_RESETHAND, the mask restored, nested handlers,
  *   sigsuspend's EINTR and mask, a read stopped and continued is made
  *   again, sigreturn with a forged frame stays in user mode
+ * - orphans: init's, a stopped orphaned group's SIGHUP and SIGCONT, the
+ *   terminal's stops and reads in an orphaned group
  * - user memory that isn't mapped: EFAULT, the process goes on, a read's
  *   bytes stay, a buffer running into it is used up to it
  * - virtual terminals: KD* and VT_* ioctls, switching, VT_PROCESS
@@ -711,6 +713,132 @@ static void user_memory_child(void)
 static void user_memory(void)
 {
     check("umem: the process goes on", aq_child_status(user_memory_child), 0);
+}
+
+
+/*
+ * Orphans: a process whose parent exits is init's (this program is pid
+ * 1). A group the exit leaves orphaned (no member has a parent in another
+ * group of its session) with a stopped member gets SIGHUP and SIGCONT; in
+ * an orphaned group the terminal's stops don't stop, a background read is
+ * EIO.
+ */
+static void orphan_hup(int sig) { SC(SYS_exit, 4, 0, 0); (void) sig; }
+
+/* until the parent is gone (init is the parent then): 0, 1 if it isn't */
+static int orphan_wait(void)
+{
+    for (int i = 0; i < 1000; ++i) {
+        if (SC(SYS_getppid, 0, 0, 0) == 1)
+            return 0;
+        aq_spin(100000);
+    }
+
+    return 1;
+}
+
+/* a session on a pty, a job in another group of it whose parent exits:
+ * the job tells it what it saw; exits with the failed step */
+static void orphan_terminal(void)
+{
+    int n = -1;
+
+    /* if the job stops, nothing continues it: the alarm ends this */
+    struct aquila_itimer it = {3000000000ull, 0};
+    SC(SYS_setitimer, AQUILA_ITIMER_REAL, &it, 0);
+
+    SC(SYS_setsid, 0, 0, 0);
+    int master = SC(SYS_open, "/dev/ptmx", O_RDWR, 0);
+    SC(SYS_ioctl, master, TIOCGPTN, &n);
+    int slave = SC(SYS_open, pts_path(n), O_RDWR, 0);
+    if (master < 0 || slave < 0) SC(SYS_exit, 1, 0, 0);
+
+    int done[2];
+    SC(SYS_pipe, done, 0, 0);
+
+    int m = SC(SYS_fork, 0, 0, 0);
+    if (!m) {
+        int j = SC(SYS_fork, 0, 0, 0);
+        if (!j) {
+            char b, r[2];
+            SC(SYS_setpgid, 0, 0, 0);
+            r[0] = orphan_wait() ? 'P' : SC(SYS_read, slave, &b, 1) == -EIO ? 'E' : 'R';
+            SC(SYS_kill, SC(SYS_getpid, 0, 0, 0), SIGTSTP, 0);
+            r[1] = 'T';
+            SC(SYS_write, done[1], r, 2);
+            SC(SYS_exit, 0, 0, 0);
+        }
+        SC(SYS_exit, 0, 0, 0);
+    }
+
+    int st;
+    char r[2] = {0};
+    SC(SYS_waitpid, m, &st, 0);
+    if (SC(SYS_read, done[0], r, 2) != 2) SC(SYS_exit, 2, 0, 0);
+    if (r[0] != 'E') SC(SYS_exit, 3, 0, 0);
+    if (r[1] != 'T') SC(SYS_exit, 4, 0, 0);
+    SC(SYS_exit, 0, 0, 0);
+}
+
+static void orphans(void)
+{
+    int p[2], c, g = -1, st = -1;
+    SC(SYS_pipe, p, 0, 0);
+
+    /* a child's child, once the child exits */
+    c = SC(SYS_fork, 0, 0, 0);
+    if (!c) {
+        g = SC(SYS_fork, 0, 0, 0);
+        if (!g)
+            SC(SYS_exit, orphan_wait() ? 6 : 5, 0, 0);
+        SC(SYS_write, p[1], &g, sizeof(g));
+        SC(SYS_exit, 0, 0, 0);
+    }
+    SC(SYS_waitpid, c, &st, 0);
+    SC(SYS_read, p[0], &g, sizeof(g));
+    check("orphan: init waits for it", SC(SYS_waitpid, g, &st, 0), g);
+    check("orphan: its parent was init", st >> 8, 5);
+
+    /* a zombie left by its parent: init's to wait for */
+    c = SC(SYS_fork, 0, 0, 0);
+    if (!c) {
+        g = SC(SYS_fork, 0, 0, 0);
+        if (!g)
+            SC(SYS_exit, 3, 0, 0);
+        SC(SYS_write, p[1], &g, sizeof(g));
+        aq_spin(20000000);
+        SC(SYS_exit, 0, 0, 0);
+    }
+    SC(SYS_waitpid, c, &st, 0);
+    SC(SYS_read, p[0], &g, sizeof(g));
+    check("orphan: a zombie left is init's", SC(SYS_waitpid, g, &st, 0), g);
+    check("orphan: the zombie's status", st >> 8, 3);
+
+    /* a stopped job whose shell exits: SIGHUP, SIGCONT */
+    c = SC(SYS_fork, 0, 0, 0);
+    if (!c) {
+        SC(SYS_setsid, 0, 0, 0);
+        g = SC(SYS_fork, 0, 0, 0);
+        if (!g) {
+            struct aquila_sigaction hsa = {(uptr) orphan_hup, 0, 0};
+            SC(SYS_sigaction, SIGHUP, &hsa, 0);
+            SC(SYS_setpgid, 0, 0, 0);
+            SC(SYS_kill, SC(SYS_getpid, 0, 0, 0), SIGSTOP, 0);
+            SC(SYS_exit, 1, 0, 0);
+        }
+        SC(SYS_write, p[1], &g, sizeof(g));
+        SC(SYS_waitpid, g, &st, WUNTRACED);
+        SC(SYS_exit, 0, 0, 0);
+    }
+    SC(SYS_waitpid, c, &st, 0);
+    SC(SYS_read, p[0], &g, sizeof(g));
+    check("orphan: a stopped group's shell exits", SC(SYS_waitpid, g, &st, 0), g);
+    check("orphan: SIGHUP and SIGCONT", st >> 8, 4);
+
+    check("orphan: on a terminal", aq_child_status(orphan_terminal), 0);
+
+    SC(SYS_close, p[0], 0, 0);
+    SC(SYS_close, p[1], 0, 0);
 }
 
 void aq_main(void)
@@ -2000,6 +2128,7 @@ void aq_main(void)
 
     exit_path_signals();
     user_memory();
+    orphans();
 
     aq_end();
 }
