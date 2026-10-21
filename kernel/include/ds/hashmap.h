@@ -14,6 +14,9 @@ typedef uintptr_t hash_t;
 
 #define HASHMAP_DEFAULT 20
 
+/* more entries than this a bucket, on average: twice the buckets */
+#define HASHMAP_LOAD    2
+
 /**
  * \ingroup ds
  * \brief hashmap
@@ -44,16 +47,6 @@ struct hashmap_node {
 #define hashmap_for(n, h) \
     for (size_t __i__ = 0; __i__ < (h)->buckets_nr; ++__i__) \
         queue_for ((n), &(h)->buckets[__i__])
-
-/**
- * \ingroup ds
- * \brief create a new statically allocated hashmap
- */
-#define HASHMAP_NEW(n) &(struct hashmap) {\
-    .count = 0, \
-    .buckets_nr = HASHMAP_DEFAULT, \
-    .buckets = &(struct queue[n]){0}, \
-}
 
 /**
  * \ingroup ds
@@ -93,17 +86,62 @@ static inline struct hashmap *hashmap_new(size_t n, int (*eq)(void *, void *))
  */
 static inline hash_t hashmap_digest(const void *_id, size_t size)
 {
-    const char *id = (const char *) _id;
+    /* FNV-1a: every byte changes the whole hash (page offsets, all
+     * multiples of 4096, would mostly collide in a sum of the bytes) */
+    const unsigned char *id = (const unsigned char *) _id;
 
-    hash_t hash = 0;
+#if ARCH_BITS==64
+    hash_t hash = 14695981039346656037ULL;
+    const hash_t prime = 1099511628211ULL;
+#else
+    hash_t hash = 2166136261U;
+    const hash_t prime = 16777619U;
+#endif
 
-    while (size) {
-        hash += *id;
-        ++id;
-        --size;
+    while (size--) {
+        hash ^= *id++;
+        hash *= prime;
     }
 
     return hash;
+}
+
+/* twice the buckets, the entries move to theirs (the queue nodes are
+ * relinked, not made anew); stays as it is if there is no memory */
+static inline void hashmap_grow(struct hashmap *hashmap)
+{
+    size_t nr = hashmap->buckets_nr * 2;
+    struct queue *buckets = kmalloc(nr * sizeof(struct queue), &M_QUEUE, M_ZERO);
+
+    if (!buckets)
+        return;
+
+    for (size_t i = 0; i < hashmap->buckets_nr; ++i) {
+        struct qnode *qnode = hashmap->buckets[i].head;
+
+        while (qnode) {
+            struct qnode *next = qnode->next;
+            struct hashmap_node *node = (struct hashmap_node *) qnode->value;
+            struct queue *queue = &buckets[node->hash % nr];
+
+            qnode->prev = queue->tail;
+            qnode->next = NULL;
+
+            if (queue->tail)
+                queue->tail->next = qnode;
+            else
+                queue->head = qnode;
+
+            queue->tail = qnode;
+            queue->count++;
+
+            qnode = next;
+        }
+    }
+
+    kfree(hashmap->buckets);
+    hashmap->buckets = buckets;
+    hashmap->buckets_nr = nr;
 }
 
 /**
@@ -134,6 +172,9 @@ static inline int hashmap_insert(struct hashmap *hashmap, hash_t hash, void *ent
     }
 
     hashmap->count++;
+
+    if (hashmap->count > hashmap->buckets_nr * HASHMAP_LOAD)
+        hashmap_grow(hashmap);
 
     return 0;
 }

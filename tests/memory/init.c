@@ -5,6 +5,8 @@
  * page tracking's 3 GiB): anonymous mappings are filled until most of it
  * is used, every page with where it is, then read back. A page the
  * kernel doesn't track, or gives to two places, doesn't keep its value.
+ * First one big mapping (a quarter of it, 1 GiB at most), whose pages
+ * are many in one table of the kernel's.
  *
  * /size has how much to fill, in MiB (tests/run.sh writes it).
  */
@@ -32,6 +34,27 @@ void aq_main(void)
     for (char *c = text; *c >= '0' && *c <= '9'; ++c)
         want = want * 10 + (*c - '0');
     want <<= 20;
+
+    /* one big mapping, filled, read back and unmapped */
+    unsigned long big = want / 4 > (1UL << 30) ? 1UL << 30 : want / 4 & ~(CHUNK - 1);
+    unsigned long *p = 0;
+    struct aquila_mmap_args ba = {0, big, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0};
+    check("one big mapping", SC(SYS_mmap, &ba, &p, 0) == 0 && p, 1);
+
+    int big_bad = 0;
+
+    if (p) {
+        for (unsigned long off = 0; off < big; off += 4096)
+            p[off / sizeof(long)] = off + 1;
+
+        for (unsigned long off = 0; off < big; off += 4096)
+            if (p[off / sizeof(long)] != off + 1)
+                ++big_bad;
+
+        SC(SYS_munmap, p, big, 0);
+    }
+
+    check("its pages kept what they were given", big_bad, 0);
 
     int n = 0;
 
