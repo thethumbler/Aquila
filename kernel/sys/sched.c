@@ -190,10 +190,16 @@ void sched_thread_ready(struct thread *thread)
     thread->sched_node  = sched_node;
 }
 
+/* the current thread is done running (it sleeps, or exited): another
+ * ready one runs now, or the CPU idles until an interrupt */
 int kidle = 0;
 void kernel_idle(void)
 {
     kidle = 1;
+
+    if (ready_queue->count)
+        schedule();
+
     arch_idle();
 }
 

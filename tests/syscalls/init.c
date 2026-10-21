@@ -429,6 +429,36 @@ void aq_main(void)
     SC(SYS_waitpid, bc, &bst, 0);
     check("reader got it all", bst >> 8, 0);
 
+    /* ping-pong through two pipes: a thread that goes to sleep lets the
+     * other run right away, not at the next timer tick (2 ms, 800 ms for
+     * these 200 round trips) */
+    int ping[2], pong[2];
+    SC(SYS_pipe, ping, 0, 0);
+    SC(SYS_pipe, pong, 0, 0);
+    int ppc = SC(SYS_fork, 0, 0, 0);
+    if (!ppc) {
+        char c;
+        SC(SYS_close, ping[1], 0, 0);
+        SC(SYS_close, pong[0], 0, 0);
+        while (SC(SYS_read, ping[0], &c, 1) == 1)
+            SC(SYS_write, pong[1], &c, 1);
+        SC(SYS_exit, 0, 0, 0);
+    }
+    SC(SYS_close, ping[0], 0, 0);
+    SC(SYS_close, pong[1], 0, 0);
+    int pp0 = now_ms(), trips = 0;
+    for (int i = 0; i < 200; ++i) {
+        char c = 'x';
+        SC(SYS_write, ping[1], &c, 1);
+        trips += SC(SYS_read, pong[0], &c, 1) == 1;
+    }
+    int took = now_ms() - pp0;
+    check("pipe ping-pong", trips, 200);
+    check("pipe ping-pong: not a tick each", took < 100, 1);
+    SC(SYS_close, ping[1], 0, 0);
+    SC(SYS_close, pong[0], 0, 0);
+    SC(SYS_waitpid, ppc, 0, 0);
+
     check("read badfd", SC(SYS_read, 50, buf, 1), -EBADF);
 
     /* signals */
