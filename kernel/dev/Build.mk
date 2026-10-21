@@ -6,6 +6,7 @@ dirs-$(DEV_MOUSE) += mouse/
 dirs-$(DEV_MEMDEV) += mem/
 dirs-y += rd/
 dirs-$(DEV_ATA) += ata/
+dirs-$(DEV_E1000) += net/
 #dirs-$(DEV_FDC) += fdc/
 obj-y  += kdev.o
 obj-y  += blkcache.o

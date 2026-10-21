@@ -51,6 +51,8 @@ DEV_UART=y
 DEV_PTY=y
 DEV_MEMDEV=y
 DEV_ATA=y
+# Intel 8254x Ethernet (e1000)
+DEV_E1000=y
 DEV_FDC=y
 
 #
@@ -72,3 +74,5 @@ INITRAMFS_CPIO=y
 
 # Network
 NET_UNIX=y
+# IPv4 over Ethernet
+NET_INET=y

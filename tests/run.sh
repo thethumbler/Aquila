@@ -11,7 +11,7 @@
 # QEMU uses KVM when /dev/kvm can be used, KVM=0 in the environment turns
 # it off.
 #
-# tests: ata cpu syscalls memory ext2 libc system disk tcc (default: all)
+# tests: ata cpu syscalls memory net ext2 libc system disk tcc (default: all)
 #
 # Requires gcc with 32-bit support, ld, cpio and qemu-system-i386 (or
 # qemu-system-x86_64). The ext2
@@ -26,7 +26,7 @@ set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 TESTS=$ROOT/tests
 
-ALL_TESTS="ata cpu syscalls memory ext2 libc system disk tcc"
+ALL_TESTS="ata cpu syscalls memory net ext2 libc system disk tcc"
 
 ARCH=x86_64
 build=1
@@ -270,6 +270,50 @@ test_memory()
     QEMU_MEM=$MEMORY_TEST_RAM run_qemu "$OUT/memory/serial.log" 180 'aqtest: done' \
         -initrd "$OUT/memory/initrd.img"
     aqtest_result "$OUT/memory/serial.log"
+}
+
+# the e1000 and the stack over it: QEMU gives its frames to a peer on the
+# host (tests/net/peer.py, -netdev socket), which checks the answers to
+# ARP and pings
+test_net()
+{
+    local log=$OUT/net/serial.log
+    local port=$((20000 + RANDOM % 20000))
+
+    mkdir -p "$OUT/net"
+    rm -f "$log"
+
+    $QEMU $ACCEL -kernel "$KERNEL" -initrd "$OUT/cpu/initrd.img" -m 256 -display none \
+        -no-reboot -append "ip=10.0.2.15/24:10.0.2.2" -serial file:"$log" \
+        -netdev socket,id=n0,udp=127.0.0.1:$port,localaddr=127.0.0.1:$((port + 1)) \
+        -device e1000,netdev=n0 >/dev/null 2>&1 &
+    local pid=$!
+
+    for _ in $(seq 300); do
+        grep -a -q 'net: eth0 10.0.2.15\|Bailing out' "$log" 2>/dev/null && break
+        sleep 0.1
+    done
+
+    python3 "$TESTS/net/peer.py" $port $((port + 1)) > "$OUT/net/peer.log" 2>&1
+    kill $pid 2>/dev/null
+    wait $pid 2>/dev/null
+    qemu_exited=0
+
+    log_problems "$log" && return 1
+
+    local pass fail
+    pass=$(grep -c '^PASS' "$OUT/net/peer.log")
+    fail=$(grep -c '^FAIL' "$OUT/net/peer.log")
+    grep '^FAIL' "$OUT/net/peer.log" | sed 's/^/    /'
+
+    if ! grep -q 'net: done' "$OUT/net/peer.log"; then
+        echo "did not finish ($pass passed, $fail failed):"
+        tail -3 "$OUT/net/peer.log" | sed 's/^/    /'
+        return 1
+    fi
+
+    echo "$pass passed, $fail failed"
+    [ "$fail" = 0 ]
 }
 
 test_ext2()
@@ -616,9 +660,9 @@ for name in $selected; do
     esac
 done
 
-# test programs (the ata test boots the cpu test's initrd)
+# test programs (the ata and net tests boot the cpu test's initrd)
 needed=" $selected "
-case "$needed" in *" ata "*) needed="$needed cpu " ;; esac
+case "$needed" in *" ata "*|*" net "*) needed="$needed cpu " ;; esac
 [ -x "$CROSS_CC" ] || needed=${needed/ libc / }
 
 for name in cpu syscalls memory ext2 libc; do
