@@ -17,6 +17,7 @@ void x86_i8042_reboot(void);
 int  x86_i8042_aux_write(uint8_t byte);
 
 void x86_acpi_poweroff(void) __attribute__((weak));
+void *x86_acpi_table(const char *signature) __attribute__((weak));
 
 int x86_pit_setup(struct ioaddr *io);
 uint32_t x86_pit_period_set(uint32_t period_ns);

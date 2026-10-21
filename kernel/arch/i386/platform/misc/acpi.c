@@ -1,7 +1,9 @@
 /*
- * ACPI, only to power off: the S5 sleep state, with the PM1 control
- * registers of the FADT and the sleep type of the \_S5 object of the DSDT,
- * found by its name without an AML interpreter.
+ * ACPI: its tables (from the RSDT, or the XSDT of ACPI 2.0), mapped once
+ * and found by their signature (x86_acpi_table: HPET, ...); and powering
+ * off: the S5 sleep state, with the PM1 control registers of the FADT
+ * and the sleep type of the \_S5 object of the DSDT, found by its name
+ * without an AML interpreter.
  */
 
 #include <core/system.h>
@@ -107,16 +109,67 @@ static struct acpi_rsdp *acpi_rsdp(void)
     return NULL;
 }
 
-static struct acpi_sdt_header *acpi_find(struct acpi_rsdt *rsdt, const char *signature)
-{
-    size_t entries = (rsdt->header.length - sizeof(rsdt->header)) / sizeof(uint32_t);
+#define ACPI_TABLES_MAX     32
 
-    for (size_t i = 0; i < entries; ++i) {
+static struct acpi_sdt_header *tables[ACPI_TABLES_MAX];
+static int tables_nr = -1;
+
+/* every table the RSDT (or XSDT) lists, mapped */
+static void acpi_tables(void)
+{
+    struct acpi_rsdp *rsdp = acpi_rsdp();
+    struct acpi_rsdp2 *rsdp2 = (struct acpi_rsdp2 *) rsdp;
+
+    tables_nr = 0;
+
+    if (!rsdp) {
+        printk("acpi: no RSDP\n");
+        return;
+    }
+
+    /* the XSDT, if there's one (and we can reach it) */
+    if (rsdp->rev >= 2 && !checksum(rsdp2, sizeof(*rsdp2)) && rsdp2->xsdt &&
+        rsdp2->xsdt < ((uint64_t) 1 << (sizeof(uintptr_t) * 8 - 1))) {
+        struct acpi_xsdt *xsdt = (struct acpi_xsdt *) acpi_table((uintptr_t) rsdp2->xsdt);
+
+        if (xsdt) {
+            size_t n = (xsdt->header.length - sizeof(xsdt->header)) / sizeof(uint64_t);
+
+            for (size_t i = 0; i < n && tables_nr < ACPI_TABLES_MAX; ++i) {
+                struct acpi_sdt_header *hdr = acpi_table((uintptr_t) xsdt->sdt[i]);
+
+                if (hdr)
+                    tables[tables_nr++] = hdr;
+            }
+
+            return;
+        }
+    }
+
+    struct acpi_rsdt *rsdt = (struct acpi_rsdt *) acpi_table(rsdp->rsdt);
+
+    if (!rsdt)
+        return;
+
+    size_t n = (rsdt->header.length - sizeof(rsdt->header)) / sizeof(uint32_t);
+
+    for (size_t i = 0; i < n && tables_nr < ACPI_TABLES_MAX; ++i) {
         struct acpi_sdt_header *hdr = acpi_table(rsdt->sdt[i]);
 
-        if (hdr && !memcmp(hdr->signature, signature, 4))
-            return hdr;
+        if (hdr)
+            tables[tables_nr++] = hdr;
     }
+}
+
+/* the table of that signature, NULL if there's none */
+void *x86_acpi_table(const char *signature)
+{
+    if (tables_nr < 0)
+        acpi_tables();
+
+    for (int i = 0; i < tables_nr; ++i)
+        if (!memcmp(tables[i]->signature, signature, 4))
+            return tables[i];
 
     return NULL;
 }
@@ -185,15 +238,7 @@ static uint16_t pm1_read(uint32_t port)
 /* powers off, returns if it can't */
 void x86_acpi_poweroff(void)
 {
-    struct acpi_rsdp *rsdp = acpi_rsdp();
-
-    if (!rsdp) {
-        printk("acpi: no RSDP\n");
-        return;
-    }
-
-    struct acpi_rsdt *rsdt = (struct acpi_rsdt *) acpi_table(rsdp->rsdt);
-    uint8_t *fadt = rsdt ? (uint8_t *) acpi_find(rsdt, "FACP") : NULL;
+    uint8_t *fadt = x86_acpi_table("FACP");
 
     if (!fadt) {
         printk("acpi: no FADT\n");

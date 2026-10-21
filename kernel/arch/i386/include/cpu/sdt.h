@@ -11,6 +11,15 @@ struct acpi_rsdp {
     uint32_t rsdt;
 } __packed;
 
+/* ACPI 2.0 (rev >= 2): the XSDT, 64-bit addresses */
+struct acpi_rsdp2 {
+    struct acpi_rsdp v1;
+    uint32_t length;
+    uint64_t xsdt;
+    uint8_t  xchecksum;
+    uint8_t  reserved[3];
+} __packed;
+
 struct acpi_sdt_header {
     char     signature[4];
     uint32_t length;
@@ -26,6 +35,29 @@ struct acpi_sdt_header {
 struct acpi_rsdt {
     struct acpi_sdt_header header;
     uint32_t sdt[0];
+} __packed;
+
+struct acpi_xsdt {
+    struct acpi_sdt_header header;
+    uint64_t sdt[0];
+} __packed;
+
+/* an address of a register (Generic Address Structure) */
+struct acpi_gas {
+    uint8_t  space;         /* 0: memory, 1: I/O ports */
+    uint8_t  bit_width;
+    uint8_t  bit_offset;
+    uint8_t  access_size;
+    uint64_t address;
+} __packed;
+
+struct acpi_hpet {
+    struct acpi_sdt_header header;
+    uint32_t event_timer_block_id;
+    struct acpi_gas address;
+    uint8_t  hpet_number;
+    uint16_t minimum_tick;
+    uint8_t  page_protection;
 } __packed;
 
 #define ACPI_MADT_LOCAL_APIC    0
