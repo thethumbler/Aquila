@@ -18,6 +18,8 @@
  *   sa_mask, SA_RESETHAND, the mask restored, nested handlers,
  *   sigsuspend's EINTR and mask, a read stopped and continued is made
  *   again, sigreturn with a forged frame stays in user mode
+ * - user memory that isn't mapped: EFAULT, the process goes on, a read's
+ *   bytes stay, a buffer running into it is used up to it
  * - virtual terminals: KD* and VT_* ioctls, switching, VT_PROCESS
  */
 
@@ -606,6 +608,109 @@ static void exit_path_signals(void)
     sa = (struct aquila_sigaction) {0, 0, 0};
     SC(SYS_sigaction, SIGUSR1, &sa, 0);
     SC(SYS_sigaction, SIGUSR2, &sa, 0);
+}
+
+/*
+ * User memory that isn't there: an address in user space with nothing
+ * mapped (a page mapped, then unmapped). The calls that read or write it
+ * fail with EFAULT and go on, what a read would have taken stays, a
+ * buffer that runs into it is used up to it. In a child: a kernel that
+ * kills the process for it (or worse) fails the last check.
+ */
+static void user_memory_child(void)
+{
+    /* two pages, the second one unmapped: `hole' is nothing, `edge' the
+     * last 8 bytes before it */
+    void *m = 0;
+    struct aquila_mmap_args ma = {0, 2 * 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0};
+
+    if (SC(SYS_mmap, &ma, &m, 0) || SC(SYS_munmap, m, 2 * 4096, 0))
+        SC(SYS_exit, 100, 0, 0);
+
+    ma.len = 4096;
+    ma.addr = m;
+    ma.flags |= MAP_FIXED;
+
+    if (SC(SYS_mmap, &ma, &m, 0))
+        SC(SYS_exit, 101, 0, 0);
+
+    char *hole = (char *) m + 4096;
+    char *edge = hole - 8;
+    char buf[64];
+
+    /* a pipe: the bytes a faulting read would have taken stay */
+    int p[2];
+    SC(SYS_pipe, p, 0, 0);
+    SC(SYS_write, p[1], "abcdefgh", 8);
+    check("umem: read into nothing", SC(SYS_read, p[0], hole, 4), -EFAULT);
+    check("umem: the bytes stay", SC(SYS_read, p[0], buf, 8), 8);
+    check("umem: write from nothing", SC(SYS_write, p[1], hole, 4), -EFAULT);
+
+    /* a buffer that runs into nothing: up to it */
+    SC(SYS_write, p[1], "0123456789abcdef", 16);
+    check("umem: read up to nothing", SC(SYS_read, p[0], edge, 16), 8);
+    check("umem: what it read", edge[0] == '0' && edge[7] == '7', 1);
+    check("umem: the rest stays", SC(SYS_read, p[0], buf, 16), 8);
+    for (int i = 0; i < 8; ++i) edge[i] = 'A' + i;
+    check("umem: write up to nothing", SC(SYS_write, p[1], edge, 16), 8);
+    check("umem: what it wrote", SC(SYS_read, p[0], buf, 16) == 8 && buf[0] == 'A' && buf[7] == 'H', 1);
+    SC(SYS_close, p[0], 0, 0);
+    SC(SYS_close, p[1], 0, 0);
+
+    /* files and devices */
+    int fd = SC(SYS_open, "/init", O_RDONLY, 0);
+    check("umem: file read into nothing", SC(SYS_read, fd, hole, 16), -EFAULT);
+    check("umem: file read up to nothing", SC(SYS_read, fd, edge, 16), 8);
+    SC(SYS_close, fd, 0, 0);
+    SC(SYS_mknod, "/dev/zero", S_IFCHR | 0666, DEV(1, 5));
+    int zero = SC(SYS_open, "/dev/zero", O_RDONLY, 0);
+    check("umem: /dev/zero into nothing", SC(SYS_read, zero, hole, 16), -EFAULT);
+    SC(SYS_close, zero, 0, 0);
+    int fs = SC(SYS_open, "/tmp/umem", O_RDWR | O_CREAT, 0644);
+    check("umem: tmpfs write from nothing", SC(SYS_write, fs, hole, 16), -EFAULT);
+    check("umem: tmpfs write up to nothing", SC(SYS_write, fs, edge, 16), 8);
+    struct aquila_stat st;
+    check("umem: the file ends where the data does", SC(SYS_fstat, fs, &st, 0) == 0 && st.st_size == 8, 1);
+    SC(SYS_close, fs, 0, 0);
+    SC(SYS_unlink, "/tmp/umem", 0, 0);
+
+    /* paths: nothing, and one that runs into nothing without its end */
+    check("umem: open path nothing", SC(SYS_open, hole, O_RDONLY, 0), -EFAULT);
+    for (int i = 0; i < 8; ++i) edge[i] = 'x';
+    check("umem: open path into nothing", SC(SYS_open, edge, O_RDONLY, 0), -EFAULT);
+    check("umem: stat into nothing", SC(SYS_stat, "/init", hole, 0), -EFAULT);
+    check("umem: stat path nothing", SC(SYS_stat, hole, buf, 0), -EFAULT);
+    check("umem: chdir nothing", SC(SYS_chdir, hole, 0, 0), -EFAULT);
+    check("umem: unlink nothing", SC(SYS_unlink, hole, 0, 0), -EFAULT);
+
+    /* structures in and out */
+    check("umem: uname", SC(SYS_uname, hole, 0, 0), -EFAULT);
+    check("umem: getcwd", SC(SYS_getcwd, hole, 100, 0), -EFAULT);
+    check("umem: fstat", SC(SYS_fstat, aq_out, hole, 0), -EFAULT);
+    check("umem: TCGETS", SC(SYS_ioctl, aq_out, TCGETS, hole), -EFAULT);
+    check("umem: TCSETS", SC(SYS_ioctl, aq_out, TCSETS, hole), -EFAULT);
+    check("umem: pipe", SC(SYS_pipe, hole, 0, 0), -EFAULT);
+    check("umem: sigaction", SC(SYS_sigaction, SIGUSR2, hole, 0), -EFAULT);
+    check("umem: sigaction old", SC(SYS_sigaction, SIGUSR2, 0, hole), -EFAULT);
+    check("umem: nanosleep", SC(SYS_nanosleep, hole, 0, 0), -EFAULT);
+    check("umem: clock_gettime", SC(SYS_clock_gettime, CLOCK_MONOTONIC, hole, 0), -EFAULT);
+    check("umem: getrandom", SC(SYS_getrandom, hole, 16, 0), -EFAULT);
+    check("umem: select", SC(SYS_select, hole, 0, 0), -EFAULT);
+    check("umem: poll", SC(SYS_poll, hole, 1, 0), -EFAULT);
+    check("umem: times", SC(SYS_times, hole, 0, 0), -EFAULT);
+
+    /* a new thread's stack, the arguments of a program */
+    struct aquila_thread_args ut = {(uptr) hole + 4096, (uptr) thr, 0, 0, 0};
+    check("umem: thread stack", SC(SYS_thread_create, &ut, 0, 0), -EFAULT);
+    char *argv[] = {"/init", hole, 0};
+    check("umem: execve argument", SC(SYS_execve, "/init", argv, 0), -EFAULT);
+
+    SC(SYS_exit, 0, 0, 0);
+}
+
+static void user_memory(void)
+{
+    check("umem: the process goes on", aq_child_status(user_memory_child), 0);
 }
 
 void aq_main(void)
@@ -1894,6 +1999,7 @@ void aq_main(void)
     SC(SYS_close, vt0, 0, 0);
 
     exit_path_signals();
+    user_memory();
 
     aq_end();
 }
