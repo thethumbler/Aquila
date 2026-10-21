@@ -13,6 +13,9 @@
  * - a datagram to 10.0.2.2:5002 is answered by "port unreachable"
  * - a datagram to 192.0.2.1:5003 goes through the gateway, and comes back
  * - a broadcast to 10.0.2.255:5004 goes (the peer checks it)
+ *
+ * The frames are taken up the stack by the network's thread, [net], a
+ * thread of process 0 (seen in /proc/0/status).
  */
 
 #include "../lib/aqtest.h"
@@ -242,6 +245,36 @@ static void interfaces(void)
     SC(SYS_close, fd, 0, 0);
 }
 
+/* `needle' in the first `n' bytes of `s' */
+static int has(const char *s, int n, const char *needle)
+{
+    int len = aq_strlen(needle);
+
+    for (int i = 0; i + len <= n; ++i)
+        if (eq(s + i, needle, len))
+            return 1;
+
+    return 0;
+}
+
+static void kernel_thread(void)
+{
+    static struct { char *dev, *opt; } no_args = {0, 0};
+    static char st[1024];
+
+    check("procfs", aq_mount("procfs", "/mnt", &no_args), 0);
+
+    int fd = SC(SYS_open, "/mnt/0/status", O_RDONLY, 0);
+    check("/proc/0/status", fd >= 0, 1);
+
+    int n = SC(SYS_read, fd, st, sizeof(st));
+    check("process 0: the kernel's", has(st, n, "name: [kernel]\npid: 0\n"), 1);
+    check("process 0: the network's thread", has(st, n, "thread 1 net: "), 1);
+    SC(SYS_close, fd, 0, 0);
+
+    check("kill -1: not process 0", SC(SYS_kill, -1, 0, 0), -ESRCH);
+}
+
 static void peer(void)
 {
     char buf[64];
@@ -285,6 +318,7 @@ void aq_main(void)
 {
     aq_begin("net");
 
+    kernel_thread();
     loopback();
     interfaces();
     peer();

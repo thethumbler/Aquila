@@ -2,18 +2,40 @@
  * Network interfaces (net/netif.h): drivers register theirs, give them
  * the frames they receive (netif_input) and send the frames given to
  * them (transmit)
+ *
+ * The frames received wait for the network's thread ([net], a kernel
+ * thread), which takes them up the stack, NET_BUDGET at a time before the
+ * others run again, and runs the network's callouts (net_callout_set).
+ * It is urgent: woken by a driver's interrupt, it runs as soon as the
+ * interrupt returns.
  */
 
 #include <core/system.h>
+#include <core/arch.h>
 #include <core/kargs.h>
+#include <core/panic.h>
 #include <core/printk.h>
 #include <core/string.h>
 #include <net/byteorder.h>
 #include <net/netif.h>
 #include <net/inet.h>
+#include <sys/callout.h>
+#include <sys/kthread.h>
+#include <sys/sched.h>
+
+#define NET_BUDGET      32      /* frames handled before the others run */
+#define NET_BACKLOG     256     /* frames waiting, at most */
 
 struct netif *netifs;
 static int netifs_nr;
+
+static struct thread *net_thread;
+static struct queue net_wait;
+
+static struct netbuf *rx_head, *rx_tail;
+static size_t rx_count;
+
+static struct callout_list net_callouts;
 
 /* "a.b.c.d" at *s, in the network's byte order; *s past it, -1 if it
  * isn't an address */
@@ -94,9 +116,52 @@ static char *mac_string(const uint8_t mac[6], char buf[18])
     return buf;
 }
 
+void net_callout_set(struct callout *c, uint64_t ns, void (*fn)(void *), void *arg)
+{
+    callout_set_on(&net_callouts, c, ns, fn, arg);
+
+    /* it may be sleeping until a later one */
+    if (net_thread)
+        thread_wakeup(net_thread);
+}
+
+static void net_main(void *arg __unused)
+{
+    for (;;) {
+        for (int n = 0; rx_head && n < NET_BUDGET; ++n) {
+            struct netbuf *nb = rx_head;
+
+            rx_head = nb->next;
+            if (!rx_head)
+                rx_tail = NULL;
+
+            rx_count--;
+            nb->next = NULL;
+            ether_input(nb->netif, nb);
+        }
+
+        callout_list_run(&net_callouts, arch_rtime_ns());
+
+        /* more: after the others */
+        if (rx_head) {
+            arch_yield();
+            continue;
+        }
+
+        sched_wait(&net_wait, callout_list_next(&net_callouts));
+    }
+}
+
 int netif_register(struct netif *netif)
 {
     int n = netifs_nr++;
+
+    if (!net_thread) {
+        if (kthread_create("net", net_main, NULL, &net_thread))
+            panic("net: can't make the network's thread");
+
+        net_thread->urgent = 1;
+    }
 
     snprintf(netif->name, sizeof(netif->name), "eth%d", n);
 
@@ -122,13 +187,24 @@ void netif_input(struct netif *netif, struct netbuf *nb)
     netif->stats.rx_bytes += nb->len;
     nb->netif = netif;
 
-    if (!(netif->flags & NETIF_UP)) {
+    if (!(netif->flags & NETIF_UP) || rx_count >= NET_BACKLOG) {
         netif->stats.rx_dropped++;
         netbuf_free(nb);
         return;
     }
 
-    ether_input(netif, nb);
+    /* for the network's thread */
+    nb->next = NULL;
+
+    if (rx_tail)
+        rx_tail->next = nb;
+    else
+        rx_head = nb;
+
+    rx_tail = nb;
+    rx_count++;
+
+    thread_wakeup(net_thread);
 }
 
 /* send a frame, the netbuf stays the caller's */

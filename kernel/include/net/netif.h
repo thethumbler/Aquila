@@ -41,4 +41,8 @@ int  netif_register(struct netif *netif);
 void netif_input(struct netif *netif, struct netbuf *nb);
 int  netif_output(struct netif *netif, struct netbuf *nb);
 
+/* fn(arg) in `ns' nanoseconds, from the network's thread */
+struct callout;
+void net_callout_set(struct callout *c, uint64_t ns, void (*fn)(void *), void *arg);
+
 #endif /* ! _NET_NETIF_H */

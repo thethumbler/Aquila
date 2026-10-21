@@ -87,7 +87,7 @@ static void arp_retry(void *arg)
     }
 
     arp_request(p->netif, p->ip);
-    callout_set(&p->retry, 1000000000ULL, arp_retry, p);
+    net_callout_set(&p->retry, 1000000000ULL, arp_retry, p);
 }
 
 /* the packet waits for the hardware address of `ip' (asked for), the
@@ -117,7 +117,7 @@ int arp_resolve(struct netif *netif, uint32_t ip, struct netbuf *nb)
         p->tries = 0;
 
         arp_request(netif, ip);
-        callout_set(&p->retry, 1000000000ULL, arp_retry, p);
+        net_callout_set(&p->retry, 1000000000ULL, arp_retry, p);
     }
 
     /* the oldest goes if there are too many */
