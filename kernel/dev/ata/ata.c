@@ -43,27 +43,54 @@ static void channel_release(struct ata_channel *ch)
     thread_queue_wakeup_nopoll(&ch->wait);
 }
 
+/*
+ * A transfer can't be left halfway (holding the channel): a signal that
+ * comes while the thread waits for the drive or the channel is delivered
+ * once it is done, not when the thread is switched to.
+ */
+static int transfer_start(void)
+{
+    int defer = 0;
+
+    if (curthread) {
+        defer = curthread->sig_defer;
+        curthread->sig_defer = 1;
+    }
+
+    return defer;
+}
+
+static void transfer_end(int defer)
+{
+    if (curthread)
+        curthread->sig_defer = defer;
+}
+
 /* the driver's transfers, for the block cache: the channel is held for
  * the command only, the buffers are the cache's */
 static ssize_t drive_read(void *_drive, uint64_t lba, size_t count, void *buf)
 {
     struct ata_drive *drive = _drive;
+    int defer = transfer_start();
 
     channel_acquire(drive->channel);
     ssize_t ret = drive->read(drive, lba, count, buf);
     channel_release(drive->channel);
 
+    transfer_end(defer);
     return ret;
 }
 
 static ssize_t drive_write(void *_drive, uint64_t lba, size_t count, void *buf)
 {
     struct ata_drive *drive = _drive;
+    int defer = transfer_start();
 
     channel_acquire(drive->channel);
     ssize_t ret = drive->write(drive, lba, count, buf);
     channel_release(drive->channel);
 
+    transfer_end(defer);
     return ret;
 }
 
