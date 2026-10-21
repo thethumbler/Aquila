@@ -60,6 +60,13 @@ esac
 
 CONFIG=../tests/host/$ARCH-pc
 
+# the main build (make, make CONFIG=x86_64-pc), contrib/ and ports/ come
+# from there
+case $ARCH in
+    i386) MAIN_BUILD=$ROOT/build ;;
+    *)    MAIN_BUILD=$ROOT/build/$ARCH ;;
+esac
+
 selected=${*:-$ALL_TESTS}
 
 for tool in gcc ld cpio $QEMU; do
@@ -327,14 +334,14 @@ test_system()
 
     # the base system's third-party software from the main build (make),
     # without the optional ports
-    local contrib=$ROOT/build/contrib/root
+    local contrib=$MAIN_BUILD/contrib/root
     if [ ! -x "$contrib/bin/dash" ]; then
         echo "SKIP: contrib not built, run make"
         return 0
     fi
 
     mkdir -p "$OUT/system"
-    make -C "$ROOT" initrd BUILDDIR="$OUT/system/build" TOOLCHAIN="$ROOT/build/toolchain" \
+    make -C "$ROOT" initrd CONFIG=$ARCH-pc BUILDDIR="$OUT/system/build" TOOLCHAIN="$ROOT/build/toolchain" \
         CONTRIB_ROOT="$contrib" PORTS_ROOT=/nonexistent ROOTFS_OVERLAY="$TESTS/system/rootfs" \
         > "$OUT/system/build.log" 2>&1 || {
         tail -20 "$OUT/system/build.log"
@@ -409,7 +416,7 @@ test_disk()
         return 0
     fi
 
-    local contrib=$ROOT/build/contrib/root
+    local contrib=$MAIN_BUILD/contrib/root
     if [ ! -x "$contrib/bin/dash" ]; then
         echo "SKIP: contrib not built, run make"
         return 0
@@ -423,7 +430,7 @@ test_disk()
     done
 
     mkdir -p "$OUT/disk"
-    make -C "$ROOT" initrd BUILDDIR="$OUT/disk/build" TOOLCHAIN="$ROOT/build/toolchain" \
+    make -C "$ROOT" initrd CONFIG=$ARCH-pc BUILDDIR="$OUT/disk/build" TOOLCHAIN="$ROOT/build/toolchain" \
         CONTRIB_ROOT="$contrib" PORTS_ROOT=/nonexistent > "$OUT/disk/build.log" 2>&1 &&
     "$ROOT/mk/hdd.sh" "$img" 128 "$OUT/disk/build/rootfs" "$KERNEL" \
         "$ROOT/boot/limine-hdd.conf" "$ROOT/build/toolchain/share/limine" \
@@ -512,7 +519,7 @@ test_disk()
 test_tcc()
 {
     local log=$OUT/tcc/serial.log
-    local ports=$ROOT/build/ports/root
+    local ports=$MAIN_BUILD/ports/root
 
     if [ ! -x "$CROSS_CC" ]; then
         echo "SKIP: no ${CROSS_CC##*/} toolchain, run make toolchain"
@@ -525,8 +532,8 @@ test_tcc()
     fi
 
     mkdir -p "$OUT/tcc"
-    make -C "$ROOT" initrd BUILDDIR="$OUT/tcc/build" TOOLCHAIN="$ROOT/build/toolchain" \
-        CONTRIB_ROOT="$ROOT/build/contrib/root" PORTS_ROOT="$ports" \
+    make -C "$ROOT" initrd CONFIG=$ARCH-pc BUILDDIR="$OUT/tcc/build" TOOLCHAIN="$ROOT/build/toolchain" \
+        CONTRIB_ROOT="$MAIN_BUILD/contrib/root" PORTS_ROOT="$ports" \
         > "$OUT/tcc/build.log" 2>&1 || {
         tail -20 "$OUT/tcc/build.log"
         return 1

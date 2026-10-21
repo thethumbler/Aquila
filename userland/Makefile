@@ -1,14 +1,14 @@
 #
 # User space programs
 #
-# Built with the i686-aquila toolchain into $(UBUILD)/<program>, each
+# Built with the system's toolchain ($(TARGET)) into $(UBUILD)/<program>, each
 # program is every .c file under its directory.
 #
 
 UBUILD ?= $(BUILDDIR)/userland
 USRC   := $(SRCDIR)/userland
 
-UCC     := i686-aquila-gcc
+UCC     := $(TARGET)-gcc
 UCFLAGS := -O2 -std=gnu11 -Wall -Wno-unused -Wno-unused-parameter -MMD -MP
 ULDLIBS := -lm
 

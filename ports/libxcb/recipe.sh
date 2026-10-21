@@ -17,7 +17,7 @@ build()
     local pythondir
     pythondir=$(echo "$STAGING"/usr/lib/python3*/site-packages)
 
-    PYTHONPATH=$pythondir ./configure --host=i686-aquila --prefix=/usr \
+    PYTHONPATH=$pythondir ./configure --host=$TARGET --prefix=/usr \
         --disable-shared --disable-devel-docs \
         XCBPROTO_XCBINCLUDEDIR="$STAGING/usr/share/xcb" \
         XCBPROTO_XCBPYTHONDIR="$pythondir"

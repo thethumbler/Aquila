@@ -6,6 +6,8 @@ include $(SRCDIR)/configs/gcc.mk
 
 ARCH=i386
 ARCH_DIR=i386
+# the system's compilers
+TARGET=i686-aquila
 ARCH_I386=y
 ARCH_BITS=32
 

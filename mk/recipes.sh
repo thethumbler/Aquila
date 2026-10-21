@@ -12,14 +12,17 @@
 #   DEPENDS     recipes to build first (of the same tree, or of contrib)
 #   FILE        name of the downloaded archive (default: basename of URL)
 #   ARCHIVE_DIR directory the archive extracts to (default: NAME-VERSION)
+#   ARCHS       the architectures it builds for (default: all), it is
+#               skipped on the others
 #
 # Sources that have no usable release archive come from git instead: GIT
 # (repository) and COMMIT (full hash, which pins the contents) replace URL
 # and SHA256.
 #
 # build() runs in the extracted source directory (after applying
-# <tree>/<name>/*.patch) with CC, AR, RANLIB, STRIP set for the i686-aquila
-# toolchain, and AQUILA_UAPI pointing at the kernel ABI headers (for host
+# <tree>/<name>/*.patch) with CC, AR, RANLIB, STRIP set for the system's
+# toolchain ($TARGET: i686-aquila, x86_64-aquila on x86_64, $ARCH), and
+# AQUILA_UAPI pointing at the kernel ABI headers (for host
 # tools that generate target tables). Programs are installed into
 # $DESTDIR (build/<tree>/root), which the initrd includes (make initrd);
 # libraries and headers other recipes build against into $STAGING
@@ -27,7 +30,9 @@
 #
 # environment:
 #   BUILDDIR    output directory (default: <repo>/build)
-#   TOOLCHAIN   i686-aquila toolchain (default: $BUILDDIR/toolchain)
+#   TOOLCHAIN   the cross toolchain (default: <repo>/build/toolchain)
+#   ARCH        i386 (default) or x86_64, TARGET its toolchain's prefix
+#   DOWNLOADS   source archives (default: <repo>/build/downloads)
 #   JOBS        parallel jobs (default: nproc)
 #
 
@@ -45,11 +50,13 @@ case "$TREE" in
 esac
 
 BUILDDIR=${BUILDDIR:-$ROOT/build}
-TOOLCHAIN=${TOOLCHAIN:-$BUILDDIR/toolchain}
+TOOLCHAIN=${TOOLCHAIN:-$ROOT/build/toolchain}
 JOBS=${JOBS:-$(nproc)}
 
-TARGET=i686-aquila
-DOWNLOADS=$BUILDDIR/downloads
+# the architecture (make passes its configuration's)
+export ARCH=${ARCH:-i386}
+export TARGET=${TARGET:-i686-aquila}
+DOWNLOADS=${DOWNLOADS:-$ROOT/build/downloads}
 export STAGING=$BUILDDIR/staging
 
 export PATH=$TOOLCHAIN/bin:$PATH
@@ -126,6 +133,16 @@ build_port()
 
     if [ -n "${2:-}" ] && [ -f "$stamp" ] &&
        [ -z "$(find "$ROOT/$tree/$1" "$LIBC" -newer "$stamp" 2>/dev/null)" ]; then
+        built[$1]=1
+        return
+    fi
+
+    # not for this architecture
+    local archs
+    archs=$(ARCHS=; source "$recipe"; echo "$ARCHS")
+
+    if [ -n "$archs" ] && [[ " $archs " != *" $ARCH "* ]]; then
+        echo "==> $1 is not built for $ARCH"
         built[$1]=1
         return
     fi

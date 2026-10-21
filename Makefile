@@ -3,8 +3,9 @@
 #
 # Everything is built into $(BUILDDIR) (default: build/).
 #
-#   make toolchain    i686-aquila cross toolchain and C library
-#                     (build/toolchain, build/sysroot), needed by the rest
+#   make toolchain    the cross toolchain and C library (i686-aquila, or
+#                     x86_64-aquila: build/toolchain, build/sysroot or
+#                     build/sysroot-x86_64), needed by the rest
 #   make              kernel, user space programs, base third-party
 #                     software (contrib/) and initrd image
 #   make kernel       build/kernel/kernel-$(VERSION).$(ARCH)
@@ -40,19 +41,22 @@
 #                     and the hard disk (it has what was saved on it)
 #   make distclean    remove build/
 #
-# CONFIG selects the kernel configuration in configs/ (default: i386-pc).
+# CONFIG selects the kernel configuration in configs/ (default: i386-pc),
+# and the architecture of everything: CONFIG=x86_64-pc builds x86-64 into
+# build/x86_64 (the toolchain is shared, in build/toolchain).
 #
 
 SRCDIR   := $(CURDIR)
-BUILDDIR ?= $(SRCDIR)/build
 CONFIG   ?= i386-pc
 
 include $(SRCDIR)/configs/$(CONFIG).mk
 
+BUILDDIR ?= $(SRCDIR)/build$(if $(filter-out i386,$(ARCH)),/$(ARCH))
+
 VERSION := 0.0.1
 
-TOOLCHAIN ?= $(BUILDDIR)/toolchain
-SYSROOT   := $(BUILDDIR)/sysroot
+TOOLCHAIN ?= $(SRCDIR)/build/toolchain
+SYSROOT   := $(abspath $(TOOLCHAIN)/..)/sysroot$(if $(filter-out i386,$(ARCH)),-$(ARCH))
 ROOTFS    := $(BUILDDIR)/rootfs
 INITRD    := $(BUILDDIR)/initrd.img
 ISO       := $(BUILDDIR)/aquila.iso
@@ -68,13 +72,13 @@ CP    := cp
 ECHO  := echo
 MKDIR := mkdir -p
 LN    := ln
-STRIP := i686-aquila-strip
+STRIP := $(TARGET)-strip
 
 LIMINE := $(TOOLCHAIN)/share/limine
 
 # KVM when /dev/kvm can be used, KVM=0 emulates the CPU instead
 KVM  ?= $(if $(shell test -r /dev/kvm -a -w /dev/kvm && echo y),1,0)
-QEMU := qemu-system-i386 $(if $(filter 1,$(KVM)),-accel kvm)
+QEMU := qemu-system-$(ARCH) $(if $(filter 1,$(KVM)),-accel kvm)
 
 MAKEFLAGS += --no-print-directory
 
@@ -85,11 +89,11 @@ export
 all: kernel userland contrib initrd
 
 toolchain:
-	@$(SRCDIR)/toolchain/build.sh
+	@BUILDDIR=$(abspath $(TOOLCHAIN)/..) $(SRCDIR)/toolchain/build.sh
 
 check-toolchain:
-	@command -v i686-aquila-gcc >/dev/null || { \
-		echo "error: i686-aquila-gcc not found, run 'make toolchain' first" >&2; exit 1; }
+	@command -v $(TARGET)-gcc >/dev/null || { \
+		echo "error: $(TARGET)-gcc not found, run 'make toolchain' first" >&2; exit 1; }
 
 # the kernel can also be built with the host compiler (see tests/host/)
 kernel:
@@ -200,7 +204,7 @@ run-hdd:
 	$(QEMU) -hda $(HDD) -m 256 -serial stdio
 
 test:
-	@$(SRCDIR)/tests/run.sh
+	@$(SRCDIR)/tests/run.sh -a $(ARCH)
 
 clean:
 	@$(RM) -r $(BUILDDIR)/kernel $(BUILDDIR)/userland $(ROOTFS) $(BUILDDIR)/iso \

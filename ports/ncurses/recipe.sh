@@ -12,7 +12,7 @@ build()
 
     # no terminfo database on the system: the descriptions of the usual
     # terminals are built into the library, made by the host's tic
-    ./configure --host=i686-aquila --build="$(./config.guess)" --prefix=/usr \
+    ./configure --host=$TARGET --build="$(./config.guess)" --prefix=/usr \
         --without-cxx --without-cxx-binding --without-ada --without-tests \
         --without-manpages --without-progs --without-shared --without-debug \
         --with-normal --enable-widec --disable-stripping --without-pkg-config \

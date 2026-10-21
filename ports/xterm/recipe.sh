@@ -14,7 +14,7 @@ build()
     # luit; terminal capabilities from ncurses (static, its tgetent()); the
     # libraries are static, what they need comes after them
     LIBS="$($PKG_CONFIG --libs xaw7 xmu xt xpm xext x11) -lncursesw" \
-    ./configure --host=i686-aquila --prefix=/usr \
+    ./configure --host=$TARGET --prefix=/usr \
         --with-app-defaults=/usr/share/X11/app-defaults \
         --disable-freetype --disable-setuid --disable-setgid --without-utempter \
         --disable-luit --disable-full-tgetent --without-xinerama \

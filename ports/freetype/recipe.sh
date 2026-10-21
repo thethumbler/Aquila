@@ -12,7 +12,7 @@ build()
     aquila_config_sub
 
     # compressed fonts with zlib, no PNG, bzip2, Brotli or HarfBuzz
-    ./configure --host=i686-aquila --prefix=/usr --disable-shared \
+    ./configure --host=$TARGET --prefix=/usr --disable-shared \
         --with-zlib=yes --with-bzip2=no --with-png=no --with-harfbuzz=no \
         --with-brotli=no
     make -j"$JOBS"

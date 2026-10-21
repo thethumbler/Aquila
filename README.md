@@ -49,6 +49,20 @@ rest (home directories, and the accounts in `/etc`), `make hdd-kernel`
 only the kernel, `make hdd` makes the whole disk anew. See the top of the [Makefile](Makefile)
 for all targets.
 
+### x86-64
+
+AquilaOS also runs on x86-64 (in progress: the kernel, the C library and
+the base system work, the ports are i386 only so far). The x86-64 build
+goes into `build/x86_64`, with an x86_64-aquila toolchain next to the
+i686 one (which also builds Limine, used by both):
+
+```
+make toolchain CONFIG=x86_64-pc     # x86_64-aquila gcc/binutils and newlib
+make CONFIG=x86_64-pc               # build/x86_64/
+make hdd CONFIG=x86_64-pc           # build/x86_64/aquila.img
+make test CONFIG=x86_64-pc          # or tests/run.sh -a x86_64
+```
+
 ## Testing
 
 ```

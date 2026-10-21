@@ -11,6 +11,6 @@ build()
 {
     aquila_config_sub
 
-    ./configure --host=i686-aquila --prefix=/usr
+    ./configure --host=$TARGET --prefix=/usr
     make DESTDIR="$STAGING" install
 }

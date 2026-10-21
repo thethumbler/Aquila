@@ -12,7 +12,7 @@ build()
 {
     aquila_config_sub
 
-    ./configure --host=i686-aquila --prefix=/usr --disable-shared \
+    ./configure --host=$TARGET --prefix=/usr --disable-shared \
         --disable-specs --without-xmlto --without-fop --disable-xaw6
     make -j"$JOBS"
     make DESTDIR="$STAGING" install

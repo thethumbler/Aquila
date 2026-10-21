@@ -32,13 +32,14 @@ build()
 ```
 
 Recipes may call `aquila_config_sub` in `build()` to let an autoconf
-`configure` accept `--host=i686-aquila`. A dependency is rebuilt only
+`configure` accept `--host=$TARGET` (`i686-aquila`, `x86_64-aquila` on
+x86-64). A dependency is rebuilt only
 when its recipe or libc changed since it was last built.
 
 `build()` runs in the extracted source directory, after applying any
 `<name>/*.patch` (`patch -p1`), with `CC`, `AR`, `RANLIB` and
-`STRIP` set for the `i686-aquila` toolchain and `JOBS` for parallel
-builds. The archive must extract to `<name>-<version>/`, or to the
+`STRIP` set for the system's toolchain (`$TARGET`, `$ARCH` is `i386`
+or `x86_64`) and `JOBS` for parallel builds. The archive must extract to `<name>-<version>/`, or to the
 directory `ARCHIVE_DIR` names.
 
 A port without a usable release archive comes from git: `GIT` (the
@@ -47,7 +48,8 @@ replace `URL` and `SHA256`, and the sources are exported as
 `<name>-<version>/`.
 
 Other optional settings: `DEPENDS` (recipes to build first, ports or
-contrib/ ones), `FILE` (name
+contrib/ ones), `ARCHS` (the architectures it builds for, e.g. `tcc`'s
+is `i386`), `FILE` (name
 of the downloaded archive). Libraries and headers other ports build
 against go into `$STAGING`, which `CPPFLAGS` and `LDFLAGS` point at,
 and `pkg-config` only looks there (`--static`: libraries are static).

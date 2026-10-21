@@ -21,7 +21,7 @@ build()
         echo '#include <aquila/signal.h>'
     } > aquila-signal/signal.h
 
-    ./configure --host=i686-aquila --prefix=/ \
+    ./configure --host=$TARGET --prefix=/ \
         CC_FOR_BUILD="cc -w -I$PWD/aquila-signal -I$AQUILA_UAPI"
     make -j"$JOBS"
 

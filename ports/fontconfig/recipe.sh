@@ -16,7 +16,7 @@ build()
     # the fonts in /usr/share/fonts, the cache in /var/cache/fontconfig (made
     # on AquilaOS, fc-cache); newlib has random() but not initstate(), its
     # random numbers are lrand48()'s
-    ac_cv_func_random=no ./configure --host=i686-aquila --prefix=/usr --sysconfdir=/etc \
+    ac_cv_func_random=no ./configure --host=$TARGET --prefix=/usr --sysconfdir=/etc \
         --localstatedir=/var --disable-shared --disable-docs \
         --disable-cache-build --with-default-fonts=/usr/share/fonts
     make -j"$JOBS"

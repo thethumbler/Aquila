@@ -8,7 +8,7 @@ SHA256=9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23
 
 build()
 {
-    CHOST=i686-aquila ./configure --prefix=/usr --static
+    CHOST=$TARGET ./configure --prefix=/usr --static
     make -j"$JOBS" libz.a
     make DESTDIR="$STAGING" install
 }

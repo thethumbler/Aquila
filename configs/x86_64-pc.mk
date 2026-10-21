@@ -21,6 +21,8 @@ LDFLAGS := -nostdlib -melf_x86_64 -z max-page-size=0x1000 --no-warn-rwx-segments
 
 ARCH=x86_64
 ARCH_DIR=x86_64
+# the system's compilers
+TARGET=x86_64-aquila
 ARCH_X86_64=y
 ARCH_BITS=64
 

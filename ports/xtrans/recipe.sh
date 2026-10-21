@@ -11,6 +11,6 @@ build()
 {
     aquila_config_sub
 
-    ./configure --host=i686-aquila --prefix=/usr --disable-docs
+    ./configure --host=$TARGET --prefix=/usr --disable-docs
     make DESTDIR="$STAGING" install
 }

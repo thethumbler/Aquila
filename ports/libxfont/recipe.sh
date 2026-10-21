@@ -14,7 +14,7 @@ build()
     aquila_config_sub
 
     # bitmap fonts (PCF, BDF) only: no FreeType, no font servers
-    ./configure --host=i686-aquila --prefix=/usr --disable-shared \
+    ./configure --host=$TARGET --prefix=/usr --disable-shared \
         --disable-freetype --disable-fc --without-bzip2 --disable-devel-docs
     make -j"$JOBS"
     make DESTDIR="$STAGING" install

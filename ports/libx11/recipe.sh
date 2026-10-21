@@ -14,7 +14,7 @@ build()
     aquila_config_sub
 
     # makekeys runs on the build host, on the protocol's keysymdef.h
-    ./configure --host=i686-aquila --prefix=/usr --disable-shared \
+    ./configure --host=$TARGET --prefix=/usr --disable-shared \
         --disable-specs --without-xmlto --without-fop \
         --disable-loadable-i18n --disable-loadable-xcursor \
         --with-keysymdefdir="$STAGING/usr/include/X11"

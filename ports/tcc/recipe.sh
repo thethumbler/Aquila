@@ -7,6 +7,8 @@
 # too: newlib's headers, startup files and archives from the sysroot.
 
 NAME=tcc
+# it makes i386 code
+ARCHS="i386"
 VERSION=0.9.28rc
 GIT=https://github.com/TinyCC/tinycc.git
 COMMIT=e23dabed154a8495f3ac1ff3cc9d04fa1c207893

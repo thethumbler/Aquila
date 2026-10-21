@@ -12,7 +12,7 @@ build()
 {
     aquila_config_sub
 
-    ./configure --host=i686-aquila --prefix=/usr --disable-shared \
+    ./configure --host=$TARGET --prefix=/usr --disable-shared \
         --disable-malloc0returnsnull
     make -j"$JOBS"
     make DESTDIR="$STAGING" install

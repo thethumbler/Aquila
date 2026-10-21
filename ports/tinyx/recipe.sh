@@ -42,8 +42,8 @@ EOF
     # C23 doesn't have, pointer types that GCC 14 doesn't take anymore)
     # (configure turns on link-time optimization: archives of LTO objects
     # need gcc-ar)
-    AR=i686-aquila-gcc-ar RANLIB=i686-aquila-gcc-ranlib \
-    CFLAGS="-O2 -std=gnu17 -fpermissive" CPPFLAGS="-I$PWD/aquila $CPPFLAGS" ./configure --host=i686-aquila --prefix=/usr \
+    AR=$TARGET-gcc-ar RANLIB=$TARGET-gcc-ranlib \
+    CFLAGS="-O2 -std=gnu17 -fpermissive" CPPFLAGS="-I$PWD/aquila $CPPFLAGS" ./configure --host=$TARGET --prefix=/usr \
         --disable-xvesa --enable-xfbdev --disable-xdmcp --disable-xdm-auth-1 --disable-dpms \
         --disable-xf86bigfont \
         --disable-ipv6 --disable-local-transport \

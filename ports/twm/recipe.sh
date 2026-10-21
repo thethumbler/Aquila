@@ -11,7 +11,7 @@ build()
     aquila_config_sub
 
     # its configuration's parser is made by the build host's yacc
-    ./configure --host=i686-aquila --prefix=/usr --datadir=/usr/share
+    ./configure --host=$TARGET --prefix=/usr --datadir=/usr/share
     make -j"$JOBS"
     install -D -m 755 src/twm "$DESTDIR/usr/bin/twm"
     $STRIP "$DESTDIR/usr/bin/twm"
