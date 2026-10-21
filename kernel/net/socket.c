@@ -14,6 +14,8 @@ int socket_create(struct file *file, int domain, int type, int protocol)
     switch (domain) {
         case AF_UNIX:
             return socket_unix_create(file, domain, type, protocol);
+        case AF_INET:
+            return socket_inet_create(file, domain, type, protocol);
     }
 
     return -EAFNOSUPPORT;

@@ -18,6 +18,10 @@ struct netbuf {
     struct netif *netif;    /* received on */
     uint8_t *data;
     size_t len;
+
+    /* where a datagram came from (in a socket's queue) */
+    uint32_t src_ip;
+    uint16_t src_port;
 };
 
 #define NETBUF_SIZE     2048

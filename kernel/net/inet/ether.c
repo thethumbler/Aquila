@@ -63,3 +63,31 @@ uint16_t inet_checksum(const void *data, size_t len)
 
     return htons(~sum & 0xffff);
 }
+
+/* over the pseudo-header too: the addresses, the protocol and the length
+ * (UDP's and TCP's checksums) */
+uint16_t inet_checksum_pseudo(uint32_t src, uint32_t dst, uint8_t proto, const void *data, size_t len)
+{
+    struct {
+        uint32_t src, dst;
+        uint8_t zero, proto;
+        uint16_t len;
+    } __packed pseudo = {src, dst, 0, proto, htons(len)};
+
+    const uint8_t *p = (const uint8_t *) &pseudo;
+    uint32_t sum = 0;
+
+    for (size_t i = 0; i < sizeof(pseudo); i += 2)
+        sum += (uint32_t) p[i] << 8 | p[i + 1];
+
+    for (p = data; len > 1; len -= 2, p += 2)
+        sum += (uint32_t) p[0] << 8 | p[1];
+
+    if (len)
+        sum += (uint32_t) p[0] << 8;
+
+    while (sum >> 16)
+        sum = (sum & 0xffff) + (sum >> 16);
+
+    return htons(~sum & 0xffff);
+}
