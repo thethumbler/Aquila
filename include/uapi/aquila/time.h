@@ -13,10 +13,10 @@
 #define AQUILA_CLK_TCK      100
 
 struct aquila_tms {
-    uint32_t tms_utime;     /* user time */
-    uint32_t tms_stime;     /* system time */
-    uint32_t tms_cutime;    /* user time of waited for children */
-    uint32_t tms_cstime;    /* system time of waited for children */
+    unsigned long tms_utime;    /* user time */
+    unsigned long tms_stime;    /* system time */
+    unsigned long tms_cutime;   /* user time of waited for children */
+    unsigned long tms_cstime;   /* system time of waited for children */
 };
 
 /* setitimer(2): the real time timer (SIGALRM) of a process, in ns; 0 is

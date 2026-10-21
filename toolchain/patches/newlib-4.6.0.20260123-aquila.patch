@@ -17,7 +17,7 @@ diff -ruN a/newlib/configure.host b/newlib/configure.host
    z8k-*-coff)
  	sys_dir=z8ksim
  	;;
-+  i[34567]86-*-aquila*)
++  i[34567]86-*-aquila* | x86_64-*-aquila*)
 +	sys_dir=aquila
 +	posix_dir=posix
 +	unix_dir=unix
@@ -189,6 +189,21 @@ diff -ruN a/newlib/libc/include/sys/cdefs.h b/newlib/libc/include/sys/cdefs.h
  #endif
  
  #define __ptr_t void *
+diff -ruN a/newlib/libc/include/sys/config.h b/newlib/libc/include/sys/config.h
+--- a/newlib/libc/include/sys/config.h
++++ b/newlib/libc/include/sys/config.h
+@@ -249,6 +249,11 @@
+ #define __DYNAMIC_REENT__
+ #endif
+ 
++/* POSIX's ssize_t, int is narrower on x86-64 */
++#if defined(__aquila__)
++#define _READ_WRITE_RETURN_TYPE _ssize_t
++#endif
++
+ #ifndef __EXPORT
+ #define __EXPORT
+ #endif
 diff -ruN a/newlib/libc/include/sys/features.h b/newlib/libc/include/sys/features.h
 --- a/newlib/libc/include/sys/features.h
 +++ b/newlib/libc/include/sys/features.h

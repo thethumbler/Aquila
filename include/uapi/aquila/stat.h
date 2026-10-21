@@ -8,10 +8,16 @@
  * (checked when libc/ is built).
  */
 
+/* the C library's layouts: its long is 32-bit on i386, 64-bit on x86-64
+ * (off_t, the nanoseconds, blksize_t, blkcnt_t, clock_t) */
 struct aquila_timespec {
     uint64_t tv_sec;
-    uint32_t tv_nsec;
-} __attribute__((packed, aligned(4)));
+    long     tv_nsec;
+}
+#ifndef __x86_64__
+__attribute__((packed, aligned(4)))
+#endif
+;
 
 struct aquila_stat {
     uint16_t  st_dev;
@@ -21,14 +27,14 @@ struct aquila_stat {
     uint32_t  st_uid;
     uint32_t  st_gid;
     uint16_t  st_rdev;
-    uint32_t  st_size;
+    long      st_size;
 
     struct aquila_timespec st_atim;
     struct aquila_timespec st_mtim;
     struct aquila_timespec st_ctim;
 
-    uint32_t  st_blksize;
-    uint32_t  st_blocks;
+    long      st_blksize;
+    long      st_blocks;
 };
 
 /* the C library defines these too, with the same values */

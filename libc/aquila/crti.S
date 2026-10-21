@@ -7,12 +7,22 @@
     .global _init
     .type _init, @function
 _init:
+#ifdef __x86_64__
+    push %rbp
+    movq %rsp, %rbp
+#else
     push %ebp
     movl %esp, %ebp
+#endif
 
     .section .fini
     .global _fini
     .type _fini, @function
 _fini:
+#ifdef __x86_64__
+    push %rbp
+    movq %rsp, %rbp
+#else
     push %ebp
     movl %esp, %ebp
+#endif

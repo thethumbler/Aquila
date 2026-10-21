@@ -59,7 +59,7 @@ SAME_FIELD(sigaction, aquila_sigaction, sa_mask);
 SAME_FIELD(sigaction, aquila_sigaction, sa_flags);
 
 /* the kernel's struct timeval (gettimeofday) is 64-bit seconds, long usec */
-_Static_assert(sizeof(struct timeval) == 12 &&
+_Static_assert(sizeof(struct timeval) == 8 + sizeof(long) &&
                offsetof(struct timeval, tv_usec) == 8,
                "struct timeval does not match the kernel");
 

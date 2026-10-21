@@ -19,11 +19,27 @@
 
 #define THREAD_STACK_SIZE   8192
 
-/* called by the kernel on the new thread's stack */
-static void thread_entry(void *(*start_routine)(void *), void *arg)
+/* called by the kernel on the new thread's stack (through thread_entry
+ * on x86-64, which can't call a static function) */
+void __aquila_thread_start(void *(*start_routine)(void *), void *arg)
 {
     pthread_exit(start_routine(arg));
 }
+
+/* the kernel starts a thread at thread_entry with the start routine and
+ * its argument on the stack, as an i386 call does (above a null return
+ * address); on x86-64 they go to registers */
+#ifdef __x86_64__
+void thread_entry(void);
+
+asm(".type thread_entry, @function\n"
+    "thread_entry:\n"
+    "    mov 8(%rsp), %rdi\n"
+    "    mov 16(%rsp), %rsi\n"
+    "    jmp __aquila_thread_start\n");
+#else
+#define thread_entry __aquila_thread_start
+#endif
 
 int pthread_create(pthread_t *thread, const pthread_attr_t *attr,
         void *(*start_routine)(void *), void *arg)
