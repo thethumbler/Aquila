@@ -49,6 +49,10 @@ void *arch_phys_map(uintptr_t paddr, size_t size);
  * cached) */
 void *arch_mmio_map(uintptr_t paddr, size_t size);
 
+/* an IRQ for a device's MSI, to handler: the message to write (address,
+ * data); -1 if it can't (the architecture's interrupt controller) */
+int arch_msi_alloc(void (*handler)(), uint64_t *addr, uint32_t *data) __attribute__((weak));
+
 void arch_disable_interrupts(void);
 
 void arch_reboot(void);

@@ -28,6 +28,8 @@ void x86_irq_gates_setup(void);
 void x86_irq_handler_install(unsigned irq, x86_irq_handler_t handler);
 void x86_irq_handler_uninstall(unsigned irq);
 void x86_irq_tick_switch(void);
+void x86_irq_alloc_from(unsigned first);
+int  x86_irq_alloc(struct x86_irq_chip *chip);
 
 /* pic.c: the 8259s */
 int  x86_pic_setup(struct ioaddr *master, struct ioaddr *slave);

@@ -8,7 +8,9 @@
  * timer is vector 240, an IRQ of its own here (X86_IRQ_TIMER).
  *
  * An IRQ may have several handlers (a PCI line is shared): each is
- * called, each looks at its device. Then the controller is told it's
+ * called, each looks at its device. An IRQ may have a controller of its
+ * own: an MSI's is the device's (x86_irq_alloc gives them, above the I/O
+ * APIC's pins). Then the controller is told it's
  * done (EOI: a level-triggered line would come again before); then what
  * the interrupt woke up may run (an urgent thread, the scheduler's tick):
  * a thread switch, once the controller is done with the interrupt.
@@ -33,9 +35,18 @@ struct handler {
 static struct {
     struct handler *handlers;
     uint64_t count;
+    struct x86_irq_chip *chip;      /* its own (MSI), else the system's */
 } irqs[X86_IRQ_NR];
 
 static struct x86_irq_chip *chip;
+
+/* the first IRQ x86_irq_alloc() may give: none until the APIC says */
+static unsigned alloc_first = X86_IRQ_TIMER;
+
+static struct x86_irq_chip *chip_of(unsigned irq)
+{
+    return irqs[irq].chip ? irqs[irq].chip : chip;
+}
 
 /* the scheduler's tick asked for a switch (x86_irq_tick_switch) */
 static int tick_switch;
@@ -48,6 +59,25 @@ void x86_irq_chip_set(struct x86_irq_chip *c)
 const char *x86_irq_chip_name(void)
 {
     return chip ? chip->name : "none";
+}
+
+/* IRQs from `first' on may be allocated (the I/O APIC's pins end there) */
+void x86_irq_alloc_from(unsigned first)
+{
+    alloc_first = first;
+}
+
+/* a free IRQ with a controller of its own (MSI), -1 if there's none */
+int x86_irq_alloc(struct x86_irq_chip *c)
+{
+    for (unsigned irq = alloc_first; irq < X86_IRQ_TIMER; ++irq) {
+        if (!irqs[irq].handlers && !irqs[irq].chip) {
+            irqs[irq].chip = c;
+            return irq;
+        }
+    }
+
+    return -1;
 }
 
 void x86_irq_handler_install(unsigned irq, x86_irq_handler_t fn)
@@ -71,8 +101,8 @@ void x86_irq_handler_install(unsigned irq, x86_irq_handler_t fn)
 
     *p = h;
 
-    if (first && chip && irq != X86_IRQ_TIMER)
-        chip->unmask(irq);
+    if (first && chip_of(irq) && irq != X86_IRQ_TIMER)
+        chip_of(irq)->unmask(irq);
 }
 
 void x86_irq_handler_uninstall(unsigned irq)
@@ -80,8 +110,8 @@ void x86_irq_handler_uninstall(unsigned irq)
     if (irq >= X86_IRQ_NR)
         return;
 
-    if (chip && irq != X86_IRQ_TIMER)
-        chip->mask(irq);
+    if (chip_of(irq) && irq != X86_IRQ_TIMER)
+        chip_of(irq)->mask(irq);
 
     while (irqs[irq].handlers) {
         struct handler *h = irqs[irq].handlers;
@@ -110,8 +140,10 @@ void __x86_irq_handler(struct x86_regs *r)
     }
 
     /* done with it */
-    if (chip)
-        chip->eoi(irq);
+    struct x86_irq_chip *c = irq < X86_IRQ_NR ? chip_of(irq) : chip;
+
+    if (c)
+        c->eoi(irq);
 
     /* the tick: the running thread back to the queue, the next one runs
      * (the CPU was idle: it runs) */
@@ -199,7 +231,7 @@ int arch_interrupts_info(char *buf, size_t size)
                      chip && chip->timer ? chip->timer : "");
         else
             snprintf(line, sizeof(line), "%d: %ld %s\n", irq, irqs[irq].count,
-                     chip && chip->describe ? chip->describe(irq) : "");
+                     chip_of(irq) && chip_of(irq)->describe ? chip_of(irq)->describe(irq) : "");
 
         n += snprintf(buf + n, size - n, "%s", line);
     }

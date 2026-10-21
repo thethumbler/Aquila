@@ -19,6 +19,13 @@
  *   PCI lines (from the devices' configuration space) are overridden as
  *   level-triggered on QEMU's pc. Each pin goes to the boot CPU, vector
  *   32 + n, masked until a handler is installed
+ * - MSI (arch_msi_alloc): an IRQ above the I/O APICs' pins, its vector in
+ *   the message the device writes to the local APIC
+ *
+ * A PCI device's line is its configuration space's, an ISA IRQ: QEMU's
+ * chipsets (pc and q35) drive those. A machine whose PCI lines are only
+ * the I/O APIC's pins past 15 would need ACPI's _PRT; a device with MSI
+ * doesn't.
  */
 
 #include <core/system.h>
@@ -187,6 +194,45 @@ static struct x86_irq_chip apic_chip = {
     .timer    = "lapic",
 };
 
+/* MSI: the device's message is the interrupt, its masking the device's
+ * (pci.c), the local APIC's EOI */
+static void msi_nothing(unsigned irq)
+{
+}
+
+static const char *msi_describe(unsigned irq)
+{
+    return "msi";
+}
+
+static struct x86_irq_chip msi_chip = {
+    .name     = "msi",
+    .mask     = msi_nothing,
+    .unmask   = msi_nothing,
+    .eoi      = apic_eoi,
+    .describe = msi_describe,
+};
+
+/* an IRQ for a device's MSI, to `handler': the message's address and data
+ * (to the boot CPU's local APIC, the IRQ's vector, edge); -1 without the
+ * APIC (the 8259 gets no MSI) or a free IRQ */
+int arch_msi_alloc(void (*handler)(), uint64_t *addr, uint32_t *data)
+{
+    if (!lapic)
+        return -1;
+
+    int irq = x86_irq_alloc(&msi_chip);
+
+    if (irq < 0)
+        return -1;
+
+    x86_irq_handler_install(irq, (x86_irq_handler_t) handler);
+
+    *addr = 0xFEE00000ULL | (uint64_t) lapic_id << 12;
+    *data = 32 + irq;
+    return irq;
+}
+
 /* the CPU has a local APIC (CPUID 1, EDX bit 9) */
 static int cpu_has_apic(void)
 {
@@ -281,6 +327,15 @@ int x86_apic_setup(void)
     x86_pic_disable();
 
     x86_irq_chip_set(&apic_chip);
+
+    /* MSIs: the IRQs past the I/O APICs' pins */
+    uint32_t gsi_end = 16;
+
+    for (int i = 0; i < ioapics_nr; ++i)
+        if (ioapics[i].gsi_base + ioapics[i].pins > gsi_end)
+            gsi_end = ioapics[i].gsi_base + ioapics[i].pins;
+
+    x86_irq_alloc_from(gsi_end);
 
     printk("apic: local APIC %d at %p, %d I/O APIC(s), the first at %p (GSI %d, %d pins)\n",
            lapic_id, (void *) (uintptr_t) madt->local_apic_address, ioapics_nr,
