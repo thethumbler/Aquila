@@ -6,13 +6,15 @@
  * values, signal numbers, struct stat, and a few library functions that
  * depend on the port (stdio, getline, opendir, pipes, fork/wait, sockets,
  * vectored I/O, the interval timer, addresses, pseudo-terminals, random
- * bytes).
+ * bytes, TCP over loopback).
  *
  * Reports in the aqtest format on the serial port.
  */
 
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <crypt.h>
 #include <dirent.h>
 #include <errno.h>
@@ -188,6 +190,56 @@ static pthread_cond_t pt_cond = PTHREAD_COND_INITIALIZER;
 static pthread_key_t pt_key;
 static volatile int pt_count, pt_ready, pt_once_runs;
 static volatile pthread_t pt_self;
+/* TCP over loopback, as programs use it */
+static void test_tcp(void)
+{
+    struct sockaddr_in addr;
+    socklen_t len = sizeof(addr);
+    char buf[32];
+
+    check("sizeof(struct sockaddr) holds a sockaddr_in", sizeof(struct sockaddr) >= sizeof(addr), 1);
+
+    int l = socket(AF_INET, SOCK_STREAM, 0);
+    int one = 1;
+    setsockopt(l, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(0);
+    addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+    check("tcp bind", bind(l, (struct sockaddr *) &addr, sizeof(addr)), 0);
+    check("tcp listen", listen(l, 4), 0);
+    check("tcp getsockname", getsockname(l, (struct sockaddr *) &addr, &len), 0);
+    check("tcp: an ephemeral port", ntohs(addr.sin_port) >= 49152, 1);
+
+    int c = socket(AF_INET, SOCK_STREAM, 0);
+    check("tcp connect", connect(c, (struct sockaddr *) &addr, sizeof(addr)), 0);
+    check("tcp TCP_NODELAY", setsockopt(c, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one)), 0);
+
+    struct sockaddr_in peer;
+    len = sizeof(peer);
+    int s = accept(l, (struct sockaddr *) &peer, &len);
+    check("tcp accept", s >= 0, 1);
+    check("tcp accept: from 127.0.0.1", peer.sin_addr.s_addr == inet_addr("127.0.0.1"), 1);
+
+    FILE *f = fdopen(c, "w");
+    fprintf(f, "GET / HTTP/1.0\r\n\r\n");
+    fflush(f);
+    check("tcp recv", recv(s, buf, sizeof(buf), 0), 18);
+    check("tcp: through stdio", memcmp(buf, "GET / HTTP/1.0\r\n\r\n", 18), 0);
+
+    check("tcp send", send(s, "HTTP/1.0 200 OK", 15, 0), 15);
+    shutdown(s, SHUT_WR);
+    int n = read(c, buf, sizeof(buf));
+    check("tcp read", n, 15);
+    check("tcp: then EOF", read(c, buf, sizeof(buf)), 0);
+
+    fclose(f);
+    close(s);
+    close(l);
+}
+
 static void *pt_key_seen;
 
 static void pt_once_init(void) { pt_once_runs++; }
@@ -790,6 +842,7 @@ int main(void)
 
     test_x_support();
     test_pthread();
+    test_tcp();
 
     /* virtual terminals */
     test_vt();

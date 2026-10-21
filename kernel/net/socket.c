@@ -9,16 +9,28 @@
 #include <aquila/errno.h>
 #include <net/socket.h>
 
+#include <aquila/fcntl.h>
+
 int socket_create(struct file *file, int domain, int type, int protocol)
 {
+    int err;
+
     switch (domain) {
         case AF_UNIX:
-            return socket_unix_create(file, domain, type, protocol);
+            err = socket_unix_create(file, domain, type, protocol);
+            break;
         case AF_INET:
-            return socket_inet_create(file, domain, type, protocol);
+            err = socket_inet_create(file, domain, type, protocol);
+            break;
+        default:
+            return -EAFNOSUPPORT;
     }
 
-    return -EAFNOSUPPORT;
+    /* read and written (F_GETFL says so, fdopen() checks it) */
+    if (!err)
+        file->flags |= O_RDWR;
+
+    return err;
 }
 
 int socket_accept(struct file *file, struct file *conn, const struct sockaddr *addr, socklen_t *len)
@@ -29,7 +41,12 @@ int socket_accept(struct file *file, struct file *conn, const struct sockaddr *a
     if (!file->socket->ops || !file->socket->ops->accept)
         return -EOPNOTSUPP;
 
-    return file->socket->ops->accept(file, conn, addr, len);
+    int err = file->socket->ops->accept(file, conn, addr, len);
+
+    if (!err)
+        conn->flags |= O_RDWR;
+
+    return err;
 }
 
 int socket_bind(struct file *file, const struct sockaddr *addr, socklen_t len)
