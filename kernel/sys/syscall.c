@@ -1638,6 +1638,11 @@ static void sys_send(struct aquila_socket_io_args *s)
 
     if ((err = socket_send(file, buf, len, flags, to, tolen))) {
         arch_syscall_return(curthread, err);
+
+        /* to a connection that can't send anymore: SIGPIPE too, as
+         * write() (not with MSG_NOSIGNAL) */
+        if (err == -EPIPE && !(flags & MSG_NOSIGNAL))
+            signal_proc_send(curproc, SIGPIPE);
         return; 
     }
 
