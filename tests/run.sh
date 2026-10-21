@@ -384,22 +384,26 @@ test_irq()
 {
     local fails=0 summary=""
 
-    # name, the kernel's command line, the controller, the timer's line,
-    # the e1000's line (QEMU's pc: IRQ 11)
+    # name, QEMU's machine and NIC, the kernel's command line, the
+    # controller, the timer's line, the NIC's (the 82540EM's line, IRQ 11;
+    # the 82574L's MSI, IRQ 24 past the I/O APIC's 24 pins)
     local modes=(
-        "apic||apic|timer:|11: [1-9][0-9]* ioapic gsi 11 level"
-        "8259|apic=off|8259|0:|11: [1-9][0-9]* 8259 edge"
+        "apic|-device e1000,netdev=n0||apic|timer:|11: [1-9][0-9]* ioapic gsi 11 level"
+        "8259|-device e1000,netdev=n0|apic=off|8259|0:|11: [1-9][0-9]* 8259 edge"
+        "msi|-device e1000e,netdev=n0||apic|timer:|24: [1-9][0-9]* msi"
+        "msi-8259|-device e1000e,netdev=n0|apic=off|8259|0:|11: [1-9][0-9]* 8259 edge"
+        "q35|-machine q35 -device e1000e,netdev=n0||apic|timer:|24: [1-9][0-9]* msi"
     )
 
     for m in "${modes[@]}"; do
-        local name karg want timer e1000
-        IFS='|' read -r name karg want timer e1000 <<< "$m"
+        local name qargs karg want timer e1000
+        IFS='|' read -r name qargs karg want timer e1000 <<< "$m"
         local log=$OUT/irq/$name.log
 
         rm -f "$log"
-        $QEMU_BIN $ACCEL -kernel "$KERNEL" -initrd "$OUT/irq/initrd.img" -m 256 -display none \
+        $QEMU_BIN $ACCEL $qargs -kernel "$KERNEL" -initrd "$OUT/irq/initrd.img" -m 256 -display none \
             -no-reboot -append "ip=10.0.2.15/24:10.0.2.2 $karg" -serial file:"$log" \
-            -netdev user,id=n0 -device e1000,netdev=n0 >/dev/null 2>&1 &
+            -netdev user,id=n0 >/dev/null 2>&1 &
         local pid=$!
 
         for _ in $(seq 300); do
@@ -413,7 +417,7 @@ test_irq()
         local problem=""
         grep -a -q 'aqtest: done, fails=0' "$log" || problem="$problem; did not pass ($(grep -a '^FAIL\|Bailing' "$log" | head -2 | tr '\n' ' '))"
         grep -a -q "^controller: $want" "$log" || problem="$problem; not through the $want"
-        grep -a -q -E "^$e1000" "$log" || problem="$problem; the e1000's line: $(grep -a '^11:' "$log")"
+        grep -a -q -E "^$e1000" "$log" || problem="$problem; the NIC's IRQ: $(grep -a '^\(11\|24\):' "$log" | tr '\n' ' ')"
 
         local rate
         rate=$(grep -a -o 'timer_rate=[0-9-]*' "$log" | cut -d= -f2)
@@ -427,17 +431,29 @@ test_irq()
         fi
     done
 
-    [ $fails = 0 ] && echo "through the apic and the 8259:$summary, the e1000's IRQ 11 (level under the apic)"
+    [ $fails = 0 ] && echo "through the apic and the 8259:$summary; the 82540EM's IRQ 11 (level under the apic), the 82574L's MSI (its line with the 8259), q35"
     [ $fails = 0 ]
 }
 
 # the e1000 and the stack over it: QEMU gives its frames to a peer on the
 # host (tests/net/peer.py, -netdev socket), which checks the answers to
 # ARP and pings, then answers the guest's program (tests/net/init.c); both
-# report their checks
+# report their checks. Twice: the 82540EM (e1000, its line) and the
+# 82574L (e1000e, MSI)
 test_net()
 {
-    local log=$OUT/net/serial.log
+    local out e1000 e1000e
+
+    e1000=$(net_with e1000) || { echo "e1000:"; echo "$e1000" | sed 's/^/    /'; return 1; }
+    e1000e=$(net_with e1000e) || { echo "e1000e:"; echo "$e1000e" | sed 's/^/    /'; return 1; }
+
+    echo "e1000: $e1000; e1000e (msi with the apic): $e1000e"
+}
+
+net_with()
+{
+    local nic=$1
+    local log=$OUT/net/serial-$nic.log peerlog=$OUT/net/peer-$nic.log
     local port=$((20000 + RANDOM % 20000))
 
     mkdir -p "$OUT/net"
@@ -446,7 +462,7 @@ test_net()
     $QEMU $ACCEL -kernel "$KERNEL" -initrd "$OUT/net/initrd.img" -m 256 -display none \
         -no-reboot -append "ip=10.0.2.15/24:10.0.2.2" -serial file:"$log" \
         -netdev socket,id=n0,udp=127.0.0.1:$port,localaddr=127.0.0.1:$((port + 1)) \
-        -device e1000,netdev=n0 >/dev/null 2>&1 &
+        -device $nic,netdev=n0 >/dev/null 2>&1 &
     local pid=$!
 
     for _ in $(seq 300); do
@@ -454,7 +470,7 @@ test_net()
         sleep 0.1
     done
 
-    python3 "$TESTS/net/peer.py" $port $((port + 1)) > "$OUT/net/peer.log" 2>&1
+    python3 "$TESTS/net/peer.py" $port $((port + 1)) > "$peerlog" 2>&1
 
     for _ in $(seq 100); do
         grep -a -q 'aqtest: done\|Bailing out' "$log" 2>/dev/null && break
@@ -468,13 +484,13 @@ test_net()
     log_problems "$log" && return 1
 
     local pass fail
-    pass=$(cat "$OUT/net/peer.log" "$log" | grep -a -c '^PASS')
-    fail=$(cat "$OUT/net/peer.log" "$log" | grep -a -c '^FAIL')
-    cat "$OUT/net/peer.log" "$log" | grep -a '^FAIL' | sed 's/^/    /'
+    pass=$(cat "$peerlog" "$log" | grep -a -c '^PASS')
+    fail=$(cat "$peerlog" "$log" | grep -a -c '^FAIL')
+    cat "$peerlog" "$log" | grep -a '^FAIL' | sed 's/^/    /'
 
-    if ! grep -q 'net: done' "$OUT/net/peer.log"; then
+    if ! grep -q 'net: done' "$peerlog"; then
         echo "the peer did not finish ($pass passed, $fail failed):"
-        tail -3 "$OUT/net/peer.log" | sed 's/^/    /'
+        tail -3 "$peerlog" | sed 's/^/    /'
         return 1
     fi
 
