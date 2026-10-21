@@ -208,4 +208,65 @@ uint32_t pci_read_bar(struct pci_dev *dev, uint8_t id)
     return pci_read_dword(dev->bus, dev->dev, dev->func, 0x10 + 4 * id);
 }
 
+#define PCI_COMMAND         0x04
+#define PCI_COMMAND_IO      0x0001
+#define PCI_COMMAND_MEMORY  0x0002
+#define PCI_COMMAND_MASTER  0x0004
+#define PCI_INTERRUPT_LINE  0x3C
+
+/*
+ * BAR `id' of `dev': its address and size (the size is what the device
+ * keeps of all ones written to it, decoding off meanwhile), a 64-bit
+ * memory BAR takes the next one too. -1 if it decodes nothing.
+ */
+int pci_bar(struct pci_dev *dev, int id, struct pci_bar *bar)
+{
+    uint8_t off = 0x10 + 4 * id;
+    uint16_t command = pci_reg16_read(dev, PCI_COMMAND);
+    uint32_t lo = pci_reg32_read(dev, off), hi = 0, size_lo, size_hi = 0xFFFFFFFF;
+
+    pci_reg16_write(dev, PCI_COMMAND, command & ~(PCI_COMMAND_IO | PCI_COMMAND_MEMORY));
+
+    pci_reg32_write(dev, off, 0xFFFFFFFF);
+    size_lo = pci_reg32_read(dev, off);
+    pci_reg32_write(dev, off, lo);
+
+    bar->io = lo & 1;
+
+    /* a 64-bit memory BAR */
+    if (!bar->io && (lo & 0x6) == 0x4) {
+        hi = pci_reg32_read(dev, off + 4);
+        pci_reg32_write(dev, off + 4, 0xFFFFFFFF);
+        size_hi = pci_reg32_read(dev, off + 4);
+        pci_reg32_write(dev, off + 4, hi);
+    }
+
+    pci_reg16_write(dev, PCI_COMMAND, command);
+
+    uint64_t mask = bar->io ? ~(uint64_t) 0x3 : ~(uint64_t) 0xF;
+    uint64_t sized = ((uint64_t) size_hi << 32 | size_lo) & mask;
+
+    if (bar->io)
+        sized |= 0xFFFFFFFF00000000ULL | 0xFFFF0000; /* 16-bit ports */
+
+    bar->addr = ((uint64_t) hi << 32 | lo) & mask;
+    bar->size = ~sized + 1;
+
+    return size_lo ? 0 : -1;
+}
+
+/* decoding its memory and ports, and mastering the bus (DMA) */
+void pci_enable(struct pci_dev *dev)
+{
+    uint16_t command = pci_reg16_read(dev, PCI_COMMAND);
+    pci_reg16_write(dev, PCI_COMMAND,
+        command | PCI_COMMAND_IO | PCI_COMMAND_MEMORY | PCI_COMMAND_MASTER);
+}
+
+/* the interrupt (of the PIC) its pin is routed to, as the firmware set */
+uint8_t pci_irq_line(struct pci_dev *dev)
+{
+    return pci_reg8_read(dev, PCI_INTERRUPT_LINE);
+}
+
 MODULE_INIT(pci, pci_prope, NULL)
