@@ -13,6 +13,11 @@
  * - flock
  * - anonymous memory (mmap), shutdown() of sockets, the interval timer
  * - SA_RESTART, SA_NOCLDWAIT and an ignored SIGCHLD, getrandom
+ * - signals delivered on the way back to user mode: the FPU and SSE state
+ *   kept across a handler, the handler's signal blocked (SA_NODEFER),
+ *   sa_mask, SA_RESETHAND, the mask restored, nested handlers,
+ *   sigsuspend's EINTR and mask, a read stopped and continued is made
+ *   again, sigreturn with a forged frame stays in user mode
  * - virtual terminals: KD* and VT_* ioctls, switching, VT_PROCESS
  */
 
@@ -336,6 +341,271 @@ static void script_interpreter(void)
 
     SC(SYS_exit, str_eq(argv[0], "/init") && str_eq(argv[2], "/tmp/script") &&
                  str_eq(argv[3], "arg") ? 42 : 1, 0, 0);
+}
+
+/*
+ * Signals on the way back to user mode (x86_return_to_user)
+ */
+
+static volatile int depth, max_depth, count, got2, got2_during, nested;
+
+static int self_pid(void) { return SC(SYS_getpid, 0, 0, 0); }
+
+/* sends itself the signal again, once: blocked while it runs, unless
+ * SA_NODEFER */
+static void deep_handler(int sig)
+{
+    if (++depth > max_depth)
+        max_depth = depth;
+
+    if (++count == 1)
+        SC(SYS_kill, self_pid(), sig, 0);
+
+    depth--;
+}
+
+static void usr2_handler(int sig) { got2++; nested = depth; (void) sig; }
+
+/* SIGUSR2 is in its sa_mask: not delivered while it runs */
+static void masking_handler(int sig)
+{
+    SC(SYS_kill, self_pid(), SIGUSR2, 0);
+    got2_during = got2;
+    (void) sig;
+}
+
+/* in a handler, another signal's handler runs */
+static void outer_handler(int sig)
+{
+    depth = 1;
+    SC(SYS_kill, self_pid(), SIGUSR2, 0);
+    depth = 0;
+    (void) sig;
+}
+
+/* changes the SSE state: the interrupted code's must come back */
+__attribute__((target("sse")))
+static void sse_handler(int sig)
+{
+    static uint32_t round_down = 0x3F80;
+    asm volatile("xorps %%xmm1, %%xmm1\n"
+                 "ldmxcsr %0" :: "m"(round_down) : "xmm1");
+    (void) sig;
+}
+
+/* xmm1 and MXCSR around a kill of itself (its handler runs before the
+ * syscall returns): 1 if both are as they were */
+__attribute__((target("sse")))
+static int sse_kept(void)
+{
+    static float in[4] __attribute__((aligned(16))) = {1.5f, 2.5f, 3.5f, 4.5f};
+    static float out[4] __attribute__((aligned(16)));
+    uint32_t mx_before, mx_after;
+    long r = SYS_kill;
+
+#ifdef __x86_64__
+    asm volatile("stmxcsr %[mb]\n"
+                 "movaps %[in], %%xmm1\n"
+                 "int $0x80\n"
+                 "movaps %%xmm1, %[out]\n"
+                 "stmxcsr %[ma]\n"
+                 : [out] "=m"(out), [mb] "=m"(mx_before), [ma] "=m"(mx_after), "+a"(r)
+                 : [in] "m"(in), "D"((uptr) self_pid()), "S"((uptr) SIGUSR1)
+                 : "xmm1", "memory", "rcx", "rdx", "r8", "r9", "r10", "r11");
+#else
+    asm volatile("stmxcsr %[mb]\n"
+                 "movaps %[in], %%xmm1\n"
+                 "int $0x80\n"
+                 "movaps %%xmm1, %[out]\n"
+                 "stmxcsr %[ma]\n"
+                 : [out] "=m"(out), [mb] "=m"(mx_before), [ma] "=m"(mx_after), "+a"(r)
+                 : [in] "m"(in), "b"((uptr) self_pid()), "c"((uptr) SIGUSR1)
+                 : "xmm1", "memory", "edx");
+#endif
+
+    for (int i = 0; i < 4; ++i)
+        if (out[i] != in[i])
+            return 0;
+
+    return mx_before == mx_after;
+}
+
+/* the kernel's struct sigframe (arch/i386/sys/signal.c) */
+struct test_regs {
+#ifdef __x86_64__
+    uint64_t r15, r14, r13, r12, r11, r10, r9, r8, rdi, rsi, rbp, rbx, rcx, rdx, rax,
+             ip, cs, flags, sp, ss;
+#else
+    uint32_t edi, esi, ebp, ebx, ecx, edx, eax, gs, fs, es, ds, ip, cs, flags, sp, ss;
+#endif
+};
+
+struct test_frame {
+    struct aquila_siginfo info;
+    unsigned long mask;
+    uint32_t fpu;
+    struct test_regs regs;
+    uint8_t fxsave[512] __attribute__((aligned(16)));
+} __attribute__((aligned(16)));
+
+static struct test_frame forged;
+static char landing_stack[4096] __attribute__((aligned(16)));
+
+/* where the forged frame goes: user mode's code segment, no IOPL, no
+ * NT, interrupts on, whatever the frame said */
+static void __attribute__((noreturn)) landing(void)
+{
+    uptr cs, flags;
+
+    asm volatile("mov %%cs, %0" : "=r"(cs));
+#ifdef __x86_64__
+    asm volatile("pushfq; popq %0" : "=r"(flags));
+#else
+    asm volatile("pushfl; popl %0" : "=r"(flags));
+#endif
+
+    int ok = (cs & 0xffff) == (0x18 | 3) && !(flags & 0x3000) && !(flags & 0x4000) && (flags & 0x200);
+    SC(SYS_exit, ok ? 0 : 1, 0, 0);
+    for (;;);
+}
+
+/* sigreturn with the stack at `frame' (where a handler's return leaves
+ * it) */
+static void __attribute__((noreturn)) sigreturn_at(uptr frame)
+{
+#ifdef __x86_64__
+    asm volatile("mov %0, %%rsp\n"
+                 "mov %1, %%eax\n"
+                 "int $0x80" :: "r"(frame), "i"(SYS_sigreturn) : "memory");
+#else
+    /* the handler's arguments are still above its stack: 16 bytes */
+    asm volatile("mov %0, %%esp\n"
+                 "mov %1, %%eax\n"
+                 "int $0x80" :: "r"(frame - 16), "i"(SYS_sigreturn) : "memory");
+#endif
+    for (;;);
+}
+
+static void forged_sigreturn(void)
+{
+    forged.regs.ip = (uptr) landing;
+    forged.regs.sp = (uptr) landing_stack + sizeof(landing_stack) - sizeof(uptr);
+    forged.regs.cs = 0x08;                          /* the kernel's */
+    forged.regs.ss = 0x10;
+    forged.regs.flags = 0x3000 | 0x4000 | 0x2;      /* IOPL 3, NT, no IF */
+#ifndef __x86_64__
+    forged.regs.flags |= 0x20000;                   /* virtual 8086 */
+    forged.regs.ds = forged.regs.es = forged.regs.fs = forged.regs.gs = 0x10;
+#endif
+    sigreturn_at((uptr) &forged);
+}
+
+static void garbage_sigreturn(void)
+{
+    /* nothing mapped there */
+    sigreturn_at(0x10000);
+}
+
+static void exit_path_signals(void)
+{
+    int pid = self_pid();
+    unsigned long before, after, set;
+
+    struct aquila_sigaction sa = {(uptr) sse_handler, 0, 0};
+    SC(SYS_sigaction, SIGUSR1, &sa, 0);
+    check("signal: the SSE state kept across a handler", sse_kept(), 1);
+
+    /* the handler's signal blocked while it runs: the second comes after */
+    SC(SYS_sigmask, SIG_BLOCK, 0, &before);
+    depth = max_depth = count = 0;
+    sa = (struct aquila_sigaction) {(uptr) deep_handler, 0, 0};
+    SC(SYS_sigaction, SIGUSR1, &sa, 0);
+    SC(SYS_kill, pid, SIGUSR1, 0);
+    check("signal: delivered twice", count, 2);
+    check("signal: not nested (its own blocked)", max_depth, 1);
+    SC(SYS_sigmask, SIG_BLOCK, 0, &after);
+    check("signal: the mask restored after", after == before, 1);
+
+    depth = max_depth = count = 0;
+    sa.sa_flags = SA_NODEFER;
+    SC(SYS_sigaction, SIGUSR1, &sa, 0);
+    SC(SYS_kill, pid, SIGUSR1, 0);
+    check("signal: SA_NODEFER nested", max_depth, 2);
+
+    /* sa_mask: SIGUSR2 waits until the handler is done */
+    got2 = got2_during = 0;
+    sa = (struct aquila_sigaction) {(uptr) usr2_handler, 0, 0};
+    SC(SYS_sigaction, SIGUSR2, &sa, 0);
+    sa = (struct aquila_sigaction) {(uptr) masking_handler, 1UL << SIGUSR2, 0};
+    SC(SYS_sigaction, SIGUSR1, &sa, 0);
+    SC(SYS_kill, pid, SIGUSR1, 0);
+    check("signal: sa_mask blocks while the handler runs", got2_during, 0);
+    check("signal: then delivered", got2, 1);
+
+    /* another signal's handler runs in a handler */
+    depth = nested = 0;
+    sa = (struct aquila_sigaction) {(uptr) outer_handler, 0, 0};
+    SC(SYS_sigaction, SIGUSR1, &sa, 0);
+    SC(SYS_kill, pid, SIGUSR1, 0);
+    check("signal: a handler in a handler", nested, 1);
+
+    /* SA_RESETHAND: the default action afterwards */
+    got_sig = 0;
+    struct aquila_sigaction old;
+    sa = (struct aquila_sigaction) {(uptr) handler, 0, SA_RESETHAND};
+    SC(SYS_sigaction, SIGUSR1, &sa, 0);
+    SC(SYS_kill, pid, SIGUSR1, 0);
+    SC(SYS_sigaction, SIGUSR1, 0, &old);
+    check("signal: SA_RESETHAND ran", got_sig, SIGUSR1);
+    check("signal: SA_RESETHAND reset", old.sa_handler, 0);
+
+    /* sigsuspend: EINTR once the handler ran, the old mask back */
+    sa = (struct aquila_sigaction) {(uptr) handler, 0, 0};
+    SC(SYS_sigaction, SIGUSR1, &sa, 0);
+    set = 1UL << SIGUSR1;
+    SC(SYS_sigmask, SIG_BLOCK, &set, &before);
+    int c = SC(SYS_fork, 0, 0, 0);
+    if (!c) {
+        struct aquila_timespec d = {0, 100000000};
+        SC(SYS_nanosleep, &d, 0, 0);
+        SC(SYS_kill, pid, SIGUSR1, 0);
+        SC(SYS_exit, 0, 0, 0);
+    }
+    got_sig = 0;
+    unsigned long none = 0;
+    check("signal: sigsuspend EINTR", SC(SYS_sigsuspend, &none, 0, 0), -EINTR);
+    check("signal: sigsuspend's handler ran", got_sig, SIGUSR1);
+    SC(SYS_sigmask, SIG_BLOCK, 0, &after);
+    check("signal: sigsuspend's mask back", after, before | set);
+    SC(SYS_sigmask, SIG_SETMASK, &before, 0);
+    SC(SYS_waitpid, c, 0, 0);
+
+    /* a read stopped and continued: made again, it gets the data */
+    int p[2], st = -1;
+    SC(SYS_pipe, p, 0, 0);
+    c = SC(SYS_fork, 0, 0, 0);
+    if (!c) {
+        char b = 0;
+        int n = SC(SYS_read, p[0], &b, 1);
+        SC(SYS_exit, n == 1 && b == 'z' ? 0 : 1, 0, 0);
+    }
+    aq_spin(20000000);
+    SC(SYS_kill, c, SIGSTOP, 0);
+    check("signal: stopped in a read", SC(SYS_waitpid, c, &st, WUNTRACED), c);
+    SC(SYS_kill, c, SIGCONT, 0);
+    SC(SYS_write, p[1], "z", 1);
+    SC(SYS_waitpid, c, &st, 0);
+    check("signal: the read made again after continuing", st, 0);
+    SC(SYS_close, p[0], 0, 0);
+    SC(SYS_close, p[1], 0, 0);
+
+    /* sigreturn can't leave user mode, a frame nowhere kills */
+    check("signal: forged sigreturn stays in user mode", aq_child_status(forged_sigreturn), 0);
+    check("signal: sigreturn with no frame: SIGSEGV", aq_child_status(garbage_sigreturn) & 0x7f, SIGSEGV);
+
+    sa = (struct aquila_sigaction) {0, 0, 0};
+    SC(SYS_sigaction, SIGUSR1, &sa, 0);
+    SC(SYS_sigaction, SIGUSR2, &sa, 0);
 }
 
 void aq_main(void)
@@ -1622,6 +1892,8 @@ void aq_main(void)
     check("VT_OPENQRY once closed", again, freevt);
     SC(SYS_close, vt1, 0, 0);
     SC(SYS_close, vt0, 0, 0);
+
+    exit_path_signals();
 
     aq_end();
 }
