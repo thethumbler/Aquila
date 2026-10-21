@@ -117,8 +117,25 @@ void print_node(unsigned i)
     printk("   |_ Next   : %d\n", nodes[i].next );
 }
 
+void *slab_alloc(size_t size, struct malloc_type *type);
+int  slab_owns(void *ptr);
+void slab_free(void *ptr);
+
 void *kmalloc(size_t size, struct malloc_type *type, int flags)
 {
+    /* the small objects, most of them, from slabs */
+    if (size <= SLAB_MAX) {
+        void *obj = slab_alloc(size, type);
+
+        if (type->qnode == NULL)
+            type->qnode = enqueue(malloc_types, type);
+
+        if (flags & M_ZERO)
+            memset(obj, 0, size);
+
+        return obj;
+    }
+
     /* round size to KVMEM_ALIGN units */
     size = (size + KVMEM_ALIGN - 1) / KVMEM_ALIGN;
 
@@ -184,6 +201,11 @@ void kfree(void *_ptr)
 {
     //printk("kfree(%p)\n", _ptr);
     uintptr_t ptr = (uintptr_t) _ptr;
+
+    if (slab_owns(_ptr)) {
+        slab_free(_ptr);
+        return;
+    }
 
     if (ptr < KVMEM_BASE)  /* That's not even allocatable */
         return;

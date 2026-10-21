@@ -33,17 +33,19 @@ struct vcache procfs_vcache = {0};
 static ssize_t procfs_meminfo(off_t off, size_t size, char *buf)
 {
     char meminfo_buf[512];
-    extern size_t k_total_mem, k_used_mem, kvmem_used, kvmem_obj_cnt;
+    extern size_t k_total_mem, k_used_mem, kvmem_used, kvmem_obj_cnt, slab_used;
 
     int sz = snprintf(meminfo_buf, 512, 
             "MemTotal: %d kB\n"
             "MemFree: %d kB\n"
             "KVMemUsed: %d KB\n"
-            "KVMemObjCnt: %d\n",
-            k_total_mem/1024,
-            (k_total_mem-k_used_mem)/1024,
-            kvmem_used/1024,
-            kvmem_obj_cnt
+            "KVMemObjCnt: %d\n"
+            "Slab: %d kB\n",
+            (int) (k_total_mem/1024),
+            (int) ((k_total_mem-k_used_mem)/1024),
+            (int) (kvmem_used/1024),
+            (int) kvmem_obj_cnt,
+            (int) (slab_used/1024)
             );
 
     if (off < sz) {

@@ -23,6 +23,10 @@
 #define ARCH_VESA_BASE         (0xE0000000UL)
 #define ARCH_EARLYFB_BASE      (0xE8000000UL)
 #define ARCH_ACPI_BASE         (0xF0000000UL)
+
+/* the pages of the kernel's small objects (mm/slab.c) */
+#define ARCH_SLAB_BASE         (0xF1000000UL)
+#define ARCH_SLAB_SIZE         (0x0E000000UL)               /* 224 MiB */
 #else
 /*
  * x86-64: user space is the lower half; in the upper half all physical
@@ -35,6 +39,8 @@
 #define ARCH_ACPI_BASE         (0xFFFFC00200000000ULL)
 #define ARCH_KVMEM_BASE        (0xFFFFD00000000000ULL)
 #define ARCH_KVMEM_NODES_SIZE  (0x00100000ULL)
+#define ARCH_SLAB_BASE         (0xFFFFE00000000000ULL)
+#define ARCH_SLAB_SIZE         (16ULL << 30)                /* 16 GiB */
 
 /* a physical address in the direct map */
 #define PHYS2VIRT(paddr)       ((void *) (ARCH_DMAP_BASE + (uintptr_t) (paddr)))

@@ -7,3 +7,4 @@ obj-y += vm_object.o
 obj-y += fault.o
 obj-y += buddy.o
 obj-y += kvmem.o
+obj-y += slab.o
