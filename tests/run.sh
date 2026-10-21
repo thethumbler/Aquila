@@ -274,7 +274,8 @@ test_memory()
 
 # the e1000 and the stack over it: QEMU gives its frames to a peer on the
 # host (tests/net/peer.py, -netdev socket), which checks the answers to
-# ARP and pings
+# ARP and pings, then answers the guest's program (tests/net/init.c); both
+# report their checks
 test_net()
 {
     local log=$OUT/net/serial.log
@@ -283,7 +284,7 @@ test_net()
     mkdir -p "$OUT/net"
     rm -f "$log"
 
-    $QEMU $ACCEL -kernel "$KERNEL" -initrd "$OUT/cpu/initrd.img" -m 256 -display none \
+    $QEMU $ACCEL -kernel "$KERNEL" -initrd "$OUT/net/initrd.img" -m 256 -display none \
         -no-reboot -append "ip=10.0.2.15/24:10.0.2.2" -serial file:"$log" \
         -netdev socket,id=n0,udp=127.0.0.1:$port,localaddr=127.0.0.1:$((port + 1)) \
         -device e1000,netdev=n0 >/dev/null 2>&1 &
@@ -295,6 +296,12 @@ test_net()
     done
 
     python3 "$TESTS/net/peer.py" $port $((port + 1)) > "$OUT/net/peer.log" 2>&1
+
+    for _ in $(seq 100); do
+        grep -a -q 'aqtest: done\|Bailing out' "$log" 2>/dev/null && break
+        sleep 0.1
+    done
+
     kill $pid 2>/dev/null
     wait $pid 2>/dev/null
     qemu_exited=0
@@ -302,13 +309,19 @@ test_net()
     log_problems "$log" && return 1
 
     local pass fail
-    pass=$(grep -c '^PASS' "$OUT/net/peer.log")
-    fail=$(grep -c '^FAIL' "$OUT/net/peer.log")
-    grep '^FAIL' "$OUT/net/peer.log" | sed 's/^/    /'
+    pass=$(cat "$OUT/net/peer.log" "$log" | grep -a -c '^PASS')
+    fail=$(cat "$OUT/net/peer.log" "$log" | grep -a -c '^FAIL')
+    cat "$OUT/net/peer.log" "$log" | grep -a '^FAIL' | sed 's/^/    /'
 
     if ! grep -q 'net: done' "$OUT/net/peer.log"; then
-        echo "did not finish ($pass passed, $fail failed):"
+        echo "the peer did not finish ($pass passed, $fail failed):"
         tail -3 "$OUT/net/peer.log" | sed 's/^/    /'
+        return 1
+    fi
+
+    if ! grep -a -q 'aqtest: done' "$log"; then
+        echo "the guest did not finish ($pass passed, $fail failed):"
+        tail -3 "$log" | sed 's/^/    /'
         return 1
     fi
 
@@ -660,12 +673,12 @@ for name in $selected; do
     esac
 done
 
-# test programs (the ata and net tests boot the cpu test's initrd)
+# test programs (the ata test boots the cpu test's initrd)
 needed=" $selected "
-case "$needed" in *" ata "*|*" net "*) needed="$needed cpu " ;; esac
+case "$needed" in *" ata "*) needed="$needed cpu " ;; esac
 [ -x "$CROSS_CC" ] || needed=${needed/ libc / }
 
-for name in cpu syscalls memory ext2 libc; do
+for name in cpu syscalls memory net ext2 libc; do
     case "$needed" in
         *" $name "*)
             mkdir -p "$OUT/$name"
