@@ -1,0 +1,167 @@
+diff --git a/sdhcp.c b/sdhcp.c
+index 1fcf5e6..ac9c978 100644
+--- a/sdhcp.c
++++ b/sdhcp.c
+@@ -1,6 +1,5 @@
+ #include <sys/ioctl.h>
+ #include <sys/socket.h>
+-#include <sys/timerfd.h>
+ 
+ #include <netinet/in.h>
+ #include <net/if.h>
+@@ -95,7 +94,10 @@ static time_t starttime;
+ static char *ifname = "eth0";
+ static unsigned char cid[16];
+ static char *program = "";
+-static int sock, timers[3];
++static int sock;
++/* AquilaOS has no timerfd: the timers are deadlines (CLOCK_MONOTONIC),
++ * poll() waits until the first; armed if their time isn't 0 */
++static struct timespec timers[3];
+ /* sav */
+ static unsigned char server[4];
+ static unsigned char client[4];
+@@ -303,19 +305,51 @@ dhcpsend(int type, int how)
+ 	udpsend(ip, sock, &bp, p - (unsigned char *)&bp);
+ }
+ 
++/* the time left until ts (0 if it has passed) */
++static struct timespec
++timeleft(const struct timespec *ts)
++{
++	struct timespec now, left = { 0 };
++
++	clock_gettime(CLOCK_MONOTONIC, &now);
++	if (ts->tv_sec > now.tv_sec || (ts->tv_sec == now.tv_sec && ts->tv_nsec > now.tv_nsec)) {
++		left.tv_sec = ts->tv_sec - now.tv_sec;
++		left.tv_nsec = ts->tv_nsec - now.tv_nsec;
++		if (left.tv_nsec < 0) {
++			left.tv_sec--;
++			left.tv_nsec += 1000000000;
++		}
++	}
++	return left;
++}
++
++static int
++armed(int n)
++{
++	return timers[n].tv_sec || timers[n].tv_nsec;
++}
++
+ static int
+ dhcprecv(void)
+ {
+-	unsigned char type;
++	unsigned char type = 0;
+ 	struct pollfd pfd[] = {
+ 		{ .fd = sock, .events = POLLIN },
+-		{ .fd = timers[0], .events = POLLIN },
+-		{ .fd = timers[1], .events = POLLIN },
+-		{ .fd = timers[2], .events = POLLIN },
+ 	};
+-	uint64_t n;
++	struct timespec left;
++	int i, ms, timeout = -1;
++
++	/* until the first timer, rounded up */
++	for (i = 0; i < (int)LEN(timers); ++i) {
++		if (!armed(i))
++			continue;
++		left = timeleft(&timers[i]);
++		ms = left.tv_sec * 1000 + (left.tv_nsec + 999999) / 1000000;
++		if (timeout == -1 || ms < timeout)
++			timeout = ms;
++	}
+ 
+-	if (poll(pfd, LEN(pfd), -1) == -1)
++	if (poll(pfd, LEN(pfd), timeout) == -1)
+ 		eprintf("poll:");
+ 	if (pfd[0].revents) {
+ 		memset(&bp, 0, sizeof(bp));
+@@ -323,17 +357,16 @@ dhcprecv(void)
+ 		optget(&bp, &type, ODtype, sizeof(type));
+ 		return type;
+ 	}
+-	if (pfd[1].revents) {
+-		type = Timeout0;
+-		read(timers[0], &n, sizeof(n));
+-	}
+-	if (pfd[2].revents) {
+-		type = Timeout1;
+-		read(timers[1], &n, sizeof(n));
+-	}
+-	if (pfd[3].revents) {
+-		type = Timeout2;
+-		read(timers[2], &n, sizeof(n));
++	/* those that expired are disarmed, the last one counts (as reading
++	 * the timerfds did) */
++	for (i = 0; i < (int)LEN(timers); ++i) {
++		if (!armed(i))
++			continue;
++		left = timeleft(&timers[i]);
++		if (left.tv_sec || left.tv_nsec)
++			continue;
++		timers[i].tv_sec = timers[i].tv_nsec = 0;
++		type = Timeout0 + i;
+ 	}
+ 	return type;
+ }
+@@ -362,19 +395,32 @@ acceptlease(void)
+ 	}
+ }
+ 
++/* timer n expires in ts->it_value (disarmed if 0) */
+ static void
+ settimeout(int n, const struct itimerspec *ts)
+ {
+-	if (timerfd_settime(timers[n], 0, ts, NULL) < 0)
+-		eprintf("timerfd_settime:");
++	struct timespec now;
++
++	if (!ts->it_value.tv_sec && !ts->it_value.tv_nsec) {
++		timers[n].tv_sec = timers[n].tv_nsec = 0;
++		return;
++	}
++	clock_gettime(CLOCK_MONOTONIC, &now);
++	timers[n].tv_sec = now.tv_sec + ts->it_value.tv_sec;
++	timers[n].tv_nsec = now.tv_nsec + ts->it_value.tv_nsec;
++	if (timers[n].tv_nsec >= 1000000000) {
++		timers[n].tv_sec++;
++		timers[n].tv_nsec -= 1000000000;
++	}
+ }
+ 
+ /* sets ts to expire halfway to the expiration of timer n, minimum of 60 seconds */
+ static void
+ calctimeout(int n, struct itimerspec *ts)
+ {
+-	if (timerfd_gettime(timers[n], ts) < 0)
+-		eprintf("timerfd_gettime:");
++	memset(ts, 0, sizeof(*ts));
++	if (armed(n))
++		ts->it_value = timeleft(&timers[n]);
+ 	ts->it_value.tv_nsec /= 2;
+ 	if (ts->it_value.tv_sec % 2)
+ 		ts->it_value.tv_nsec += 500000000;
+@@ -518,7 +564,6 @@ main(int argc, char *argv[])
+ 	struct ifreq ifreq;
+ 	struct sockaddr addr;
+ 	int rnd;
+-	size_t i;
+ 
+ 	ARGBEGIN {
+ 	case 'd': /* don't update DNS in /etc/resolv.conf */
+@@ -571,12 +616,6 @@ main(int argc, char *argv[])
+ 	read(rnd, xid, sizeof(xid));
+ 	close(rnd);
+ 
+-	for (i = 0; i < LEN(timers); ++i) {
+-		timers[i] = timerfd_create(CLOCK_BOOTTIME, TFD_CLOEXEC);
+-		if (timers[i] == -1)
+-			eprintf("timerfd_create:");
+-	}
+-
+ 	starttime = time(NULL);
+ 	run();
+ 

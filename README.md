@@ -63,6 +63,11 @@ route add default gw 10.0.2.2
 ping 10.0.2.2
 ```
 
+or from a DHCP server (sdhcp, contrib): `ifconfig eth0 up; sdhcp eth0`,
+which sets the address, the default route and `/etc/resolv.conf`, and
+renews the lease. On a disk, the `dhcp` service does it at every boot
+once enabled: `ln -s /etc/sv/dhcp /etc/service/`.
+
 Programs have UDP sockets and ping sockets (`SOCK_DGRAM`,
 `IPPROTO_ICMP`). TCP is not there yet.
 
@@ -149,7 +154,7 @@ from source, see [tests/](tests/README.md).
 - [X] IPv4, ARP, ICMP (echo, unreachable), loopback
 - [X] UDP and ping sockets
 - [ ] TCP
-- [ ] DHCP
+- [X] DHCP    (sdhcp, contrib)
 
 #### System
 - [X] newlib 4.6 C library

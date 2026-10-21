@@ -1,0 +1,9 @@
+#!/bin/sh
+# DHCP on eth0 (sdhcp): the address, the netmask, the default route and
+# /etc/resolv.conf from the server, the lease renewed. Not enabled unless
+# asked for: ln -s /etc/sv/dhcp /etc/service/
+if ! ifconfig eth0 up; then
+    sv down .
+    exit 1
+fi
+exec sdhcp -f eth0
