@@ -70,6 +70,8 @@ void kmain(struct boot *boot)
         panic("failed to allocate process structure for init");
     }
 
+    initproc = init;
+
     curthread = (struct thread *) init->threads.head->value;
     curproc   = init;
 

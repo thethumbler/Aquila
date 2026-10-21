@@ -34,6 +34,8 @@ MALLOC_DEFINE(M_FDS, "fds", "file descriptor array"); /* FIXME */
 /* all processes */
 struct queue *procs = QUEUE_NEW();
 
+struct proc *initproc;
+
 /* all sessions */
 struct queue *sessions = QUEUE_NEW();
 
@@ -150,6 +152,74 @@ error:
     return err;
 }
 
+/*
+ * A process group is orphaned (POSIX) when none of its members has a
+ * parent in another group of its session: no one there would continue it
+ * once it stops. `gone', on its way out, doesn't count, as a member or a
+ * parent; nor does init, as a parent (it isn't a shell).
+ */
+int pgrp_orphaned(struct pgroup *pgrp, struct proc *gone)
+{
+    queue_for (node, pgrp->procs) {
+        struct proc *p = node->value, *parent = p->parent;
+
+        if (p == gone || p->zombie || !parent || parent == gone || parent == initproc)
+            continue;
+
+        if (parent->pgrp != pgrp && parent->pgrp->session == pgrp->session)
+            return 0;
+    }
+
+    return 1;
+}
+
+/* `gone' leaving makes `pgrp' orphaned: if one of its members is stopped,
+ * SIGHUP and SIGCONT to all of them, nothing else would continue them */
+static void pgrp_orphaned_hangup(struct pgroup *pgrp, struct proc *gone)
+{
+    int stopped = 0;
+
+    queue_for (node, pgrp->procs) {
+        struct proc *p = node->value;
+
+        if (p != gone && p->running && p->stopped)
+            stopped = 1;
+    }
+
+    if (stopped && pgrp_orphaned(pgrp, gone)) {
+        signal_pgrp_send(pgrp, SIGHUP);
+        signal_pgrp_send(pgrp, SIGCONT);
+    }
+}
+
+/* the group of `p' is in the session of the group of `q', and another */
+static int pgrp_other_same_session(struct proc *p, struct proc *q)
+{
+    return p->pgrp != q->pgrp && p->pgrp->session == q->pgrp->session;
+}
+
+/* `proc' is a zombie: its parent is told, and may wait for it; a parent
+ * that doesn't wait for its children (SIGCHLD ignored, SA_NOCLDWAIT)
+ * leaves no zombie */
+static void proc_zombie_notify(struct proc *proc)
+{
+    struct proc *parent = proc->parent;
+
+    if (!parent) {
+        proc_reap(proc);
+        return;
+    }
+
+    int nowait = parent->sigaction[SIGCHLD].sa_handler == SIG_IGN ||
+                 (parent->sigaction[SIGCHLD].sa_flags & SA_NOCLDWAIT);
+
+    thread_queue_wakeup(&parent->wait_queue);
+    signal_proc_send(parent, SIGCHLD);
+
+    if (nowait)
+        proc_reap(proc);
+}
+
 void proc_kill(struct proc *proc)
 {
     if (proc->pid == 1) {
@@ -221,18 +291,27 @@ void proc_kill(struct proc *proc)
 
     proc->sig_pending = 0;
 
-    /* Mark all children as orphans, nobody will wait for them anymore so
-     * reap the ones that already exited (live ones are reaped on exit) */
+    /* its own group: its parent, in another group of the session, may
+     * have been what kept it from being orphaned */
+    if (proc->parent && pgrp_other_same_session(proc->parent, proc))
+        pgrp_orphaned_hangup(proc->pgrp, proc);
+
+    /* the children are init's: it waits for them, the zombies among them
+     * already (live ones when they exit); a child's group in another
+     * group of the session may be orphaned now */
     struct qnode *node = procs->head;
     while (node) {
         struct proc *_proc = node->value;
         node = node->next;  /* proc_reap removes the current node */
 
         if (_proc->parent == proc) {
-            _proc->parent = NULL;
+            _proc->parent = initproc;
+
+            if (pgrp_other_same_session(_proc, proc))
+                pgrp_orphaned_hangup(_proc->pgrp, proc);
 
             if (_proc->zombie)
-                proc_reap(_proc);
+                proc_zombie_notify(_proc);
         }
     }
 
@@ -252,22 +331,8 @@ void proc_kill(struct proc *proc)
 
     proc->zombie = 1;
 
-    /* Wakeup parent if it is waiting for children */
-    if (proc->parent) {
-        struct proc *parent = proc->parent;
-        int nowait = parent->sigaction[SIGCHLD].sa_handler == SIG_IGN ||
-                     (parent->sigaction[SIGCHLD].sa_flags & SA_NOCLDWAIT);
-
-        thread_queue_wakeup(&parent->wait_queue);
-        signal_proc_send(parent, SIGCHLD);
-
-        /* the parent doesn't wait for its children: no zombie */
-        if (nowait)
-            proc_reap(proc);
-    } else { 
-        /* Orphan zombie, just reap it */
-        proc_reap(proc);
-    }
+    /* its parent waits for it */
+    proc_zombie_notify(proc);
 
     if (kill_curthread) {
         arch_cur_thread_kill();

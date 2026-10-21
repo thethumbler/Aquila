@@ -170,6 +170,7 @@ int proc_new(struct proc **ref);
 int session_new(struct proc *proc);
 int proc_setpgid(struct proc *proc, pid_t pgid);
 void pgrp_release(struct pgroup *pgrp);
+int  pgrp_orphaned(struct pgroup *pgrp, struct proc *gone);
 
 void proc_kill(struct proc *proc);
 int  proc_reap(struct proc *proc);
@@ -183,6 +184,9 @@ int  proc_init(struct proc *proc);
 #define PROC_UIO(proc) ((struct uio){.cwd = (proc)->cwd, .uid = (proc)->uid, .gid = (proc)->gid, .mask = (proc)->mask})
 
 extern struct queue *procs;
+
+/* init (pid 1): orphans' parent; only it and the kernel's process have none */
+extern struct proc *initproc;
 extern struct queue *sessions;
 
 #endif /* ! _SYS_PROC_H */

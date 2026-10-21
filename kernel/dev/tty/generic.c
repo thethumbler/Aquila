@@ -199,6 +199,10 @@ int tty_background(struct tty *tty, int sig)
         if ((proc->sigmask & (1UL << sig)) || proc->sigaction[sig].sa_handler == SIG_IGN)
             return sig == SIGTTIN ? -EIO : 0;
 
+        /* an orphaned group isn't stopped, no one would continue it */
+        if (pgrp_orphaned(proc->pgrp, NULL))
+            return -EIO;
+
         signal_pgrp_send(proc->pgrp, sig);
         return -ERESTARTSYS;
     }

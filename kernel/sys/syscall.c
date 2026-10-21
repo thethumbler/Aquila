@@ -2121,8 +2121,8 @@ static void sys_getppid(void)
 {
     syscall_log(LOG_DEBUG, "getppid()\n");
 
-    /* orphans are as if reparented to init */
-    arch_syscall_return(curthread, curproc->parent ? curproc->parent->pid : 1);
+    /* orphans are init's; init and the kernel's process have no parent */
+    arch_syscall_return(curthread, curproc->parent ? curproc->parent->pid : 0);
 }
 
 typedef unsigned long fd_mask;

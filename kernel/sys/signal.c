@@ -229,6 +229,11 @@ int signal_take(void)
             case SIGACT_TERMINATE:
                 signal_exit(sig);
             case SIGACT_STOP:
+                /* the terminal's stops don't stop an orphaned group: no
+                 * one would continue it (POSIX); SIGSTOP does */
+                if (sig != SIGSTOP && pgrp_orphaned(proc->pgrp, NULL))
+                    break;
+
                 signal_stop(sig);
                 break;
             default:
