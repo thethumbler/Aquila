@@ -4,7 +4,9 @@
  * - pointers into kernel space must be rejected with EFAULT
  * - descriptors, signal numbers and sizes must be range checked
  * - signals, wait, threads, pipes, unix sockets, exec of bad ELF files
- * - files: the *at() calls, links, rename, permissions and attributes
+ * - files: the *at() calls, links, rename, permissions and attributes;
+ *   paths walked vnode by vnode (.. after a link, the cwd and an open
+ *   directory renamed, mounts, search permission, trailing slashes)
  * - nanosleep and clocks
  * - FIFOs
  * - sessions and controlling terminals, on a pty
@@ -1030,6 +1032,112 @@ static void stopped_sleeps(void)
 
     SC(SYS_close, stop_pipe[0], 0, 0);
     SC(SYS_close, stop_pipe[1], 0, 0);
+}
+
+
+/*
+ * Paths walked vnode by vnode: ".." after a symbolic link is the parent
+ * of where it went; a current directory, an open one, are the same
+ * directory after a rename; ".." crosses mounts both ways; a directory
+ * that isn't searchable stops a lookup; a removed current directory has
+ * no path; a trailing slash wants a directory
+ */
+static char cwd_buf[256];
+
+static const char *cwd_now(void)
+{
+    if (SC(SYS_getcwd, cwd_buf, sizeof(cwd_buf), 0))
+        return "(error)";
+    return cwd_buf;
+}
+
+/* in a child: chdir, rename what has it, the cwd follows; exits with the
+ * failed step */
+static void cwd_renamed(void)
+{
+    char sb[256];
+
+    if (SC(SYS_mkdir, "/tmp/pr", 0755, 0) || SC(SYS_mkdir, "/tmp/pr/x", 0755, 0)) SC(SYS_exit, 1, 0, 0);
+    if (SC(SYS_chdir, "/tmp/pr/x", 0, 0)) SC(SYS_exit, 2, 0, 0);
+    if (SC5(SYS_renameat, AT_FDCWD, "/tmp/pr", AT_FDCWD, "/tmp/pr2", 0)) SC(SYS_exit, 3, 0, 0);
+    if (!str_eq(cwd_now(), "/tmp/pr2/x")) SC(SYS_exit, 4, 0, 0);
+
+    int fd = SC(SYS_open, "f", O_CREAT | O_WRONLY, 0644);
+    if (fd < 0) SC(SYS_exit, 5, 0, 0);
+    SC(SYS_close, fd, 0, 0);
+    if (SC(SYS_stat, "/tmp/pr2/x/f", sb, 0)) SC(SYS_exit, 6, 0, 0);
+
+    /* removed: no path, nothing found in it */
+    SC(SYS_unlink, "/tmp/pr2/x/f", 0, 0);
+    if (SC(SYS_rmdir, "/tmp/pr2/x", 0, 0)) SC(SYS_exit, 7, 0, 0);
+    if (SC(SYS_getcwd, cwd_buf, sizeof(cwd_buf), 0) != -ENOENT) SC(SYS_exit, 8, 0, 0);
+    if (SC(SYS_stat, "f", sb, 0) != -ENOENT) SC(SYS_exit, 9, 0, 0);
+
+    SC(SYS_rmdir, "/tmp/pr2", 0, 0);
+    SC(SYS_exit, 0, 0, 0);
+}
+
+/* in a child: up through mounts with ..; exits with the failed step */
+static void cwd_mounts(void)
+{
+    if (SC(SYS_chdir, "/dev", 0, 0) || SC(SYS_chdir, "..", 0, 0) || !str_eq(cwd_now(), "/"))
+        SC(SYS_exit, 1, 0, 0);
+
+    if (SC(SYS_mkdir, "/tmp/mx", 0755, 0) || aq_mount("tmpfs", "/tmp/mx", 0)) SC(SYS_exit, 2, 0, 0);
+    if (SC(SYS_mkdir, "/tmp/mx/in", 0755, 0)) SC(SYS_exit, 3, 0, 0);
+    if (SC(SYS_chdir, "/tmp/mx/in", 0, 0) || !str_eq(cwd_now(), "/tmp/mx/in")) SC(SYS_exit, 4, 0, 0);
+    if (SC(SYS_chdir, "../..", 0, 0) || !str_eq(cwd_now(), "/tmp")) SC(SYS_exit, 5, 0, 0);
+
+    /* a mount point is no entry to remove or rename */
+    if (SC(SYS_rmdir, "/tmp/mx", 0, 0) != -EBUSY) SC(SYS_exit, 6, 0, 0);
+
+    SC(SYS_exit, 0, 0, 0);
+}
+
+/* in a child, unprivileged: a directory it can't search; exits with the
+ * failed step */
+static void search_permission(void)
+{
+    char sb[256];
+
+    if (SC(SYS_setuid, 1000, 0, 0)) SC(SYS_exit, 1, 0, 0);
+    if (SC(SYS_stat, "/tmp/ps/f", sb, 0) != -EACCES) SC(SYS_exit, 2, 0, 0);
+    if (SC(SYS_open, "/tmp/ps/f", O_RDONLY, 0) != -EACCES) SC(SYS_exit, 3, 0, 0);
+    if (SC(SYS_chdir, "/tmp/ps", 0, 0) != -EACCES) SC(SYS_exit, 4, 0, 0);
+    SC(SYS_exit, 0, 0, 0);
+}
+
+static void vnode_paths(void)
+{
+    char sb[256], sb2[256];
+
+    /* .. after a symbolic link */
+    SC(SYS_mkdir, "/tmp/pa", 0755, 0);
+    SC(SYS_mkdir, "/tmp/pa/b", 0755, 0);
+    SC(SYS_symlinkat, "/tmp/pa/b", AT_FDCWD, "/tmp/pl");
+    SC(SYS_stat, "/tmp/pa", sb, 0);
+    check("path: .. after a link is where it went's", SC(SYS_stat, "/tmp/pl/..", sb2, 0) == 0 &&
+          ST(sb2)->st_ino == ST(sb)->st_ino, 1);
+
+    /* an open directory renamed: still it */
+    int dirfd = SC(SYS_open, "/tmp/pa/b", O_RDONLY | O_DIRECTORY, 0);
+    SC5(SYS_renameat, AT_FDCWD, "/tmp/pa/b", AT_FDCWD, "/tmp/pa/c", 0);
+    int fd = SC5(SYS_openat, dirfd, "f", O_CREAT | O_WRONLY, 0644, 0);
+    check("path: openat in a renamed directory", fd >= 0 && SC(SYS_stat, "/tmp/pa/c/f", sb, 0) == 0, 1);
+    SC(SYS_close, fd, 0, 0);
+    SC(SYS_close, dirfd, 0, 0);
+
+    /* a trailing slash wants a directory */
+    check("path: a file with a trailing slash", SC(SYS_stat, "/init/", sb, 0), -ENOTDIR);
+    check("path: a directory with one", SC(SYS_stat, "/tmp/pa/", sb, 0), 0);
+
+    check("path: the cwd renamed", aq_child_status(cwd_renamed) >> 8, 0);
+    check("path: .. through mounts", aq_child_status(cwd_mounts) >> 8, 0);
+
+    SC(SYS_mkdir, "/tmp/ps", 0700, 0);
+    fd = SC(SYS_open, "/tmp/ps/f", O_CREAT | O_WRONLY, 0644);
+    SC(SYS_close, fd, 0, 0);
+    check("path: search permission", aq_child_status(search_permission) >> 8, 0);
 }
 
 void aq_main(void)
@@ -2322,6 +2430,7 @@ void aq_main(void)
     orphans();
     open_files();
     stopped_sleeps();
+    vnode_paths();
 
     aq_end();
 }

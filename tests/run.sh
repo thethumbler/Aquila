@@ -148,7 +148,7 @@ build_initrd()
     local root=$OUT/$name/root
 
     rm -rf "$root"
-    mkdir -p "$root/dev" "$root/mnt" "$root/tmp"
+    mkdir -p "$root/dev" "$root/mnt" "$root/tmp" "$root/proc"
 
     if [ "$name" = libc ]; then
         # a regular program, built against the C library
