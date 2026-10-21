@@ -19,7 +19,6 @@
 #define ARCH_RAM_MAX           ARCH_DMAP_SIZE
 #define ARCH_KVMEM_BASE        (0xF0000000UL)
 #define ARCH_KVMEM_SIZE        (0x04000000UL)               /* 64 MiB */
-#define ARCH_KVMEM_NODES_SIZE  (0x00100000UL)
 #define ARCH_SLAB_BASE         (0xF4000000UL)
 #define ARCH_SLAB_SIZE         (0x04000000UL)               /* 64 MiB */
 #define ARCH_VESA_BASE         (0xF8000000UL)
@@ -44,7 +43,6 @@
 #define ARCH_MMIO_SIZE         (64ULL << 30)                /* 64 GiB */
 #define ARCH_KVMEM_BASE        (0xFFFFD00000000000ULL)
 #define ARCH_KVMEM_SIZE        (1ULL << 30)                 /* 1 GiB */
-#define ARCH_KVMEM_NODES_SIZE  (0x00100000ULL)
 #define ARCH_SLAB_BASE         (0xFFFFE00000000000ULL)
 #define ARCH_SLAB_SIZE         (16ULL << 30)                /* 16 GiB */
 

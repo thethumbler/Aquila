@@ -34,6 +34,13 @@
  */
 void kmain(struct boot *boot)
 {
+    /* the kernel's allocator checked, on request (tests/kvmem) */
+    if (!kargs_get("kvmem.test", NULL))
+        kvmem_selftest();
+
+    if (!kargs_get("kvmem.guard", NULL))
+        kvmem_guardtest();
+
     kdev_init();
     vfs_init();
     modules_init();

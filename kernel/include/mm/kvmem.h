@@ -32,13 +32,8 @@ MALLOC_DECLARE(M_QNODE);
 MALLOC_DECLARE(M_HASHMAP);
 MALLOC_DECLARE(M_HASHMAP_NODE);
 
-void *kmalloc(size_t, struct malloc_type *type, int flags);
+/* `size' bytes of `type' (M_ZERO: zeroed), NULL if there's no memory */
+void *kmalloc(size_t size, struct malloc_type *type, int flags);
 void kfree(void *);
-extern int debug_kmalloc;
-
-#ifdef DEBUG_KMALLOC
-#define kmalloc(s) ((debug_kmalloc? printk("%s [%d]: kmalloc(%d)\n", __func__, __LINE__, (s)): 0), (kmalloc)((s)))
-#define kfree(s) ((debug_kmalloc? printk("%s [%d]: kfree(%p)\n", __func__,  __LINE__, (s)): 0), (kfree)((s)))
-#endif
 
 #endif /* ! _MM_KVMEM_H */

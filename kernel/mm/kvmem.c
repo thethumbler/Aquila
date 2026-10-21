@@ -1,17 +1,30 @@
+/*
+ * kmalloc() and kfree(): the kernel's memory
+ *
+ * Objects of up to SLAB_MAX bytes come from slabs (mm/slab.c). Bigger
+ * ones take whole pages of their own, in the kvmem region of the
+ * kernel's address space (ARCH_KVMEM_BASE): a vmem arena (mm/vmem.h)
+ * gives the range, pages of memory are mapped in it, and the segment
+ * keeps the object's size and malloc type for kfree().
+ *
+ * Each object's range ends in a guard page, never mapped: what runs past
+ * an object's end faults, so does what runs below its start (the page
+ * there is another's guard, or isn't allocated): a kernel stack that
+ * overflows, a buffer overrun, end in a page fault, not in another
+ * object. It costs addresses, not memory.
+ *
+ * Every allocation is counted by its malloc type (/proc/kvmem).
+ */
+
 #include <core/system.h>
 #include <core/panic.h>
-#include <core/assert.h>
+#include <core/string.h>
 
-#include <mm/pmap.h>
+#include <mm/buddy.h>
 #include <mm/mm.h>
-#include <mm/buddy.h> /* XXX */
+#include <mm/pmap.h>
 #include <mm/vm.h>
-
-uintptr_t __stack_chk_guard = 0xDEADBEEF;
-void __stack_chk_fail(void)
-{
-    panic("stack smashing detected");
-}
+#include <mm/vmem.h>
 
 struct queue *malloc_types = QUEUE_NEW();
 
@@ -22,312 +35,220 @@ MALLOC_DEFINE(M_QNODE, "queue-node", "queue node structure");
 MALLOC_DEFINE(M_HASHMAP, "hashmap", "hashmap structure");
 MALLOC_DEFINE(M_HASHMAP_NODE, "hashmap-node", "hashmap node structure");
 
-int debug_kmalloc = 0;
+/* the guard page after each object */
+#define KVMEM_GUARD     PAGE_SIZE
 
-struct kvmem_node {
-    uint32_t addr : 28; /* Offset, in KVMEM_ALIGN units (4 GiB) */
-    uint32_t free : 1;  /* Free or not flag */
-    uint32_t size : 26; /* Size, in KVMEM_ALIGN units (up to 1 GiB) */
-    uint32_t next : 25; /* Index of the next node */
-    struct malloc_type *type;
-};
+static struct vmem kvmem;
 
-size_t kvmem_used;
-size_t kvmem_obj_cnt;
-
-#define KVMEM_BASE       ARCH_KVMEM_BASE
-
-/* objects are 16-byte aligned (what x86-64 expects: stacks, fxsave) */
-#define KVMEM_ALIGN     16U
-
-#define NODE_ADDR(node) (KVMEM_BASE + ((node).addr) * KVMEM_ALIGN)
-#define NODE_SIZE(node) (((node).size) * KVMEM_ALIGN)
-#define LAST_NODE_INDEX (100000)
-#define MAX_NODE_SIZE   ((1UL << 26) - 1)
-
-#if 0
-struct vm_entry kvmem_nodes = {
-    .base  = KVMEM_NODES,
-    .size  = KVMEM_NODES_SIZE,
-    .flags = VM_KRW,
-};
-#endif
-
-//struct kvmem_node *nodes = (struct kvmem_node *) KVMEM_NODES;
-struct kvmem_node nodes[LAST_NODE_INDEX];
-
-void kvmem_setup(void)
-{
-    /* Setting up initial node */
-    nodes[0].addr = 0;
-    nodes[0].free = 1;
-    nodes[0].size = MIN(ARCH_KVMEM_SIZE / KVMEM_ALIGN, MAX_NODE_SIZE);   /* the region */
-    nodes[0].next = LAST_NODE_INDEX;
-
-    /* We have to set qnode to an arbitrary value since
-     * enqueue will use kmalloc which would try to enqueue
-     * M_QNODE type if qnode == NULL, gettings us in an
-     * infinite loop
-     */
-    M_QNODE.qnode = (void *) 0xDEADBEEF;
-    M_QNODE.qnode = enqueue(malloc_types, &M_QNODE);
-}
-
-uint32_t first_free_node = 0;
-static uint32_t get_node(void)
-{
-    for (unsigned i = first_free_node; i < LAST_NODE_INDEX; ++i) {
-        if (!nodes[i].size) {
-            return i;
-        }
-    }
-
-    panic("Can't find an unused node");
-}
-
-void release_node(uint32_t i)
-{
-    if (nodes[i].type)
-        nodes[i].type->nr--;
-
-    memset(&nodes[i], 0, sizeof(struct kvmem_node));
-    nodes[i].free = 1;
-}
-
-uint32_t get_first_fit_free_node(uint32_t size)
-{
-    unsigned i = first_free_node;
-
-    while (!(nodes[i].free && nodes[i].size >= size)) {
-        if (nodes[i].next == LAST_NODE_INDEX)
-            panic("Can't find a free node");
-        i = nodes[i].next;
-    }
-
-    return i;
-}
-
-void print_node(unsigned i)
-{
-    printk("Node[%d]\n", i);
-    printk("   |_ Addr   : %x\n", NODE_ADDR(nodes[i]));
-    printk("   |_ free?  : %s\n", nodes[i].free?"yes":"no");
-    printk("   |_ Size   : %d B [ %d KiB ]\n",
-        NODE_SIZE(nodes[i]), NODE_SIZE(nodes[i])/1024);
-    printk("   |_ Next   : %d\n", nodes[i].next );
-}
+size_t kvmem_used;      /* bytes of objects' pages, for /proc/meminfo */
+size_t kvmem_obj_cnt;   /* objects */
 
 void *slab_alloc(size_t size, struct malloc_type *type);
 int  slab_owns(void *ptr);
 void slab_free(void *ptr);
 
+void kvmem_setup(void)
+{
+    /* enqueue() allocates the list's node: M_QNODE's own can't be on the
+     * list before it, it gets a placeholder first */
+    M_QNODE.qnode = (void *) 0xDEADBEEF;
+    M_QNODE.qnode = enqueue(malloc_types, &M_QNODE);
+
+    if (vmem_init(&kvmem, "kvmem", ARCH_KVMEM_BASE, ARCH_KVMEM_SIZE, PAGE_SIZE))
+        panic("kvmem: no memory for its arena");
+}
+
+/* the object's pages, from `base': unmapped, back to the buddy allocator */
+static void kvmem_unmap(vaddr_t base, size_t size)
+{
+    for (vaddr_t va = base; va < base + size; va += PAGE_SIZE) {
+        paddr_t paddr = arch_page_get_mapping(kvm_space.pmap, va);
+
+        if (paddr) {
+            pmap_remove(kvm_space.pmap, va, va + PAGE_SIZE);
+            mm_page_dealloc(paddr);
+        }
+    }
+}
+
+/* an object of whole pages, its guard after it */
+static void *kvmem_alloc(size_t size, struct malloc_type *type)
+{
+    size = PAGE_ROUND(size);
+
+    struct vmem_seg *seg = vmem_alloc(&kvmem, size + KVMEM_GUARD);
+
+    if (!seg)
+        return NULL;
+
+    for (vaddr_t va = seg->base; va < seg->base + size; va += PAGE_SIZE) {
+        struct vm_page *vm_page = mm_page_alloc();
+
+        if (!vm_page || pmap_add(kvm_space.pmap, va, vm_page->paddr, VM_KRW)) {
+            if (vm_page)
+                mm_page_dealloc(vm_page->paddr);
+
+            kvmem_unmap(seg->base, va - seg->base);
+            vmem_free(&kvmem, seg);
+            return NULL;
+        }
+    }
+
+    seg->type  = type;
+    seg->bytes = size;
+
+    type->nr++;
+    type->total += size;
+    kvmem_used += size;
+    kvmem_obj_cnt++;
+
+    return (void *) seg->base;
+}
+
 void *kmalloc(size_t size, struct malloc_type *type, int flags)
 {
     /* the small objects, most of them, from slabs */
-    if (size <= SLAB_MAX) {
-        void *obj = slab_alloc(size, type);
+    void *obj = size <= SLAB_MAX ? slab_alloc(size, type) : kvmem_alloc(size, type);
 
-        if (type->qnode == NULL)
-            type->qnode = enqueue(malloc_types, type);
+    if (!obj)
+        return NULL;
 
-        if (flags & M_ZERO)
-            memset(obj, 0, size);
-
-        return obj;
-    }
-
-    /* round size to KVMEM_ALIGN units */
-    size = (size + KVMEM_ALIGN - 1) / KVMEM_ALIGN;
-
-    /* Zero sized nodes are considered unused, so never hand one out */
-    if (!size)
-        size = 1;
-
-    /* Look for a first fit free node */
-    unsigned i = get_first_fit_free_node(size);
-
-    /* Mark it as used */
-    nodes[i].free = 0;
-
-    /* Split the node if necessary */
-    if (nodes[i].size > size) {
-        unsigned n = get_node();
-
-        nodes[n].addr = nodes[i].addr + size;
-        nodes[n].free = 1;
-        nodes[n].size = nodes[i].size - size;
-        nodes[n].next = nodes[i].next;
-
-        nodes[i].next = n;
-        nodes[i].size = size;
-    }
-
-    nodes[i].type = type;
-    type->nr++;
-
-    type->total += NODE_SIZE(nodes[i]);
-    kvmem_used += NODE_SIZE(nodes[i]);
-    kvmem_obj_cnt++;
-
-    vaddr_t map_base = PAGE_ALIGN(NODE_ADDR(nodes[i]));
-    vaddr_t map_end  = PAGE_ROUND(NODE_ADDR(nodes[i]) + NODE_SIZE(nodes[i]));
-    size_t  map_size = (map_end - map_base)/PAGE_SIZE;
-
-    if (map_size) {
-        struct vm_entry vm_entry;
-
-        vm_entry.paddr = 0,
-        vm_entry.base  = map_base,
-        vm_entry.size  = map_size * PAGE_SIZE,
-        vm_entry.flags = VM_KRW,
-
-        vm_map(&kvm_space, &vm_entry);
-    }
-
-    if (type->qnode == NULL) {
+    if (type->qnode == NULL)
         type->qnode = enqueue(malloc_types, type);
-    }
 
-    void *obj = (void *) NODE_ADDR(nodes[i]);
-
-    if (flags & M_ZERO) {
-        memset(obj, 0, size * KVMEM_ALIGN);
-    }
+    if (flags & M_ZERO)
+        memset(obj, 0, size);
 
     return obj;
 }
 
-void kfree(void *_ptr)
+void kfree(void *ptr)
 {
-    //printk("kfree(%p)\n", _ptr);
-    uintptr_t ptr = (uintptr_t) _ptr;
+    if (!ptr)
+        return;
 
-    if (slab_owns(_ptr)) {
-        slab_free(_ptr);
+    if (slab_owns(ptr)) {
+        slab_free(ptr);
         return;
     }
 
-    if (ptr < KVMEM_BASE)  /* That's not even allocatable */
-        return;
+    struct vmem_seg *seg = vmem_find(&kvmem, (uintptr_t) ptr);
 
-    /* Look for the node containing _ptr -- merge sequential free nodes */
-    size_t cur_node = 0, prev_node = 0;
-
-    while (ptr != NODE_ADDR(nodes[cur_node])) {
-        /* check if current and previous node are free */
-        if (cur_node && nodes[cur_node].free && nodes[prev_node].free) {
-            /* check for overflow */
-            if ((uintptr_t) (nodes[cur_node].size + nodes[prev_node].size) <= MAX_NODE_SIZE) {
-                nodes[prev_node].size += nodes[cur_node].size;
-                nodes[prev_node].next  = nodes[cur_node].next;
-                release_node(cur_node);
-                cur_node = nodes[prev_node].next;
-
-                if (cur_node == LAST_NODE_INDEX)  /* Trying to free unallocated node */
-                    goto done;
-
-                continue;
-            }
-        }
-
-        prev_node = cur_node;
-        cur_node = nodes[cur_node].next;
-
-        if (cur_node == LAST_NODE_INDEX)  /* Trying to free unallocated node */
-            goto done;
+    /* not an object's start: a bug (a pointer into one, freed twice,
+     * never kmalloc's) */
+    if (!seg) {
+        printk("kfree: %p isn't an object kmalloc() gave\n", ptr);
+        panic("kfree of something kmalloc() didn't give");
     }
 
-    if (nodes[cur_node].free)  { /* Node is already free, dangling pointer? */
-        printk("double free detected at %p\n", ptr);
-        if (nodes[cur_node].type)
-            printk("object type: %s\n", nodes[cur_node].type->name);
-        panic("double free");
-        //goto done;
-    }
+    struct malloc_type *type = seg->type;
 
-    /* First we mark our node as free */
-    nodes[cur_node].free = 1;
-    
-    if (nodes[cur_node].type) {
-        nodes[cur_node].type->total -= NODE_SIZE(nodes[cur_node]);
-        nodes[cur_node].type->nr--;
-        nodes[cur_node].type = NULL;
-    }
-
-    if (debug_kmalloc)
-        printk("NODE_SIZE %d\n", NODE_SIZE(nodes[cur_node]));
-
-    kvmem_used -= NODE_SIZE(nodes[cur_node]);
+    type->nr--;
+    type->total -= seg->bytes;
+    kvmem_used -= seg->bytes;
     kvmem_obj_cnt--;
 
-    /* Now we merge all free nodes ahead -- except the last node */
-    while (nodes[cur_node].next < LAST_NODE_INDEX && nodes[cur_node].free) {
-        /* check if current and previous node are free */
-        if (cur_node && nodes[cur_node].free && nodes[prev_node].free) {
-            /* check for overflow */
-            if ((uintptr_t) (nodes[cur_node].size + nodes[prev_node].size) <= MAX_NODE_SIZE) {
-                nodes[prev_node].size += nodes[cur_node].size;
-                nodes[prev_node].next  = nodes[cur_node].next;
-                release_node(cur_node);
-                cur_node = nodes[prev_node].next;
-                continue;
-            }
-        }
-
-        prev_node = cur_node;
-        cur_node = nodes[cur_node].next;
-    }
-
-    cur_node = 0;
-    while (nodes[cur_node].next < LAST_NODE_INDEX) {
-        if (nodes[cur_node].free) {
-            //struct vm_entry vm_entry = {0};
-
-            //vm_entry.paddr = 0;
-            //vm_entry.base  = NODE_ADDR(nodes[cur_node]);
-            //vm_entry.size  = NODE_SIZE(nodes[cur_node]);
-            //vm_entry.flags = VM_KRW;
-
-            vaddr_t vaddr = NODE_ADDR(nodes[cur_node]);
-            size_t  size  = NODE_SIZE(nodes[cur_node]);
-
-            //vm_unmap(&kvm_space, &vm_entry);
-
-            /* XXX */
-            if (size < PAGE_SIZE) goto next;
-
-            vaddr_t sva = PAGE_ROUND(vaddr);
-            vaddr_t eva = PAGE_ALIGN(vaddr + size);
-
-            size_t nr = (eva - sva)/PAGE_SIZE;
-
-            while (nr--) {
-                paddr_t paddr = arch_page_get_mapping(kvm_space.pmap, sva);
-
-                if (paddr) {
-                    pmap_remove(kvm_space.pmap, sva, sva + PAGE_SIZE);
-                    buddy_free(BUDDY_ZONE_NORMAL, paddr, PAGE_SIZE);
-                }
-
-                sva += PAGE_SIZE;
-            }
-        }
-
-next:
-        cur_node = nodes[cur_node].next;
-    }
-
-done:
-    return;
+    kvmem_unmap(seg->base, seg->bytes);
+    vmem_free(&kvmem, seg);
 }
 
-void dump_nodes(void)
+/*
+ * Checks, on request (the kvmem.test and kvmem.guard arguments,
+ * tests/kvmem)
+ */
+
+MALLOC_DEFINE(M_KVMEM_TEST, "kvmem-test", "kvmem self-test object");
+
+static size_t kvmem_segs(void)
 {
-    printk("Nodes dump\n");
-    unsigned i = 0;
-    while (i < LAST_NODE_INDEX) {
-        print_node(i);
-        if (nodes[i].next == LAST_NODE_INDEX) break;
-        i = nodes[i].next;
+    size_t n = 0;
+
+    for (struct vmem_seg *seg = kvmem.segs; seg; seg = seg->next)
+        ++n;
+
+    return n;
+}
+
+#define TEST_OBJS   48
+
+/* objects of many sizes: each its own pages, its guard unmapped, none
+ * overwriting another; freed out of order, the arena as it was */
+static const char *kvmem_selftest_run(void)
+{
+    static uint8_t *obj[TEST_OBJS];
+    static size_t size[TEST_OBJS];
+    size_t inuse = kvmem.inuse, segs = kvmem_segs(), objs = kvmem_obj_cnt;
+
+    for (int round = 0; round < 2; ++round) {
+        for (int i = 0; i < TEST_OBJS; ++i) {
+            if (obj[i])
+                continue;
+
+            size[i] = SLAB_MAX + 1 + (i * 1237 + round * 4093) % (6 * PAGE_SIZE);
+
+            if (!(obj[i] = kmalloc(size[i], &M_KVMEM_TEST, 0)))
+                return "an allocation failed";
+
+            if ((uintptr_t) obj[i] % PAGE_SIZE)
+                return "an object isn't on a page";
+
+            if (arch_page_get_mapping(kvm_space.pmap, (vaddr_t) obj[i] + PAGE_ROUND(size[i])))
+                return "a guard page is mapped";
+
+            memset(obj[i], i + 1, size[i]);
+        }
+
+        for (int i = 0; i < TEST_OBJS; ++i)
+            for (size_t b = 0; obj[i] && b < size[i]; b += 97)
+                if (obj[i][b] != (uint8_t) (i + 1))
+                    return "an object was overwritten";
+
+        /* every third one, then every other: holes to merge and fill */
+        for (int i = round; i < TEST_OBJS; i += 3 - round) {
+            kfree(obj[i]);
+            obj[i] = NULL;
+        }
     }
+
+    if (M_KVMEM_TEST.nr != (size_t) (kvmem_obj_cnt - objs))
+        return "the type's count is wrong";
+
+    /* the rest, from the last */
+    for (int i = TEST_OBJS - 1; i >= 0; --i) {
+        kfree(obj[i]);
+        obj[i] = NULL;
+    }
+
+    if (M_KVMEM_TEST.nr || M_KVMEM_TEST.total)
+        return "the type still counts objects";
+
+    if (kvmem.inuse != inuse || kvmem_obj_cnt != objs)
+        return "the arena isn't as it was";
+
+    if (kvmem_segs() != segs)
+        return "free segments didn't merge";
+
+    return NULL;
+}
+
+void kvmem_selftest(void)
+{
+    const char *err = kvmem_selftest_run();
+
+    if (err)
+        printk("kvmem: self-test failed: %s\n", err);
+    else
+        printk("kvmem: self-test passed\n");
+}
+
+/* a write one byte past an object's end: its guard page faults (a panic) */
+void kvmem_guardtest(void)
+{
+    volatile char *buf = kmalloc(3000, &M_KVMEM_TEST, 0);
+    volatile char *past = buf + PAGE_ROUND(3000);
+
+    printk("kvmem: writing past %p's end, at %p\n", buf, past);
+    *past = 1;
+
+    printk("kvmem: the guard page didn't fault\n");
 }

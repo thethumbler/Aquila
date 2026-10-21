@@ -4,3 +4,4 @@ obj-y += module.o
 obj-y += snprintf.o
 obj-y += kargs.o
 obj-y += time.o
+obj-y += ssp.o

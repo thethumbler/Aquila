@@ -176,6 +176,8 @@ struct vm_page {
 extern struct vm_space kvm_space;
 
 void kvmem_setup(void);
+void kvmem_selftest(void);
+void kvmem_guardtest(void);
 
 /* mm/vmm.c XXX */
 int  vm_map(struct vm_space *vm_space, struct vm_entry *vm_entry);
