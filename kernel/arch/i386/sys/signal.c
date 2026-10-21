@@ -240,6 +240,11 @@ void x86_return_to_user(struct x86_regs *r, int syscall)
                 /* back to the int $0x80, the number in eax */
                 REG_IP(r) -= 2;
                 REG_AX(r) = thread->syscall_nr;
+
+                /* straight back into the same call, the same arguments:
+                 * it may go on where it was (a handler runs first
+                 * otherwise, its calls aren't the restart) */
+                thread->restarting = !sig;
             } else {
                 REG_AX(r) = -EINTR;
             }

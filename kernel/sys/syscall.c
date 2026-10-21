@@ -2152,10 +2152,14 @@ static int fd_ready(struct file *file, int write)
 }
 
 /* deadline of a select()/poll() timeout of `ns' nanoseconds, -1 for
- * none; 0 means don't wait */
+ * none; 0 means don't wait. Restarted after a stop: the deadline it had */
 static uint64_t poll_deadline(int64_t ns)
 {
-    return ns < 0 ? 0 : arch_rtime_ns() + ns;
+    uint64_t until = ns < 0 ? 0 : curthread->restarting ? curthread->restart_until :
+                     arch_rtime_ns() + ns;
+
+    curthread->restart_until = until;
+    return until;
 }
 
 static void sys_select(struct aquila_select_args *args)
@@ -2691,11 +2695,16 @@ static void sys_nanosleep(const struct aquila_timespec *req, struct aquila_times
         return;
     }
 
-    uint64_t until = arch_rtime_ns() + kreq.tv_sec * 1000000000ULL + kreq.tv_nsec;
+    /* until the deadline it had when a stop interrupted it, restarted
+     * after the stop; else from now */
+    uint64_t until = curthread->restarting ? curthread->restart_until :
+                     arch_rtime_ns() + kreq.tv_sec * 1000000000ULL + kreq.tv_nsec;
+
+    curthread->restart_until = until;
 
     if (sched_sleep(until)) {
         /* a signal: the time left, EINTR once a handler ran (a stop: the
-         * whole time again, as it's restarted) */
+         * call is restarted, until the same deadline) */
         if (rem) {
             uint64_t now = arch_rtime_ns();
             uint64_t left = now < until ? until - now : 0;

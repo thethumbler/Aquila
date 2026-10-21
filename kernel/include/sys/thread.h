@@ -44,6 +44,12 @@ struct thread {
     /** The system call it's in (the last it made), to restart it */
     int syscall_nr;
 
+    /** The call is a restart (a stop interrupted it, no handler ran):
+     *  restart_until is the deadline it had, which a call that sleeps
+     *  until one (nanosleep, poll, select) keeps */
+    int restarting;
+    uint64_t restart_until;
+
     /** What the thread exited with (thread_exit), for thread_join */
     void *exit_value;
 
