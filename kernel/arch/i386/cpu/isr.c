@@ -161,12 +161,10 @@ void __x86_isr(struct x86_regs *regs)
         if (addr < USER_STACK && uaccess_fixup(regs))
             return;
 
-        /* the kernel's, at a user address it didn't check: it can't go on
-         * (until every access goes through copyin and copyout) */
-        if (addr < USER_STACK)
-            signal_exit(SIGSEGV);
-
-        printk("kernel: page fault at %p\n", (void *) addr);
+        /* the kernel's anywhere else, even at a user address: user memory
+         * is only touched through copyin() and copyout(), this is a bug */
+        printk("kernel: page fault at %p%s\n", (void *) addr,
+               addr < USER_STACK ? " (user memory, outside copyin/copyout)" : "");
         x86_dump_registers(regs);
         panic("page fault in the kernel");
     }
