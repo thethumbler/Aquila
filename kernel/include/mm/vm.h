@@ -173,7 +173,6 @@ struct vm_page {
     size_t ref; /**< number of processes referencing this page */
 };
 
-extern struct vm_page pages[];
 extern struct vm_space kvm_space;
 
 void kvmem_setup(void);

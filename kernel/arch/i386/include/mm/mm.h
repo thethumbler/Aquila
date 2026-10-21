@@ -5,7 +5,15 @@
 #include <cpu/cpu.h>
 
 #define NR_PAGE_SIZE           2
-#define KERNEL_HEAP_SIZE       (8ULL * 1024 * 1024)  /* 8 MiB */
+
+/* the physical memory the boot code maps at the kernel's addresses (the
+ * kernel, then what mm_setup() needs at boot: pages[] is 16 bytes a
+ * page on i386, 32 on x86-64) */
+#if ARCH_BITS==32
+#define ARCH_BOOT_MAPPED       (128UL * 1024 * 1024)        /* 128 MiB */
+#else
+#define ARCH_BOOT_MAPPED       (1024UL * 1024 * 1024)       /* 1 GiB */
+#endif
 
 #if ARCH_BITS==32
 #define ARCH_KVMEM_BASE        (0xD0000000UL)

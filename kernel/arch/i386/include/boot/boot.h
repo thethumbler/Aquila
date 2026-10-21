@@ -31,9 +31,13 @@ build_multiboot_mmap(multiboot_info_t *info, mmap_t *boot_mmap, int max)
         uint64_t start = mmap->addr;
         uint64_t end   = mmap->addr + mmap->len;
 
+#if ARCH_BITS==32
         if (start < 0x100000000ULL) {
             if (end > 0xFFFFFFFFULL || end < start)
                 end = 0xFFFFFFFFULL;
+#else
+        {
+#endif
 
             boot_mmap[count++] = (mmap_t) {
                 .type  = mmap->type,

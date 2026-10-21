@@ -12,19 +12,11 @@
 size_t k_total_mem, k_used_mem;
 static uintptr_t kstart = 0, kend = 0;
 
-static char alloc_area[1024 * 1024]; /* 1 MiB heap area */
-static char *alloc_mark = alloc_area;
-
+/* the bitmaps are sized by the memory, from what mm_setup() set aside */
 static inline void *alloc(size_t size, size_t align)
 {
-    char *ret = (char *)((uintptr_t)(alloc_mark + align - 1) & (~(align - 1)));
-
-    if (ret + size > alloc_area + sizeof(alloc_area))
-        panic("buddy: out of boot allocation area");
-
-    alloc_mark = ret + size;
-    memset(ret, 0, size);
-    return ret;
+    extern void *mm_boot_alloc(size_t size, size_t align);
+    return mm_boot_alloc(size, align);
 }
 
 struct buddy buddies[BUDDY_ZONE_NR][BUDDY_MAX_ORDER+1];

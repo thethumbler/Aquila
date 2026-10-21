@@ -51,8 +51,8 @@ static void switch_to_higher_half(void)
     memset((void *) _BSP_PML4, 0, sizeof(_BSP_PML4));
 #endif
 
-    /* entries count required to map the kernel */
-    entries = ((uintptr_t)(&kernel_end) + KERNEL_HEAP_SIZE + TABLE_MASK) / TABLE_SIZE;
+    /* page tables to map the kernel and what follows it */
+    entries = ARCH_BOOT_MAPPED / TABLE_SIZE;
 
 #if ARCH_BITS==32
     uint32_t *_BSP_PT = (uint32_t *) scratch;
