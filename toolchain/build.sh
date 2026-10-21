@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Build the i686-aquila cross toolchain and C library.
+# Build the i686-aquila (or x86_64-aquila) cross toolchain and C library.
 #
 # usage: toolchain/build.sh [stage...]
 #
@@ -13,14 +13,18 @@
 #   headers     install the user/kernel ABI headers (include/uapi)
 #   libc        newlib with the aquila port (libc/) into the sysroot
 #   limine      Limine bootloader (BIOS) and its host tool, for the ISO image
+#               (i386 only, built with the i686-aquila toolchain)
 #
 # environment:
+#   ARCH        i386 (default) or x86_64
 #   BUILDDIR    output directory (default: <repo>/build)
 #   JOBS        parallel jobs (default: nproc)
 #
 # Results:
 #   $BUILDDIR/toolchain     cross tools, add $BUILDDIR/toolchain/bin to PATH
-#   $BUILDDIR/sysroot       target headers and libraries (/usr/include, /usr/lib)
+#                           (both architectures' tools, named by target)
+#   $BUILDDIR/sysroot       target headers and libraries (/usr/include,
+#                           /usr/lib), $BUILDDIR/sysroot-x86_64 for x86_64
 #
 # Host requirements: a C/C++ compiler, make, bison, flex, texinfo, GMP, MPFR,
 # MPC, wget, and nasm for Limine.
@@ -35,12 +39,25 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 BUILDDIR=${BUILDDIR:-$ROOT/build}
 JOBS=${JOBS:-$(nproc)}
 
-TARGET=i686-aquila
+ARCH=${ARCH:-i386}
+
 PREFIX=$BUILDDIR/toolchain
-SYSROOT=$BUILDDIR/sysroot
 DOWNLOADS=$BUILDDIR/downloads
 SRC=$BUILDDIR/toolchain-src
-OBJ=$BUILDDIR/toolchain-obj
+
+case $ARCH in
+    i386)
+        TARGET=i686-aquila
+        SYSROOT=$BUILDDIR/sysroot
+        OBJ=$BUILDDIR/toolchain-obj ;;
+    x86_64)
+        TARGET=x86_64-aquila
+        SYSROOT=$BUILDDIR/sysroot-x86_64
+        OBJ=$BUILDDIR/toolchain-obj-x86_64 ;;
+    *)
+        echo "unknown ARCH: $ARCH" >&2
+        exit 2 ;;
+esac
 PATCHES=$ROOT/toolchain/patches
 
 BINUTILS=binutils-2.47
@@ -222,7 +239,12 @@ stage_limine()
 }
 
 ALL_STAGES="fetch autotools binutils gcc headers libc limine"
-stages=${*:-$ALL_STAGES}
+
+if [ "$ARCH" = i386 ]; then
+    stages=${*:-$ALL_STAGES}
+else
+    stages=${*:-fetch autotools binutils gcc headers libc}
+fi
 
 for stage in $stages; do
     case " $ALL_STAGES " in

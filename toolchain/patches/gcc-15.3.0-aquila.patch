@@ -26,7 +26,7 @@ diff -ruN a/fixincludes/mkfixinc.sh b/fixincludes/mkfixinc.sh
 diff -ruN a/gcc/config/aquila.h b/gcc/config/aquila.h
 --- a/gcc/config/aquila.h
 +++ b/gcc/config/aquila.h
-@@ -0,0 +1,39 @@
+@@ -0,0 +1,42 @@
 +/* Target definitions for AquilaOS.
 +
 +This file is part of GCC.
@@ -36,12 +36,15 @@ diff -ruN a/gcc/config/aquila.h b/gcc/config/aquila.h
 +Software Foundation; either version 3, or (at your option) any later
 +version.  */
 +
-+/* Same type sizes as the i386 SysV ABI used by the kernel.  */
++/* Same type sizes as the i386 SysV ABI used by the kernel (x86-64's are
++   the LP64 ones of i386/x86-64.h).  */
++#ifndef TARGET_64BIT_DEFAULT
 +#undef  SIZE_TYPE
 +#define SIZE_TYPE "unsigned int"
 +
 +#undef  PTRDIFF_TYPE
 +#define PTRDIFF_TYPE "int"
++#endif
 +
 +/* Only static linking is supported.  */
 +#undef  LINK_SPEC
@@ -82,7 +85,7 @@ diff -ruN a/gcc/config.gcc b/gcc/config.gcc
  *-*-fuchsia*)
    native_system_header_dir=/include
    tmake_file="t-fuchsia"
-@@ -1956,6 +1962,9 @@
+@@ -1956,9 +1962,15 @@
  i[34567]86-*-elfiamcu)
  	tm_file="${tm_file} i386/unix.h i386/att.h elfos.h newlib-stdint.h i386/iamcu.h"
  	;;
@@ -92,10 +95,16 @@ diff -ruN a/gcc/config.gcc b/gcc/config.gcc
  i[34567]86-*-elf*)
  	tm_file="${tm_file} i386/unix.h i386/att.h elfos.h newlib-stdint.h i386/i386elf.h"
  	;;
++x86_64-*-aquila*)
++	tm_file="${tm_file} i386/unix.h i386/att.h elfos.h newlib-stdint.h i386/i386elf.h i386/x86-64.h aquila.h"
++	;;
+ x86_64-*-elf*)
+ 	tm_file="${tm_file} i386/unix.h i386/att.h elfos.h newlib-stdint.h i386/i386elf.h i386/x86-64.h"
+ 	;;
 diff -ruN a/libgcc/config.host b/libgcc/config.host
 --- a/libgcc/config.host
 +++ b/libgcc/config.host
-@@ -753,6 +753,10 @@
+@@ -753,9 +753,17 @@
  i[34567]86-*-elfiamcu)
  	tmake_file="$tmake_file i386/t-crtstuff t-softfp-sfdftf i386/32/t-softfp i386/32/t-iamcu i386/t-softfp t-softfp t-dfprules"
  	;;
@@ -106,3 +115,10 @@ diff -ruN a/libgcc/config.host b/libgcc/config.host
  i[34567]86-*-elf*)
  	tmake_file="$tmake_file i386/t-crtstuff t-crtstuff-pic t-libgcc-pic"
  	;;
++x86_64-*-aquila*)
++	extra_parts="$extra_parts crtbegin.o crtend.o"
++	tmake_file="$tmake_file i386/t-crtstuff t-crtstuff-pic t-libgcc-pic"
++	;;
+ x86_64-*-elf* | x86_64-*-rtems*)
+ 	tmake_file="$tmake_file i386/t-crtstuff t-crtstuff-pic t-libgcc-pic"
+ 	case ${host} in

@@ -10,6 +10,15 @@ diff -ruN a/bfd/config.bfd b/bfd/config.bfd
      targ_defvec=i386_elf32_vec
      targ64_selvecs="x86_64_elf64_vec"
      ;;
+@@ -1341,7 +1341,7 @@
+     targ_archs="$targ_archs bfd_powerpc_arch bfd_rs6000_arch"
+     want64=true
+     ;;
+-  x86_64-*-dicos* | x86_64-*-dragonfly* | x86_64-*-haiku* | x86_64-*-redox*)
++  x86_64-*-dicos* | x86_64-*-dragonfly* | x86_64-*-haiku* | x86_64-*-redox* | x86_64-*-aquila*)
+     targ_defvec=x86_64_elf64_vec
+     targ_selvecs="i386_elf32_vec"
+     want64=true
 diff -ruN a/config.sub b/config.sub
 --- a/config.sub
 +++ b/config.sub
@@ -44,3 +53,12 @@ diff -ruN a/ld/configure.tgt b/ld/configure.tgt
  i[3-7]86-*-solaris2*)
  			targ_emul=elf_i386_sol2
  			targ_extra_emuls=elf_i386
+@@ -953,6 +955,8 @@
+ x86_64-*-redox*)	targ_emul=elf_x86_64
+ 			targ_extra_emuls=elf_i386
+ 			;;
++x86_64-*-aquila*)	targ_emul=elf_x86_64
++			;;
+ x86_64-*-solaris2*)
+ 			targ_emul=elf_x86_64_sol2
+ 			targ_extra_libpath=elf_i386_sol2
