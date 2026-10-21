@@ -1,5 +1,6 @@
 #include <core/system.h>
 #include <mm/vm.h>
+#include <mm/pmap.h>
 
 static struct vm_pager vnode_pager;
 
@@ -44,18 +45,14 @@ struct vm_object *vm_object_vnode(struct vnode *vnode)
 }
 
 
-/* where a page is mapped to be filled, while no other page-in can run */
-static char __load[PAGE_SIZE] __aligned(PAGE_SIZE);
-
 struct vm_page *vnode_page_in(struct vm_object *vm_object, size_t off)
 {
     struct vnode *vnode = (struct vnode *) vm_object->p;
 
     off = PAGE_ALIGN(off);
 
-    /* read into a buffer of its own: reading may sleep (on the disk), and
-     * other page-ins use __load meanwhile; a short read leaves zeros, not
-     * stale memory */
+    /* read into a buffer of its own: reading may sleep (on the disk); a
+     * short read leaves zeros, not stale memory */
     char *buf = kmalloc(PAGE_SIZE, &M_BUFFER, M_ZERO);
     if (!buf) return NULL;
 
@@ -81,8 +78,7 @@ struct vm_page *vnode_page_in(struct vm_object *vm_object, size_t off)
     vm_page->off = off;
     vm_page->ref = 1;
 
-    mm_page_map(kvm_space.pmap, (vaddr_t) __load, vm_page->paddr, VM_KW);
-    memcpy(__load, buf, PAGE_SIZE);
+    pmap_page_write(vm_page->paddr, 0, PAGE_SIZE, buf);
     kfree(buf);
 
     vm_object_page_insert(vm_object, vm_page);
