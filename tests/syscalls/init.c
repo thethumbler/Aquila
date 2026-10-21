@@ -9,7 +9,8 @@
  * - FIFOs
  * - sessions and controlling terminals, on a pty
  * - stopping and continuing processes, the terminal line discipline
- * - select, poll and terminal read timeouts (VTIME)
+ * - select, poll and terminal read timeouts (VTIME); nanosleep, poll and
+ *   select stopped and continued keep their deadline
  * - flock
  * - anonymous memory (mmap), shutdown() of sockets, the interval timer
  * - SA_RESTART, SA_NOCLDWAIT and an ignored SIGCHLD, getrandom
@@ -959,6 +960,76 @@ static void open_files(void)
     check("open file: then no reader", SC(SYS_write, ofile_pipe[1], "x", 1), -EPIPE);
     SC(SYS_close, ofile_pipe[1], 0, 0);
     SC(SYS_sigaction, SIGPIPE, &dfl, 0);
+}
+
+
+/*
+ * A sleep stopped and continued goes on until the deadline it had (the
+ * call is restarted, it keeps its deadline): a child waits 400 ms, it's
+ * stopped at about 100 ms and continued at about 300 ms, it wakes at
+ * about 400 ms, not 600. Exits with how long it waited, in 10 ms.
+ */
+static int stop_pipe[2];
+
+static void stopped_nanosleep(void)
+{
+    int t = now_ms();
+    struct aquila_timespec d = {0, 400000000};
+    SC(SYS_nanosleep, &d, 0, 0);
+    SC(SYS_exit, (now_ms() - t) / 10, 0, 0);
+}
+
+static void stopped_poll(void)
+{
+    int t = now_ms();
+    struct pollfd p = {stop_pipe[0], POLLIN, 0};
+    SC(SYS_poll, &p, 1, 400);
+    SC(SYS_exit, (now_ms() - t) / 10, 0, 0);
+}
+
+static void stopped_select(void)
+{
+    int t = now_ms();
+    u32 rset[2] = {1u << stop_pipe[0], 0};
+    struct { uint64_t sec; long usec; } tv = {0, 400000};  /* the kernel's timeval */
+    struct aquila_select_args sel = {stop_pipe[0] + 1, rset, 0, 0, &tv};
+    SC(SYS_select, &sel, 0, 0);
+    SC(SYS_exit, (now_ms() - t) / 10, 0, 0);
+}
+
+/* fn in a child stopped from 100 to 300 ms: how long it waited (10 ms) */
+static int stopped_wait(void (*fn)(void))
+{
+    struct aquila_timespec d = {0, 100000000};
+    int st, c = SC(SYS_fork, 0, 0, 0);
+
+    if (!c)
+        fn();
+
+    SC(SYS_nanosleep, &d, 0, 0);
+    SC(SYS_kill, c, SIGSTOP, 0);
+    SC(SYS_waitpid, c, &st, WUNTRACED);
+    d.tv_nsec = 200000000;
+    SC(SYS_nanosleep, &d, 0, 0);
+    SC(SYS_kill, c, SIGCONT, 0);
+    SC(SYS_waitpid, c, &st, 0);
+
+    return st >> 8;
+}
+
+static void stopped_sleeps(void)
+{
+    SC(SYS_pipe, stop_pipe, 0, 0);
+
+    int n = stopped_wait(stopped_nanosleep);
+    check("stopped nanosleep: its deadline kept (x10 ms)", n >= 38 && n <= 50 ? 40 : n, 40);
+    n = stopped_wait(stopped_poll);
+    check("stopped poll: its deadline kept (x10 ms)", n >= 38 && n <= 50 ? 40 : n, 40);
+    n = stopped_wait(stopped_select);
+    check("stopped select: its deadline kept (x10 ms)", n >= 38 && n <= 50 ? 40 : n, 40);
+
+    SC(SYS_close, stop_pipe[0], 0, 0);
+    SC(SYS_close, stop_pipe[1], 0, 0);
 }
 
 void aq_main(void)
@@ -2250,6 +2321,7 @@ void aq_main(void)
     user_memory();
     orphans();
     open_files();
+    stopped_sleeps();
 
     aq_end();
 }
