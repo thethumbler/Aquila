@@ -44,6 +44,7 @@ and `fakeroot` (skipped if missing). Build output goes to
 | `system`   | the initrd built from source (with contrib/, without ports/): logins on the serial console, then dash runs commands, pipelines, `$(...)`, a long line, `^C`, `/dev/tty` and sbase tools, `nc` over loopback, and the `dhcp` service enabled (sdhcp gets the address from QEMU's user network, a ping goes through) (needs `make toolchain` and `make`) |
 | `disk`     | the system installed on a hard disk image (`mk/hdd.sh`): booted from it with Limine twice, a file written on the first boot is read on the second (`mk/hdd-kernel.sh` and `mk/hdd-update.sh` put the kernel and an updated system on it in between), `e2fsck` is clean (needs `make toolchain` and `make`) |
 | `tcc`      | the tcc port (`make ports`) on AquilaOS: compiles and runs programs against the C library and libm (skipped without the port) |
+| `curl`     | the curl port (`make ports`) on AquilaOS, against HTTPS servers on the host with a CA made for the test: the page fetched over TLS 1.3, a certificate for another name and one from an unknown CA refused (skipped without the port) |
 
 A test fails on a `FAIL` line, a kernel panic, a guest reset (QEMU runs
 with `-no-reboot`) or if it doesn't finish in time.

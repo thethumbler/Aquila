@@ -13,7 +13,7 @@
 # QEMU uses KVM when /dev/kvm can be used, KVM=0 in the environment turns
 # it off.
 #
-# tests: ata cpu syscalls memory kvmem clock irq net tcp ext2 libc system disk tcc (default: all)
+# tests: ata cpu syscalls memory kvmem clock irq net tcp ext2 libc system disk tcc curl (default: all)
 #
 # Requires gcc with 32-bit support, ld, cpio and qemu-system-i386 (or
 # qemu-system-x86_64). The ext2
@@ -28,7 +28,7 @@ set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 TESTS=$ROOT/tests
 
-ALL_TESTS="ata cpu syscalls memory kvmem clock irq net tcp ext2 libc system disk tcc"
+ALL_TESTS="ata cpu syscalls memory kvmem clock irq net tcp ext2 libc system disk tcc curl"
 
 ARCH=x86_64
 build=1
@@ -927,6 +927,117 @@ END
     done
 
     [ $missing = 0 ] && echo "compiled and ran programs on AquilaOS, with libc and libm"
+}
+
+# HTTPS with the curl port (TLS through Mbed TLS), from the system to
+# servers on the host (10.0.2.2): a certificate for aquila.test from a CA
+# made for the test, which curl is given, and one for wrong.test; the
+# page fetched over TLS 1.3, the wrong name and the unknown CA refused
+test_curl()
+{
+    local log=$OUT/curl/serial.log
+    local ports=$MAIN_BUILD/ports/root dir=$OUT/curl
+
+    if [ ! -x "$CROSS_CC" ]; then
+        echo "SKIP: no ${CROSS_CC##*/} toolchain, run make toolchain"
+        return 0
+    fi
+
+    if [ ! -x "$ports/usr/bin/curl" ]; then
+        echo "SKIP: the curl port isn't built, run make ports"
+        return 0
+    fi
+
+    rm -rf "$dir/pki" "$dir/overlay"
+    mkdir -p "$dir/pki" "$dir/overlay/etc"
+
+    # the CA, the server certificates it signs
+    (
+        cd "$dir/pki"
+        openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj /CN=aquila-test-ca \
+            -keyout ca.key -out ca.pem
+        for name in aquila.test wrong.test; do
+            openssl req -newkey rsa:2048 -nodes -subj "/CN=$name" -keyout "$name.key" -out "$name.csr"
+            printf 'subjectAltName=DNS:%s\n' "$name" > "$name.ext"
+            openssl x509 -req -in "$name.csr" -CA ca.pem -CAkey ca.key -CAcreateserial -days 2 \
+                -extfile "$name.ext" -out "$name.pem"
+        done
+    ) > "$dir/pki.log" 2>&1 || { tail -5 "$dir/pki.log"; return 1; }
+
+    cp "$dir/pki/ca.pem" "$dir/overlay/etc/test-ca.pem"
+
+    make -C "$ROOT" initrd CONFIG=$ARCH-pc BUILDDIR="$dir/build" TOOLCHAIN="$ROOT/build/toolchain" \
+        CONTRIB_ROOT="$MAIN_BUILD/contrib/root" PORTS_ROOT="$ports" ROOTFS_OVERLAY="$dir/overlay" \
+        > "$dir/build.log" 2>&1 || {
+        tail -20 "$dir/build.log"
+        return 1
+    }
+
+    # two free ports, the servers on them
+    local p1 p2
+    read -r p1 p2 < <(python3 -c 'import socket
+s = [socket.socket() for _ in range(2)]
+[x.bind(("127.0.0.1", 0)) for x in s]
+print(*[x.getsockname()[1] for x in s])')
+
+    rm -f "$dir/ready1" "$dir/ready2"
+    python3 "$TESTS/curl/server.py" "$dir/pki/aquila.test.pem" "$dir/pki/aquila.test.key" "$p1" "$dir/ready1" &
+    local s1=$!
+    python3 "$TESTS/curl/server.py" "$dir/pki/wrong.test.pem" "$dir/pki/wrong.test.key" "$p2" "$dir/ready2" &
+    local s2=$!
+
+    for _ in $(seq 100); do [ -f "$dir/ready1" ] && [ -f "$dir/ready2" ] && break; sleep 0.1; done
+
+    local fifo=$dir/input
+    rm -f "$fifo" "$log.raw"
+    mkfifo "$fifo"
+    timeout 120 $QEMU $ACCEL -kernel "$KERNEL" -initrd "$dir/build/initrd.img" \
+        -append earlycon=ttyS0 -m 256 -display none -no-reboot -serial stdio \
+        -netdev user,id=n0 -device e1000,netdev=n0 \
+        < "$fifo" > "$log.raw" 2>/dev/null &
+    local pid=$!
+
+    prompts()
+    {
+        for _ in $(seq 600); do
+            [ "$(grep -a -c '^# ' "$log.raw")" -ge "$1" ] && return 0
+            sleep 0.1
+        done
+        return 1
+    }
+
+    exec 3> "$fifo"
+    local n=1 line
+    for _ in $(seq 600); do grep -a -q 'login: ' "$log.raw" && break; sleep 0.1; done
+    printf 'root\r' >&3
+    prompts 1
+    while IFS= read -r line; do
+        printf '%s\r' "$line" >&3
+        n=$((n + 1))
+        prompts $n || break
+    done <<END
+ifconfig eth0 up; sdhcp eth0; sleep 3
+curl -sS --cacert /etc/test-ca.pem --resolve aquila.test:$p1:10.0.2.2 https://aquila.test:$p1/
+curl -sSv --cacert /etc/test-ca.pem --resolve aquila.test:$p1:10.0.2.2 -o /dev/null https://aquila.test:$p1/ 2>&1 | grep 'Handshake complete'
+curl -sS --cacert /etc/test-ca.pem --resolve aquila.test:$p2:10.0.2.2 https://aquila.test:$p2/; echo "wrong-name=\$?"
+curl -sS --resolve aquila.test:$p1:10.0.2.2 https://aquila.test:$p1/; echo "unknown-ca=\$?"
+END
+    printf 'poweroff\r' >&3
+    wait $pid
+    exec 3>&-
+    kill $s1 $s2 2>/dev/null
+    wait $s1 $s2 2>/dev/null
+    tr -d '\r' < "$log.raw" > "$log"
+
+    local missing=0 want
+    for want in '^aquila-tls-ok$' 'mbedTLS: TLSv1\.3 Handshake complete' '^wrong-name=60$' '^unknown-ca=60$'; do
+        if ! grep -a -q -E -- "$want" "$log"; then
+            echo "missing output: $want"
+            missing=1
+        fi
+    done
+
+    [ $missing = 0 ] && echo "HTTPS over TLS 1.3: the page fetched, the wrong name and the unknown CA refused"
 }
 
 #
