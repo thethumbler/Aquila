@@ -123,7 +123,7 @@ static void pty_session(void)
     SC(SYS_pipe, ready, 0, 0);
     c = SC(SYS_fork, 0, 0, 0);
     if (!c) {
-        struct aquila_sigaction hsa = {(u32) hup_handler, 0, 0};
+        struct aquila_sigaction hsa = {(uptr) hup_handler, 0, 0};
         SC(SYS_sigaction, SIGHUP, &hsa, 0);
         SC(SYS_write, ready[1], "R", 1);
         for (;;)
@@ -328,7 +328,7 @@ static int str_eq(const char *a, const char *b)
  * argv and envp are on the entry stack */
 static void script_interpreter(void)
 {
-    u32 *entry = (u32 *) aq_entry_esp;
+    uptr *entry = (uptr *) aq_entry_esp;
     char **argv = (char **) entry[1];
 
     if (entry[0] != 4 || !str_eq(argv[1], "-x y"))
@@ -443,7 +443,7 @@ void aq_main(void)
     check("sigaction kact", SC(SYS_sigaction, SIGUSR2, KADDR, 0), -EFAULT);
     sa.sa_handler = KADDR;
     check("sigaction khandler", SC(SYS_sigaction, SIGUSR2, &sa, 0), -EFAULT);
-    sa.sa_handler = (u32) handler;
+    sa.sa_handler = (uptr) handler;
     check("sigaction handler", SC(SYS_sigaction, SIGUSR2, &sa, 0), 0);
     check("kill self handler", SC(SYS_kill, pid, SIGUSR2, 0), 0);
     check("handler ran", got_sig, SIGUSR2);
@@ -471,7 +471,7 @@ void aq_main(void)
     /* async signal to busy child (delivered on context switch) */
     c = SC(SYS_fork, 0, 0, 0);
     if (!c) {
-        struct aquila_sigaction s2 = {(u32) child_handler, 0, 0};
+        struct aquila_sigaction s2 = {(uptr) child_handler, 0, 0};
         SC(SYS_sigaction, SIGUSR1, &s2, 0);
         for (;;);
     }
@@ -483,7 +483,12 @@ void aq_main(void)
     /* sbrk / munmap */
     int brk = SC(SYS_sbrk, 0, 0, 0);
     check("sbrk neg", SC(SYS_sbrk, -0x10000000, 0, 0), -1);
+    /* more than there is below the stack */
+#ifdef __x86_64__
+    check("sbrk huge", SC(SYS_sbrk, 0x800000000000ul, 0, 0), -1);
+#else
     check("sbrk huge", SC(SYS_sbrk, 0xB0000000, 0, 0), -1);
+#endif
     check("sbrk ok", SC(SYS_sbrk, 0x1000, 0, 0), brk);
     check("munmap len0", SC(SYS_munmap, brk & ~0xfff, 0, 0), -EINVAL);
 
@@ -496,7 +501,7 @@ void aq_main(void)
 
     /* mmap */
     void *mret;
-    struct aquila_mmap_args ma = {(void *) 0xC0000000, 0x1000, PROT_READ | PROT_WRITE, MAP_FIXED | MAP_PRIVATE, aq_out, 0};
+    struct aquila_mmap_args ma = {(void *) KADDR, 0x1000, PROT_READ | PROT_WRITE, MAP_FIXED | MAP_PRIVATE, aq_out, 0};
     check("mmap fixed kernel", SC(SYS_mmap, &ma, &mret, 0), -EINVAL);
     check("mmap kret", SC(SYS_mmap, &ma, KADDR, 0), -EFAULT);
 
@@ -504,7 +509,7 @@ void aq_main(void)
     struct aquila_mmap_args aa = {0, 100, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0};
     check("mmap anonymous", SC(SYS_mmap, &aa, &mret, 0), 0);
     volatile char *anon = mret;
-    check("mmap anonymous page aligned", (u32) anon & 0xfff, 0);
+    check("mmap anonymous page aligned", (uptr) anon & 0xfff, 0);
     check("mmap anonymous zero", anon[0] | anon[99] | anon[4095], 0);
     anon[0] = 'p';
     int ac = SC(SYS_fork, 0, 0, 0);
@@ -526,9 +531,9 @@ void aq_main(void)
     check("mmap fixed unaligned", SC(SYS_mmap, &aa, &mret, 0), -EINVAL);
 
     /* threads */
-    struct aquila_thread_args ut = {KADDR, (u32) thr, 0, 0, 0};
+    struct aquila_thread_args ut = {KADDR, (uptr) thr, 0, 0, 0};
     check("thread kstack", SC(SYS_thread_create, &ut, 0, 0), -EFAULT);
-    ut.stack = (u32) &tstack[8192];
+    ut.stack = (uptr) &tstack[8192];
     int tid = SC(SYS_thread_create, &ut, 0, 0);
     void *tval = 0;
     check("thread join", SC(SYS_thread_join, tid, &tval, 0), tid);
@@ -952,7 +957,7 @@ void aq_main(void)
     SC(SYS_close, fd, 0, 0);
 
     /* a reader interrupted while waiting leaves no reader behind */
-    sa.sa_handler = (u32) handler;
+    sa.sa_handler = (uptr) handler;
     SC(SYS_sigaction, SIGUSR1, &sa, 0);
     c = SC(SYS_fork, 0, 0, 0);
     if (!c)
@@ -1087,7 +1092,7 @@ void aq_main(void)
     /* a caught SIGTSTP doesn't stop */
     c = SC(SYS_fork, 0, 0, 0);
     if (!c) {
-        struct aquila_sigaction tsa = {(u32) sigtstp_handler, 0, 0};
+        struct aquila_sigaction tsa = {(uptr) sigtstp_handler, 0, 0};
         SC(SYS_sigaction, SIGTSTP, &tsa, 0);
         spin_forever();
     }
@@ -1122,7 +1127,8 @@ void aq_main(void)
     check("woke before a second", now_ms() - t1 < 1000, 1);
     check("read end set", rs.bits[0], 1UL << pp[0]);
     SC(SYS_waitpid, c, &st, 0);
-    struct fdset bad = {{0, 1UL << (40 - 32)}};  /* descriptor 40 */
+    struct fdset bad = {{0, 0}};  /* descriptor 40 */
+    bad.bits[40 / (8 * sizeof(long))] = 1UL << (40 % (8 * sizeof(long)));
     check("select closed fd", do_select(41, &bad, 0, 0), -EBADF);
     fd = SC(SYS_open, "/tmp/other", O_RDONLY, 0);
     rs.bits[0] = 1UL << fd;
@@ -1168,7 +1174,7 @@ void aq_main(void)
     check("realtime ns", rns >= 90000000 && rns < 900000000, 1);
 
     /* the interval timer: SIGALRM every 50ms, read, then disarmed */
-    struct aquila_sigaction asa = {(u32) alarm_handler, 0, 0};
+    struct aquila_sigaction asa = {(uptr) alarm_handler, 0, 0};
     SC(SYS_sigaction, SIGALRM, &asa, 0);
     struct aquila_itimer it = {50000000, 50000000}, iold = {1, 1};
     check("setitimer kaddr", SC(SYS_setitimer, AQUILA_ITIMER_REAL, KADDR, 0), -EFAULT);
@@ -1212,7 +1218,7 @@ void aq_main(void)
     char rb = 0;
     SC(SYS_pipe, rp, 0, 0);
     for (int restart = 1; restart >= 0; --restart) {
-        asa = (struct aquila_sigaction) {(u32) alarm_handler, 0, restart ? SA_RESTART : 0};
+        asa = (struct aquila_sigaction) {(uptr) alarm_handler, 0, restart ? SA_RESTART : 0};
         SC(SYS_sigaction, SIGALRM, &asa, 0);
         c = SC(SYS_fork, 0, 0, 0);
         if (!c) {
@@ -1262,7 +1268,7 @@ void aq_main(void)
     SC(SYS_nanosleep, &ts, 0, 0);
     check("SIGCHLD ignored, no zombie", SC(SYS_waitpid, c, &st, 0), -ECHILD);
     got_sig = 0;
-    csa = (struct aquila_sigaction) {(u32) handler, 0, SA_NOCLDWAIT};
+    csa = (struct aquila_sigaction) {(uptr) handler, 0, SA_NOCLDWAIT};
     SC(SYS_sigaction, SIGCHLD, &csa, 0);
     c = SC(SYS_fork, 0, 0, 0);
     if (!c)
@@ -1318,7 +1324,7 @@ void aq_main(void)
     check("times EFAULT", SC(SYS_times, KADDR, 0, 0), -EFAULT);
 
     /* interrupted by a signal: EINTR and the time left */
-    sa.sa_handler = (u32) handler;
+    sa.sa_handler = (uptr) handler;
     SC(SYS_sigaction, SIGUSR1, &sa, 0);
     c = SC(SYS_fork, 0, 0, 0);
     if (!c) {
@@ -1338,7 +1344,7 @@ void aq_main(void)
 
     /* --- signal masks --- */
     unsigned long set = 1UL << SIGUSR1, old = 0;
-    sa.sa_handler = (u32) handler;
+    sa.sa_handler = (uptr) handler;
     SC(SYS_sigaction, SIGUSR1, &sa, 0);
     got_sig = 0;
     check("block SIGUSR1", SC(SYS_sigmask, SIG_BLOCK, &set, &old), 0);
@@ -1395,7 +1401,7 @@ void aq_main(void)
     /* process groups: a child in its own group, signalled through it */
     c = SC(SYS_fork, 0, 0, 0);
     if (!c) {
-        struct aquila_sigaction s3 = {(u32) child_handler, 0, 0};
+        struct aquila_sigaction s3 = {(uptr) child_handler, 0, 0};
         SC(SYS_sigaction, SIGUSR1, &s3, 0);
         for (;;);
     }
@@ -1519,7 +1525,7 @@ void aq_main(void)
     check("KDGKBMODE raw", vi, K_RAW);
 
     /* VT_PROCESS: switching away waits for VT_RELDISP */
-    struct aquila_sigaction vsa = {(u32) vt_handler, 0, 0};
+    struct aquila_sigaction vsa = {(uptr) vt_handler, 0, 0};
     SC(SYS_sigaction, SIGUSR1, &vsa, 0);
     SC(SYS_sigaction, SIGUSR2, &vsa, 0);
     struct vt_mode vm = {VT_PROCESS, 0, SIGUSR1, SIGUSR2, 0}, vm2 = {0};

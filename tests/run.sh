@@ -514,6 +514,11 @@ test_tcc()
     local log=$OUT/tcc/serial.log
     local ports=$ROOT/build/ports/root
 
+    if [ ! -x "$CROSS_CC" ]; then
+        echo "SKIP: no ${CROSS_CC##*/} toolchain, run make toolchain"
+        return 0
+    fi
+
     if [ ! -x "$ports/usr/bin/tcc" ]; then
         echo "SKIP: the tcc port isn't built, run make ports"
         return 0

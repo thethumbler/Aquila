@@ -47,7 +47,13 @@ void arch_syscall(struct x86_regs *r);
 #endif
 #define USER_STACK_BASE (USER_STACK - USER_STACK_SIZE)
 
+#if ARCH_BITS==32
 #define KERN_STACK_SIZE (8192U)  /* 8 KiB */
+#else
+/* frames are bigger (a symbolic link loop is lookups 8 deep, with a 4 KiB
+ * path parsed at the end) */
+#define KERN_STACK_SIZE (16384U) /* 16 KiB */
+#endif
 
 static inline void arch_interrupts_enable(void)
 {
