@@ -1,0 +1,12 @@
+--- a/library/platform_util.c
++++ b/library/platform_util.c
+@@ -219,7 +219,8 @@
+ #include <unistd.h>
+ #endif
+ 
+-#if (defined(_POSIX_VERSION) && _POSIX_VERSION >= 199309L) || defined(__HAIKU__)
++#if (defined(_POSIX_VERSION) && _POSIX_VERSION >= 199309L) || defined(__HAIKU__) || \
++    defined(__aquila__)
+ mbedtls_ms_time_t mbedtls_ms_time(void)
+ {
+     int ret;
