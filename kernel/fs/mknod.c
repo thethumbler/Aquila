@@ -7,7 +7,7 @@ int vfs_mknod(const char *path, mode_t mode, dev_t dev, struct uio *uio, struct 
     struct vnode *dir = NULL;
     char *name = NULL;
 
-    if ((ret = vfs_lookup_parent(path, uio, &dir, &name, NULL)))
+    if ((ret = vfs_lookup_parent(path, uio, &dir, &name)))
         return ret == -EBUSY ? -EEXIST : ret;
 
     /* creating an entry needs write and search permission on the directory */

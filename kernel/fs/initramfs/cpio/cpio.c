@@ -204,6 +204,21 @@ static int cpio_finddir(struct vnode *root, const char *name, struct dirent *dir
     if (!S_ISDIR(root->mode))   /* Not even a directory */
         return -ENOTDIR;
 
+    /* its parent (the root has none: it's the root) */
+    if (!strcmp(name, "..")) {
+        struct vnode *parent = ((struct cpio *) root->p)->parent;
+
+        if (!parent)
+            return -ENOENT;
+
+        if (dirent) {
+            dirent->d_ino = (vino_t) parent;
+            cpio_dirent_name(dirent, name);
+        }
+
+        return 0;
+    }
+
     struct vnode *dir = ((struct cpio *) root->p)->dir;
 
     if (!dir)   /* Directory has no children */

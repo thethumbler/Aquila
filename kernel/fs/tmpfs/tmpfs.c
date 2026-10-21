@@ -143,7 +143,7 @@ static int tmpfs_init()
     return vfs_install(&tmpfs);
 }
 
-static int tmpfs_mount(const char *dir, int flags __unused, void *data __unused)
+static int tmpfs_mount(struct vnode *dir, int flags __unused, void *data __unused)
 {
     /* Initalize new */
     struct vnode *tmpfs_root = kmalloc(sizeof(struct vnode), &M_VNODE, M_ZERO);

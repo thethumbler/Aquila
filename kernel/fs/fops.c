@@ -154,11 +154,6 @@ ssize_t vfs_file_close(struct file *file)
     if (!file || !file->vnode)
         return -EINVAL;
 
-    if (file->path) {
-        kfree(file->path);
-        file->path = NULL;
-    }
-
     vfs_file_lock_release(file);
 
     if (file->flags & FILE_SOCKET)

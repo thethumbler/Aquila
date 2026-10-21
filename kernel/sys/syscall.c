@@ -103,29 +103,28 @@ static int at_uio(int dirfd, const char *path, struct uio *uio)
     if (!file)
         return -EBADF;
 
-    /* only directories opened by path know where they are */
-    if ((file->flags & FILE_SOCKET) || !S_ISDIR(file->vnode->mode) || !file->path)
+    /* the directory itself (the call holds the file, its vnode stays) */
+    if ((file->flags & FILE_SOCKET) || !S_ISDIR(file->vnode->mode))
         return -ENOTDIR;
 
-    uio->cwd = file->path;
+    uio->cwd = file->vnode;
     return 0;
 }
 
-/* absolute path of user space's `upath' from directory `dirfd', for
- * calls taking two paths */
-static int at_path(int dirfd, const char *upath, char **abs_path)
+/* user space's `upath' (a kernel copy, *path) and the uio to resolve it
+ * from directory `dirfd', for calls taking two paths */
+static int at_path(int dirfd, const char *upath, char **path, struct uio *uio)
 {
-    struct uio uio;
-    char *path;
     int ret;
 
-    if ((ret = upath_get(upath, &path)))
+    if ((ret = upath_get(upath, path)))
         return ret;
 
-    if (!(ret = at_uio(dirfd, path, &uio)))
-        ret = vfs_parse_path(path, &uio, abs_path);
+    if ((ret = at_uio(dirfd, *path, uio))) {
+        kfree(*path);
+        *path = NULL;
+    }
 
-    kfree(path);
     return ret;
 }
 
@@ -143,7 +142,7 @@ static int at_lookup(int dirfd, const char *upath, int flags, struct uio *uio, s
         if (flags & AT_SYMLINK_NOFOLLOW)
             uio->flags |= O_NOFOLLOW;
 
-        ret = vfs_lookup(path, uio, vnode, NULL);
+        ret = vfs_lookup(path, uio, vnode);
     }
 
     kfree(path);
@@ -287,25 +286,24 @@ static void sys_kill(pid_t pid, int sig)
 
 static int do_linkat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, int flags)
 {
-    char *oabs = NULL, *nabs = NULL;
+    char *opath = NULL, *npath = NULL;
+    struct uio ouio, nuio;
     int ret;
 
     if (flags & ~AT_SYMLINK_FOLLOW)
         return -EINVAL;
 
-    if (!(ret = at_path(olddirfd, oldpath, &oabs)) &&
-        !(ret = at_path(newdirfd, newpath, &nabs))) {
-        struct uio uio = PROC_UIO(curproc);
-
+    if (!(ret = at_path(olddirfd, oldpath, &opath, &ouio)) &&
+        !(ret = at_path(newdirfd, newpath, &npath, &nuio))) {
         /* a link to a symbolic link, not to what it points to */
         if (!(flags & AT_SYMLINK_FOLLOW))
-            uio.flags = O_NOFOLLOW;
+            ouio.flags = O_NOFOLLOW;
 
-        ret = vfs_link(oabs, nabs, &uio);
+        ret = vfs_link(opath, &ouio, npath, &nuio);
     }
 
-    kfree(oabs);
-    kfree(nabs);
+    kfree(opath);
+    kfree(npath);
     return ret;
 }
 
@@ -359,7 +357,7 @@ static int creat_path(const char *path, struct uio *uio, char **ref)
         const char *p = cur ? cur : path;
         struct vnode *vnode = NULL;
 
-        if (vfs_lookup(p, &nofollow, &vnode, NULL)) {
+        if (vfs_lookup(p, &nofollow, &vnode)) {
             *ref = cur;
             return 0;
         }
@@ -431,7 +429,6 @@ static int do_openat(int dirfd, const char *upath, int oflags, mode_t mode)
 
     struct vnode *vnode = NULL;
     struct file *file = NULL;
-    char *abs_path = NULL;
     int excl = (oflags & (O_CREAT | O_EXCL)) == (O_CREAT | O_EXCL);
     int created = 0;
 
@@ -441,7 +438,7 @@ static int do_openat(int dirfd, const char *upath, int oflags, mode_t mode)
     if (excl)
         uio.flags |= O_NOFOLLOW;
 
-    ret = vfs_lookup(path, &uio, &vnode, &abs_path);
+    ret = vfs_lookup(path, &uio, &vnode);
 
     if (!ret && excl) {
         ret = -EEXIST;
@@ -494,12 +491,6 @@ static int do_openat(int dirfd, const char *upath, int oflags, mode_t mode)
     if ((ret = vfs_file_open(file)))
         goto done;
 
-    /* directories remember their path, for the *at() calls */
-    if (S_ISDIR(vnode->mode)) {
-        file->path = abs_path;
-        abs_path = NULL;
-    }
-
     proc_fd_install(curproc, fd, file, (oflags & O_CLOEXEC) ? FD_CLOEXEC : 0);
     ret = fd;
 
@@ -512,7 +503,6 @@ done:
             vfs_close(vnode);
     }
 
-    kfree(abs_path);
     kfree(path);
     return ret;
 }
@@ -1114,54 +1104,42 @@ static void sys_fcntl(int fd, int cmd, uintptr_t arg)
     arch_syscall_return(curthread, -EINVAL);
 }
 
+/* the current directory is `vnode' (a searchable directory; the
+ * reference is the process's now) */
+static int cwd_set(struct vnode *vnode)
+{
+    int ret;
+
+    if (!S_ISDIR(vnode->mode))
+        return -ENOTDIR;
+
+    if ((ret = vfs_access(vnode, &PROC_UIO(curproc), VFS_X)))
+        return ret;
+
+    if (curproc->cwd)
+        vfs_close(curproc->cwd);
+
+    curproc->cwd = vnode;
+    return 0;
+}
+
 static void sys_chdir(const char *upath)
 {
     syscall_log(LOG_DEBUG, "chdir(path=%p)\n", upath);
 
     char *path = NULL;
-    char *abs_path = NULL;
     struct vnode *vnode = NULL;
     int ret = upath_get(upath, &path);
 
-    if (ret)
-        goto free_resources;
+    if (!ret)
+        ret = vfs_lookup(path, &PROC_UIO(curproc), &vnode);
 
-    if (!*path) {
-        ret = -ENOENT;
-        goto free_resources;
-    }
+    if (!ret && !(ret = cwd_set(vnode)))
+        vnode = NULL;
 
-    ret = vfs_lookup(path, &PROC_UIO(curproc), &vnode, &abs_path);
-
-    if (ret)
-        goto free_resources;
-
-    if (!vnode || !abs_path) {
-        ret = vnode? -ENOMEM : -ENOENT;
-        goto free_resources;
-    }
-
-    if (!S_ISDIR(vnode->mode)) {
-        ret = -ENOTDIR;
-        goto free_resources;
-    }
-
-    /* cwd is kept as a path, no vnode reference is held for it */
-    char *cwd = strdup(abs_path);
-
-    if (!cwd) {
-        ret = -ENOMEM;
-        goto free_resources;
-    }
-
-    kfree(curproc->cwd);
-    curproc->cwd = cwd;
-
-free_resources:
     if (vnode)
         vfs_close(vnode);
 
-    kfree(abs_path);
     kfree(path);
     arch_syscall_return(curthread, ret);
 }
@@ -1175,14 +1153,26 @@ static void sys_getcwd(char *buf, size_t size)
         return;
     }
 
-    size_t len = strlen(curproc->cwd);
+    /* made from the directory up (it isn't kept as a string) */
+    size = MIN(size, UPATH_MAX);
+    char *path = kmalloc(size, &M_BUFFER, 0);
+    int ret;
 
-    if (size < len + 1) {
-        arch_syscall_return(curthread, -ERANGE);
+    if (!path) {
+        arch_syscall_return(curthread, -ENOMEM);
         return;
     }
 
-    arch_syscall_return(curthread, copyout(buf, curproc->cwd, len + 1));
+    if (!curproc->cwd)
+        ret = size < 2 ? -ERANGE : (strcpy(path, "/"), 0);
+    else
+        ret = vfs_vnode_path(curproc->cwd, NULL, path, size);
+
+    if (!ret)
+        ret = copyout(buf, path, strlen(path) + 1);
+
+    kfree(path);
+    arch_syscall_return(curthread, ret);
 }
 
 static void sys_thread_create(struct aquila_thread_args *__uthread)
@@ -2499,15 +2489,16 @@ static void sys_renameat(int olddirfd, const char *oldpath, int newdirfd, const 
     syscall_log(LOG_DEBUG, "renameat(olddirfd=%d, oldpath=%p, newdirfd=%d, newpath=%p)\n",
             olddirfd, oldpath, newdirfd, newpath);
 
-    char *oabs = NULL, *nabs = NULL;
+    char *opath = NULL, *npath = NULL;
+    struct uio ouio, nuio;
     int ret;
 
-    if (!(ret = at_path(olddirfd, oldpath, &oabs)) &&
-        !(ret = at_path(newdirfd, newpath, &nabs)))
-        ret = vfs_rename(oabs, nabs, &PROC_UIO(curproc));
+    if (!(ret = at_path(olddirfd, oldpath, &opath, &ouio)) &&
+        !(ret = at_path(newdirfd, newpath, &npath, &nuio)))
+        ret = vfs_rename(opath, &ouio, npath, &nuio);
 
-    kfree(oabs);
-    kfree(nabs);
+    kfree(opath);
+    kfree(npath);
     arch_syscall_return(curthread, ret);
 }
 
@@ -2629,23 +2620,18 @@ static void sys_fchdir(int fd)
     syscall_log(LOG_DEBUG, "fchdir(fd=%d)\n", fd);
 
     struct file *file = fd_file(fd);
-    int ret = 0;
+    int ret;
 
     if (!file) {
         ret = -EBADF;
-    } else if ((file->flags & FILE_SOCKET) || !S_ISDIR(file->vnode->mode) || !file->path) {
+    } else if (file->flags & FILE_SOCKET) {
         ret = -ENOTDIR;
-    } else if (vfs_access(file->vnode, &PROC_UIO(curproc), VFS_X)) {
-        ret = -EACCES;
     } else {
-        char *cwd = strdup(file->path);
+        /* the directory the descriptor has, however it was reached */
+        file->vnode->ref++;
 
-        if (cwd) {
-            kfree(curproc->cwd);
-            curproc->cwd = cwd;
-        } else {
-            ret = -ENOMEM;
-        }
+        if ((ret = cwd_set(file->vnode)))
+            vfs_close(file->vnode);
     }
 
     arch_syscall_return(curthread, ret);

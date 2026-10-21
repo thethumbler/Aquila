@@ -326,7 +326,10 @@ static ssize_t procfs_proc_status(int pid, off_t off, size_t size, void *buf)
     if (!proc)
         return -ESRCH;
 
-    char status_buf[1024];
+    char status_buf[1024], cwd[256];
+
+    if (!proc->cwd || vfs_vnode_path(proc->cwd, NULL, cwd, sizeof(cwd)))
+        strcpy(cwd, proc->cwd ? "?" : "/");
 
     int sz = snprintf(status_buf, sizeof(status_buf),
             "name: %s\n"
@@ -343,7 +346,7 @@ static ssize_t procfs_proc_status(int pid, off_t off, size_t size, void *buf)
             proc->name,
             proc->pid,
             proc->parent ? proc->parent->pid : 0,
-            proc->cwd,
+            cwd,
             proc->mask,
             proc->uid,
             proc->gid,
@@ -658,6 +661,12 @@ static int procfs_finddir(struct vnode *parent, const char *name, struct dirent 
     } else if (parent->ino > 0) {
         size_t pid = INO_PID(parent->ino);
 
+        /* a process's directory is /proc's */
+        if (!strcmp(name, "..")) {
+            dirent->d_ino = (vino_t) procfs_root;
+            return 0;
+        }
+
         for (size_t i = 0; i < PROCFS_PROC_ENTRIES; ++i) {
             if (!strcmp(proc_entries[i].name, name)) {
                 dirent->d_ino  = PROC_INO(pid) + i + 1;
@@ -790,7 +799,7 @@ static int procfs_init()
     return 0;
 }
 
-static int procfs_mount(const char *dir, int flags, void *data)
+static int procfs_mount(struct vnode *dir, int flags, void *data)
 {
     vfs_bind(dir, procfs_root);
     return 0;

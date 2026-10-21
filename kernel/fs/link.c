@@ -2,26 +2,16 @@
 #include <fs/vfs.h>
 #include <aquila/fcntl.h>
 
-/* root vnode of the filesystem mounted where absolute path `path' is */
-static struct vnode *mount_root(const char *path)
-{
-    char **tokens = tokenize_path(path);
-    struct vfs_path *vfs_path = vfs_get_mountpoint(tokens);
-    struct vnode *root = vfs_path->root;
-
-    free_tokens(tokens);
-    kfree(vfs_path);
-    return root;
-}
-
-/* a new hard link `newpath' to `oldpath', which is followed unless uio has O_NOFOLLOW */
-int vfs_link(const char *oldpath, const char *newpath, struct uio *uio)
+/* a new hard link `newpath' (from nuio's directory) to `oldpath' (from
+ * ouio's), which is followed unless ouio has O_NOFOLLOW */
+int vfs_link(const char *oldpath, struct uio *ouio, const char *newpath, struct uio *nuio)
 {
     int ret = 0;
-    struct vnode *vnode = NULL, *dir = NULL;
-    char *oabs = NULL, *nabs = NULL, *name = NULL;
+    struct vnode *vnode = NULL, *dir = NULL, *odir = NULL;
+    char *name = NULL;
+    struct uio *uio = nuio;
 
-    if ((ret = vfs_lookup(oldpath, uio, &vnode, &oabs)))
+    if ((ret = vfs_lookup_dir(oldpath, ouio, &vnode, &odir)))
         return ret;
 
     if (S_ISDIR(vnode->mode)) {
@@ -29,13 +19,14 @@ int vfs_link(const char *oldpath, const char *newpath, struct uio *uio)
         goto done;
     }
 
-    if ((ret = vfs_lookup_parent(newpath, uio, &dir, &name, &nabs))) {
+    if ((ret = vfs_lookup_parent(newpath, nuio, &dir, &name))) {
         if (ret == -EBUSY)
             ret = -EEXIST;
         goto done;
     }
 
-    if (mount_root(oabs) != mount_root(nabs)) {
+    /* in the same mounted filesystem */
+    if (vfs_mount_root_of(odir) != vfs_mount_root_of(dir)) {
         ret = -EXDEV;
         goto done;
     }
@@ -47,9 +38,8 @@ int vfs_link(const char *oldpath, const char *newpath, struct uio *uio)
 
 done:
     if (dir) vfs_close(dir);
+    vfs_close(odir);
     vfs_close(vnode);
-    kfree(oabs);
-    kfree(nabs);
     kfree(name);
     return ret;
 }
@@ -85,7 +75,7 @@ ssize_t vfs_readlink(const char *path, struct uio *uio, char *buf, size_t size)
     struct uio link_uio = *uio;
     link_uio.flags |= O_NOFOLLOW;
 
-    ssize_t ret = vfs_lookup(path, &link_uio, &vnode, NULL);
+    ssize_t ret = vfs_lookup(path, &link_uio, &vnode);
 
     if (ret)
         return ret;
@@ -113,16 +103,18 @@ static int entry_get(struct vnode *dir, const char *name, struct vnode **ref)
     return ret ? ret : vfs_vget(dir, dirent.d_ino, ref);
 }
 
-int vfs_rename(const char *oldpath, const char *newpath, struct uio *uio)
+/* `oldpath' (from ouio's directory) renamed `newpath' (from nuio's) */
+int vfs_rename(const char *oldpath, struct uio *ouio, const char *newpath, struct uio *nuio)
 {
     int ret = 0;
     struct vnode *odir = NULL, *ndir = NULL, *ovnode = NULL, *nvnode = NULL;
-    char *oname = NULL, *nname = NULL, *oabs = NULL, *nabs = NULL;
+    char *oname = NULL, *nname = NULL;
+    struct uio *uio = ouio;
 
-    if ((ret = vfs_lookup_parent(oldpath, uio, &odir, &oname, &oabs)))
+    if ((ret = vfs_lookup_parent(oldpath, ouio, &odir, &oname)))
         goto done;
 
-    if ((ret = vfs_lookup_parent(newpath, uio, &ndir, &nname, &nabs)))
+    if ((ret = vfs_lookup_parent(newpath, nuio, &ndir, &nname)))
         goto done;
 
     if ((ret = vfs_access(odir, uio, VFS_W | VFS_X)) ||
@@ -141,18 +133,17 @@ int vfs_rename(const char *oldpath, const char *newpath, struct uio *uio)
         goto done;
 
     /* renaming a file to itself (or to another link to it) does nothing */
-    if (ovnode == nvnode || !strcmp(oabs, nabs))
+    if (ovnode == nvnode || (odir == ndir && !strcmp(oname, nname)))
         goto done;
 
-    if (mount_root(oabs) != mount_root(nabs)) {
+    /* in the same mounted filesystem */
+    if (vfs_mount_root_of(odir) != vfs_mount_root_of(ndir)) {
         ret = -EXDEV;
         goto done;
     }
 
-    size_t olen = strlen(oabs);
-
     /* a directory can't be moved into itself */
-    if (S_ISDIR(ovnode->mode) && !strncmp(oabs, nabs, olen) && nabs[olen] == '/') {
+    if (S_ISDIR(ovnode->mode) && vfs_under(ndir, ovnode)) {
         ret = -EINVAL;
         goto done;
     }
@@ -185,7 +176,5 @@ done:
 
     kfree(oname);
     kfree(nname);
-    kfree(oabs);
-    kfree(nabs);
     return ret;
 }

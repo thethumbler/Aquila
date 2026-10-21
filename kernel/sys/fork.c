@@ -90,11 +90,9 @@ int proc_fork(struct thread *thread, struct proc **ref)
      * fork continues execution from a spawned thread */
     fork_thread->spawned = 1;
 
-    /* Copy current working directory */
-    if (!(fork->cwd = strdup(proc->cwd))) {
-        err = -ENOMEM;
-        goto error;
-    }
+    /* the same current directory */
+    if ((fork->cwd = proc->cwd))
+        fork->cwd->ref++;
 
     /* copy file descriptors */
     if ((err = copy_fds(proc, fork)))
@@ -155,7 +153,7 @@ error:
         if (fork->name)
             kfree(fork->name);
         if (fork->cwd)
-            kfree(fork->cwd);
+            vfs_close(fork->cwd);
 
         /* free main thread (it never ran, no arch data) */
         struct thread *_thread = NULL;

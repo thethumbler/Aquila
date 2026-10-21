@@ -109,7 +109,7 @@ static int exec_script(struct proc *proc, const char *path, char **interp, char 
 
     *interp = *arg = NULL;
 
-    if ((err = vfs_lookup(path, &uio, &vnode, NULL)))
+    if ((err = vfs_lookup(path, &uio, &vnode)))
         return err;
 
     /* a regular file the process may execute, as any program */

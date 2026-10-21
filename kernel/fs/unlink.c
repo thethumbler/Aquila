@@ -9,7 +9,7 @@ static int vfs_remove(const char *path, struct uio *uio, int rmdir)
     char *name = NULL;
     struct dirent dirent;
 
-    if ((ret = vfs_lookup_parent(path, uio, &dir, &name, NULL)))
+    if ((ret = vfs_lookup_parent(path, uio, &dir, &name)))
         return ret;
 
     /* removing an entry needs write and search permission on the directory */

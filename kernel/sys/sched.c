@@ -7,6 +7,7 @@
 #include <ds/queue.h>
 #include <dev/random.h>
 #include <sys/callout.h>
+#include <fs/vfs.h>
 
 #include <aquila/stat.h>
 
@@ -226,7 +227,8 @@ void sched_init_spawn(struct proc *init)
 
     /* init defaults */
     init->mask = 022;   /* umask */
-    init->cwd = strdup("/");
+    init->cwd = vfs_root;
+    vfs_root->ref++;
 
     arch_sched_init();
 

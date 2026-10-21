@@ -53,8 +53,8 @@ MALLOC_DECLARE(M_VNODE);
  * \brief user I/O operation
  */
 struct uio {
-    char     *root; /* Root Directory */
-    char     *cwd;  /* Current Working Directory */
+    struct vnode *root; /* where absolute paths start, NULL: vfs_root */
+    struct vnode *cwd;  /* where relative ones do, NULL: the root */
     uid_t    uid;
     gid_t    gid;
     mode_t   mask;
@@ -94,21 +94,13 @@ struct vops {
 
 /**
  * \ingroup vfs
- */
-struct vfs_path {
-    struct vnode *root;
-    char **tokens;
-};
-
-/**
- * \ingroup vfs
  * \brief filesystem structure
  */
 struct fs {
     char *name;
     int (*init)  ();
     int (*load)  (struct vnode *dev, struct vnode **super);  /* Read superblock */
-    int (*mount) (const char *dir, int flags, void *data);
+    int (*mount) (struct vnode *dir, int flags, void *data);    /* on dir: vfs_bind() */
 
     struct vops vops;
     struct fops fops;
@@ -151,6 +143,11 @@ struct vnode {
 
     /** the pipe of a FIFO while it is open */
     struct pipe *fifo;
+
+    /** a directory a filesystem is mounted on: that filesystem's root;
+     *  a mounted filesystem's root: the directory it's mounted on */
+    struct vnode *mounted;
+    struct vnode *covered;
 };
 
 /*
@@ -166,10 +163,6 @@ struct file {
 
     off_t offset;
     int flags;      /* open flags (O_*) */
-
-    /* absolute path of an open directory, for the *at() system calls;
-     * the file's (freed by vfs_file_close) */
-    char *path;
 
     /* its flock() lock */
     struct file_lock *lock;
@@ -206,11 +199,6 @@ struct fs_list {
     struct fs_list *next;
 };
 
-/* XXX */
-struct vfs_path *vfs_get_mountpoint(char **tokens);
-char **tokenize_path(const char * const path);
-int vfs_parse_path(const char *path, struct uio *uio, char **abs_path);
-
 extern struct fs_list *registered_fs;
 extern struct vnode *vfs_root;
 
@@ -226,7 +214,7 @@ void    vfs_init(void);
 int     vfs_install(struct fs *fs);
 int     vfs_mount_root(struct vnode *vnode);
 int     vfs_mount_root_dev(const char *name, const char *type);
-int     vfs_bind(const char *path, struct vnode *target);
+int     vfs_bind(struct vnode *dir, struct vnode *root);
 int     vfs_mount(const char *type, const char *dir, int flags, void *data, struct uio *uio);
 
 /* vnode operations mappings */
@@ -281,10 +269,14 @@ int     vfs_file_can_read(struct file * file, size_t size);
 int     vfs_file_can_write(struct file * file, size_t size);
 int     vfs_file_eof(struct file *);
 
-/* Path resolution and lookup */
-int     vfs_relative(const char * const rel, const char * const path, char **abs_path);
-int     vfs_lookup(const char *path, struct uio *uio, struct vnode **vnode, char **abs_path);
-int     vfs_lookup_parent(const char *path, struct uio *uio, struct vnode **dir, char **name, char **abs_path);
+/* Path lookup (fs/lookup.c) */
+int     vfs_lookup(const char *path, struct uio *uio, struct vnode **vnode);
+int     vfs_lookup_parent(const char *path, struct uio *uio, struct vnode **dir, char **name);
+int     vfs_lookup_dir(const char *path, struct uio *uio, struct vnode **vnode, struct vnode **dir);
+int     vfs_parent(struct vnode *dir, struct vnode **parent);
+struct vnode *vfs_mount_root_of(struct vnode *vnode);
+int     vfs_under(struct vnode *vnode, struct vnode *dir);
+int     vfs_vnode_path(struct vnode *vnode, struct vnode *root, char *buf, size_t size);
 
 /* Higher level functions */
 int     vfs_creat(const char *path, mode_t mode, struct uio *uio, struct vnode **ref);
@@ -292,10 +284,10 @@ int     vfs_mkdir(const char *path, mode_t mode, struct uio *uio, struct vnode *
 int     vfs_mknod(const char *path, uint32_t mode, dev_t dev, struct uio *uio, struct vnode **ref);
 int     vfs_unlink(const char *path, struct uio *uio);
 int     vfs_rmdir(const char *path, struct uio *uio);
-int     vfs_link(const char *oldpath, const char *newpath, struct uio *uio);
+int     vfs_link(const char *oldpath, struct uio *ouio, const char *newpath, struct uio *nuio);
 int     vfs_symlink(const char *target, const char *path, struct uio *uio);
 ssize_t vfs_readlink(const char *path, struct uio *uio, char *buf, size_t size);
-int     vfs_rename(const char *oldpath, const char *newpath, struct uio *uio);
+int     vfs_rename(const char *oldpath, struct uio *ouio, const char *newpath, struct uio *nuio);
 int     vfs_stat(struct vnode *vnode, struct aquila_stat *buf);
 int     vfs_perms_check(struct file *file, struct uio *uio);
 

@@ -181,7 +181,7 @@ error:
     return err;
 }
 
-static int minix_mount(const char *dir, int flags, void *_args)
+static int minix_mount(struct vnode *dir, int flags, void *_args)
 {
     struct {
         char *dev;
@@ -196,7 +196,7 @@ static int minix_mount(const char *dir, int flags, void *_args)
     if (!args || !args->dev)
         return -EINVAL;
 
-    if ((err= vfs_lookup(args->dev, &uio, &dev, NULL)))
+    if ((err= vfs_lookup(args->dev, &uio, &dev)))
         goto error;
 
     struct vnode *fs;

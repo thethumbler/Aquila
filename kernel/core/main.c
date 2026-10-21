@@ -64,7 +64,7 @@ void kmain(struct boot *boot)
     }
 
     /* devfs on /dev with /dev/console, init may write to it right away */
-    struct uio uio = {.cwd = "/", .mask = 022};
+    struct uio uio = {.mask = 022};
 
     if (!vfs_mount("devfs", "/dev", 0, NULL, &uio))
         vfs_mknod("/dev/console", S_IFCHR | 0600, DEV(5, 1), &uio, NULL);

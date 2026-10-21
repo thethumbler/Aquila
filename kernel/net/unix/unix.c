@@ -133,7 +133,7 @@ static int socket_unix_bind(struct file *file, const struct sockaddr *addr, sock
         return -EINVAL;
 
     struct vnode *vnode = NULL;
-    err = vfs_lookup(addr_un->sun_path, &uio, &vnode, NULL);
+    err = vfs_lookup(addr_un->sun_path, &uio, &vnode);
 
     if (err && err != -ENOENT)
         return err;
@@ -150,7 +150,7 @@ static int socket_unix_bind(struct file *file, const struct sockaddr *addr, sock
         return err;
 
     /* Get vnode -- FIXME */
-    if ((err = vfs_lookup(addr_un->sun_path, &uio, &vnode, NULL)))
+    if ((err = vfs_lookup(addr_un->sun_path, &uio, &vnode)))
         return err;
 
     struct un_socket *socket = kmalloc(sizeof(struct un_socket), &M_UN_SOCKET, M_ZERO);
@@ -182,7 +182,7 @@ static int socket_unix_connect(struct file *file, const struct sockaddr *addr, s
         return -EISCONN;
 
     /* Open socket */
-    if ((err = vfs_lookup(addr_un->sun_path, &uio, &vnode, NULL))) {
+    if ((err = vfs_lookup(addr_un->sun_path, &uio, &vnode))) {
         return err;
     }
 

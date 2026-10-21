@@ -43,7 +43,7 @@ int devpts_init()
     return 0;
 }
 
-int devpts_mount(const char *dir, int flags, void *data)
+int devpts_mount(struct vnode *dir, int flags, void *data)
 {
     if (!devpts_root)
         return -EINVAL;

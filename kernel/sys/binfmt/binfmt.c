@@ -89,7 +89,7 @@ int binfmt_load(struct proc *proc, const char *path, struct proc **ref)
         uio = PROC_UIO(proc);
     }
 
-    if ((err = vfs_lookup(path, &uio, &vnode, NULL)))
+    if ((err = vfs_lookup(path, &uio, &vnode)))
         return err;
 
     if (!vnode)

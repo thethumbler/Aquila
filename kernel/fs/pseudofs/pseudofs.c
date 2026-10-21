@@ -5,6 +5,15 @@
 
 MALLOC_DEFINE(M_PSEUDOFS_DENT, "pseudofs-dirent", "pseudofs directory entry");
 
+/*
+ * A directory is a list of its entries (vnode->p). Its ".." is one of
+ * them, as on a disk: the parent's vnode (not a reference, the parent
+ * can't go while it has the directory), which finddir finds as any other
+ * and rename moves; readdir makes up "." and ".." itself, it skips it. A
+ * filesystem's root has none: it's a root.
+ */
+static const char dotdot[] = "..";
+
 /* bounded copy of an entry name into a struct dirent */
 static void pseudofs_dirent_name(struct dirent *dirent, const char *name)
 {
@@ -62,12 +71,20 @@ int pseudofs_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, s
 
     if (!dirent->d_name) goto error_nomem;
 
+    /* the new directory's .. */
+    if (S_ISDIR(mode)) {
+        struct pseudofs_dirent *parent = kmalloc(sizeof(struct pseudofs_dirent), &M_PSEUDOFS_DENT, 0);
+        if (!parent) goto error_nomem;
+
+        parent->d_name = dotdot;
+        parent->d_ino  = dir;
+        parent->next   = NULL;
+        vnode->p       = parent;
+        dir->nlink++;
+    }
+
     dirent->next  = cur_dir;
     dir->p        = dirent;
-
-    /* the new directory's .. */
-    if (S_ISDIR(mode))
-        dir->nlink++;
 
     if (ref)
         *ref = vnode;
@@ -215,6 +232,11 @@ int pseudofs_vrename(struct vnode *odir, const char *ofn, struct vnode *ndir, co
 
     /* a directory's .. now links to the new parent */
     if (S_ISDIR(entry->d_ino->mode)) {
+        struct pseudofs_dirent *prev, *up = entry_find(entry->d_ino, dotdot, &prev);
+
+        if (up)
+            up->d_ino = ndir;
+
         odir->nlink--;
         ndir->nlink++;
     }
@@ -251,6 +273,10 @@ ssize_t pseudofs_readdir(struct vnode *dir, off_t offset, struct dirent *dirent)
 
     int i = 0;
     for (struct pseudofs_dirent *e = _dirent; e; e = e->next) {
+        /* made up above */
+        if (e->d_name == dotdot)
+            continue;
+
         if (i == offset) {
             found = 1;
             dirent->d_ino = e->d_ino->ino;

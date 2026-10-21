@@ -92,7 +92,8 @@ struct proc {
     struct proc *parent;
 
     /** Current Working Directory */
-    char *cwd;
+    /** Current directory (a reference), NULL: the root */
+    struct vnode *cwd;
 
     /** File mode creation mask */
     mode_t mask;

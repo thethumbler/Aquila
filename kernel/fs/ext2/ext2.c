@@ -160,10 +160,8 @@ error:
     return err;
 }
 
-int ext2_mount(const char *dir, int flags, void *_args)
+int ext2_mount(struct vnode *dir, int flags, void *_args)
 {
-    printk("ext2_mount(dir=%s, flags=%x, args=%p)\n", dir, flags, _args);
-
     struct {
         char *dev;
         char *opt;
@@ -177,7 +175,7 @@ int ext2_mount(const char *dir, int flags, void *_args)
     if (!args || !args->dev)
         return -EINVAL;
 
-    if ((err = vfs_lookup(args->dev, &uio, &dev, NULL)))
+    if ((err = vfs_lookup(args->dev, &uio, &dev)))
         goto error;
 
     struct vnode *fs;

@@ -285,7 +285,11 @@ void proc_kill(struct proc *proc)
 
     /* Free kernel-space resources */
     kfree(proc->fds);
-    kfree(proc->cwd);
+
+    if (proc->cwd)
+        vfs_close(proc->cwd);
+
+    proc->cwd = NULL;
 
     proc->sig_pending = 0;
 

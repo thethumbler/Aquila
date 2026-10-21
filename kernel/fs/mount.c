@@ -24,18 +24,31 @@ int vfs_mount(const char *type, const char *dir, int flags, void *data, struct u
     if (!fs)
         return -EINVAL;
 
-    /* Directory path must be absolute */
-    int ret = 0;
-    char *_dir = NULL;
-    if ((ret = vfs_parse_path(dir, uio, &_dir))) {
-        if (_dir)
-            kfree(_dir);
-        return ret;
+    /* the directory it goes on */
+    struct vnode *covered = NULL;
+    int err;
+
+    if ((err = vfs_lookup(dir, uio, &covered)))
+        return err;
+
+    if (!S_ISDIR(covered->mode)) {
+        vfs_close(covered);
+        return -ENOTDIR;
     }
 
-    int err = 0;
-    err = fs->mount(_dir, flags, data);
-    
+    if (covered->mounted) {
+        vfs_close(covered);
+        return -EBUSY;
+    }
+
+    /* where it is, for /proc/mounts */
+    char *path = kmalloc(1024, &M_BUFFER, 0);
+
+    if (!path || vfs_vnode_path(covered, NULL, path, 1024))
+        err = path ? -ENAMETOOLONG : -ENOMEM;
+    else
+        err = fs->mount(covered, flags, data);
+
     if (err == 0) {
         struct mountpoint *mp = kmalloc(sizeof(struct mountpoint), &M_MOUNTPOINT, 0);
         struct {
@@ -44,12 +57,13 @@ int vfs_mount(const char *type, const char *dir, int flags, void *data, struct u
         } *args = data;
         mp->dev = (args && args->dev)? strdup(args->dev) : "none";
         mp->type = strdup(type);
-        mp->path = strdup(_dir);
+        mp->path = strdup(path);
         mp->options = "";
         enqueue(mounts, mp);
     }
 
-    kfree(_dir);
+    kfree(path);
+    vfs_close(covered);
 
     return err;
 }

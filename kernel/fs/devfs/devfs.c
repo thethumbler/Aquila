@@ -43,7 +43,7 @@ static int devfs_init()
     return 0;
 }
 
-static int devfs_mount(const char *dir, int flags, void *data)
+static int devfs_mount(struct vnode *dir, int flags, void *data)
 {
     if (!devfs_root)
         return -EINVAL;
