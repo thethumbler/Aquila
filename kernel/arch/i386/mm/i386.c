@@ -31,6 +31,8 @@ MALLOC_DEFINE(M_PMAP, "pmap", "physical memory map structure");
 #define PG_PRESENT  0x001
 #define PG_WRITE    0x002
 #define PG_USER     0x004
+#define PG_PWT      0x008   /* write-through */
+#define PG_PCD      0x010   /* cache disabled */
 
 #define PG_ADDR(e)  ((e) & ~(uint32_t) PAGE_MASK)
 
@@ -181,6 +183,10 @@ static uint32_t pte_flags(uint32_t flags)
 
     if (flags & VM_URWX)
         pte |= PG_USER;
+
+    /* device memory */
+    if (flags & VM_NOCACHE)
+        pte |= PG_PCD | PG_PWT;
 
     return pte;
 }
@@ -347,11 +353,8 @@ int pmap_page_write(paddr_t paddr, off_t off, size_t size, void *buf)
 /* where the window has room for the memory past the direct map */
 static vaddr_t phys_window_next = ARCH_PHYS_WINDOW_BASE;
 
-void *arch_phys_map(uintptr_t paddr, size_t size)
+static void *phys_window_map(uintptr_t paddr, size_t size, uint32_t flags)
 {
-    if (paddr + size <= ARCH_DMAP_SIZE)
-        return PHYS2VIRT(paddr);
-
     paddr_t start = PAGE_ALIGN(paddr);
     size_t  len   = PAGE_ROUND(paddr + size) - start;
 
@@ -362,7 +365,21 @@ void *arch_phys_map(uintptr_t paddr, size_t size)
     phys_window_next += len;
 
     for (size_t off = 0; off < len; off += PAGE_SIZE)
-        pmap_add(&k_pmap, vaddr + off, start + off, VM_KRW);
+        pmap_add(&k_pmap, vaddr + off, start + off, flags);
 
     return (void *) (vaddr + (paddr - start));
+}
+
+void *arch_phys_map(uintptr_t paddr, size_t size)
+{
+    if (paddr + size <= ARCH_DMAP_SIZE)
+        return PHYS2VIRT(paddr);
+
+    return phys_window_map(paddr, size, VM_KRW);
+}
+
+/* a device's registers, uncached */
+void *arch_mmio_map(uintptr_t paddr, size_t size)
+{
+    return phys_window_map(paddr, size, VM_KRW | VM_NOCACHE);
 }

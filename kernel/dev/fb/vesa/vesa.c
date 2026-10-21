@@ -61,7 +61,8 @@ static int fbdev_vesa_prope(int i __unused, struct fbdev *fb)
 
     vesa_vm.paddr = info->phys_base_ptr;
     vesa_vm.size  = size;
-    vesa_vm.flags = VM_KRW | VM_NOCACHE;
+    /* cached, as the console's (arch/i386/earlycon/fb.c) */
+    vesa_vm.flags = VM_KRW;
 
     vm_map(&kvm_space, &vesa_vm);
 

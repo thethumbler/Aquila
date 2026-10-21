@@ -43,6 +43,10 @@ paddr_t arch_page_get_mapping(struct pmap *pmap, vaddr_t vaddr);
  * made for it) */
 void *arch_phys_map(uintptr_t paddr, size_t size);
 
+/* the kernel's address of a device's registers (memory-mapped I/O, not
+ * cached) */
+void *arch_mmio_map(uintptr_t paddr, size_t size);
+
 void arch_disable_interrupts(void);
 
 void arch_reboot(void);

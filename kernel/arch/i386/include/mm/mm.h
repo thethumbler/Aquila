@@ -12,7 +12,7 @@
  * (the direct map, the kernel at 1 MiB in it: _VMA), 768 MiB of it at most
  * (the rest isn't used), then the kernel's heap, its small objects, the
  * devices, and what is mapped of the memory past the direct map (the boot
- * loader's modules, ACPI's tables)
+ * loader's modules, ACPI's tables, the devices' registers)
  */
 #define ARCH_DMAP_BASE         (0xC0000000UL)
 #define ARCH_DMAP_SIZE         (0x30000000UL)               /* 768 MiB */
@@ -40,6 +40,8 @@
 #define ARCH_VESA_BASE         (0xFFFFC00000000000ULL)
 #define ARCH_EARLYFB_BASE      (0xFFFFC00100000000ULL)
 #define ARCH_ACPI_BASE         (0xFFFFC00200000000ULL)
+#define ARCH_MMIO_BASE         (0xFFFFC00300000000ULL)     /* devices' registers */
+#define ARCH_MMIO_SIZE         (64ULL << 30)                /* 64 GiB */
 #define ARCH_KVMEM_BASE        (0xFFFFD00000000000ULL)
 #define ARCH_KVMEM_SIZE        (1ULL << 30)                 /* 1 GiB */
 #define ARCH_KVMEM_NODES_SIZE  (0x00100000ULL)

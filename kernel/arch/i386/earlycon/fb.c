@@ -117,7 +117,9 @@ static void earlycon_fb_init()
 {
     fb_vmr.paddr = fb_paddr;
     fb_vmr.size  = fb_size;
-    fb_vmr.flags = VM_KRW | VM_NOCACHE;
+    /* cached, as it has always been: uncached it is slow to read (the
+     * console scrolls), write-combining would need the PAT set up */
+    fb_vmr.flags = VM_KRW;
 
     vm_map(&kvm_space, &fb_vmr);
     fb_init = 1;

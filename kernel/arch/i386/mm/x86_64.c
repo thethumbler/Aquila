@@ -33,6 +33,8 @@ extern struct boot *__kboot;
 #define PG_PRESENT  0x001
 #define PG_WRITE    0x002
 #define PG_USER     0x004
+#define PG_PWT      0x008   /* write-through */
+#define PG_PCD      0x010   /* cache disabled */
 #define PG_LARGE    0x080   /* 2 MiB (in a PD), 1 GiB (in a PDPT) */
 #define PG_GLOBAL   0x100
 
@@ -228,6 +230,10 @@ static uint64_t pte_flags(uint32_t flags)
     if (flags & VM_URWX)
         pte |= PG_USER;
 
+    /* device memory */
+    if (flags & VM_NOCACHE)
+        pte |= PG_PCD | PG_PWT;
+
     return pte;
 }
 
@@ -409,4 +415,25 @@ int pmap_page_write(paddr_t paddr, off_t off, size_t size, void *buf)
 void *arch_phys_map(uintptr_t paddr, size_t size)
 {
     return PHYS2VIRT(paddr);
+}
+
+/* where the window has room for devices' registers */
+static vaddr_t mmio_next = ARCH_MMIO_BASE;
+
+/* a device's registers, uncached */
+void *arch_mmio_map(uintptr_t paddr, size_t size)
+{
+    paddr_t start = PAGE_ALIGN(paddr);
+    size_t  len   = PAGE_ROUND(paddr + size) - start;
+
+    if (mmio_next + len > ARCH_MMIO_BASE + ARCH_MMIO_SIZE)
+        panic("no room to map a device's registers");
+
+    vaddr_t vaddr = mmio_next;
+    mmio_next += len;
+
+    for (size_t off = 0; off < len; off += PAGE_SIZE)
+        pmap_add(&k_pmap, vaddr + off, start + off, VM_KRW | VM_NOCACHE);
+
+    return (void *) (vaddr + (paddr - start));
 }
