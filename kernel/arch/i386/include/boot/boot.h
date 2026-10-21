@@ -61,7 +61,7 @@ build_multiboot_modules(multiboot_info_t *info, module_t *modules, int max)
 
     for (unsigned i = 0; i < info->mods_count && count < max; ++i) {
         modules[count++] = (module_t) {
-            .addr = (void *) VMA((uintptr_t) mods[i].mod_start),
+            .paddr = mods[i].mod_start,
             .size = mods[i].mod_end - mods[i].mod_start,
             .cmdline = mods[i].cmdline ?
                 (char *) VMA((uintptr_t) mods[i].cmdline) : "",

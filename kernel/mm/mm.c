@@ -234,7 +234,7 @@ static paddr_t boot_left(struct boot *boot, paddr_t start, size_t size)
     paddr_t end = start + size;
 
     for (int i = 0; i < boot->modules_count; ++i) {
-        paddr_t s = LMA((uintptr_t) boot->modules[i].addr);
+        paddr_t s = boot->modules[i].paddr;
         paddr_t e = s + boot->modules[i].size;
 
         if (start < e && end > s)
@@ -349,6 +349,20 @@ void mm_setup(struct boot *boot)
         ram = ram_end;
     }
 
+#ifdef ARCH_RAM_MAX
+    /* only what the kernel maps (i386's direct map) */
+    if (ram_end > ARCH_RAM_MAX) {
+        ram = 0;
+
+        for (int i = 0; i < boot->mmap_count; ++i)
+            if (boot->mmap[i].type == MMAP_USABLE && boot->mmap[i].start < ARCH_RAM_MAX)
+                ram += MIN(boot->mmap[i].end, ARCH_RAM_MAX) - boot->mmap[i].start;
+
+        printk("kernel: only the first %ld MiB are used\n", (uint64_t) (ARCH_RAM_MAX >> 20));
+        ram_end = ARCH_RAM_MAX;
+    }
+#endif
+
     /* the buddy allocator works in blocks of BUDDY_MAX_BS */
     ram_end &= ~(paddr_t) (BUDDY_MAX_BS - 1);
 
@@ -371,7 +385,7 @@ void mm_setup(struct boot *boot)
     /* Mark modules space as unusable */
     for (int i = 0; i < boot->modules_count; ++i) {
         module_t *mod = &boot->modules[i];
-        buddy_set_unusable(LMA((uintptr_t) mod->addr), mod->size);
+        buddy_set_unusable(mod->paddr, mod->size);
     }
 
     /* what /proc/meminfo calls the total */

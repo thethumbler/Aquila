@@ -6,27 +6,30 @@
 
 #define NR_PAGE_SIZE           2
 
-/* the physical memory the boot code maps at the kernel's addresses (the
- * kernel, then what mm_setup() needs at boot: pages[] is 16 bytes a
- * page on i386, 32 on x86-64) */
 #if ARCH_BITS==32
-#define ARCH_BOOT_MAPPED       (128UL * 1024 * 1024)        /* 128 MiB */
-#else
-#define ARCH_BOOT_MAPPED       (1024UL * 1024 * 1024)       /* 1 GiB */
-#endif
-
-#if ARCH_BITS==32
-#define ARCH_KVMEM_BASE        (0xD0000000UL)
+/*
+ * i386: user space is below 3 GiB; above, RAM is mapped from 0xC0000000
+ * (the direct map, the kernel at 1 MiB in it: _VMA), 768 MiB of it at most
+ * (the rest isn't used), then the kernel's heap, its small objects, the
+ * devices, and what is mapped of the memory past the direct map (the boot
+ * loader's modules, ACPI's tables)
+ */
+#define ARCH_DMAP_BASE         (0xC0000000UL)
+#define ARCH_DMAP_SIZE         (0x30000000UL)               /* 768 MiB */
+#define ARCH_RAM_MAX           ARCH_DMAP_SIZE
+#define ARCH_KVMEM_BASE        (0xF0000000UL)
+#define ARCH_KVMEM_SIZE        (0x04000000UL)               /* 64 MiB */
 #define ARCH_KVMEM_NODES_SIZE  (0x00100000UL)
+#define ARCH_SLAB_BASE         (0xF4000000UL)
+#define ARCH_SLAB_SIZE         (0x04000000UL)               /* 64 MiB */
+#define ARCH_VESA_BASE         (0xF8000000UL)
+#define ARCH_EARLYFB_BASE      (0xF9000000UL)
+#define ARCH_ACPI_BASE         (0xFA000000UL)
+#define ARCH_PHYS_WINDOW_BASE  (0xFA400000UL)
+#define ARCH_PHYS_WINDOW_SIZE  (0x05800000UL)               /* 88 MiB */
 
-/* fixed kernel mappings of devices */
-#define ARCH_VESA_BASE         (0xE0000000UL)
-#define ARCH_EARLYFB_BASE      (0xE8000000UL)
-#define ARCH_ACPI_BASE         (0xF0000000UL)
-
-/* the pages of the kernel's small objects (mm/slab.c) */
-#define ARCH_SLAB_BASE         (0xF1000000UL)
-#define ARCH_SLAB_SIZE         (0x0E000000UL)               /* 224 MiB */
+/* the boot code maps all of the direct map */
+#define ARCH_BOOT_MAPPED       ARCH_DMAP_SIZE
 #else
 /*
  * x86-64: user space is the lower half; in the upper half all physical
@@ -38,13 +41,18 @@
 #define ARCH_EARLYFB_BASE      (0xFFFFC00100000000ULL)
 #define ARCH_ACPI_BASE         (0xFFFFC00200000000ULL)
 #define ARCH_KVMEM_BASE        (0xFFFFD00000000000ULL)
+#define ARCH_KVMEM_SIZE        (1ULL << 30)                 /* 1 GiB */
 #define ARCH_KVMEM_NODES_SIZE  (0x00100000ULL)
 #define ARCH_SLAB_BASE         (0xFFFFE00000000000ULL)
 #define ARCH_SLAB_SIZE         (16ULL << 30)                /* 16 GiB */
 
+/* the boot code maps the kernel, and what follows it of the first GiB, at
+ * -2 GiB (pages[] is 32 bytes a page, mm_setup() puts it there) */
+#define ARCH_BOOT_MAPPED       (1024UL * 1024 * 1024)       /* 1 GiB */
+#endif
+
 /* a physical address in the direct map */
 #define PHYS2VIRT(paddr)       ((void *) (ARCH_DMAP_BASE + (uintptr_t) (paddr)))
-#endif
 
 extern char _VMA; /* Must be defined in linker script */
 

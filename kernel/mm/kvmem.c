@@ -61,7 +61,7 @@ void kvmem_setup(void)
     /* Setting up initial node */
     nodes[0].addr = 0;
     nodes[0].free = 1;
-    nodes[0].size = -1;
+    nodes[0].size = MIN(ARCH_KVMEM_SIZE / KVMEM_ALIGN, MAX_NODE_SIZE);   /* the region */
     nodes[0].next = LAST_NODE_INDEX;
 
     /* We have to set qnode to an arbitrary value since

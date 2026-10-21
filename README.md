@@ -52,7 +52,8 @@ for all targets.
 
 ### i386
 
-The default is x86-64. AquilaOS also runs on i386, which is built into
+The default is x86-64. AquilaOS also runs on i386 (using at most
+768 MiB of memory, what its kernel maps), which is built into
 `build/` with an i686-aquila toolchain (next to the x86_64 one in
 `build/toolchain`), `CONFIG=i386-pc` selects it:
 

@@ -5,7 +5,7 @@
 #include <sys/elf.h>
 
 typedef struct {
-    void *addr;
+    uintptr_t paddr;    /* physical, arch_phys_map() maps it */
     size_t size;
     char *cmdline;
 } module_t;

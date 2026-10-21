@@ -403,3 +403,10 @@ int pmap_page_write(paddr_t paddr, off_t off, size_t size, void *buf)
     memcpy((char *) PHYS2VIRT(paddr) + off, buf, MIN(size, PAGE_SIZE - (size_t) off));
     return 0;
 }
+
+/* all of the RAM is in the direct map (and what the boot loader left is
+ * in RAM) */
+void *arch_phys_map(uintptr_t paddr, size_t size)
+{
+    return PHYS2VIRT(paddr);
+}

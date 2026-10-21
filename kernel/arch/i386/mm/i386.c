@@ -6,285 +6,84 @@
  *          - Volume 3, System Programming Guide
  *          - Chapter 4, Paging
  *
- *  Every pmap has its own page directory, switching is loading it in cr3.
- *  The kernel's half (from KERNEL_PDE) has all its page tables made at
- *  boot, the directories share them, so the kernel's mappings are the same
- *  in all of them and never change in a directory. The last entry of a
- *  directory maps it on itself (PAGE_DIR, PAGE_TBL), the one before is
- *  a table of the kernel's with the page mounted at MOUNT_ADDR, to reach
- *  physical pages.
+ *  RAM is mapped from 0xC0000000 (ARCH_DMAP_BASE, the direct map, 768 MiB
+ *  at most), page tables and pages are reached there. Every pmap has its
+ *  own page directory; the kernel's half (from KERNEL_PDE) has all its
+ *  page tables made at boot and shared by the directories, so the
+ *  kernel's mappings are the same in every address space and never change
+ *  in a directory. Switching is loading cr3.
  */
 
 #include <core/arch.h>
 #include <core/panic.h>
 #include <core/printk.h>
+#include <core/string.h>
 #include <core/system.h>
 #include <cpu/cpu.h>
-#include <ds/queue.h>
 
 #include <mm/pmap.h>
 #include <mm/buddy.h>
+#include <mm/mm.h>
 #include <mm/vm.h>
-
-#include <sys/sched.h>
-
-#include "i386.h"
 
 MALLOC_DEFINE(M_PMAP, "pmap", "physical memory map structure");
 
-static struct pmap *cur_pmap = NULL;
+#define PG_PRESENT  0x001
+#define PG_WRITE    0x002
+#define PG_USER     0x004
 
-static volatile uint32_t *bootstrap_processor_table = NULL;
-static volatile uint32_t last_page_table[1024] __aligned(PAGE_SIZE) = {0};
+#define PG_ADDR(e)  ((e) & ~(uint32_t) PAGE_MASK)
+
+#define VDIR(va)    (((va) >> 22) & 0x3FF)
+#define VTBL(va)    (((va) >> 12) & 0x3FF)
 
 /* the first entry of the kernel's half, 0xC0000000 */
 #define KERNEL_PDE  768
 
-/* the mounted page and the map being worked on are the same for everyone,
- * what uses them can't be interrupted (and switched out) */
-static inline uint32_t irq_save(void)
+static struct pmap k_pmap;
+static struct pmap *cur_pmap = NULL;
+
+static inline uint32_t *table(paddr_t paddr)
 {
-    uint32_t eflags;
-    asm volatile("pushfl; popl %0; cli" : "=r"(eflags) :: "memory");
-    return eflags;
+    return PHYS2VIRT(paddr);
 }
 
-static inline void irq_restore(uint32_t eflags)
-{
-    if (eflags & 0x200)
-        asm volatile("sti" ::: "memory");
-}
-
-static inline void tlb_invalidate_page(uintptr_t virt)
-{
-    asm volatile("invlpg (%%eax)"::"a"(virt));
-}
-
-#define MOUNT_ADDR  ((void *) 0xFFBFF000)
-#define PAGE_DIR    ((uint32_t *) 0xFFFFF000)
-#define PAGE_TBL(i) ((uint32_t *) (0xFFC00000 + 0x1000 * (i)))
-
-/* ================== Frame Helpers ================== */
-
-static inline uintptr_t frame_mount(uintptr_t paddr)
-{
-    uintptr_t prev = (uintptr_t) last_page_table[1023] & ~PAGE_MASK;
-
-    if (!paddr)
-        return prev; //(uintptr_t) last_page_table[1023] & ~PAGE_MASK;
-
-    if (paddr & PAGE_MASK)
-        panic("Mount must be on page (4K) boundary");
-
-    uint32_t page = paddr | PG_PRESENT | PG_WRITE;
-
-    last_page_table[1023] = page;
-    tlb_invalidate_page((uintptr_t) MOUNT_ADDR);
-
-    return prev;
-}
-
-static inline uintptr_t frame_get(void)
+static paddr_t table_alloc(void)
 {
     struct vm_page *vm_page = mm_page_alloc();
-    uintptr_t frame = vm_page->paddr; //buddy_alloc(BUDDY_ZONE_NORMAL, PAGE_SIZE);
 
-    if (!frame) {
-        panic("Could not allocate frame");
-    }
+    if (!vm_page)
+        panic("could not allocate a page table");
 
-    uint32_t eflags = irq_save();
-    uintptr_t old = frame_mount(frame);
-    memset(MOUNT_ADDR, 0, PAGE_SIZE);
-    frame_mount(old);
-    irq_restore(eflags);
-
-    return frame;
+    memset(table(vm_page->paddr), 0, PAGE_SIZE);
+    return vm_page->paddr;
 }
 
-static inline uintptr_t frame_get_no_clr(void)
+static void table_free(paddr_t paddr)
 {
-    struct vm_page *vm_page = mm_page_alloc();
-    uintptr_t frame = vm_page->paddr; //buddy_alloc(BUDDY_ZONE_NORMAL, PAGE_SIZE);
-
-    if (!frame) {
-        panic("Could not allocate frame");
-    }
-
-    return frame;
+    buddy_free(BUDDY_ZONE_NORMAL, paddr, PAGE_SIZE);
 }
 
-static void frame_release(uintptr_t i)
+/* the entry of the page table that maps `va' in `pmap', its table made
+ * if `make', else NULL if there is none */
+static uint32_t *pte_get(struct pmap *pmap, vaddr_t va, int make)
 {
-    buddy_free(BUDDY_ZONE_NORMAL, i, PAGE_SIZE);
+    uint32_t *pde = &table(pmap->map)[VDIR(va)];
+
+    if (!(*pde & PG_PRESENT)) {
+        if (!make)
+            return NULL;
+
+        *pde = table_alloc() | PG_PRESENT | PG_WRITE |
+            (VDIR(va) < KERNEL_PDE ? PG_USER : 0);
+    }
+
+    return &table(PG_ADDR(*pde))[VTBL(va)];
 }
 
-/* ================== Table Helpers ================== */
-
-static inline paddr_t table_alloc(void)
+static inline void tlb_invalidate_page(vaddr_t va)
 {
-    uintptr_t paddr = frame_get();
-
-    struct vm_page *vm_page = mm_page(paddr);
-    memset(vm_page, 0, sizeof(struct vm_page));
-    vm_page->paddr = paddr;
-
-    return paddr;
-}
-
-static inline void table_dealloc(paddr_t paddr)
-{
-    frame_release(paddr);
-}
-
-static inline int table_map(paddr_t paddr, size_t pdidx, int flags)
-{
-    if (pdidx > 1023)
-        return -EINVAL;
-
-    uint32_t table;
-    table  = paddr | (PG_PRESENT|PG_WRITE|PG_USER);
-    PAGE_DIR[pdidx] = table;
-
-    tlb_flush();
-
-    return 0;
-}
-
-static inline void table_unmap(size_t pdidx)
-{
-    if (pdidx > 1023)
-        return;
-
-    if (PAGE_DIR[pdidx] & PG_PRESENT) {
-        PAGE_DIR[pdidx] &= ~PG_PRESENT;
-        table_dealloc(PAGE_DIR[pdidx] & ~PAGE_MASK);
-    }
-
-    tlb_flush();
-}
-
-/* ================== Page Helpers ================== */
-static inline int page_map(paddr_t paddr, size_t pdidx, size_t ptidx, int flags)
-{
-    /* Sanity checking */
-    if (pdidx > 1023 || ptidx > 1023) {
-        return -EINVAL;
-    }
-
-    uint32_t page;
-
-    page  = paddr | PG_PRESENT;
-    page |= flags & (VM_KW | VM_UW)? PG_WRITE : 0;
-    page |= flags & (VM_URWX)? PG_USER : 0;
-
-    /* Check if table is present */
-    if (!(PAGE_DIR[pdidx] & PG_PRESENT)) {
-        //struct vm_page *vm_page = mm_page_alloc();
-        //paddr_t table = vm_page->paddr; //table_alloc();
-        paddr_t table = table_alloc();
-
-        table_map(table, pdidx, flags);
-    }
-
-    int present = PAGE_TBL(pdidx)[ptidx] & PG_PRESENT;
-
-    PAGE_TBL(pdidx)[ptidx] = page;
-
-    /* Increment references to table -- unless we replaced a present page */
-    if (!present) {
-        paddr_t table = PHYSADDR(PAGE_DIR[pdidx]);
-        mm_page_incref(table);
-    }
-
-    return 0;
-}
-
-static inline int page_protect(size_t pdidx, size_t ptidx, uint32_t flags)
-{
-    /* Sanity checking */
-    if (pdidx > 1023 || ptidx > 1023) {
-        return -EINVAL;
-    }
-
-    uint32_t page;
-
-    /* Check if table is present */
-    if (!(PAGE_DIR[pdidx] & PG_PRESENT)) {
-        return -EINVAL;
-    }
-
-    page = PAGE_TBL(pdidx)[ptidx];
-
-    if (page & PG_PRESENT) {
-        page &= ~(PG_WRITE|PG_USER);
-        page |= (flags & (VM_KW | VM_UW))? PG_WRITE : 0;
-        page |= (flags & VM_URWX)? PG_USER : 0;
-
-        PAGE_TBL(pdidx)[ptidx] = page;
-    }
-
-    return 0;
-}
-
-static inline void page_unmap(vaddr_t vaddr)
-{
-    if (vaddr & PAGE_MASK)
-        return;
-
-    size_t pdidx = VDIR(vaddr);
-    size_t ptidx = VTBL(vaddr);
-
-    if (PAGE_DIR[pdidx] & PG_PRESENT) {
-        if (PAGE_TBL(pdidx)[ptidx] & PG_PRESENT) {
-            uintptr_t old_page = PAGE_ALIGN(PAGE_TBL(pdidx)[ptidx]);
-            //printk("old_page %p (ref=%d)\n", old_page, mm_page_ref(old_page));
-
-            PAGE_TBL(pdidx)[ptidx] = 0;
-
-            /* Decrement references to table */
-            paddr_t table = PHYSADDR(PAGE_DIR[pdidx]);
-            //printk("mm_page_ref(table) = %d\n", mm_page_ref(table));
-
-            mm_page_decref(table);
-
-            /* the kernel's tables are shared by all the directories */
-            if (mm_page_ref(table) == 0 && pdidx < KERNEL_PDE)
-                table_unmap(pdidx);
-
-            tlb_invalidate_page(vaddr);
-        }
-    }
-}
-
-static inline uint32_t __page_get_mapping(vaddr_t vaddr)
-{
-    if (PAGE_DIR[VDIR(vaddr)] & PG_PRESENT) {
-        uint32_t page = PAGE_TBL(VDIR(vaddr))[VTBL(vaddr)];
-
-        if (page & PG_PRESENT)
-            return page;
-    }
-
-    return 0;
-}
-
-static void table_dump(paddr_t table)
-{
-    uintptr_t mnt = frame_mount(table);
-    uint32_t *_pages = MOUNT_ADDR;
-
-    printk("Table: %p\n", table);
-
-    for (int i = 0; i < 1024; ++i) {
-        if (_pages[i] & PG_PRESENT) {
-            paddr_t page = PHYSADDR(_pages[i]);
-            size_t ref = mm_page_ref(table);
-            printk("  %p: %d\n", page, ref);
-        }
-    }
-
-    frame_mount(mnt);
+    asm volatile("invlpg (%0)" :: "r"(va) : "memory");
 }
 
 struct pmap *pmap_switch(struct pmap *pmap)
@@ -302,66 +101,27 @@ struct pmap *pmap_switch(struct pmap *pmap)
     return ret;
 }
 
-static struct pmap k_pmap;
-
-/* make `pmap''s entries reachable (PAGE_DIR, PAGE_TBL), with interrupts
- * off until pmap_leave(): the kernel's are, in any directory */
-static struct pmap *pmap_enter(struct pmap *pmap, uint32_t *eflags)
+void pmap_init(void)
 {
-    *eflags = irq_save();
-    return pmap == &k_pmap ? cur_pmap : pmap_switch(pmap);
-}
+    /* the boot directory (arch/i386/boot/init.c) becomes the kernel's: it
+     * maps the direct map, and the same at 0, which goes */
+    k_pmap.map = read_cr3() & ~PAGE_MASK;
+    k_pmap.ref = 1;
+    kvm_space.pmap = &k_pmap;
+    cur_pmap = &k_pmap;
 
-static void pmap_leave(struct pmap *old, uint32_t eflags)
-{
-    pmap_switch(old);
-    irq_restore(eflags);
-}
+    uint32_t *dir = table(k_pmap.map);
 
-static void setup_i386_paging(void)
-{
-    printk("x86: setting up 32-bit paging\n");
-    uintptr_t __cur_pd = read_cr3() & ~PAGE_MASK;
+    for (int i = 0; i < KERNEL_PDE; ++i)
+        dir[i] = 0;
 
-    bootstrap_processor_table = (uint32_t *) VMA(__cur_pd);
-    bootstrap_processor_table[1023] = LMA((uint32_t) bootstrap_processor_table) | PG_WRITE | PG_PRESENT;
-    bootstrap_processor_table[1022] = LMA((uint32_t) last_page_table) | PG_PRESENT | PG_WRITE;
-
-    /* Unmap lower half */
-    for (int i = 0; bootstrap_processor_table[i]; ++i)
-        bootstrap_processor_table[i] = 0;
+    /* every table of the kernel's half, before there is any other
+     * directory */
+    for (int i = KERNEL_PDE; i < 1024; ++i)
+        if (!(dir[i] & PG_PRESENT))
+            dir[i] = table_alloc() | PG_PRESENT | PG_WRITE;
 
     tlb_flush();
-
-    k_pmap.map = __cur_pd;
-    kvm_space.pmap = &k_pmap;
-}
-
-/*
- *  Archeticture Interface
- */
-
-int arch_page_unmap(vaddr_t vaddr)
-{
-    if (vaddr & PAGE_MASK)
-        return -EINVAL;
-
-    page_unmap(vaddr);
-    return 0;
-}
-
-void arch_mm_page_fault(vaddr_t vaddr, int err)
-{
-    int flags = 0;
-
-    flags |= err & 0x01? PF_PRESENT : 0;
-    flags |= err & 0x02? PF_WRITE   : PF_READ;
-    flags |= err & 0x04? PF_USER    : 0;
-    flags |= err & 0x10? PF_EXEC    : 0;
-
-    mm_page_fault(vaddr, flags);
-
-    return;
 }
 
 static struct pmap *pmap_alloc(void)
@@ -371,26 +131,13 @@ static struct pmap *pmap_alloc(void)
 
 static void pmap_release(struct pmap *pmap)
 {
-    if (pmap == cur_pmap) {
+    if (pmap == cur_pmap)
         pmap_switch(&k_pmap);
-        //cur_pmap = NULL;
-    }
 
     if (pmap->map)
-        frame_release(pmap->map);
+        table_free(pmap->map);
 
     kfree(pmap);
-}
-
-void pmap_init(void)
-{
-    setup_i386_paging();
-    cur_pmap = &k_pmap;
-
-    /* all the kernel's tables, before there is any other directory */
-    for (int i = KERNEL_PDE; i < 1022; ++i)
-        if (!(PAGE_DIR[i] & PG_PRESENT))
-            table_map(table_alloc(), i, 0);
 }
 
 struct pmap *pmap_create(void)
@@ -402,58 +149,52 @@ struct pmap *pmap_create(void)
 
     memset(pmap, 0, sizeof(struct pmap));
 
-    pmap->map = frame_get();
+    pmap->map = table_alloc();
     pmap->ref = 1;
 
-    /* the kernel's half, the same in every directory, and itself */
-    uint32_t eflags = irq_save();
-    uintptr_t old = frame_mount(pmap->map);
-    uint32_t *dir = MOUNT_ADDR;
+    /* the kernel's half, the same in every directory */
+    uint32_t *dir = table(pmap->map), *kdir = table(k_pmap.map);
 
-    for (int i = KERNEL_PDE; i < 1023; ++i)
-        dir[i] = PAGE_DIR[i];
-
-    dir[1023] = pmap->map | PG_PRESENT | PG_WRITE;
-
-    frame_mount(old);
-    irq_restore(eflags);
+    for (int i = KERNEL_PDE; i < 1024; ++i)
+        dir[i] = kdir[i];
 
     return pmap;
 }
 
 void pmap_incref(struct pmap *pmap)
 {
-    /* XXX Handle overflow */
     pmap->ref++;
 }
 
 void pmap_decref(struct pmap *pmap)
 {
-    pmap->ref--;
-
-    if (pmap->ref == 0) {
-        //printk("should release pmap %p\n", pmap);
+    if (--pmap->ref == 0)
         pmap_release(pmap);
-    }
+}
+
+static uint32_t pte_flags(uint32_t flags)
+{
+    uint32_t pte = PG_PRESENT;
+
+    if (flags & (VM_KW | VM_UW))
+        pte |= PG_WRITE;
+
+    if (flags & VM_URWX)
+        pte |= PG_USER;
+
+    return pte;
 }
 
 int pmap_add(struct pmap *pmap, vaddr_t va, paddr_t pa, uint32_t flags)
 {
-    //printk("pmap_add(pmap=%p, va=%p, pa=%p, flags=0x%x)\n", pmap, va, pa, flags);
-
     if ((va & PAGE_MASK) || (pa & PAGE_MASK))
         return -EINVAL;
 
-    uint32_t eflags;
-    struct pmap *old_map = pmap_enter(pmap, &eflags);
+    uint32_t *pte = pte_get(pmap, va, 1);
+    *pte = pa | pte_flags(flags);
 
-    size_t pdidx = VDIR(va);
-    size_t ptidx = VTBL(va);
-
-    page_map(pa, pdidx, ptidx, flags);
-    tlb_invalidate_page(va);
-
-    pmap_leave(old_map, eflags);
+    if (pmap == cur_pmap || pmap == &k_pmap)
+        tlb_invalidate_page(va);
 
     return 0;
 }
@@ -463,58 +204,40 @@ void pmap_remove(struct pmap *pmap, vaddr_t sva, vaddr_t eva)
     if ((sva & PAGE_MASK) || (eva & PAGE_MASK))
         return;
 
-    uint32_t eflags;
-    struct pmap *old_map = pmap_enter(pmap, &eflags);
+    for (; sva < eva; sva += PAGE_SIZE) {
+        uint32_t *pte = pte_get(pmap, sva, 0);
 
-    while (sva < eva) {
-        page_unmap(sva);
-        sva += PAGE_SIZE;
-    }
+        if (pte && (*pte & PG_PRESENT)) {
+            *pte = 0;
 
-    pmap_leave(old_map, eflags);
-}
-
-static void table_remove_all(paddr_t table)
-{
-    uintptr_t mnt = frame_mount(table);
-    uint32_t *_pages = MOUNT_ADDR;
-
-    for (int i = 0; i < 1024; ++i) {
-        if (_pages[i] & PG_PRESENT) {
-            paddr_t page = PHYSADDR(_pages[i]);
-            _pages[i] = 0;
-
-            mm_page_decref(page);
-            size_t ref = mm_page_ref(table);
-            mm_page_decref(table);
+            if (pmap == cur_pmap || pmap == &k_pmap)
+                tlb_invalidate_page(sva);
         }
     }
-
-    frame_mount(mnt);
 }
 
+/* the user half's tables go; the pages they map lose the reference the
+ * page fault handler gave them (mm_page_incref) */
 void pmap_remove_all(struct pmap *pmap)
 {
-    uint32_t eflags = irq_save();
+    uint32_t *dir = table(pmap->map);
 
-    paddr_t base = pmap->map;
+    for (int i = 0; i < KERNEL_PDE; ++i) {
+        if (!(dir[i] & PG_PRESENT))
+            continue;
 
-    uintptr_t old_mount = frame_mount(base);
-    uint32_t *tbl = (uint32_t *) MOUNT_ADDR;
+        uint32_t *t = table(PG_ADDR(dir[i]));
 
-    for (int i = 0; i < 768; ++i) {
-        if (tbl[i] & PG_PRESENT) {
-            paddr_t table = PHYSADDR(tbl[i]);
-            table_remove_all(table);
-            tbl[i] = 0;
-            table_dealloc(table);
-        }
+        for (int j = 0; j < 1024; ++j)
+            if (t[j] & PG_PRESENT)
+                mm_page_decref(PG_ADDR(t[j]));
+
+        table_free(PG_ADDR(dir[i]));
+        dir[i] = 0;
     }
 
-    tlb_flush();
-
-    frame_mount(old_mount);
-    irq_restore(eflags);
+    if (pmap == cur_pmap)
+        tlb_flush();
 }
 
 void pmap_protect(struct pmap *pmap, vaddr_t sva, vaddr_t eva, uint32_t prot)
@@ -522,20 +245,16 @@ void pmap_protect(struct pmap *pmap, vaddr_t sva, vaddr_t eva, uint32_t prot)
     if (sva & PAGE_MASK)
         return;
 
-    uint32_t eflags;
-    struct pmap *old_map = pmap_enter(pmap, &eflags);
+    for (; sva < eva; sva += PAGE_SIZE) {
+        uint32_t *pte = pte_get(pmap, sva, 0);
 
-    while (sva < eva) {
-        size_t pdidx = VDIR(sva);
-        size_t ptidx = VTBL(sva);
+        if (pte && (*pte & PG_PRESENT)) {
+            *pte = PG_ADDR(*pte) | pte_flags(prot);
 
-        page_protect(pdidx, ptidx, prot);
-        tlb_invalidate_page(sva);
-
-        sva += PAGE_SIZE;
+            if (pmap == cur_pmap || pmap == &k_pmap)
+                tlb_invalidate_page(sva);
+        }
     }
-
-    pmap_leave(old_map, eflags);
 }
 
 void pmap_copy(struct pmap *dst_map, struct pmap *src_map, vaddr_t dst_addr, size_t len,
@@ -549,16 +268,9 @@ void pmap_update(struct pmap *pmap)
     return;
 }
 
-static char __copy_buf[PAGE_SIZE] __aligned(PAGE_SIZE);
 void pmap_page_copy(paddr_t src, paddr_t dst)
 {
-    uint32_t eflags = irq_save();
-    uintptr_t old = frame_mount(src);
-    memcpy(__copy_buf, MOUNT_ADDR, PAGE_SIZE);
-    frame_mount(dst);
-    memcpy(MOUNT_ADDR, __copy_buf, PAGE_SIZE);
-    frame_mount(old);
-    irq_restore(eflags);
+    memcpy(PHYS2VIRT(dst), PHYS2VIRT(src), PAGE_SIZE);
 }
 
 void pmap_page_protect(struct vm_page *pg, uint32_t flags)
@@ -588,14 +300,30 @@ int pmap_is_referenced(struct vm_page *pg)
 
 paddr_t arch_page_get_mapping(struct pmap *pmap, vaddr_t vaddr)
 {
-    uint32_t eflags;
-    struct pmap *old_map = pmap_enter(pmap, &eflags);
+    uint32_t *pte = pte_get(pmap, vaddr, 0);
 
-    uint32_t page = __page_get_mapping(vaddr);
+    return pte && (*pte & PG_PRESENT) ? PG_ADDR(*pte) : 0;
+}
 
-    pmap_leave(old_map, eflags);
+int arch_page_unmap(vaddr_t vaddr)
+{
+    if (vaddr & PAGE_MASK)
+        return -EINVAL;
 
-    return page ? PHYSADDR(page) : 0;
+    pmap_remove(cur_pmap, vaddr, vaddr + PAGE_SIZE);
+    return 0;
+}
+
+void arch_mm_page_fault(vaddr_t vaddr, int err)
+{
+    int flags = 0;
+
+    flags |= err & 0x01? PF_PRESENT : 0;
+    flags |= err & 0x02? PF_WRITE   : PF_READ;
+    flags |= err & 0x04? PF_USER    : 0;
+    flags |= err & 0x10? PF_EXEC    : 0;
+
+    mm_page_fault(vaddr, flags);
 }
 
 int pmap_page_read(paddr_t paddr, off_t off, size_t size, void *buf)
@@ -603,13 +331,7 @@ int pmap_page_read(paddr_t paddr, off_t off, size_t size, void *buf)
     if (off < 0 || off >= PAGE_SIZE)
         return -EINVAL;
 
-    size_t sz = MIN(size, PAGE_SIZE - (size_t) off);
-    uint32_t eflags = irq_save();
-    uintptr_t old = frame_mount(paddr);
-    char *page = (char *) MOUNT_ADDR;
-    memcpy(buf, page + off, sz);
-    frame_mount(old);
-    irq_restore(eflags);
+    memcpy(buf, (char *) PHYS2VIRT(paddr) + off, MIN(size, PAGE_SIZE - (size_t) off));
     return 0;
 }
 
@@ -618,12 +340,29 @@ int pmap_page_write(paddr_t paddr, off_t off, size_t size, void *buf)
     if (off < 0 || off >= PAGE_SIZE)
         return -EINVAL;
 
-    size_t sz = MIN(size, PAGE_SIZE - (size_t) off);
-    uint32_t eflags = irq_save();
-    uintptr_t old = frame_mount(paddr);
-    char *page = (char *) MOUNT_ADDR;
-    memcpy(page + off, buf, sz);
-    frame_mount(old);
-    irq_restore(eflags);
+    memcpy((char *) PHYS2VIRT(paddr) + off, buf, MIN(size, PAGE_SIZE - (size_t) off));
     return 0;
+}
+
+/* where the window has room for the memory past the direct map */
+static vaddr_t phys_window_next = ARCH_PHYS_WINDOW_BASE;
+
+void *arch_phys_map(uintptr_t paddr, size_t size)
+{
+    if (paddr + size <= ARCH_DMAP_SIZE)
+        return PHYS2VIRT(paddr);
+
+    paddr_t start = PAGE_ALIGN(paddr);
+    size_t  len   = PAGE_ROUND(paddr + size) - start;
+
+    if (phys_window_next + len > ARCH_PHYS_WINDOW_BASE + ARCH_PHYS_WINDOW_SIZE)
+        panic("no room to map memory past the direct map");
+
+    vaddr_t vaddr = phys_window_next;
+    phys_window_next += len;
+
+    for (size_t off = 0; off < len; off += PAGE_SIZE)
+        pmap_add(&k_pmap, vaddr + off, start + off, VM_KRW);
+
+    return (void *) (vaddr + (paddr - start));
 }

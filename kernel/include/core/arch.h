@@ -39,6 +39,10 @@ void arch_mm_setup(void);
 
 paddr_t arch_page_get_mapping(struct pmap *pmap, vaddr_t vaddr);
 
+/* the kernel's address of physical memory (the direct map, or a mapping
+ * made for it) */
+void *arch_phys_map(uintptr_t paddr, size_t size);
+
 void arch_disable_interrupts(void);
 
 void arch_reboot(void);
