@@ -59,22 +59,31 @@ host's `/usr/lib`.
 | port       | version  |                                                     |
 |------------|----------|-----------------------------------------------------|
 | font-cursor-misc | 1.0.4 | the cursor font, for X servers                 |
-| font-misc-misc | 1.1.3  | the fixed width fonts of X (`fixed`, `6x13`, `9x15`, ...), Unicode, in `/usr/share/fonts/X11/misc` (BDF, there is no `bdftopcf`) |
+| font-misc-misc | 1.1.3  | the fixed width fonts of X (`fixed`, `6x13`, `9x15`, ...) in `/usr/share/fonts/X11/misc` (BDF, there is no `bdftopcf`): Unicode, and ISO 8859-1 (made by the recipe) which the usual names are |
 | kilo       | 323d93b  | `kilo` in `/usr/bin`                                |
 | libfontenc | 1.1.8    | library only (for libXfont)                         |
+| libice     | 1.1.2    | library only (for libSM)                            |
 | libpthread-stubs | 0.5 | `pthread-stubs.pc` only (the pthread functions are in the C library), for libxcb |
+| libsm      | 1.2.6    | library only (session management, for Xt)           |
 | libtermkey | 0.22     | library only (for vis)                              |
 | libx11     | 1.8.12   | library only (Xlib), and its data in `/usr/share/X11` (locales, error messages) |
 | libxau     | 1.0.12   | library only (X authorization)                      |
+| libxaw     | 1.0.16   | library only (Athena widgets)                       |
 | libxcb     | 1.17.0   | library only (the X protocol, under Xlib)           |
 | libxdmcp   | 1.1.5    | library only (for TinyX)                            |
+| libxext    | 1.3.6    | library only (X extensions)                         |
 | libxfont   | 1.5.4    | library only, bitmap fonts (for TinyX)              |
+| libxmu     | 1.2.1    | library only (miscellaneous utilities of X clients) |
+| libxpm     | 3.5.17   | library only (X pixmaps)                            |
+| libxt      | 1.3.1    | library only (the X Toolkit Intrinsics)             |
 | lua        | 5.5.1    | `lua` and `luac` in `/usr/bin`                      |
 | ncurses    | 6.6      | library only, wide characters, the vt100, ansi, linux, xterm and xterm-256color descriptions built in (no terminfo database) |
 | tcc        | mob e23dabe | `tcc` (also `cc`) in `/usr/bin`, compiling static programs on AquilaOS; with the C library's headers in `/usr/include` and archives in `/usr/lib`; no `-run` (no `mprotect()`) |
-| tinyx      | 1.2.0 (feab72c) | `Xfbdev` (also `X`) in `/usr/bin`: X on the framebuffer, the keyboard and mouse of a virtual terminal; clients through a Unix socket (`:0`). Its changes to X.Org's code are GPLv3 |
+| tinyx      | 1.2.0 (feab72c) | `Xfbdev` (also `X`) and `startx` (X and twm with an xterm, or `~/.xinitrc`) in `/usr/bin`: X on the framebuffer, the keyboard and mouse of a virtual terminal; clients through a Unix socket (`:0`). Its changes to X.Org's code are GPLv3 |
+| twm        | 1.0.13.1 | `twm` in `/usr/bin`, the window manager of X        |
 | vis        | 0.9      | `vis` in `/usr/bin`, without Lua (no syntax highlighting) |
 | xcb-proto  | 1.17.0   | for libxcb: the protocol in XML, generated on the build host |
 | xorgproto  | 2024.1   | headers only (X protocol)                           |
+| xterm      | 401      | `xterm` in `/usr/bin`, the terminal emulator of X (bitmap fonts, no setuid, utmp or luit) |
 | xtrans     | 1.5.2    | headers only (X transports)                         |
 | zlib       | 1.3.1    | library only                                        |

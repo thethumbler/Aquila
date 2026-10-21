@@ -54,4 +54,7 @@ EOF
     install -D -m 755 kdrive/fbdev/Xfbdev "$DESTDIR/usr/bin/Xfbdev"
     $STRIP "$DESTDIR/usr/bin/Xfbdev"
     ln -sf Xfbdev "$DESTDIR/usr/bin/X"
+
+    # X and a session (~/.xinitrc, or twm and an xterm)
+    install -m 755 "$ROOT/ports/tinyx/startx" "$DESTDIR/usr/bin/startx"
 }

@@ -1,0 +1,42 @@
+#!/bin/sh
+#
+# startx: X on the framebuffer (Xfbdev, :0) and a session in it, the
+# commands of ~/.xinitrc, or else twm and an xterm. X stops when the
+# session ends (the last command of .xinitrc, or the xterm).
+#
+# usage: startx [Xfbdev options]
+#
+
+display=:0
+socket=/tmp/.X11-unix/X0
+
+# a socket left by an X that didn't stop goes, Xfbdev makes it again
+rm -f "$socket"
+
+Xfbdev "$display" "$@" 2>/tmp/Xfbdev.log &
+xpid=$!
+
+# until it listens (its socket), or gives up
+i=0
+while [ ! -S "$socket" ] && kill -0 "$xpid" 2>/dev/null && [ "$i" -lt 30 ]; do
+    sleep 1
+    i=$((i + 1))
+done
+
+if ! kill -0 "$xpid" 2>/dev/null; then
+    echo "startx: Xfbdev exited, see /tmp/Xfbdev.log" >&2
+    exit 1
+fi
+
+DISPLAY=$display
+export DISPLAY
+
+if [ -f "$HOME/.xinitrc" ]; then
+    sh "$HOME/.xinitrc"
+else
+    twm &
+    xterm -geometry 80x24+20+20
+fi
+
+kill "$xpid" 2>/dev/null
+wait "$xpid" 2>/dev/null

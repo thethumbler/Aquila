@@ -35,7 +35,9 @@ kernel's virtual terminals have logins on `/dev/tty1` to `/dev/tty3`,
 Alt+F1 to Alt+F6 switch between them. runit supervises the logins as
 services (`/etc/sv`, enabled in `/etc/service`, see `sv`); `poweroff` and
 `reboot` shut down through it, as does Ctrl+Alt+Del. `make iso` only builds
-`build/aquila.iso`.
+`build/aquila.iso`. With the ports (`make ports`), `startx` on the screen
+starts X: twm and an xterm (Ctrl+Alt+F1 to Ctrl+Alt+F6 switch terminals
+from it).
 
 The ISO and `make run` boot the ramdisk, read-only and the same on every
 boot. `make hdd` makes `build/aquila.img`, a hard disk with AquilaOS
@@ -121,7 +123,8 @@ from source, see [tests/](tests/README.md).
 - [X] Lua     (port)
 - [X] tcc     (C compiler, port), building programs on AquilaOS
 - [X] TinyX   (Xfbdev, X server on the framebuffer, port) with X.Org's
-              fixed and cursor fonts
+              fixed and cursor fonts, Xlib and the X Toolkit (ports)
+- [X] twm and xterm (ports), `startx`
 
 ## License
 

@@ -1,0 +1,32 @@
+diff -ruN a/main.c b/main.c
+--- a/main.c
++++ b/main.c
+@@ -160,6 +160,11 @@
+ #endif
+ #endif
+ 
++#ifdef __aquila__
++#define USE_SYSV_PGRP
++#define USE_SYSV_SIGNALS
++#endif
++
+ #ifdef __CYGWIN__
+ #define WTMP
+ #endif
+diff -ruN a/xterm_io.h b/xterm_io.h
+--- a/xterm_io.h
++++ b/xterm_io.h
+@@ -77,6 +77,13 @@
+ #define HAVE_GRANTPT_PTY_ISATTY 1
+ #endif
+ 
++#ifdef __aquila__
++#define USE_POSIX_TERMIOS
++#define HAVE_POSIX_OPENPT 1
++#define HAVE_PTSNAME 1
++#define HAVE_GRANTPT_PTY_ISATTY 1
++#endif
++
+ #ifdef __SCO__
+ #define USE_TERMIOS
+ #ifndef _SVID3
