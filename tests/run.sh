@@ -2,16 +2,18 @@
 #
 # Build the kernel with the host toolchain and run the QEMU test suite.
 #
-# usage: tests/run.sh [-a arch] [-n] [-v] [test...]
+# usage: tests/run.sh [-a arch] [-k args] [-n] [-v] [test...]
 #
 #   -a      the architecture: x86_64 (default) or i386
+#   -k      more for the kernel's command line, every boot (e.g. apic=off;
+#           but the disk test's, Limine's configuration says it)
 #   -n      don't rebuild the kernel, use the existing image
 #   -v      print the serial log of failed tests
 #
 # QEMU uses KVM when /dev/kvm can be used, KVM=0 in the environment turns
 # it off.
 #
-# tests: ata cpu syscalls memory clock net tcp ext2 libc system disk tcc (default: all)
+# tests: ata cpu syscalls memory clock irq net tcp ext2 libc system disk tcc (default: all)
 #
 # Requires gcc with 32-bit support, ld, cpio and qemu-system-i386 (or
 # qemu-system-x86_64). The ext2
@@ -26,18 +28,20 @@ set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 TESTS=$ROOT/tests
 
-ALL_TESTS="ata cpu syscalls memory clock net tcp ext2 libc system disk tcc"
+ALL_TESTS="ata cpu syscalls memory clock irq net tcp ext2 libc system disk tcc"
 
 ARCH=x86_64
 build=1
 verbose=0
+kargs=
 
-while getopts "a:nvh" opt; do
+while getopts "a:k:nvh" opt; do
     case $opt in
         a) ARCH=$OPTARG ;;
+        k) kargs=$OPTARG ;;
         n) build=0 ;;
         v) verbose=1 ;;
-        *) sed -n '3,16p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+        *) sed -n '3,18p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
     esac
 done
 shift $((OPTIND - 1))
@@ -105,6 +109,28 @@ if [ $build = 1 ]; then
 fi
 
 KERNEL=$(ls "$OUT"/build/kernel/kernel-*.$ARCH 2>/dev/null | head -1)
+
+# -k: QEMU through a wrapper that adds them to -append (a script, timeout
+# runs it); QEMU_BIN is QEMU itself
+QEMU_BIN=$QEMU
+
+if [ -n "$kargs" ]; then
+    QEMU=$OUT/qemu-kargs
+    cat > "$QEMU" <<EOF
+#!/bin/bash
+args=() append=0 kernel=0
+while [ \$# -gt 0 ]; do
+    case "\$1" in
+        -append) args+=(-append "\$2 $kargs"); append=1; shift 2; continue ;;
+        -kernel) kernel=1 ;;
+    esac
+    args+=("\$1"); shift
+done
+[ \$append = 1 ] || [ \$kernel = 0 ] || args+=(-append "$kargs")
+exec $QEMU_BIN "\${args[@]}"
+EOF
+    chmod +x "$QEMU"
+fi
 
 if [ -z "$KERNEL" ]; then
     echo "error: no kernel image, run without -n" >&2
@@ -286,7 +312,7 @@ test_clock()
     local modes=(
         "tsc|-cpu $CPU_MODEL,+invtsc||tsc|1"
         "hpet|||hpet|1"
-        "pit|-machine hpet=off||pit|0"
+        "pit|-machine hpet=off||timer ticks|0"
         "forced|-cpu $CPU_MODEL,+invtsc|clock=hpet|hpet|1"
     )
 
@@ -348,6 +374,60 @@ PY
     done
 
     [ $fails = 0 ] && echo "sources and their resolution:$summary; monotonic, nanosleep, 2 s as the host counts them"
+    [ $fails = 0 ]
+}
+
+# interrupts through the APIC (the I/O APIC's routes, the local APIC's
+# timer) and through the 8259 (apic=off): tests/irq/init.c shows
+# /proc/interrupts, the timer's rate, the e1000's level-triggered line
+test_irq()
+{
+    local fails=0 summary=""
+
+    # name, the kernel's command line, the controller, the timer's line,
+    # the e1000's line (QEMU's pc: IRQ 11)
+    local modes=(
+        "apic||apic|timer:|11: [1-9][0-9]* ioapic gsi 11 level"
+        "8259|apic=off|8259|0:|11: [1-9][0-9]* 8259 edge"
+    )
+
+    for m in "${modes[@]}"; do
+        local name karg want timer e1000
+        IFS='|' read -r name karg want timer e1000 <<< "$m"
+        local log=$OUT/irq/$name.log
+
+        rm -f "$log"
+        $QEMU_BIN $ACCEL -kernel "$KERNEL" -initrd "$OUT/irq/initrd.img" -m 256 -display none \
+            -no-reboot -append "ip=10.0.2.15/24:10.0.2.2 $karg" -serial file:"$log" \
+            -netdev user,id=n0 -device e1000,netdev=n0 >/dev/null 2>&1 &
+        local pid=$!
+
+        for _ in $(seq 300); do
+            grep -a -q 'aqtest: done\|Bailing out' "$log" 2>/dev/null && break
+            sleep 0.1
+        done
+
+        kill $pid 2>/dev/null
+        wait $pid 2>/dev/null
+
+        local problem=""
+        grep -a -q 'aqtest: done, fails=0' "$log" || problem="$problem; did not pass ($(grep -a '^FAIL\|Bailing' "$log" | head -2 | tr '\n' ' '))"
+        grep -a -q "^controller: $want" "$log" || problem="$problem; not through the $want"
+        grep -a -q -E "^$e1000" "$log" || problem="$problem; the e1000's line: $(grep -a '^11:' "$log")"
+
+        local rate
+        rate=$(grep -a -o 'timer_rate=[0-9-]*' "$log" | cut -d= -f2)
+        [ -n "$rate" ] && [ "$rate" -ge 450 ] && [ "$rate" -le 550 ] || problem="$problem; the timer ticked $rate times a second"
+
+        if [ -n "$problem" ]; then
+            echo "$name:${problem#;}"
+            fails=$((fails + 1))
+        else
+            summary="$summary $name($rate/s)"
+        fi
+    done
+
+    [ $fails = 0 ] && echo "through the apic and the 8259:$summary, the e1000's IRQ 11 (level under the apic)"
     [ $fails = 0 ]
 }
 
@@ -820,7 +900,7 @@ needed=" $selected "
 case "$needed" in *" ata "*) needed="$needed cpu " ;; esac
 [ -x "$CROSS_CC" ] || needed=${needed/ libc / }
 
-for name in cpu syscalls memory clock net tcp ext2 libc; do
+for name in cpu syscalls memory clock irq net tcp ext2 libc; do
     case "$needed" in
         *" $name "*)
             mkdir -p "$OUT/$name"
