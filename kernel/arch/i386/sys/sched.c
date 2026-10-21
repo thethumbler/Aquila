@@ -10,21 +10,6 @@
 static uint32_t timer_period = 0;
 static uint64_t timer_ticks = 0;
 
-uint64_t arch_rtime_ns(void)
-{
-    return timer_ticks * timer_period;
-}
-
-uint64_t arch_rtime_us(void)
-{
-    return timer_ticks * timer_period / 1000ULL;
-}
-
-uint64_t arch_rtime_ms(void)
-{
-    return timer_ticks * timer_period / 1000000ULL;
-}
-
 uint64_t arch_cycles(void)
 {
     uint32_t lo, hi;
@@ -62,6 +47,7 @@ static void x86_sched_handler(struct x86_regs *r)
     }
 
     ++timer_ticks;
+    x86_clock_tick();
     sched_timer_tick(timer_period, (r->cs & 3) == 3);
 
     if (kidle) {
@@ -77,6 +63,9 @@ static void x86_sched_handler(struct x86_regs *r)
 void arch_sched_init(void)
 {
     timer_period = platform_timer_setup(2000000, x86_sched_handler);
+
+    /* the clock: the TSC or the HPET, else these ticks */
+    x86_clock_init(timer_period);
 }
 
 static void __arch_idle(void)

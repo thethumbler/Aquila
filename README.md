@@ -126,6 +126,8 @@ from source, see [tests/](tests/README.md).
 
 #### Kernel
 - [X] Monolithic kernel
+- [X] A clock to the nanosecond: the TSC (invariant) or the HPET, the
+      PIT's ticks without them (`clock=tsc|hpet|pit`)
 - [X] Kernel threads (process 0, `[kernel]`; `ps` shows them as `[net]`, ...)
 - [X] Virtual Filesystem
 - [ ] Loadable modules

@@ -7,7 +7,14 @@
 static struct ioaddr pit_ioaddr;
 
 #define PIT_CHANNEL0    0x00
+#define PIT_CHANNEL2    0x02
 #define PIT_CMD         0x03
+
+/* channel 2's gate and output (the speaker's port) */
+#define PIT_GATE_PORT   0x61
+#define GATE2           0x01
+#define SPEAKER         0x02
+#define OUT2            0x20
 
 struct pit_cmd_register {
     union {
@@ -79,4 +86,40 @@ uint32_t x86_pit_period_set(uint32_t period_ns)
     io_out8(&pit_ioaddr, PIT_CHANNEL0, (div >> 8) & 0xFF);
 
     return period_ns;
+}
+
+/*
+ * `us' microseconds, busy (at most 54 ms): channel 2 counts down once,
+ * its output goes high at 0 (channel 0 keeps the tick). To calibrate
+ * the TSC without an HPET.
+ */
+void x86_pit_delay(uint32_t us)
+{
+    struct ioaddr gate = {.addr = PIT_GATE_PORT, .type = IOADDR_PORT};
+    uint32_t count = (uint32_t) (FBASE * us / 1000000ULL);
+
+    if (count > 0xFFFF)
+        count = 0xFFFF;
+
+    /* gate off, speaker off */
+    io_out8(&gate, 0, (io_in8(&gate, 0) & ~(GATE2 | SPEAKER)));
+
+    struct pit_cmd_register cmd = {
+        .bcd = 0,
+        .mode = 0,      /* interrupt on terminal count: once */
+        .access = PIT_ACCESS_LOHIBYTE,
+        .channel = 2,
+    };
+
+    io_out8(&pit_ioaddr, PIT_CMD, cmd.raw);
+    io_out8(&pit_ioaddr, PIT_CHANNEL2, count & 0xFF);
+    io_out8(&pit_ioaddr, PIT_CHANNEL2, count >> 8);
+
+    /* gate on: it counts */
+    io_out8(&gate, 0, (io_in8(&gate, 0) & ~SPEAKER) | GATE2);
+
+    while (!(io_in8(&gate, 0) & OUT2))
+        ;
+
+    io_out8(&gate, 0, io_in8(&gate, 0) & ~GATE2);
 }
