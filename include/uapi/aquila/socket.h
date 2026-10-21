@@ -59,6 +59,7 @@ struct sockaddr {
 #define SO_SNDLOWAT     19
 #define SO_RCVTIMEO     20
 #define SO_SNDTIMEO     21
+#define SO_BINDTODEVICE 25      /* an interface's name: only through it */
 #define SO_ACCEPTCONN   30
 
 #define SHUT_RD         0x0001

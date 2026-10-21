@@ -22,7 +22,7 @@ void udp_input(struct netif *netif, struct netbuf *nb, const struct ipv4_hdr *ih
 
     nb->len = ntohs(uh->len);
 
-    struct inet_sock *sock = inet_sock_find(IP_PROTO_UDP, ih->dst, uh->dst, ih->src, uh->src);
+    struct inet_sock *sock = inet_sock_find(netif, IP_PROTO_UDP, ih->dst, uh->dst, ih->src, uh->src);
 
     if (!sock) {
         /* to one of our addresses, not to a broadcast */

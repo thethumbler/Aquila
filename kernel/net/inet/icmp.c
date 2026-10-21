@@ -12,7 +12,7 @@
 #include <aquila/errno.h>
 
 /* an "unreachable" for a datagram we sent: the socket that sent it */
-static void icmp_unreachable_input(struct icmp_hdr *icmp, size_t len)
+static void icmp_unreachable_input(struct netif *netif, struct icmp_hdr *icmp, size_t len)
 {
     /* the header of the datagram, and 8 bytes of it (UDP's header) */
     struct ipv4_hdr *ih = (struct ipv4_hdr *) (icmp + 1);
@@ -26,7 +26,7 @@ static void icmp_unreachable_input(struct icmp_hdr *icmp, size_t len)
         return;
 
     struct udp_hdr *uh = (struct udp_hdr *) ((uint8_t *) ih + hlen);
-    struct inet_sock *sock = inet_sock_find(IP_PROTO_UDP, ih->src, uh->src, ih->dst, uh->dst);
+    struct inet_sock *sock = inet_sock_find(netif, IP_PROTO_UDP, ih->src, uh->src, ih->dst, uh->dst);
 
     if (sock)
         inet_sock_error(sock, icmp->code == ICMP_UNREACH_PORT ? ECONNREFUSED : EHOSTUNREACH);
@@ -61,7 +61,7 @@ void icmp_input(struct netif *netif, struct netbuf *nb, uint32_t src, uint32_t d
         case ICMP_ECHO_REPLY: {
             /* to the ping socket of that identifier, the ICMP header with
              * the data */
-            struct inet_sock *sock = inet_sock_find(IP_PROTO_ICMP, dst, icmp->id, src, 0);
+            struct inet_sock *sock = inet_sock_find(netif, IP_PROTO_ICMP, dst, icmp->id, src, 0);
 
             if (!sock)
                 break;
@@ -73,7 +73,7 @@ void icmp_input(struct netif *netif, struct netbuf *nb, uint32_t src, uint32_t d
         }
 
         case ICMP_UNREACH:
-            icmp_unreachable_input(icmp, nb->len);
+            icmp_unreachable_input(netif, icmp, nb->len);
             break;
     }
 

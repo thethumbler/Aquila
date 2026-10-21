@@ -152,6 +152,16 @@ static void net_main(void *arg __unused)
     }
 }
 
+/* the interface named `name' (at most 16 characters, IFNAMSIZ) */
+struct netif *netif_find(const char *name)
+{
+    for (struct netif *netif = netifs; netif; netif = netif->next)
+        if (!strncmp(netif->name, name, 16))
+            return netif;
+
+    return NULL;
+}
+
 int netif_register(struct netif *netif)
 {
     int n = netifs_nr++;

@@ -38,6 +38,7 @@ struct netif {
 extern struct netif *netifs;
 
 int  netif_register(struct netif *netif);
+struct netif *netif_find(const char *name);
 void netif_input(struct netif *netif, struct netbuf *nb);
 int  netif_output(struct netif *netif, struct netbuf *nb);
 

@@ -48,6 +48,8 @@ struct inet_sock {
     size_t recv_bytes;
     struct queue recv_wait;
 
+    struct netif *netif;        /* SO_BINDTODEVICE: only through it */
+
     int error;                  /* to report (SO_ERROR, the next call) */
     uint64_t rcvtimeo;          /* ns, 0: none */
     int broadcast;              /* SO_BROADCAST */
@@ -115,16 +117,18 @@ static void sock_unbind(struct inet_sock *sock)
     sock->lport = 0;
 }
 
-/* the socket a datagram from (remote, remote_port) to (local, port) is
- * for: a connected one to that remote first, else one that isn't
- * connected (the remote port doesn't count for ping) */
-struct inet_sock *inet_sock_find(uint8_t proto, uint32_t local, uint16_t port,
-                                 uint32_t remote, uint16_t remote_port)
+/* the socket a datagram from (remote, remote_port) to (local, port),
+ * received on `netif', is for: a connected one to that remote first, else
+ * one that isn't connected (the remote port doesn't count for ping); not
+ * one bound to another interface */
+struct inet_sock *inet_sock_find(struct netif *netif, uint8_t proto, uint32_t local,
+                                 uint16_t port, uint32_t remote, uint16_t remote_port)
 {
     struct inet_sock *any = NULL;
 
     for (struct inet_sock *s = bound; s; s = s->next) {
-        if (s->proto != proto || s->lport != port || (s->laddr && s->laddr != local))
+        if (s->proto != proto || s->lport != port || (s->laddr && s->laddr != local) ||
+            (s->netif && s->netif != netif))
             continue;
 
         if (!s->connected) {
@@ -256,8 +260,9 @@ static int socket_inet_bind(struct file *file, const struct sockaddr *addr, sock
     if (sock->lport)
         return -EINVAL;
 
-    /* any, or one of ours */
-    if (ip && !ipv4_is_local(ip))
+    /* any, one of ours, or the broadcast address (to receive what is sent
+     * to it only, as a DHCP client does) */
+    if (ip && ip != 0xffffffff && !ipv4_is_local(ip))
         return -EADDRNOTAVAIL;
 
     /* the ports below 1024 are root's */
@@ -322,10 +327,14 @@ static ssize_t socket_inet_send(struct file *file, void *buf, size_t len, int fl
         return err;
     }
 
-    struct netif *netif = ipv4_route(ip);
+    /* bound to an interface: through it, whatever the routes say */
+    struct netif *netif = sock->netif ? sock->netif : ipv4_route(ip);
 
     if (!netif)
         return -ENETUNREACH;
+
+    if (!(netif->flags & NETIF_UP))
+        return -ENETDOWN;
 
     if ((ip == 0xffffffff || ip == (netif->ip | ~netif->netmask)) && !sock->broadcast)
         return -EACCES;
@@ -343,8 +352,10 @@ static ssize_t socket_inet_send(struct file *file, void *buf, size_t len, int fl
     if (!nb)
         return -ENOBUFS;
 
-    /* from the address it's bound to, if it is */
-    uint32_t src = sock->laddr ? sock->laddr : ipv4_source(netif, ip);
+    /* from the address it's bound to, if it is (not the broadcast
+     * address: from the interface's then, 0.0.0.0 if it has none) */
+    uint32_t src = sock->laddr && sock->laddr != 0xffffffff ? sock->laddr :
+                   ipv4_source(netif, ip);
 
     if (sock->proto == IP_PROTO_UDP) {
         memcpy(netbuf_put(nb, len), buf, len);
@@ -478,6 +489,19 @@ static int socket_inet_getsockopt(struct file *file, int level, int name, void *
             *len = sizeof(int);
             return 0;
 
+        case SO_BINDTODEVICE: {
+            /* its name, "" if none */
+            const char *name = sock->netif ? sock->netif->name : "";
+            size_t n = strlen(name) + 1;
+
+            if (*len < n)
+                return -EINVAL;
+
+            memcpy(val, name, n);
+            *len = n;
+            return 0;
+        }
+
         case SO_RCVTIMEO: {
             if (*len < sizeof(struct timeval))
                 return -EINVAL;
@@ -507,6 +531,30 @@ static int socket_inet_setsockopt(struct file *file, int level, int name, const 
 
             sock->broadcast = !!*(const int *) val;
             return 0;
+
+        case SO_BINDTODEVICE: {
+            /* an interface's name (in a buffer that may be longer, as a
+             * struct ifreq), none if empty; root's, as Linux has it */
+            char name[17] = {0};
+
+            if (curproc->uid)
+                return -EPERM;
+
+            memcpy(name, val, MIN(len, (socklen_t) 16));
+
+            if (!name[0]) {
+                sock->netif = NULL;
+                return 0;
+            }
+
+            struct netif *netif = netif_find(name);
+
+            if (!netif)
+                return -ENODEV;
+
+            sock->netif = netif;
+            return 0;
+        }
 
         case SO_RCVTIMEO: {
             if (len < sizeof(struct timeval))

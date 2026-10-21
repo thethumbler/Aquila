@@ -18,15 +18,6 @@
 #include <aquila/ioctl.h>
 #include <aquila/route.h>
 
-static struct netif *netif_byname(const char *name)
-{
-    for (struct netif *netif = netifs; netif; netif = netif->next)
-        if (!strncmp(netif->name, name, IFNAMSIZ))
-            return netif;
-
-    return NULL;
-}
-
 static int netif_index(struct netif *netif)
 {
     int i = 1;
@@ -162,7 +153,7 @@ int inet_ifioctl(int request, void *argp)
     if (uaccess_check(ifr, sizeof(*ifr)))
         return -EFAULT;
 
-    struct netif *netif = netif_byname(ifr->ifr_name);
+    struct netif *netif = netif_find(ifr->ifr_name);
 
     if (!netif)
         return -ENODEV;

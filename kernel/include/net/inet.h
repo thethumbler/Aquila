@@ -98,7 +98,7 @@ void icmp_unreachable(struct netif *netif, const struct ipv4_hdr *ih, int code);
 void udp_input(struct netif *netif, struct netbuf *nb, const struct ipv4_hdr *ih);
 
 /* the sockets (net/inet/socket.c) */
-struct inet_sock *inet_sock_find(uint8_t proto, uint32_t local, uint16_t port,
+struct inet_sock *inet_sock_find(struct netif *netif, uint8_t proto, uint32_t local, uint16_t port,
                                  uint32_t remote, uint16_t remote_port);
 void inet_sock_deliver(struct inet_sock *sock, struct netbuf *nb);
 void inet_sock_error(struct inet_sock *sock, int err);

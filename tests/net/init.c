@@ -242,6 +242,22 @@ static void interfaces(void)
         for (int i = 0; i < IFNAMSIZ; ++i) ifr.ifr_name[i] = "nope"[i < 4 ? i : 4];
         SC(SYS_ioctl, fd, SIOCGIFADDR, &ifr); }), -ENODEV);
 
+    /* what a DHCP client does: bound to the interface, and to the
+     * broadcast address */
+    int d = udp(), e = udp();
+    char dev[IFNAMSIZ] = {0};
+    unsigned int devlen = sizeof(dev);
+
+    check("struct sockaddr holds a sockaddr_in", sizeof(struct sockaddr), sizeof(struct sockaddr_in));
+    check("SO_BINDTODEVICE", setopt(d, SO_BINDTODEVICE, "eth0", 5), 0);
+    check("SO_BINDTODEVICE: get", SC5(SYS_getsockopt, d, SOL_SOCKET, SO_BINDTODEVICE, dev, &devlen), 0);
+    check("SO_BINDTODEVICE: eth0", eq(dev, "eth0", 5), 1);
+    check("SO_BINDTODEVICE: no such interface", setopt(e, SO_BINDTODEVICE, "nope", 5), -ENODEV);
+    check("bind: the broadcast address", bind_to(d, 0xffffffff, 68), 0);
+    check("bind: someone else's address", bind_to(e, ip4(10, 0, 2, 99), 68), -EADDRNOTAVAIL);
+    SC(SYS_close, d, 0, 0);
+    SC(SYS_close, e, 0, 0);
+
     SC(SYS_close, fd, 0, 0);
 }
 

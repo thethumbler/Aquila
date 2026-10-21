@@ -104,7 +104,15 @@ struct netif *ipv4_route(uint32_t dst)
     struct netif *gw = NULL;
 
     for (struct netif *netif = netifs; netif; netif = netif->next) {
-        if (!(netif->flags & NETIF_UP) || !netif->ip)
+        if (!(netif->flags & NETIF_UP))
+            continue;
+
+        /* a broadcast goes from an interface without an address too (a
+         * DHCP client's, from 0.0.0.0) */
+        if (dst == 0xffffffff)
+            return netif;
+
+        if (!netif->ip)
             continue;
 
         if (on_link(netif, dst) || dst == 0xffffffff || ipv4_is_local(dst))
