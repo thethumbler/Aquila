@@ -129,8 +129,8 @@ ports: check-toolchain
 #
 
 # what the base system has besides contrib/ (sbase, dash)
-AQBOX_BIN  := clear ps stat truncate vmstat
-AQBOX_SBIN := getty login mount poweroff readmbr reboot
+AQBOX_BIN  := clear ping ps stat truncate vmstat
+AQBOX_SBIN := getty ifconfig login mount poweroff readmbr reboot route
 
 # contrib/ is built unless it comes from elsewhere
 initrd: userland $(if $(filter $(BUILDDIR)/contrib/root,$(CONTRIB_ROOT)),contrib)

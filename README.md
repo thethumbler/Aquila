@@ -50,6 +50,22 @@ rest (home directories, and the accounts in `/etc`), `make hdd-kernel`
 only the kernel, `make hdd` makes the whole disk anew. See the top of the [Makefile](Makefile)
 for all targets.
 
+### Network
+
+The kernel drives Intel 8254x Ethernet cards (e1000), QEMU's default.
+IPv4 is configured with the kernel argument `ip=<address>/<prefix
+length>[:<gateway>]`, e.g. `ip=10.0.2.15/24:10.0.2.2` for QEMU's user
+network, or on the running system:
+
+```
+ifconfig eth0 10.0.2.15 netmask 255.255.255.0 up
+route add default gw 10.0.2.2
+ping 10.0.2.2
+```
+
+Programs have UDP sockets and ping sockets (`SOCK_DGRAM`,
+`IPPROTO_ICMP`). TCP is not there yet.
+
 ### i386
 
 The default is x86-64. AquilaOS also runs on i386 (using at most
@@ -126,6 +142,13 @@ from source, see [tests/](tests/README.md).
 - [X] ata     (ATA hard disks, PIO mode)
 - [X] fbdev   (framebuffer, VESA; the Linux framebuffer API)
 - [X] 8250    (UART)
+- [X] e1000   (Intel 8254x Ethernet)
+
+#### Network
+- [X] IPv4, ARP, ICMP (echo, unreachable), loopback
+- [X] UDP and ping sockets
+- [ ] TCP
+- [ ] DHCP
 
 #### System
 - [X] newlib 4.6 C library
