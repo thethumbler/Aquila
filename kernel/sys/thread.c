@@ -101,7 +101,7 @@ int thread_queue_wakeup_nopoll(struct queue *queue)
 #ifdef DEBUG_SLEEP_QUEUE
         printk("[%d:%d] %s: Waking up from queue %p\n", thread->owner->pid, thread->tid, thread->owner->name, queue);
 #endif
-        sched_thread_ready(thread);
+        sched_thread_wake(thread);
     }
 
     return 0;
@@ -115,7 +115,7 @@ void thread_wakeup(struct thread *thread)
 
     queue_node_remove(thread->sleep_queue, thread->sleep_node);
     thread->sleep_node = NULL;
-    sched_thread_ready(thread);
+    sched_thread_wake(thread);
 }
 
 int thread_create(struct thread *thread, uintptr_t stack, uintptr_t entry, uintptr_t uentry, uintptr_t arg, uintptr_t attr __unused, struct thread **new_thread)

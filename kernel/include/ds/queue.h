@@ -97,6 +97,33 @@ static inline struct qnode *enqueue(struct queue *queue, void *value)
 
 /**
  * \ingroup ds
+ * \brief insert a new element at the head of a queue, the next dequeued
+ */
+static inline struct qnode *enqueue_head(struct queue *queue, void *value)
+{
+    if (!queue)
+        return NULL;
+
+    struct qnode *node = kmalloc(sizeof(struct qnode), &M_QNODE, 0);
+    if (!node) return NULL;
+
+    memset(node, 0, sizeof(struct qnode));
+    node->value = value;
+
+    if (!queue->count) {
+        queue->head = queue->tail = node;
+    } else {
+        node->next = queue->head;
+        queue->head->prev = node;
+        queue->head = node;
+    }
+
+    ++queue->count;
+    return node;
+}
+
+/**
+ * \ingroup ds
  * \brief get an element from a queue and remove it
  */
 static inline void *dequeue(struct queue *queue)

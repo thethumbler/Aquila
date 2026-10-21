@@ -187,6 +187,13 @@ void __x86_irq_handler(struct x86_regs *r)
 
     sched_idle_wakeup();
 
+    /* an urgent thread was woken (the network's): it runs now, not at the
+     * next tick; the interrupted thread is ready again */
+    if (sched_urgent && (r->cs & 3) == 3 && curthread) {
+        extern void x86_preempt(void);
+        x86_preempt();
+    }
+
     /* back to user mode (maybe after other threads ran): signals queued
      * meanwhile (by drivers) are delivered, a stop that was left for the
      * thread is taken now */

@@ -190,6 +190,23 @@ void sched_thread_ready(struct thread *thread)
     thread->sched_node  = sched_node;
 }
 
+/* an urgent thread was woken: switch to it when the interrupt returns to
+ * user mode (an idle CPU switches anyway) */
+int sched_urgent = 0;
+
+/* a sleeping thread woken up: ready, ahead of the others if urgent */
+void sched_thread_wake(struct thread *thread)
+{
+    if (!thread->urgent) {
+        sched_thread_ready(thread);
+        return;
+    }
+
+    thread->sched_queue = ready_queue;
+    thread->sched_node  = enqueue_head(ready_queue, thread);
+    sched_urgent = 1;
+}
+
 /* the current thread is done running (it sleeps, or exited): another
  * ready one runs now, or the CPU idles until an interrupt */
 int kidle = 0;
@@ -241,6 +258,8 @@ void schedule() /* Called from arch-specific timer event handler */
 {
     if (!ready_queue)    /* How did we even get here? */
         panic("Threads queue is not initialized");
+
+    sched_urgent = 0;
 
     if (!kidle)
         sched_thread_ready(curthread);

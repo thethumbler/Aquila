@@ -28,6 +28,7 @@ void arch_syscall_return(struct thread *thread, uintptr_t val);
 void arch_sched_init(void);
 void arch_sched();
 void arch_cur_thread_kill(void);// __attribute__((noreturn));
+void arch_yield(void);  /* the current thread runs again after the ready ones */
 
 /* arch/ARCH/sys/execve.c */
 void arch_sys_execve(struct proc *proc, int argc, char * const argp[], int envc, char * const envp[]);

@@ -21,6 +21,11 @@ void schedule(void);
 void sched_idle_wakeup(void);
 
 void sched_thread_ready(struct thread *thread);
+void sched_thread_wake(struct thread *thread);
+
+/* an urgent thread was woken (thread->urgent), it runs once the interrupt
+ * returns */
+extern int sched_urgent;
 
 void sched_timer_tick(uint32_t period, int user);
 void sched_sleep(uint64_t until);

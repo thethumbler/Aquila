@@ -124,6 +124,12 @@ void arch_cur_thread_kill(void)
     x86_goto((uintptr_t) __arch_cur_thread_kill, stack, stack);
 }
 
+void arch_yield(void)
+{
+    extern void x86_preempt(void);
+    x86_preempt();
+}
+
 void arch_sleep(void)
 {
     extern void x86_sleep(void);

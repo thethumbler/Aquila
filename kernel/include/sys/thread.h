@@ -83,6 +83,10 @@ struct thread {
 
     /** Thread flags */
     int spawned;
+
+    /** Runs before the others once woken, as soon as the interrupt that
+     *  woke it returns (sched_thread_wake): the network's thread */
+    int urgent;
 };
 
 int thread_queue_sleep(struct queue *queue);
