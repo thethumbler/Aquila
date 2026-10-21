@@ -4,6 +4,7 @@
 
 #include <boot/boot.h>
 #include <dev/dev.h>
+#include <mm/vm.h>
 
 static void *rd_addr = NULL;
 size_t rd_size = 0; /* XXX */
@@ -42,12 +43,22 @@ static ssize_t rd_write(struct devid *dd __unused, off_t offset, size_t size, vo
     return size;
 }
 
+/* the module, where the boot loader put it (after the kernel, past what
+ * the early mapping covers if it is large) */
+static struct vm_entry rd_vm;
+
 static int rd_probe()
 {
     extern struct boot *__kboot;
     module_t *rd_module = &__kboot->modules[0];
     rd_addr = (void *) rd_module->addr;
     rd_size = rd_module->size;
+
+    rd_vm.base  = PAGE_ALIGN((uintptr_t) rd_addr);
+    rd_vm.paddr = LMA(rd_vm.base);
+    rd_vm.size  = PAGE_ROUND((uintptr_t) rd_addr + rd_size) - rd_vm.base;
+    rd_vm.flags = VM_KRW;
+    vm_map(&kvm_space, &rd_vm);
 
     kdev_blkdev_register(1, &rddev);
 
