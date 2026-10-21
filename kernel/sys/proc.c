@@ -136,7 +136,7 @@ int proc_init(struct proc *proc)
 
     proc->pid = proc_pid_alloc();
 
-    proc->fds = kmalloc(FDS_COUNT * sizeof(struct file), &M_FDS, M_ZERO);
+    proc->fds = kmalloc(FDS_COUNT * sizeof(struct fd), &M_FDS, M_ZERO);
 
     if (!proc->fds) {
         err = -ENOMEM;
@@ -251,6 +251,9 @@ void proc_kill(struct proc *proc)
         if (thread->sched_node) /* Thread is in the scheduler queue */
             queue_node_remove(thread->sched_queue, thread->sched_node);
 
+        /* a system call it won't return from: the files it held */
+        thread_files_release(thread);
+
         if (thread == curthread) {
             kill_curthread = 1;
             continue;
@@ -264,13 +267,8 @@ void proc_kill(struct proc *proc)
     }
 
     /* close all file descriptors */
-    for (int i = 0; i < FDS_COUNT; ++i) {
-        struct file *file = &proc->fds[i];
-        if (file->vnode && file->vnode != (void *) -1) {
-            vfs_file_close(file);
-            file->vnode = NULL;
-        }
-    }
+    for (int i = 0; i < FDS_COUNT; ++i)
+        proc_fd_close(proc, i);
 
     /* what is left frees what the thread killing itself runs on (its map,
      * its process once reaped), it must not be switched out until it is
@@ -359,13 +357,13 @@ int proc_reap(struct proc *proc)
     return 0;
 }
 
+/* the lowest free descriptor, reserved while the call sets it up (no one
+ * else takes it, it isn't open yet): -1 if there's none */
 int proc_fd_get(struct proc *proc)
 {
     for (int i = 0; i < FDS_COUNT; ++i) {
-        if (!proc->fds[i].vnode) {
-            /* start from a clean slot, no stale offset/flags */
-            proc->fds[i] = (struct file) {0};
-            proc->fds[i].vnode = (void *) -1;    
+        if (!proc->fds[i].file) {
+            proc->fds[i] = (struct fd) {.file = FD_RESERVED};
             return i;
         }
     }
@@ -373,11 +371,41 @@ int proc_fd_get(struct proc *proc)
     return -1;
 }
 
+/* a reserved descriptor wasn't set up after all: free again */
 void proc_fd_release(struct proc *proc, int fd)
 {
-    if (fd >= 0 && fd < FDS_COUNT) {
-        proc->fds[fd].vnode = NULL;
-    }
+    if (fd >= 0 && fd < FDS_COUNT)
+        proc->fds[fd] = (struct fd) {0};
+}
+
+/* a reserved descriptor refers to `file' (the reference is the
+ * descriptor's now) */
+void proc_fd_install(struct proc *proc, int fd, struct file *file, int flags)
+{
+    proc->fds[fd] = (struct fd) {.file = file, .flags = flags};
+}
+
+/* the open file `fd' refers to, NULL if it's free or being set up */
+struct file *proc_fd_file(struct proc *proc, int fd)
+{
+    if (fd < 0 || fd >= FDS_COUNT)
+        return NULL;
+
+    struct file *file = proc->fds[fd].file;
+    return file == FD_RESERVED ? NULL : file;
+}
+
+/* the descriptor is free, its reference to the open file dropped (the
+ * last one closes the file: what the close says) */
+int proc_fd_close(struct proc *proc, int fd)
+{
+    struct file *file = proc_fd_file(proc, fd);
+
+    if (!file)
+        return -EBADF;
+
+    proc->fds[fd] = (struct fd) {0};
+    return file_put(file);
 }
 
 int session_new(struct proc *proc)

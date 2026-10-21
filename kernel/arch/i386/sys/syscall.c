@@ -36,6 +36,9 @@ void arch_syscall(struct x86_regs *r)
     syscall(r->rdi, r->rsi, r->rdx, r->r10, r->r8);
 #endif
 
+    /* the open files the call used: let go of */
+    thread_files_release(curthread);
+
     /* an urgent thread was woken during the call (the network's, by a
      * packet to ourselves): it runs before returning to user mode */
     if (sched_urgent) {

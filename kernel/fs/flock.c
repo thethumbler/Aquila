@@ -1,7 +1,7 @@
 /*
  * Advisory locks on whole files (flock): shared or exclusive, held by an
- * open file and the descriptors copied from it (dup, fork). They go away
- * with LOCK_UN, or when the last of those descriptors is closed.
+ * open file (which the descriptors dup() and fork() copied share). They
+ * go away with LOCK_UN, or when the open file is closed.
  */
 
 #include <core/system.h>
@@ -18,7 +18,6 @@ MALLOC_DEFINE(M_FILE_LOCK, "file-lock", "flock() lock");
 struct file_lock {
     struct vnode *vnode;
     int type;   /* LOCK_SH, LOCK_EX, or 0 while not locked */
-    int ref;    /* descriptors sharing it */
 };
 
 /* locks held, and the threads waiting for one to be released */
@@ -72,7 +71,6 @@ int vfs_file_flock(struct file *file, int op)
         if (!lock) return -ENOMEM;
 
         lock->vnode = file->vnode;
-        lock->ref = 1;
         file->lock = lock;
     }
 
@@ -97,28 +95,7 @@ int vfs_file_flock(struct file *file, int op)
     return 0;
 }
 
-/*
- * A descriptor is copied (dup, fork): both share a lock. Regular files
- * get one already, so that one taken later through either is the same.
- */
-void vfs_file_lock_copy(struct file *file, struct file *copy)
-{
-    if (!file->lock && !(file->flags & FILE_SOCKET) && S_ISREG(file->vnode->mode)) {
-        file->lock = kmalloc(sizeof(struct file_lock), &M_FILE_LOCK, M_ZERO);
-
-        if (file->lock) {
-            file->lock->vnode = file->vnode;
-            file->lock->ref = 1;
-        }
-    }
-
-    copy->lock = file->lock;
-
-    if (file->lock)
-        file->lock->ref++;
-}
-
-/* a descriptor is closed */
+/* the open file is closed: its lock goes */
 void vfs_file_lock_release(struct file *file)
 {
     struct file_lock *lock = file->lock;
@@ -127,10 +104,6 @@ void vfs_file_lock_release(struct file *file)
         return;
 
     file->lock = NULL;
-
-    if (--lock->ref)
-        return;
-
     lock_unlock(lock);
     kfree(lock);
 }

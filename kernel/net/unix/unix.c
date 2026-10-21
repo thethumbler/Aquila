@@ -50,7 +50,6 @@ int socket_unix_create(struct file *file, int domain, int type, int protocol)
     socket->protocol = protocol;
     socket->ops      = &socket_unix_ops;
     socket->p        = NULL;
-    socket->ref      = 1;
 
     file->flags     |= FILE_SOCKET;
     file->socket     = socket;
@@ -98,7 +97,6 @@ static int socket_unix_accept(struct file *file, struct file *conn, const struct
 
     conn_socket->domain = AF_UNIX_CONN;
     conn_socket->p      = request;
-    conn_socket->ref    = 1;    /* only referenced by the new descriptor */
 
     /* Initialize connection, offset 0 marks the server side */
     conn->socket = conn_socket;

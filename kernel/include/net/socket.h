@@ -17,8 +17,6 @@ struct socket {
 
     /* Private data */
     void *p;
-
-    ssize_t ref;
 };
 
 struct sock_ops {

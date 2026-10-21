@@ -67,6 +67,12 @@ struct thread {
     struct queue *sched_queue;
     struct qnode *sched_node;
 
+    /** The open files its system call holds (file_hold), let go of when
+     *  it returns, or when the thread is killed */
+#define THREAD_FILES_HELD   4
+    struct file *files[THREAD_FILES_HELD];
+    int files_held;
+
     /** Arch specific data */
     void *arch;
 
@@ -89,6 +95,9 @@ void thread_wakeup(struct thread *thread);
 int thread_new(struct proc *proc, struct thread **rthread);
 int thread_create(struct thread *thread, uintptr_t stack, uintptr_t entry, uintptr_t uentry, uintptr_t arg, uintptr_t attr, struct thread **new_thread);
 int thread_kill(struct thread *thread);
+
+/* the files its system call holds, let go of (fs/file.c) */
+void thread_files_release(struct thread *thread);
 
 /* sys/execve.h */
 int thread_execve(struct thread *thread, char * const argp[], char * const envp[]);

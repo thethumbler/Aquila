@@ -400,7 +400,6 @@ int socket_tcp_create(struct file *file, int domain, int type, int protocol)
     socket->protocol = protocol;
     socket->ops      = &socket_tcp_ops;
     socket->p        = pcb;
-    socket->ref      = 1;
 
     file->flags |= FILE_SOCKET;
     file->socket = socket;
@@ -487,7 +486,6 @@ static int socket_tcp_accept(struct file *file, struct file *conn, const struct 
 
     memcpy(socket, file->socket, sizeof(struct socket));
     socket->p   = child;
-    socket->ref = 1;
 
     conn->socket = socket;
     conn->flags  = FILE_SOCKET;

@@ -153,6 +153,11 @@ struct vnode {
     struct pipe *fifo;
 };
 
+/*
+ * An open file (POSIX's open file description, fs/file.c): one per open(),
+ * pipe(), socket() or accept(), shared by the descriptors dup() and fork()
+ * copy, with its offset and status flags
+ */
 struct file {
     union {
         struct vnode *vnode;
@@ -161,15 +166,30 @@ struct file {
 
     off_t offset;
     int flags;      /* open flags (O_*) */
-    int fdflags;    /* descriptor flags (FD_CLOEXEC) */
 
     /* absolute path of an open directory, for the *at() system calls;
-     * owned by the descriptor (freed by vfs_file_close) */
+     * the file's (freed by vfs_file_close) */
     char *path;
 
-    /* the flock() lock, shared with the descriptors copied from this one */
+    /* its flock() lock */
     struct file_lock *lock;
+
+    /* the descriptors, and the system calls, referring to it */
+    int ref;
 };
+
+/* a new open file, its one reference the caller's */
+struct file *file_new(void);
+
+/* one more reference */
+struct file *file_ref(struct file *file);
+
+/* a reference dropped: the last one closes and frees the file (the
+ * close's result) */
+int file_put(struct file *file);
+
+/* held by the current thread's system call until it returns */
+struct file *file_hold(struct file *file);
 
 /**
  * \ingroup vfs
@@ -252,7 +272,6 @@ ssize_t vfs_file_readdir(struct file *file, struct dirent *dirent);
 off_t   vfs_file_lseek(struct file *file, off_t offset, int whence);
 ssize_t vfs_file_close(struct file *file);
 int     vfs_file_flock(struct file *file, int op);
-void    vfs_file_lock_copy(struct file *file, struct file *copy);
 void    vfs_file_lock_release(struct file *file);
 int     vfs_file_ioctl(struct file *file, int request, void *argp);
 int     vfs_file_trunc(struct file *file, off_t len);

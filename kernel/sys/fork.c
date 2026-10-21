@@ -11,36 +11,21 @@
 
 MALLOC_DECLARE(M_FDS);
 
+/* the child's descriptors refer to the parent's open files: the same
+ * files, their offsets shared */
 static int copy_fds(struct proc *parent, struct proc *fork)
 {
-    /* copy open files descriptors */
-    fork->fds = kmalloc(FDS_COUNT * sizeof(struct file), &M_FDS, 0);
+    fork->fds = kmalloc(FDS_COUNT * sizeof(struct fd), &M_FDS, M_ZERO);
 
     if (!fork->fds)
         return -ENOMEM;
 
-    memcpy(fork->fds, parent->fds, FDS_COUNT * sizeof(struct file));
-
     for (int i = 0; i < FDS_COUNT; ++i) {
-        struct file *file = &fork->fds[i];
-
         /* a slot another thread is setting up stays the parent's */
-        if (file->vnode == (void *) -1) {
-            *file = (struct file) {0};
-            continue;
-        }
+        struct file *file = proc_fd_file(parent, i);
 
-        if (file->vnode) {
-            if (file->flags & FILE_SOCKET)
-                file->socket->ref++;
-            else
-                file->vnode->ref++;
-
-            if (file->path)
-                file->path = strdup(file->path);
-
-            vfs_file_lock_copy(&parent->fds[i], file);
-        }
+        if (file)
+            fork->fds[i] = (struct fd) {.file = file_ref(file), .flags = parent->fds[i].flags};
     }
 
     return 0;
@@ -156,13 +141,10 @@ int proc_fork(struct thread *thread, struct proc **ref)
 error:
     /* the caller returns err to the parent */
     if (fork) {
-        /* close copied file descriptors (drops the references we took) */
+        /* the copied descriptors (drops the references we took) */
         if (fork->fds) {
-            for (int i = 0; i < FDS_COUNT; ++i) {
-                struct file *file = &fork->fds[i];
-                if (file->vnode && file->vnode != (void *) -1)
-                    vfs_file_close(file);
-            }
+            for (int i = 0; i < FDS_COUNT; ++i)
+                proc_fd_close(fork, i);
 
             kfree(fork->fds);
         }

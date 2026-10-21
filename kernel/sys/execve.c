@@ -271,14 +271,9 @@ int proc_execve(struct thread *thread, const char *fn, char * const _argp[], cha
     thread->spawned = 0;
 
     /* close descriptors marked close-on-exec */
-    for (int fd = 0; fd < FDS_COUNT; ++fd) {
-        struct file *file = &proc->fds[fd];
-
-        if (file->vnode && file->vnode != (void *) -1 && (file->fdflags & FD_CLOEXEC)) {
-            vfs_file_close(file);
-            *file = (struct file) {0};
-        }
-    }
+    for (int fd = 0; fd < FDS_COUNT; ++fd)
+        if (proc_fd_file(proc, fd) && (proc->fds[fd].flags & FD_CLOEXEC))
+            proc_fd_close(proc, fd);
 
     /* caught signals go back to their default action, ignored ones stay
      * ignored (POSIX); the mask and the pending ones stay */

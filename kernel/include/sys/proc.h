@@ -37,6 +37,17 @@ struct session {
     struct qnode *qnode;
 };
 
+/*
+ * A file descriptor: the open file it refers to (fs/file.c, shared with
+ * the descriptors dup() and fork() copied), and its own flags
+ */
+struct fd {
+    struct file *file;  /* NULL: free; FD_RESERVED: being set up */
+    int flags;          /* FD_CLOEXEC */
+};
+
+#define FD_RESERVED ((struct file *) -1)
+
 /**
  * \ingroup sys
  * \brief process Group
@@ -74,8 +85,8 @@ struct proc {
     /** Process name - XXX */
     char *name;
 
-    /** Open file descriptors */
-    struct file *fds;
+    /** File descriptors (FDS_COUNT), each an open file it refers to */
+    struct fd *fds;
 
     /** Parent process */
     struct proc *parent;
@@ -176,6 +187,9 @@ void proc_kill(struct proc *proc);
 int  proc_reap(struct proc *proc);
 int  proc_fd_get(struct proc *proc);
 void proc_fd_release(struct proc *proc, int fd);
+void proc_fd_install(struct proc *proc, int fd, struct file *file, int flags);
+struct file *proc_fd_file(struct proc *proc, int fd);
+int  proc_fd_close(struct proc *proc, int fd);
 void proc_dump(struct proc *proc);
 
 int  proc_init(struct proc *proc);

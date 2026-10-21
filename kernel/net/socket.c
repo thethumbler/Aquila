@@ -155,12 +155,8 @@ int socket_shutdown(struct file *file, int how)
     if (!file->socket->ops || !file->socket->ops->shutdown)
         return -EOPNOTSUPP;
 
-    file->socket->ref--;
-
-    if (!file->socket->ref)
-        return file->socket->ops->shutdown(file, how);
-
-    return 0;
+    /* the open file is closed (its last descriptor) */
+    return file->socket->ops->shutdown(file, how);
 }
 
 int socket_getname(struct file *file, struct sockaddr *addr, socklen_t *len, int peer)

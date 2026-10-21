@@ -214,7 +214,6 @@ int socket_inet_create(struct file *file, int domain, int type, int protocol)
     socket->protocol = protocol;
     socket->ops      = &socket_inet_ops;
     socket->p        = sock;
-    socket->ref      = 1;
 
     file->flags |= FILE_SOCKET;
     file->socket = socket;

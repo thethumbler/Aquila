@@ -673,7 +673,8 @@ static int vt_file_close(struct file *file)
     struct vt *vt = vt_file(file);
     dev_t rdev = file->vnode->rdev;
 
-    /* descriptors copied by fork() and dup() weren't counted */
+    /* one close for each open (whatever descriptors shared the file);
+     * /dev/tty0's weren't counted */
     if (vt && vt->opens > 0 && !(DEV_MAJOR(rdev) == 4 && DEV_MINOR(rdev) == 0))
         vt->opens--;
 

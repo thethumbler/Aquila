@@ -42,19 +42,18 @@
 static int syscall_log_level = LOG_NONE;
 LOGGER_DEFINE(syscall, syscall_log, syscall_log_level)
 
-/* return the open file associated with `fd', NULL if `fd' is not open */
+/* the open file `fd' refers to, held until the call returns (a close
+ * meanwhile doesn't take it away); NULL if `fd' is not open */
 static struct file *fd_file(int fd)
 {
-    if (fd < 0 || fd >= FDS_COUNT)  /* Out of bounds */
-        return NULL;
+    struct file *file = proc_fd_file(curproc, fd);
+    return file ? file_hold(file) : NULL;
+}
 
-    struct file *file = &curproc->fds[fd];
-
-    /* free or reserved (being set up by another syscall) descriptor */
-    if (!file->vnode || file->vnode == (void *) -1)
-        return NULL;
-
-    return file;
+/* the same, not held: only until the call sleeps (select, poll) */
+static struct file *fd_peek(int fd)
+{
+    return proc_fd_file(curproc, fd);
 }
 
 /*
@@ -170,19 +169,9 @@ static void sys_close(int fildes)
 {
     syscall_log(LOG_DEBUG, "close(fildes=%d)\n", fildes);
 
-    struct file *file = fd_file(fildes);
-
-    if (!file) {
-        arch_syscall_return(curthread, -EBADF);
-        return;
-    }
-
-    int ret = vfs_file_close(file);
-
-    /* clear the slot so no stale offset/flags leak into the next user */
-    *file = (struct file) {0};
-
-    arch_syscall_return(curthread, ret);
+    /* the descriptor goes; the open file once nothing else refers to it
+     * (another descriptor, a call using it) */
+    arch_syscall_return(curthread, proc_fd_close(curproc, fildes));
 }
 
 static void sys_execve(const char *path, char * const argp[], char * const envp[])
@@ -441,6 +430,7 @@ static int do_openat(int dirfd, const char *upath, int oflags, mode_t mode)
     }
 
     struct vnode *vnode = NULL;
+    struct file *file = NULL;
     char *abs_path = NULL;
     int excl = (oflags & (O_CREAT | O_EXCL)) == (O_CREAT | O_EXCL);
     int created = 0;
@@ -488,31 +478,35 @@ static int do_openat(int dirfd, const char *upath, int oflags, mode_t mode)
         goto done;
     }
 
-    curproc->fds[fd] = (struct file) {
-        .vnode   = vnode,
-        .offset  = 0,
-        .flags   = oflags & ~O_CLOEXEC,
-        .fdflags = (oflags & O_CLOEXEC) ? FD_CLOEXEC : 0,
-    };
+    /* the open file: until it's open, not closed if this fails */
+    if (!(file = file_new())) {
+        ret = -ENOMEM;
+        goto done;
+    }
+
+    file->vnode = vnode;
+    file->flags = oflags & ~O_CLOEXEC;
 
     /* the creator may open the file whatever mode it was given */
-    if (!created && (ret = vfs_perms_check(&curproc->fds[fd], &uio)))
+    if (!created && (ret = vfs_perms_check(file, &uio)))
         goto done;
 
-    if ((ret = vfs_file_open(&curproc->fds[fd])))
+    if ((ret = vfs_file_open(file)))
         goto done;
 
     /* directories remember their path, for the *at() calls */
     if (S_ISDIR(vnode->mode)) {
-        curproc->fds[fd].path = abs_path;
+        file->path = abs_path;
         abs_path = NULL;
     }
 
+    proc_fd_install(curproc, fd, file, (oflags & O_CLOEXEC) ? FD_CLOEXEC : 0);
     ret = fd;
 
 done:
     if (ret < 0) {
         proc_fd_release(curproc, fd);
+        kfree(file);
 
         if (vnode)
             vfs_close(vnode);
@@ -1013,24 +1007,31 @@ static void sys_pipe(int fd[2])
     int err = 0;
     int fd1 = -1, fd2 = -1;
     int fds[2];
+    struct file *r = NULL, *w = NULL;
 
     if ((fd1 = proc_fd_get(curproc)) == -1 || (fd2 = proc_fd_get(curproc)) == -1) {
         err = -EMFILE;
         goto error;
     }
 
-    if ((err = pipefs_pipe(&curproc->fds[fd1], &curproc->fds[fd2])))
+    if (!(r = file_new()) || !(w = file_new())) {
+        err = -ENOMEM;
         goto error;
+    }
+
+    if ((err = pipefs_pipe(r, w)))
+        goto error;
+
+    proc_fd_install(curproc, fd1, r, 0);
+    proc_fd_install(curproc, fd2, w, 0);
 
     fds[0] = fd1;
     fds[1] = fd2;
 
     /* nowhere to say: the descriptors go again */
     if (copyout(fd, fds, sizeof(fds))) {
-        vfs_file_close(&curproc->fds[fd1]);
-        vfs_file_close(&curproc->fds[fd2]);
-        curproc->fds[fd1] = (struct file) {0};
-        curproc->fds[fd2] = (struct file) {0};
+        proc_fd_close(curproc, fd1);
+        proc_fd_close(curproc, fd2);
         arch_syscall_return(curthread, -EFAULT);
         return;
     }
@@ -1039,6 +1040,10 @@ static void sys_pipe(int fd[2])
     return;
 
 error:
+    /* not open: nothing to close */
+    kfree(r);
+    kfree(w);
+
     if (fd1 != -1)
         proc_fd_release(curproc, fd1);
 
@@ -1074,7 +1079,7 @@ static void sys_fcntl(int fd, int cmd, uintptr_t arg)
 
             /* lowest numbered free descriptor greater than or equal to arg */
             for (dupfd = arg; dupfd < FDS_COUNT; ++dupfd) {
-                if (!curproc->fds[dupfd].vnode)
+                if (!curproc->fds[dupfd].file)
                     break;
             }
 
@@ -1083,33 +1088,24 @@ static void sys_fcntl(int fd, int cmd, uintptr_t arg)
                 return;
             }
 
-            curproc->fds[dupfd] = *file;
-            curproc->fds[dupfd].fdflags = cmd == F_DUPFD_CLOEXEC ? FD_CLOEXEC : 0;
-
-            if (file->path)
-                curproc->fds[dupfd].path = strdup(file->path);
-
-            vfs_file_lock_copy(file, &curproc->fds[dupfd]);
-
-            /* the new descriptor holds its own reference (as in fork) */
-            if (file->flags & FILE_SOCKET)
-                file->socket->ref++;
-            else
-                file->vnode->ref++;
+            /* the same open file: its offset and status flags shared */
+            proc_fd_install(curproc, dupfd, file_ref(file), cmd == F_DUPFD_CLOEXEC ? FD_CLOEXEC : 0);
 
             arch_syscall_return(curthread, dupfd);
             return;
         case F_GETFD:
-            arch_syscall_return(curthread, file->fdflags);
+            arch_syscall_return(curthread, curproc->fds[fd].flags);
             return;
         case F_SETFD:
-            file->fdflags = arg & FD_CLOEXEC;
+            /* the descriptor's own */
+            curproc->fds[fd].flags = arg & FD_CLOEXEC;
             arch_syscall_return(curthread, 0);
             return;
         case F_GETFL:
             arch_syscall_return(curthread, file->flags & ~FILE_SOCKET);
             return;
         case F_SETFL:
+            /* the open file's: every descriptor referring to it */
             file->flags = (file->flags & ~setfl) | ((int) arg & setfl);
             arch_syscall_return(curthread, 0);
             return;
@@ -1539,14 +1535,17 @@ static void sys_socket(int domain, int type, int protocol)
     }
     
     int err = 0;
-    struct file *file = &curproc->fds[fd];
+    struct file *file = file_new();
 
-    if ((err = socket_create(file, domain, type, protocol))) {
+    if (!file || (err = socket_create(file, domain, type, protocol))) {
+        /* not open: nothing to close */
+        kfree(file);
         proc_fd_release(curproc, fd);
-        arch_syscall_return(curthread, err);
+        arch_syscall_return(curthread, file ? err : -ENOMEM);
         return;
     }
 
+    proc_fd_install(curproc, fd, file, 0);
     arch_syscall_return(curthread, fd);
     return;
 }
@@ -1607,7 +1606,13 @@ static void sys_accept(int fd, const struct sockaddr *addr, socklen_t *len)
         return;
     }
 
-    struct file *conn   = &curproc->fds[conn_fd];
+    struct file *conn = file_new();
+
+    if (!conn) {
+        proc_fd_release(curproc, conn_fd);
+        arch_syscall_return(curthread, -ENOMEM);
+        return;
+    }
 
     union ksockaddr k;
     memset(&k, 0, sizeof(k));
@@ -1615,6 +1620,7 @@ static void sys_accept(int fd, const struct sockaddr *addr, socklen_t *len)
     int err = 0;
 
     if (addr && (err = sockaddr_room(len, &room))) {
+        kfree(conn);
         proc_fd_release(curproc, conn_fd);
         arch_syscall_return(curthread, err);
         return;
@@ -1623,15 +1629,17 @@ static void sys_accept(int fd, const struct sockaddr *addr, socklen_t *len)
     klen = room;
 
     if ((err = socket_accept(socket, conn, addr ? &k.sa : NULL, addr ? &klen : NULL))) {
+        kfree(conn);
         proc_fd_release(curproc, conn_fd);
         arch_syscall_return(curthread, err);
         return; 
     }
 
+    proc_fd_install(curproc, conn_fd, conn, 0);
+
     /* nowhere to say who: the connection goes */
     if (addr && sockaddr_copyout((struct sockaddr *) addr, len, &k, klen, room)) {
-        vfs_file_close(conn);
-        *conn = (struct file) {0};
+        proc_fd_close(curproc, conn_fd);
         arch_syscall_return(curthread, -EFAULT);
         return;
     }
@@ -2215,7 +2223,7 @@ static void sys_select(struct aquila_select_args *args)
             if (!FD_BIT(want_read, i) && !FD_BIT(want_write, i))
                 continue;
 
-            struct file *file = fd_file(i);
+            struct file *file = fd_peek(i);
 
             if (!file) {
                 arch_syscall_return(curthread, -EBADF);
@@ -2307,7 +2315,7 @@ static void sys_poll(struct pollfd *fds, nfds_t nfds, int timeout_ms)
             if (p->fd < 0)
                 continue;
 
-            if (!(file = fd_file(p->fd))) {
+            if (!(file = fd_peek(p->fd))) {
                 p->revents = POLLNVAL;
             } else {
                 if ((p->events & POLLIN) && fd_ready(file, 0))
