@@ -1,285 +1,376 @@
+/*
+ *                 x86-64 4-Level Paging
+ *
+ *  References:
+ *      [1] - Intel(R) 64 and IA-32 Architectures Software Developers Manual
+ *          - Volume 3, System Programming Guide
+ *          - Chapter 4, Paging (4.5, 4-Level Paging)
+ *
+ *  All physical memory is mapped at ARCH_DMAP_BASE (the direct map), page
+ *  tables and pages are reached there. Every pmap has its own PML4. The
+ *  kernel's half (entries 256 to 511) has all its PDPTs made at boot and
+ *  shared by the PML4s, so the kernel's mappings are the same in every
+ *  address space and never change in a PML4. Switching is loading cr3.
+ */
+
 #include <core/arch.h>
 #include <core/panic.h>
 #include <core/printk.h>
+#include <core/string.h>
 #include <core/system.h>
+#include <boot/boot.h>
 #include <cpu/cpu.h>
-#include <ds/queue.h>
-#include <mm/buddy.h>
-#include <mm/vm.h>
 
-#include "x86_64.h"
+#include <mm/pmap.h>
+#include <mm/buddy.h>
+#include <mm/mm.h>
+#include <mm/vm.h>
 
 MALLOC_DEFINE(M_PMAP, "pmap", "physical memory map structure");
 
-static volatile __dirtbl_t    *bsp_lvl4 = NULL;
-static volatile __directory_t *bsp_lvl3 = NULL;
-static volatile __table_t     *bsp_lvl2 = NULL;
+extern struct boot *__kboot;
 
-static volatile __page_t last_page_table[512] __aligned(PAGE_SIZE) = {0};
+#define PG_PRESENT  0x001
+#define PG_WRITE    0x002
+#define PG_USER     0x004
+#define PG_LARGE    0x080   /* 2 MiB (in a PD), 1 GiB (in a PDPT) */
+#define PG_GLOBAL   0x100
 
-#define MOUNT_ADDR  ((void *) 0xFFFF80003FFFF000)
+#define PG_ADDR(e)  ((e) & 0x000FFFFFFFFFF000ULL)
 
-#define LVL4            ((__dirtbl_t *)   (0xFFFFFFFFFFFFF000ULL))
-#define LVL3(i)         ((__directory_t *)(0xFFFFFFFFFFE00000ULL + 0x1000ULL * (i)))
-#define LVL2(i, j)      ((__table_t *)    (0xFFFFFFFFC0000000ULL + 512ULL * 0x1000 * (i) + 0x1000ULL * (j)))
-#define LVL1(i, j, k)   ((__page_t *)     (0xFFFFFF8000000000ULL + 512ULL * 512ULL * 0x1000 * (i) + 512ULL * 0x1000 * (j) + 0x1000ULL * (k)))
+/* the entry of `va' in its table of `level' (0: PT, 1: PD, 2: PDPT, 3: PML4) */
+#define IDX(va, level)  (((va) >> (12 + 9 * (level))) & 0x1FF)
 
-#define VADDR(i, j, k, l)    ((uintptr_t)      ((512UL * 512UL * 512UL * (i) + 512UL * 512UL * (j) + 512UL * (k) + (l)) * 0x1000UL))
+#define KERNEL_PML4E    256
+#define LARGE_SIZE      0x200000ULL
 
-static inline void tlb_invalidate_page(uintptr_t virt)
+static struct pmap k_pmap;
+static struct pmap *cur_pmap = NULL;
+
+static inline uint64_t *table(paddr_t paddr)
 {
-    asm volatile ("invlpg (%%rax)"::"a"(virt));
+    return PHYS2VIRT(paddr);
 }
 
-/* ================== Frame Helpers ================== */
-
-static inline uintptr_t frame_mount(uintptr_t paddr)
+static paddr_t table_alloc(void)
 {
-    if (!paddr)
-        return (uintptr_t) last_page_table[511].raw & ~PAGE_MASK;
+    struct vm_page *vm_page = mm_page_alloc();
 
-    if (paddr & PAGE_MASK)
-        panic("Mount must be on page (4K) boundary");
+    if (!vm_page)
+        panic("could not allocate a page table");
 
-    uintptr_t prev = (uintptr_t) last_page_table[511].raw & ~PAGE_MASK;
+    memset(table(vm_page->paddr), 0, PAGE_SIZE);
+    return vm_page->paddr;
+}
 
-    __page_t page;
-    page.raw = paddr;
-
-    page.present = 1;
-    page.write = 1;
-
-    last_page_table[511] = page;
-    tlb_invalidate_page((uintptr_t) MOUNT_ADDR);
-
-    return prev;
-} 
-
-#include "frame_utils.h"
-
-/* ================== PDPT Helpers ================== */
-
-static inline int pdpt_map(paddr_t paddr, size_t idx, int flags)
+static void table_free(paddr_t paddr)
 {
-    if (idx > 511)
+    buddy_free(BUDDY_ZONE_NORMAL, paddr, PAGE_SIZE);
+}
+
+/* the entry of the page table that maps `va' in `pmap', the tables on the
+ * way made if `make', else NULL if one is missing */
+static uint64_t *pte_get(struct pmap *pmap, vaddr_t va, int make)
+{
+    uint64_t *t = table(pmap->map);
+    uint64_t flags = PG_PRESENT | PG_WRITE | (IDX(va, 3) < KERNEL_PML4E ? PG_USER : 0);
+
+    for (int level = 3; level > 0; --level) {
+        uint64_t *e = &t[IDX(va, level)];
+
+        if (!(*e & PG_PRESENT)) {
+            if (!make)
+                return NULL;
+
+            *e = table_alloc() | flags;
+        }
+
+        /* the direct map's large pages aren't the pmap's to change */
+        if (*e & PG_LARGE)
+            return NULL;
+
+        t = table(PG_ADDR(*e));
+    }
+
+    return &t[IDX(va, 0)];
+}
+
+static inline void tlb_invalidate_page(vaddr_t va)
+{
+    asm volatile("invlpg (%0)" :: "r"(va) : "memory");
+}
+
+struct pmap *pmap_switch(struct pmap *pmap)
+{
+    if (!pmap)
+        panic("pmap?");
+
+    struct pmap *ret = cur_pmap;
+
+    if (pmap != cur_pmap) {
+        write_cr3(pmap->map);
+        cur_pmap = pmap;
+    }
+
+    return ret;
+}
+
+/* the end of the RAM the boot loader found */
+static paddr_t ram_end(void)
+{
+    paddr_t end = 0;
+
+    for (int i = 0; i < __kboot->mmap_count; ++i)
+        if (__kboot->mmap[i].type == MMAP_USABLE && __kboot->mmap[i].end > end)
+            end = __kboot->mmap[i].end;
+
+    return end;
+}
+
+void pmap_init(void)
+{
+    /* the boot tables (arch/i386/boot/x86_64_bootstrap.S) become the
+     * kernel's: they map the kernel at -2 GiB and the first GiB of the
+     * direct map (and itself, which goes) */
+    k_pmap.map = read_cr3() & ~PAGE_MASK;
+    k_pmap.ref = 1;
+    kvm_space.pmap = &k_pmap;
+    cur_pmap = &k_pmap;
+
+    uint64_t *pml4 = table(k_pmap.map);
+
+    /* the rest of the RAM in the direct map, with 2 MiB pages */
+    paddr_t end = (ram_end() + LARGE_SIZE - 1) & ~(LARGE_SIZE - 1);
+
+    for (paddr_t pa = 0; pa < end; pa += LARGE_SIZE) {
+        vaddr_t va = ARCH_DMAP_BASE + pa;
+        uint64_t *t = pml4;
+
+        for (int level = 3; level > 1; --level) {
+            uint64_t *e = &t[IDX(va, level)];
+
+            if (!(*e & PG_PRESENT))
+                *e = table_alloc() | PG_PRESENT | PG_WRITE;
+
+            t = table(PG_ADDR(*e));
+        }
+
+        t[IDX(va, 1)] = pa | PG_PRESENT | PG_WRITE | PG_LARGE | PG_GLOBAL;
+    }
+
+    /* every PDPT of the kernel's half, before there is any other PML4 */
+    for (int i = KERNEL_PML4E; i < 512; ++i)
+        if (!(pml4[i] & PG_PRESENT))
+            pml4[i] = table_alloc() | PG_PRESENT | PG_WRITE;
+
+    /* nothing at the bottom anymore: user space */
+    pml4[0] = 0;
+    tlb_flush();
+
+    printk("x86_64: %ld MiB in the direct map\n", (uint64_t) (end >> 20));
+}
+
+static struct pmap *pmap_alloc(void)
+{
+    return kmalloc(sizeof(struct pmap), &M_PMAP, 0);
+}
+
+static void pmap_release(struct pmap *pmap)
+{
+    if (pmap == cur_pmap)
+        pmap_switch(&k_pmap);
+
+    if (pmap->map)
+        table_free(pmap->map);
+
+    kfree(pmap);
+}
+
+struct pmap *pmap_create(void)
+{
+    struct pmap *pmap = pmap_alloc();
+
+    if (pmap == NULL)
+        return NULL;
+
+    memset(pmap, 0, sizeof(struct pmap));
+
+    pmap->map = table_alloc();
+    pmap->ref = 1;
+
+    /* the kernel's half, the same in every PML4 */
+    uint64_t *pml4 = table(pmap->map), *kpml4 = table(k_pmap.map);
+
+    for (int i = KERNEL_PML4E; i < 512; ++i)
+        pml4[i] = kpml4[i];
+
+    return pmap;
+}
+
+void pmap_incref(struct pmap *pmap)
+{
+    pmap->ref++;
+}
+
+void pmap_decref(struct pmap *pmap)
+{
+    if (--pmap->ref == 0)
+        pmap_release(pmap);
+}
+
+static uint64_t pte_flags(uint32_t flags)
+{
+    uint64_t pte = PG_PRESENT;
+
+    if (flags & (VM_KW | VM_UW))
+        pte |= PG_WRITE;
+
+    if (flags & VM_URWX)
+        pte |= PG_USER;
+
+    return pte;
+}
+
+int pmap_add(struct pmap *pmap, vaddr_t va, paddr_t pa, uint32_t flags)
+{
+    if ((va & PAGE_MASK) || (pa & PAGE_MASK))
         return -EINVAL;
 
-    __dirtbl_t dirtbl = {.raw = paddr};
+    uint64_t *pte = pte_get(pmap, va, 1);
 
-    dirtbl.present = 1;
-    dirtbl.write   = !!(flags & (VM_KW | VM_UW));
-    dirtbl.user    = !!(flags & (VM_URWX));
+    if (!pte)
+        return -EINVAL;
 
-    LVL4[idx] = dirtbl;
+    *pte = pa | pte_flags(flags);
 
-    //tlb_flush();
+    if (pmap == cur_pmap || pmap == &k_pmap)
+        tlb_invalidate_page(va);
 
     return 0;
 }
 
-/* ================== PD Helpers ================== */
-
-static inline int pd_map(paddr_t paddr, size_t pdpt_idx, size_t pd_idx, int flags)
+void pmap_remove(struct pmap *pmap, vaddr_t sva, vaddr_t eva)
 {
-    if (pdpt_idx > 511 || pd_idx > 511)
-        return -EINVAL;
-
-    __directory_t dir = {.raw = paddr};
-
-    dir.present = 1;
-    dir.write   = !!(flags & (VM_KW | VM_UW));
-    dir.user    = !!(flags & (VM_URWX));
-
-    LVL3(pdpt_idx)[pd_idx] = dir;
-
-    //tlb_flush();
-
-    return 0;
-}
-
-/* ================== Table Helpers ================== */
-
-static inline int table_map(paddr_t paddr, size_t pdpt_idx, size_t pd_idx, size_t dir_idx, int flags)
-{
-    if (pdpt_idx > 511 || pd_idx > 511 || dir_idx > 511)
-        return -EINVAL;
-
-    __table_t table = {.raw = paddr};
-
-    table.present = 1;
-    table.write   = !!(flags & (VM_KW | VM_UW));
-    table.user    = !!(flags & (VM_URWX));
-
-    LVL2(pdpt_idx, pd_idx)[dir_idx] = table;
-
-    //tlb_flush();
-
-    return 0;
-}
-
-/* ================== Page Helpers ================== */
-
-static inline int __page_map(paddr_t paddr, size_t pml4, size_t dirtbl, size_t dir, size_t table, int flags)
-{
-    /* Sanity checking */
-    if (pml4 > 511 || dirtbl > 511 || dir > 511 || table > 511) {
-        return -EINVAL;
-    }
-
-    __page_t page = {.raw = paddr};
-
-    page.present = 1;
-    page.write   = !!(flags & (VM_KW | VM_UW));
-    page.user    = !!(flags & (VM_URWX));
-
-    /* Check if PDPT is present */
-    if (!LVL4[pml4].present) {
-        paddr_t paddr = frame_get();
-        pdpt_map(paddr, pml4, flags);
-    }
-
-    //pages[GET_PHYS_ADDR(&LVL4[pml4])/PAGE_SIZE].refs++;
-    mm_page_incref(GET_PHYS_ADDR(&LVL4[pml4]));
-
-    /* Check if PD is present */
-    if (!LVL3(pml4)[dirtbl].present) {
-        paddr_t paddr = frame_get();
-        pd_map(paddr, pml4, dirtbl, flags);
-    }
-
-    //pages[GET_PHYS_ADDR(&LVL3(pml4)[dirtbl])/PAGE_SIZE].refs++;
-    mm_page_incref(GET_PHYS_ADDR(&LVL3(pml4)[dirtbl]));
-
-    /* Check if table is present */
-    if (!LVL2(pml4, dirtbl)[dir].present) {
-        paddr_t paddr = frame_get();
-        table_map(paddr, pml4, dirtbl, dir, flags);
-    }
-
-    //pages[GET_PHYS_ADDR(&LVL2(pml4, dirtbl)[dir])/PAGE_SIZE].refs++;
-    mm_page_incref(GET_PHYS_ADDR(&LVL2(pml4, dirtbl)[dir]));
-
-    LVL1(pml4, dirtbl, dir)[table] = page;
-
-    return 0;
-}
-
-static inline void __page_unmap(vaddr_t vaddr)
-{
-    if (vaddr & PAGE_MASK)
+    if ((sva & PAGE_MASK) || (eva & PAGE_MASK))
         return;
 
-    __virtaddr_t virtaddr = {.raw = vaddr};
-    size_t pml4      = virtaddr.pml4;
-    size_t dirtbl    = virtaddr.dirtbl;
-    size_t directory = virtaddr.directory;
-    size_t table     = virtaddr.table;
+    for (; sva < eva; sva += PAGE_SIZE) {
+        uint64_t *pte = pte_get(pmap, sva, 0);
 
-    if (LVL4[pml4].present &&
-        LVL3(pml4)[dirtbl].present &&
-        LVL2(pml4, dirtbl)[directory].present) {
+        if (pte && (*pte & PG_PRESENT)) {
+            *pte = 0;
 
-        /* Dereference page */
-        LVL1(pml4, dirtbl, directory)[table].raw = 0;
-
-#if 0
-        /* Decrement references */
-        paddr_t table_phy = GET_PHYS_ADDR(&LVL2(pml4, dirtbl)[directory]);
-        pages[table_phy/PAGE_SIZE].refs--;
-        if (!pages[table_phy/PAGE_SIZE].refs) {
-            frame_release(table_phy);
-            LVL2(pml4, dirtbl)[directory].present = 0;
+            if (pmap == cur_pmap || pmap == &k_pmap)
+                tlb_invalidate_page(sva);
         }
-
-        paddr_t directory_phy = GET_PHYS_ADDR(&LVL3(pml4)[dirtbl]);
-        pages[directory_phy/PAGE_SIZE].refs--;
-        if (!pages[directory_phy/PAGE_SIZE].refs) {
-            frame_release(directory_phy);
-            LVL3(pml4)[dirtbl].present = 0;
-        }
-
-        paddr_t dirtbl_phy = GET_PHYS_ADDR(&LVL4[pml4]);
-        pages[directory_phy/PAGE_SIZE].refs--;
-        if (!pages[directory_phy/PAGE_SIZE].refs) {
-            frame_release(directory_phy);
-            LVL4[pml4].present = 0;
-        }
-#endif
-
-        tlb_invalidate_page(vaddr);
     }
 }
 
-
-/* =================== XXX =============== */
-#include "page_utils.h"
-
-
-/* =================== Arch MM Interface =============== */
-
-int arch_page_map(paddr_t paddr, vaddr_t vaddr, int flags)
+/* the tables of the user half, from `level' down */
+static void tables_free(paddr_t paddr, int level)
 {
-    if (vaddr & PAGE_MASK)
-        return -EINVAL;
+    uint64_t *t = table(paddr);
 
-    __virtaddr_t virtaddr = {.raw = vaddr};
-
-    size_t pml4   = virtaddr.pml4;
-    size_t dirtbl = virtaddr.dirtbl;
-    size_t dir    = virtaddr.directory;
-    size_t table  = virtaddr.table;
-
-    __page_map(paddr, pml4, dirtbl, dir, table, flags);
-    tlb_invalidate_page(vaddr);
-
-    return 0;
-}
-
-int arch_page_unmap(vaddr_t vaddr)
-{
-    /* XXX */
-    if (vaddr >= 0xFFFFD00000000000)
-        printk("arch_page_unmap(vaddr=%p)\n", vaddr);
-
-    if (vaddr & PAGE_MASK)
-        return -EINVAL;
-
-    __page_unmap(vaddr);
-
-    return 0;
-}
-
-static inline __page_t *__page_get_mapping(uintptr_t addr)
-{
-    __virtaddr_t virt = (__virtaddr_t){.raw = addr};
-
-    if (LVL4[virt.pml4].present &&
-        LVL3(virt.pml4)[virt.dirtbl].present &&
-        LVL2(virt.pml4, virt.dirtbl)[virt.directory].present &&
-        LVL1(virt.pml4, virt.dirtbl, virt.directory)[virt.table].present) {
-
-        __page_t *page = &LVL1(virt.pml4, virt.dirtbl, virt.directory)[virt.table];
-
-        if (page->present)
-            return page;
+    if (level > 1) {
+        for (int i = 0; i < 512; ++i)
+            if (t[i] & PG_PRESENT)
+                tables_free(PG_ADDR(t[i]), level - 1);
     }
 
-    return NULL;
+    table_free(paddr);
+}
+
+void pmap_remove_all(struct pmap *pmap)
+{
+    uint64_t *pml4 = table(pmap->map);
+
+    for (int i = 0; i < KERNEL_PML4E; ++i) {
+        if (pml4[i] & PG_PRESENT) {
+            tables_free(PG_ADDR(pml4[i]), 3);
+            pml4[i] = 0;
+        }
+    }
+
+    if (pmap == cur_pmap)
+        tlb_flush();
+}
+
+void pmap_protect(struct pmap *pmap, vaddr_t sva, vaddr_t eva, uint32_t prot)
+{
+    if (sva & PAGE_MASK)
+        return;
+
+    for (; sva < eva; sva += PAGE_SIZE) {
+        uint64_t *pte = pte_get(pmap, sva, 0);
+
+        if (pte && (*pte & PG_PRESENT)) {
+            *pte = PG_ADDR(*pte) | pte_flags(prot);
+
+            if (pmap == cur_pmap || pmap == &k_pmap)
+                tlb_invalidate_page(sva);
+        }
+    }
+}
+
+void pmap_copy(struct pmap *dst_map, struct pmap *src_map, vaddr_t dst_addr, size_t len,
+ vaddr_t src_addr)
+{
+    return;
+}
+
+void pmap_update(struct pmap *pmap)
+{
+    return;
+}
+
+void pmap_page_copy(paddr_t src, paddr_t dst)
+{
+    memcpy(PHYS2VIRT(dst), PHYS2VIRT(src), PAGE_SIZE);
+}
+
+void pmap_page_protect(struct vm_page *pg, uint32_t flags)
+{
+    return;
+}
+
+int pmap_clear_modify(struct vm_page *pg)
+{
+    return -1;
+}
+
+int pmap_clear_reference(struct vm_page *pg)
+{
+    return -1;
+}
+
+int pmap_is_modified(struct vm_page *pg)
+{
+    return -1;
+}
+
+int pmap_is_referenced(struct vm_page *pg)
+{
+    return -1;
 }
 
 paddr_t arch_page_get_mapping(struct pmap *pmap, vaddr_t vaddr)
 {
-    __page_t *page = __page_get_mapping(vaddr);
+    uint64_t *pte = pte_get(pmap, vaddr, 0);
 
-    if (page)
-        return GET_PHYS_ADDR(page);
+    return pte && (*pte & PG_PRESENT) ? PG_ADDR(*pte) : 0;
+}
 
+int arch_page_unmap(vaddr_t vaddr)
+{
+    if (vaddr & PAGE_MASK)
+        return -EINVAL;
+
+    pmap_remove(cur_pmap, vaddr, vaddr + PAGE_SIZE);
     return 0;
 }
 
 void arch_mm_page_fault(vaddr_t vaddr, int err)
 {
-    //printk("arch_mm_page_fault(vaddr=%p)\n", vaddr);
     int flags = 0;
 
     flags |= err & 0x01? PF_PRESENT : 0;
@@ -290,288 +381,20 @@ void arch_mm_page_fault(vaddr_t vaddr, int err)
     mm_page_fault(vaddr, flags);
 }
 
-paddr_t arch_get_frame()
+int pmap_page_read(paddr_t paddr, off_t off, size_t size, void *buf)
 {
-    return frame_get();
-}
-
-void arch_release_frame(paddr_t paddr)
-{
-    frame_release(paddr);
-}
-
-static struct pmap *cur_pmap = NULL;
-struct pmap *arch_pmap_switch(struct pmap *pmap)
-{
-    if (!pmap)
-        panic("pmap?");
-
-    struct pmap *ret = cur_pmap;
-
-    if (cur_pmap && cur_pmap->map == pmap->map) {
-        cur_pmap = pmap;
-        return ret;
-    }
-
-    if (cur_pmap) { /* Store current directory mapping in old_dir */
-        copy_virtual_to_physical((void *) cur_pmap->map, (void *) bsp_lvl4, 255 * 8);
-    }
-
-    copy_physical_to_virtual((void *) bsp_lvl4, (void *) pmap->map, 255 * 8);
-
-    cur_pmap = pmap;
-    tlb_flush();
-
-    return ret;
-}
-
-static struct pmap k_pmap;
-
-void setup_64_bit_paging()
-{
-    printk("x86: Setting up 64-bit paging\n");
-
-    uintptr_t __cur_pml4 = read_cr3() & ~PAGE_MASK;
-    bsp_lvl4 = (__dirtbl_t *)    VMA(__cur_pml4);
-    bsp_lvl3 = (__directory_t *) VMA((uintptr_t) GET_PHYS_ADDR(&bsp_lvl4[0]));
-    bsp_lvl2 = (__table_t *)     VMA((uintptr_t) GET_PHYS_ADDR(&bsp_lvl3[0]));
-
-    /* Recursive map paging structure */
-    bsp_lvl4[511].raw     = __cur_pml4; //LMA((uintptr_t) bsp_lvl4);
-    bsp_lvl4[511].write   = 1;
-    bsp_lvl4[511].present = 1;
-
-    /* Map last page table */
-    bsp_lvl2[511].raw     = LMA((uintptr_t) last_page_table);
-    bsp_lvl2[511].write   = 1;
-    bsp_lvl2[511].present = 1;
-
-    /* Unmap lower half */
-    bsp_lvl4[0].raw = 0;
-
-    tlb_flush();
-}
-
-static struct pmap *pmap_alloc(void)
-{
-    return kmalloc(sizeof(struct pmap), &M_PMAP, 0);
-}
-
-static void pmap_release(struct pmap *pmap)
-{
-    if (pmap == cur_pmap) {
-        arch_pmap_switch(&k_pmap);
-        //cur_pmap = NULL;
-    }
-
-    if (pmap->map)
-        arch_release_frame(pmap->map);
-
-    kfree(pmap);
-}
-
-void arch_pmap_init(void)
-{
-    setup_64_bit_paging();
-    cur_pmap = &k_pmap;
-}
-
-struct pmap *arch_pmap_create(void)
-{
-    struct pmap *pmap = pmap_alloc();
-
-    if (pmap == NULL)
-        return NULL;
-
-    memset(pmap, 0, sizeof(struct pmap));
-
-    pmap->map = arch_get_frame();
-    pmap->ref = 1;
-
-    return pmap;
-}
-
-#if 0
-void arch_pmap_incref(struct pmap *pmap)
-{
-    /* XXX Handle overflow */
-    pmap->ref++;
-}
-#endif
-
-void arch_pmap_decref(struct pmap *pmap)
-{
-    pmap->ref--;
-
-    if (pmap->ref == 0)
-        pmap_release(pmap);
-}
-
-int arch_pmap_add(struct pmap *pmap, vaddr_t va, paddr_t pa, uint32_t flags)
-{
-    //printk("arch_pmap_add(pmap=%p, va=%p, pa=%p, flags=0x%x)\n", pmap, va, pa, flags);
-
-    struct pmap *old_map = arch_pmap_switch(pmap);
-
-    if (va & PAGE_MASK) {
-        struct pmap *old_map = arch_pmap_switch(pmap);
+    if (off < 0 || off >= PAGE_SIZE)
         return -EINVAL;
-    }
 
-    __virtaddr_t virtaddr = {.raw = va};
-
-    size_t pml4   = virtaddr.pml4;
-    size_t dirtbl = virtaddr.dirtbl;
-    size_t dir    = virtaddr.directory;
-    size_t table  = virtaddr.table;
-
-    __page_map(pa, pml4, dirtbl, dir, table, flags);
-
-    tlb_invalidate_page(va);
-
-    arch_pmap_switch(old_map);
-
+    memcpy(buf, (char *) PHYS2VIRT(paddr) + off, MIN(size, PAGE_SIZE - (size_t) off));
     return 0;
 }
 
-void arch_pmap_remove(struct pmap *pmap, vaddr_t sva, vaddr_t eva)
+int pmap_page_write(paddr_t paddr, off_t off, size_t size, void *buf)
 {
-    struct pmap *old_map = arch_pmap_switch(pmap);
+    if (off < 0 || off >= PAGE_SIZE)
+        return -EINVAL;
 
-    if (sva & PAGE_MASK || eva & PAGE_MASK) {
-        arch_pmap_switch(old_map);
-        return;
-    }
-
-    while (sva < eva) {
-        page_unmap(sva);
-        sva += PAGE_SIZE;
-    }
-
-    arch_pmap_switch(old_map);
-}
-
-void arch_pmap_remove_all(struct pmap *pmap)
-{
-    struct pmap *old_map = arch_pmap_switch(pmap);
-
-    paddr_t base = pmap->map;
-
-    uintptr_t old_mount = frame_mount(base);
-    uint32_t *tbl = (uint32_t *) MOUNT_ADDR;
-
-    for (int i = 0; i < 768; ++i) {
-        if (tbl[i] & PG_PRESENT) {
-            paddr_t table = GET_PHYS_ADDR(tbl[i]);
-
-            uintptr_t _mnt = frame_mount(table);
-            uint32_t  *pg  = MOUNT_ADDR;
-
-            for (int j = 0; j < 1024; ++j) {
-                if (pg[j] & PG_PRESENT) {
-                    paddr_t page = GET_PHYS_ADDR(pg[j]);
-                    pg[j] = 0;
-                    mm_page_decref(page);
-                    mm_page_decref(table);
-                }
-            }
-
-            tbl[i] = 0;
-
-            frame_mount(_mnt);
-        }
-    }
-
-    tlb_flush();
-
-    frame_mount(old_mount);
-
-    arch_pmap_switch(old_map);
-    return;
-}
-
-void arch_pmap_protect(struct pmap *pmap, vaddr_t sva, vaddr_t eva, uint32_t prot)
-{
-    struct pmap *old_map = arch_pmap_switch(pmap);
-
-    //printk("arch_pmap_protect(pmap=%p, sva=%p, eva=%p, prot=0x%x)\n", pmap, sva, eva, prot);
-
-    if (sva & PAGE_MASK) {
-        arch_pmap_switch(old_map);
-        return;
-    }
-
-    while (sva < eva) {
-        size_t pdidx = VDIR(sva);
-        size_t ptidx = VTBL(sva);
-
-        page_protect(pdidx, ptidx, prot);
-        tlb_invalidate_page(sva);
-
-        sva += PAGE_SIZE;
-    }
-
-    arch_pmap_switch(old_map);
-}
-
-void arch_pmap_copy(struct pmap *dst_map, struct pmap *src_map, vaddr_t dst_addr, size_t len,
- vaddr_t src_addr)
-{
-    return;
-}
-
-void arch_pmap_update(struct pmap *pmap)
-{
-    return;
-}
-
-static char __copy_buf[PAGE_SIZE] __aligned(PAGE_SIZE);
-void arch_pmap_page_copy(paddr_t src, paddr_t dst)
-{
-    copy_physical_to_virtual(__copy_buf, (char *) src, PAGE_SIZE);
-    copy_virtual_to_physical((char *) dst, __copy_buf, PAGE_SIZE);
-    return;
-}
-
-void arch_pmap_page_protect(struct vm_page *pg, uint32_t flags)
-{
-    return;
-}
-
-int arch_pmap_clear_modify(struct vm_page *pg)
-{
-    return -1;
-}
-
-int arch_pmap_clear_reference(struct vm_page *pg)
-{
-    return -1;
-}
-
-int arch_pmap_is_modified(struct vm_page *pg)
-{
-    return -1;
-}
-
-int arch_pmap_is_referenced(struct vm_page *pg)
-{
-    return -1;
-}
-
-paddr_t arch_page_get_mapping(struct pmap *pmap, vaddr_t vaddr)
-{
-    struct pmap *old_map = arch_pmap_switch(pmap);
-
-    //printk("arch_page_get_mapping(vaddr=%p)\n", vaddr);
-    uint32_t page = __page_get_mapping(vaddr);
-
-    if (page) {
-        arch_pmap_switch(old_map);
-
-        return GET_PHYS_ADDR(page);
-    }
-
-    arch_pmap_switch(old_map);
-
+    memcpy((char *) PHYS2VIRT(paddr) + off, buf, MIN(size, PAGE_SIZE - (size_t) off));
     return 0;
 }

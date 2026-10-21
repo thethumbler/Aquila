@@ -31,8 +31,10 @@ void arch_syscall(struct x86_regs *r)
     void (*syscall)(uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t) = syscall_table[r->eax];
     syscall(r->ebx, r->ecx, r->edx, r->esi, r->edi);
 #else
-    void (*syscall)() = syscall_table[r->rax];
-    syscall(r->rbx, r->rcx, r->rdx, r->rsi, r->rdi);
+    /* the arguments in Linux's registers (r10 for rcx, which the syscall
+     * instruction takes) */
+    void (*syscall)(uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t) = syscall_table[r->rax];
+    syscall(r->rdi, r->rsi, r->rdx, r->r10, r->r8);
 #endif
 
     curthread->in_syscall = 0;

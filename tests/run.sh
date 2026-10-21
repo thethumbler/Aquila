@@ -2,8 +2,9 @@
 #
 # Build the kernel with the host toolchain and run the QEMU test suite.
 #
-# usage: tests/run.sh [-n] [-v] [test...]
+# usage: tests/run.sh [-a arch] [-n] [-v] [test...]
 #
+#   -a      the architecture: i386 (default) or x86_64
 #   -n      don't rebuild the kernel, use the existing image
 #   -v      print the serial log of failed tests
 #
@@ -12,7 +13,8 @@
 #
 # tests: ata cpu syscalls ext2 libc system disk tcc (default: all)
 #
-# Requires gcc with 32-bit support, ld, cpio and qemu-system-i386. The ext2
+# Requires gcc with 32-bit support, ld, cpio and qemu-system-i386 (or
+# qemu-system-x86_64). The ext2
 # test also needs e2fsprogs (mke2fs, e2fsck, debugfs) and python3. The libc,
 # system and disk tests need the i686-aquila toolchain (make toolchain) and
 # are skipped without it, the disk test also sfdisk, mkfs.fat, mtools and
@@ -23,28 +25,44 @@ set -u
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 TESTS=$ROOT/tests
-OUT=$TESTS/out
-CONFIG=../tests/host/i386-pc
 
 ALL_TESTS="ata cpu syscalls ext2 libc system disk tcc"
 
-CROSS_CC=$ROOT/build/toolchain/bin/i686-aquila-gcc
-
+ARCH=i386
 build=1
 verbose=0
 
-while getopts "nvh" opt; do
+while getopts "a:nvh" opt; do
     case $opt in
+        a) ARCH=$OPTARG ;;
         n) build=0 ;;
         v) verbose=1 ;;
-        *) sed -n '3,15p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+        *) sed -n '3,16p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
     esac
 done
 shift $((OPTIND - 1))
 
+case $ARCH in
+    i386)
+        OUT=$TESTS/out
+        QEMU=qemu-system-i386
+        HOST_CC_ARCH=-m32
+        CROSS_CC=$ROOT/build/toolchain/bin/i686-aquila-gcc ;;
+    x86_64)
+        OUT=$TESTS/out/x86_64
+        QEMU=qemu-system-x86_64
+        HOST_CC_ARCH=-m64
+        CROSS_CC=$ROOT/build/toolchain/bin/x86_64-aquila-gcc ;;
+    *)
+        echo "error: unknown architecture: $ARCH" >&2
+        exit 2 ;;
+esac
+
+CONFIG=../tests/host/$ARCH-pc
+
 selected=${*:-$ALL_TESTS}
 
-for tool in gcc ld cpio qemu-system-i386; do
+for tool in gcc ld cpio $QEMU; do
     if ! command -v $tool >/dev/null; then
         echo "error: $tool not found" >&2
         exit 2
@@ -72,7 +90,7 @@ if [ $build = 1 ]; then
     fi
 fi
 
-KERNEL=$(ls "$OUT"/build/kernel/kernel-*.i386 2>/dev/null | head -1)
+KERNEL=$(ls "$OUT"/build/kernel/kernel-*.$ARCH 2>/dev/null | head -1)
 
 if [ -z "$KERNEL" ]; then
     echo "error: no kernel image, run without -n" >&2
@@ -97,7 +115,7 @@ build_initrd()
         "$CROSS_CC" -O1 -Wall -o "$root/init" "$TESTS/$name/init.c" \
             > "$OUT/$name/gcc.log" 2>&1 || { cat "$OUT/$name/gcc.log"; return 1; }
     else
-        gcc -m32 -static -nostdlib -ffreestanding -fno-builtin -fno-pic -no-pie \
+        gcc $HOST_CC_ARCH -static -nostdlib -ffreestanding -fno-builtin -fno-pic -no-pie \
             -fno-stack-protector -fcf-protection=none -O1 -Wall -Wno-unused-function \
             -I"$ROOT/include/uapi" -Wl,--build-id=none -o "$root/init" "$TESTS/$name/init.c" \
             > "$OUT/$name/gcc.log" 2>&1 || { cat "$OUT/$name/gcc.log"; return 1; }
@@ -125,7 +143,7 @@ run_qemu()
     shift 3
 
     rm -f "$log"
-    qemu-system-i386 $ACCEL -kernel "$KERNEL" -m 256 -display none -no-reboot \
+    $QEMU $ACCEL -kernel "$KERNEL" -m 256 -display none -no-reboot \
         -serial file:"$log" "$@" >/dev/null 2>&1 &
 
     local pid=$! ticks=0
@@ -285,7 +303,7 @@ EOF
 test_libc()
 {
     if [ ! -x "$CROSS_CC" ]; then
-        echo "SKIP: no i686-aquila toolchain, run make toolchain"
+        echo "SKIP: no ${CROSS_CC##*/} toolchain, run make toolchain"
         return 0
     fi
 
@@ -303,7 +321,7 @@ test_system()
     local initrd=$OUT/system/initrd.img
 
     if [ ! -x "$CROSS_CC" ]; then
-        echo "SKIP: no i686-aquila toolchain, run make toolchain"
+        echo "SKIP: no ${CROSS_CC##*/} toolchain, run make toolchain"
         return 0
     fi
 
@@ -351,7 +369,7 @@ test_system()
             printf '%s\r' "${step#* }"
         done
         sleep 2
-    } | timeout 90 qemu-system-i386 $ACCEL -kernel "$KERNEL" -initrd "$initrd" \
+    } | timeout 90 $QEMU $ACCEL -kernel "$KERNEL" -initrd "$initrd" \
         -append earlycon=ttyS0 -m 256 -display none -no-reboot -serial stdio \
         2>/dev/null | tr -d '\r' > "$log"
 
@@ -387,7 +405,7 @@ test_disk()
     local img=$OUT/disk/aquila.img
 
     if [ ! -x "$CROSS_CC" ] || [ ! -x "$ROOT/build/toolchain/bin/limine" ]; then
-        echo "SKIP: no i686-aquila toolchain, run make toolchain"
+        echo "SKIP: no ${CROSS_CC##*/} toolchain, run make toolchain"
         return 0
     fi
 
@@ -434,7 +452,7 @@ test_disk()
         rm -f "$fifo"
         mkfifo "$fifo"
         # straight to the log, a pipe would hold back what the waits look for
-        timeout 120 qemu-system-i386 $ACCEL -hda "$img" -m 256 -display none -no-reboot \
+        timeout 120 $QEMU $ACCEL -hda "$img" -m 256 -display none -no-reboot \
             -serial stdio < "$fifo" > "$1.raw" 2>/dev/null &
         local pid=$!
 
@@ -512,7 +530,7 @@ test_tcc()
     local fifo=$OUT/tcc/input
     rm -f "$fifo" "$log.raw"
     mkfifo "$fifo"
-    timeout 120 qemu-system-i386 $ACCEL -kernel "$KERNEL" -initrd "$OUT/tcc/build/initrd.img" \
+    timeout 120 $QEMU $ACCEL -kernel "$KERNEL" -initrd "$OUT/tcc/build/initrd.img" \
         -append earlycon=ttyS0 -m 256 -display none -no-reboot -serial stdio \
         < "$fifo" > "$log.raw" 2>/dev/null &
     local pid=$!

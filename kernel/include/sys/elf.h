@@ -9,6 +9,12 @@ typedef uint32_t elf32_addr;
 typedef uint32_t elf32_off;
 typedef uint16_t elf32_half;
 
+typedef uint64_t elf64_addr;
+typedef uint64_t elf64_off;
+typedef uint64_t elf64_xword;
+typedef uint32_t elf64_word;
+typedef uint16_t elf64_half;
+
 #define ET_NONE     0x0000
 #define ET_REL      0x0001
 #define ET_EXEC     0x0002
@@ -25,6 +31,7 @@ typedef uint16_t elf32_half;
 #define EM_88K      0x0005
 #define EM_860      0x0007
 #define EM_MIPS     0x0008
+#define EM_X86_64   0x003E
 
 #define EV_NONE     0x0000
 #define EV_CURRENT  0x0001
@@ -209,6 +216,42 @@ struct elf32_dyn {
         elf32_word  d_val;
         elf32_addr  d_ptr;
     } d_un;
+};
+
+/**
+ * \ingroup binfmt
+ * \brief elf64 file header
+ */
+struct elf64_hdr {
+    uint8_t     e_ident[EI_NIDENT];
+    elf64_half  e_type;
+    elf64_half  e_machine;
+    elf64_word  e_version;
+    elf64_addr  e_entry;
+    elf64_off   e_phoff;
+    elf64_off   e_shoff;
+    elf64_word  e_flags;
+    elf64_half  e_ehsize;
+    elf64_half  e_phentsize;
+    elf64_half  e_phnum;
+    elf64_half  e_shentsize;
+    elf64_half  e_shnum;
+    elf64_half  e_shstrndx;
+};
+
+/**
+ * \ingroup binfmt
+ * \brief elf64 program header
+ */
+struct elf64_phdr {
+    elf64_word  p_type;
+    elf64_word  p_flags;
+    elf64_off   p_offset;
+    elf64_addr  p_vaddr;
+    elf64_addr  p_paddr;
+    elf64_xword p_filesz;
+    elf64_xword p_memsz;
+    elf64_xword p_align;
 };
 
 #endif /* ! _ELF_H */

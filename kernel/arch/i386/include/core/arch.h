@@ -37,7 +37,12 @@ MALLOC_DECLARE(M_KERN_STACK);
 
 void arch_syscall(struct x86_regs *r);
 
+#if ARCH_BITS==32
 #define USER_STACK      (0xC0000000UL)
+#else
+/* the top of the lower half, user space */
+#define USER_STACK      (0x0000800000000000UL)
+#endif
 #define USER_STACK_BASE (USER_STACK - USER_STACK_SIZE)
 
 #define KERN_STACK_SIZE (8192U)  /* 8 KiB */

@@ -12,25 +12,41 @@
 #include <sys/elf.h>
 #include <mm/vm.h>
 
-static int binfmt_elf32_load(struct proc *proc, struct vnode *vnode)
+/* the kernel's own class and machine, the only ones it runs */
+#if ARCH_BITS==32
+#define ELF_CLASS       ELFCLASS32
+#define ELF_MACHINE     EM_386
+typedef struct elf32_hdr  elf_hdr;
+typedef struct elf32_phdr elf_phdr;
+#else
+#define ELF_CLASS       ELFCLASS64
+#define ELF_MACHINE     EM_X86_64
+typedef struct elf64_hdr  elf_hdr;
+typedef struct elf64_phdr elf_phdr;
+#endif
+
+static int binfmt_elf_load_segments(struct proc *proc, struct vnode *vnode)
 {
     int err = 0;
 
     struct vm_space *vm_space = &proc->vm_space;
 
-    struct elf32_hdr hdr;
+    elf_hdr hdr;
 
     if (vfs_read(vnode, 0, sizeof(hdr), &hdr) != sizeof(hdr))
         goto e_inval;
 
-    if (hdr.e_phentsize < sizeof(struct elf32_phdr))
+    if (hdr.e_ident[EI_CLASS] != ELF_CLASS || hdr.e_machine != ELF_MACHINE)
+        goto e_inval;
+
+    if (hdr.e_phentsize < sizeof(elf_phdr))
         goto e_inval;
 
     uintptr_t proc_heap = 0;
     size_t offset = hdr.e_phoff;
 
     for (int i = 0; i < hdr.e_phnum; ++i) {
-        struct elf32_phdr phdr;
+        elf_phdr phdr;
 
         if (vfs_read(vnode, offset, sizeof(phdr), &phdr) != sizeof(phdr))
             goto e_inval;
@@ -153,60 +169,6 @@ error:
     return err;
 }
 
-#if 0
-static int binfmt_elf64_load(struct proc *proc, struct vnode *file)
-{
-    int err = 0;
-
-    struct elf64_hdr hdr;
-    vfs_read(file, 0, sizeof(hdr), &hdr);
-
-    uintptr_t proc_heap = 0;
-    size_t offset = hdr.shoff;
-    
-    for (int i = 0; i < hdr.shnum; ++i) {
-        struct elf64_section_hdr shdr;
-        vfs_read(file, offset, sizeof(shdr), &shdr);
-        
-        if (shdr.flags & SHF_ALLOC) {
-            struct vmr *vmr = kmalloc(sizeof(struct vmr));
-            memset(vmr, 0, sizeof(struct vmr));
-
-            vmr->base  = shdr.addr;
-            vmr->size  = shdr.size;
-
-            /* access flags */
-            vmr->flags |= VM_UR;
-            vmr->flags |= shdr.flags & SHF_WRITE ? VM_UW : 0;
-            vmr->flags |= shdr.flags & SHF_EXEC ? VM_UX : 0;
-            //vmr->flags = VM_URWX;   /* FIXME */
-
-            vmr->qnode = enqueue(&proc->vmr, vmr);
-
-            if (shdr.type == SHT_PROGBITS) {
-                vmr->flags |= VM_FILE;
-                vmr->off   = shdr.off;
-                vmr->vnode = file;
-                //vfs_read(vmr->vnode, vmr->off, vmr->size, (void *) vmr->base);
-            } else {
-                vmr->flags |= VM_ZERO;
-                //memset((void *) vmr->base, 0, vmr->size);
-            }
-
-            if (shdr.addr + shdr.size > proc_heap)
-                proc_heap = shdr.addr + shdr.size;
-        }
-
-        offset += hdr.shentsize;
-    }
-
-    proc->heap_start = proc_heap;
-    proc->heap = proc_heap;
-    proc->entry = hdr.entry;
-
-    return err;
-}
-#endif
 
 int binfmt_elf_check(struct vnode *vnode)
 {
@@ -227,17 +189,5 @@ int binfmt_elf_check(struct vnode *vnode)
 
 int binfmt_elf_load(struct proc *proc, const char *path __unused, struct vnode *vnode)
 {
-    int err = 0;
-
-    struct elf32_hdr hdr;
-
-    if (vfs_read(vnode, 0, sizeof(hdr), &hdr) != sizeof(hdr))
-        return -EINVAL;
-
-    switch (hdr.e_ident[EI_CLASS]) {
-        case ELFCLASS32:
-            return binfmt_elf32_load(proc, vnode);
-    }
-
-    return -EINVAL;
+    return binfmt_elf_load_segments(proc, vnode);
 }

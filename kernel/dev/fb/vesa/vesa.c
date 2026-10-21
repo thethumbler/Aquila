@@ -4,10 +4,10 @@
 #include <video/vesa.h>
 #include <mm/vm.h>
 
-static char *vmem = (char *) 0xE0000000;
+static char *vmem = (char *) ARCH_VESA_BASE;
 
 static struct vm_entry vesa_vm = {
-    .base = 0xE0000000,
+    .base = ARCH_VESA_BASE,
 };
 
 static size_t len = 0;

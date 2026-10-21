@@ -20,7 +20,7 @@
 MALLOC_DEFINE(M_ACPI, "acpi", "ACPI table mapping");
 
 /* where tables are mapped */
-#define ACPI_WINDOW         0xF0000000UL
+#define ACPI_WINDOW         ARCH_ACPI_BASE
 #define ACPI_WINDOW_SIZE    0x00400000UL
 
 static uintptr_t window_next = ACPI_WINDOW;

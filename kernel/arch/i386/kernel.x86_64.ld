@@ -2,28 +2,29 @@ OUTPUT_FORMAT(elf64-x86-64)
 ENTRY(_start)
 OUTPUT(kernel.elf)
 
-SECTIONS {
+/*
+ * Loaded by the addresses of its multiboot header (boot/multiboot.S): the
+ * file from kernel_start to kernel_load_end is the memory from there, and
+ * the .bss after it is zeroed, up to kernel_bss_end. So every section is
+ * page aligned, the .bss last.
+ */
 
+SECTIONS {
     LMA = 0x100000;
     . = LMA;
 
+    kernel_start = .;
+
+    /* the 32-bit entry, run at its physical address */
     .boot.text : ALIGN(0x1000) {
-        */arch/i386/boot/*.o(.text*)
-        */arch/i386/boot/*.o(.rodata*)
-    }
-
-    .boot.data : ALIGN(0x1000) {
-        */arch/i386/boot/*.o(.data)
-    }
-
-    .boot.bss (NOLOAD) : ALIGN(0x1000) {
-        */arch/i386/boot/*.o(*)
+        */boot/multiboot.o(.text)
+        */boot/x86_64_bootstrap.o(.text)
     }
 
     boot_end = .;
 
-    _VMA = 0xFFFF800000000000;
-    . += _VMA;
+    _VMA = 0xFFFFFFFF80000000;
+    . = ALIGN(0x1000) + _VMA;
 
     .text : AT(ADDR(.text) - _VMA) ALIGN(0x1000) {
         *(.text*)
@@ -35,18 +36,25 @@ SECTIONS {
         *(.__minit*)
         __minit_end = .;
     }
-    
+
     .data : AT(ADDR(.data) - _VMA) ALIGN(0x1000) {
-        *(.data)
+        *(.data*)
+        . = ALIGN(0x1000);
     }
-    
+
+    kernel_load_end = . - _VMA;
+
     .bss : AT(ADDR(.bss) - _VMA) ALIGN(0x1000) {
-        *(.bss)
+        *(.bss*)
+        *(COMMON)
+        . = ALIGN(0x1000);
     }
-    
+
+    kernel_bss_end = . - _VMA;
+
     /DISCARD/ : {
         *(.*)
     }
-    
+
     kernel_end = . - _VMA;
 }

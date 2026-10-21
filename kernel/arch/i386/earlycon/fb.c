@@ -12,11 +12,11 @@ static uint32_t fb_xres, fb_yres, fb_depth,
                 fb_rows = 25, fb_cols = 80, fb_size;
 
 static struct vm_entry fb_vmr = {
-    .base = 0xE8000000,
+    .base = ARCH_EARLYFB_BASE,
 };
 
-static char *vmem   = (char *) 0xE8000000;
-static char *cursor = (char *) 0xE8000000;
+static char *vmem   = (char *) ARCH_EARLYFB_BASE;
+static char *cursor = (char *) ARCH_EARLYFB_BASE;
 
 void earlycon_fb_register(uintptr_t paddr, uint32_t scanline, uint32_t yres, uint32_t xres, uint32_t depth)
 {

@@ -1,8 +1,9 @@
 /*
  * aqtest - minimal freestanding harness for kernel test programs
  *
- * Each test is a static i386 ELF that runs as /init from its own initrd.
- * It talks to the kernel through raw `int $0x80' syscalls (no libc), and
+ * Each test is a static ELF (i386 or x86_64, the kernel's) that runs as
+ * /init from its own initrd. It talks to the kernel through raw
+ * `int $0x80' syscalls (no libc), and
  * reports results on the first serial port, one line per check:
  *
  *      PASS <name> got=<value> want=<value>
@@ -21,6 +22,7 @@
 #include <stdint.h>
 
 typedef uint32_t u32;
+typedef unsigned long uptr;     /* a pointer's size */
 
 #include <aquila/errno.h>
 #include <aquila/fcntl.h>
@@ -33,25 +35,41 @@ typedef uint32_t u32;
 #define DEV(major, minor)   (((major) << 8) | (minor))
 
 /* an address in kernel space, must never be accepted from user space */
+#ifdef __x86_64__
+#define KADDR       0xFFFFFFFF80100000ul
+#else
 #define KADDR       0xC0100000u
+#endif
 
-static inline int sc3(int n, u32 a, u32 b, u32 c)
+/* the number in eax, the arguments in ebx, ecx, edx, esi and edi; on
+ * x86_64 in rdi, rsi, rdx, r10 and r8 */
+static inline long sc3(long n, uptr a, uptr b, uptr c)
 {
-    int r;
+    long r;
+#ifdef __x86_64__
+    asm volatile("int $0x80" : "=a"(r) : "a"(n), "D"(a), "S"(b), "d"(c) : "memory");
+#else
     asm volatile("int $0x80" : "=a"(r) : "a"(n), "b"(a), "c"(b), "d"(c) : "memory");
+#endif
     return r;
 }
 
-#define SC(n, a, b, c) sc3(n, (u32)(a), (u32)(b), (u32)(c))
+#define SC(n, a, b, c) sc3(n, (uptr)(a), (uptr)(b), (uptr)(c))
 
-static inline int sc5(int n, u32 a, u32 b, u32 c, u32 d, u32 e)
+static inline long sc5(long n, uptr a, uptr b, uptr c, uptr d, uptr e)
 {
-    int r;
+    long r;
+#ifdef __x86_64__
+    register uptr r10 asm("r10") = d;
+    register uptr r8 asm("r8") = e;
+    asm volatile("int $0x80" : "=a"(r) : "a"(n), "D"(a), "S"(b), "d"(c), "r"(r10), "r"(r8) : "memory");
+#else
     asm volatile("int $0x80" : "=a"(r) : "a"(n), "b"(a), "c"(b), "d"(c), "S"(d), "D"(e) : "memory");
+#endif
     return r;
 }
 
-#define SC5(n, a, b, c, d, e) sc5(n, (u32)(a), (u32)(b), (u32)(c), (u32)(d), (u32)(e))
+#define SC5(n, a, b, c, d, e) sc5(n, (uptr)(a), (uptr)(b), (uptr)(c), (uptr)(d), (uptr)(e))
 
 static inline int aq_mount(const char *type, const char *dir, void *data)
 {
@@ -63,14 +81,22 @@ static inline int aq_mount(const char *type, const char *dir, void *data)
  * Entry point: record the stack pointer the kernel handed us (tests check
  * its alignment) and call aq_main() like crt0 would call main().
  */
-u32 aq_entry_esp;
+uptr aq_entry_esp;
 void aq_main(void);
 
+#ifdef __x86_64__
+asm(".globl _start\n"
+    "_start:\n"
+    "    mov %rsp, aq_entry_esp(%rip)\n"
+    "    call aq_main\n"
+    "1:  jmp 1b\n");
+#else
 asm(".globl _start\n"
     "_start:\n"
     "    mov %esp, aq_entry_esp\n"
     "    call aq_main\n"
     "1:  jmp 1b\n");
+#endif
 
 static int aq_out = -1;
 static int aq_fails = 0;

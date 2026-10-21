@@ -362,12 +362,32 @@ x86_fork_return:
     iretq
 #endif
 
+/* to the context of `regs' (struct x86_regs), on the kernel stack */
 .global return_from_signal
 return_from_signal:
+#if ARCH_BITS==32
     mov 4(%esp), %edi
     mov %edi, %esp    /* Fix stack pointer */
     pop_context
     iret
+#else
+    mov %rdi, %rsp
+    pop_context
+    iretq
+#endif
+
+#if ARCH_BITS==64
+/* to user mode, in the context of `regs' (built below the kernel stack's
+ * top), with the user's data segments */
+.global x86_jump_user_regs
+x86_jump_user_regs:
+    mov  $0x20 | 0x3, %ax
+    movw %ax, %ds
+    movw %ax, %es
+    mov  %rdi, %rsp
+    pop_context
+    iretq
+#endif
 
 .align 8
 gdt_pointer:

@@ -1,7 +1,7 @@
 #ifndef _X86_CONFIG_H
 #define _X86_CONFIG_H
 
-#if 1
+#ifndef __x86_64__
 #define ARCH X86
 #define ARCH_X86
 #define ARCH_BITS 32

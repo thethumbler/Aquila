@@ -77,8 +77,49 @@ void arch_handle_signal(int sig)
     uintptr_t sig_sp = regs->esp;
 #else
     uintptr_t sig_sp = regs->rsp;
+
+    /* the handler's arguments in registers (signal number, siginfo, NULL
+     * ucontext); its siginfo and return address on the stack, below the
+     * red zone (128 bytes the code may use under its stack pointer), 16
+     * bytes aligned before the return address is pushed */
+    uintptr_t info_sp = (sig_sp - 128 - sizeof(struct aquila_siginfo)) & ~(uintptr_t) 15;
+    uintptr_t new_sp  = info_sp - sizeof(uintptr_t);
+
+    if (sig_sp < 256 || !signal_frame_ok(new_sp, sig_sp - new_sp)) {
+        /* can't deliver, the user stack is unusable */
+        arch->kstack += sizeof(struct x86_regs);
+        signal_terminate(SIGSEGV);
+        return;
+    }
+
+    x86_kernel_stack_set(arch->kstack);
+
+    int is_fault = sig == SIGSEGV || sig == SIGBUS || sig == SIGILL || sig == SIGFPE;
+
+    *(struct aquila_siginfo *) info_sp = (struct aquila_siginfo) {
+        .si_signo = sig,
+        .si_addr  = is_fault ? curthread->fault_addr : 0,
+    };
+
+    /* the return address, where the page fault is a sigreturn */
+    *(uintptr_t *) new_sp = 0x0FFF;
+
+    struct x86_regs frame = {
+        .rdi = sig,
+        .rsi = info_sp,
+        .rdx = 0,
+        .rip = handler,
+        .cs  = X86_CS,
+        .rflags = X86_EFLAGS,
+        .rsp = new_sp,
+        .ss  = X86_SS,
+    };
+
+    extern void x86_jump_user_regs(struct x86_regs *) __attribute__((noreturn));
+    x86_jump_user_regs(&frame);
 #endif
 
+#if ARCH_BITS==32
     /* the siginfo, then the handler's arguments (signal number, siginfo,
      * NULL ucontext) and return address, kept 4-byte aligned */
     size_t info_size  = (sizeof(struct aquila_siginfo) + 3) & ~3;
@@ -116,9 +157,6 @@ void arch_handle_signal(int sig)
     *(uintptr_t *) sig_sp = 0x0FFF;
 
     extern void x86_jump_user(uintptr_t eax, uintptr_t eip, uintptr_t cs, uintptr_t eflags, uintptr_t esp, uintptr_t ss) __attribute__((noreturn));
-#if ARCH_BITS==32
-    x86_jump_user(0, handler, X86_CS, X86_EFLAGS, sig_sp, X86_SS);
-#else
     x86_jump_user(0, handler, X86_CS, X86_EFLAGS, sig_sp, X86_SS);
 #endif
 }

@@ -80,13 +80,13 @@ static int dma_transfer(struct ata_drive *drive, uint64_t lba, size_t count, int
     struct ata_channel *ch = drive->channel;
     int c = channel_index(drive);
 
-    prdt[c].addr  = (uint32_t) LMA(&dma_buf[c][0]);
+    prdt[c].addr  = (uint32_t) (uintptr_t) LMA(&dma_buf[c][0]);
     prdt[c].size  = (count * 512) & 0xFFFF;
     prdt[c].flags = PRD_EOT;
 
     /* stopped, the direction, the table, interrupt and error cleared */
     io_out8(&ch->bm, BM_CMD, write ? 0 : BM_CMD_READ);
-    io_out32(&ch->bm, BM_PRDT, (uint32_t) LMA(&prdt[c]));
+    io_out32(&ch->bm, BM_PRDT, (uint32_t) (uintptr_t) LMA(&prdt[c]));
     io_out8(&ch->bm, BM_STATUS, BM_ST_IRQ | BM_ST_ERROR);
 
     ata_setup(drive, lba, count);

@@ -18,18 +18,22 @@ void arch_stack_trace()
 
     struct stack_frame *stk = NULL;
 
+#if ARCH_BITS==32
     asm volatile ("movl %%ebp, %0":"=r"(stk));
+#else
+    asm volatile ("movq %%rbp, %0":"=r"(stk));
+#endif
 
     printk("stack trace:\n");
 
     /* symbols are not always provided by the bootloader */
     int have_syms = __kboot && __kboot->symtab && __kboot->strtab;
-    const char *strs = have_syms ? (const char *) __kboot->strtab->sh_addr : NULL;
+    const char *strs = have_syms ? (const char *) (uintptr_t) __kboot->strtab->sh_addr : NULL;
 
     for (int frame = 0; stk && frame < 20; ++frame) {
 
         /* find symbol */
-        struct elf32_sym *sym = have_syms ? (struct elf32_sym *) __kboot->symtab->sh_addr : NULL;
+        struct elf32_sym *sym = have_syms ? (struct elf32_sym *) (uintptr_t) __kboot->symtab->sh_addr : NULL;
 
         int found = 0;
 

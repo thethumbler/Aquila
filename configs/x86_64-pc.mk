@@ -1,18 +1,19 @@
-#
-# Compilation flags
-#
+CC := x86_64-aquila-gcc
 
-CC := gcc
-CFLAGS := -std=gnu99 -I. -I$(PDIR)/arch/$$(ARCH_DIR)/chipset/$$(PLATFORM_DIR)/include -I$(PDIR)/arch/$$(ARCH_DIR)/include -I $(PDIR) -I $(PDIR)/include/ -nostdlib -ffreestanding \
-		  -O3 -Wall -Wextra -Werror -funsigned-bitfields -fuse-ld=bfd \
-		  -Wno-unused \
-		  -mcmodel=large -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -z max-page-size=0x1000
+# the kernel model: linked in the top 2 GiB; no red zone (interrupts use
+# the kernel stack), no SSE (its registers aren't saved on entry)
+CFLAGS += \
+		-std=gnu11 -nostdlib -ffreestanding -m64 -mcmodel=kernel \
+		-mno-red-zone -mgeneral-regs-only -fno-omit-frame-pointer \
+		-O3 -Wall -Wextra -Werror \
+		-Wno-unused -Wno-unused-parameter \
+		-funsigned-bitfields -fuse-ld=bfd
 
 AS := $(CC)
 ASFLAGS := $(CFLAGS)
-
-LD := ld.bfd
-LDFLAGS := -nostdlib -melf_x86_64
+LD := x86_64-aquila-ld
+# the kernel is mapped as a single RWX segment
+LDFLAGS := -nostdlib -melf_x86_64 -z max-page-size=0x1000 --no-warn-rwx-segments
 
 #
 # Configurations
@@ -30,7 +31,7 @@ ARCH_BITS=64
 X86_MULTIBOOT=y
 
 #
-# Chipset - generic
+# Platform - PC
 #
 
 PLATFORM_X86_PC=y
@@ -41,6 +42,12 @@ PLATFORM_X86_MISC_PIC=y
 PLATFORM_X86_MISC_PIT=y
 # Support i8042 PS/2 Controller
 PLATFORM_X86_MISC_I8042=y
+# Support HPET
+PLATFORM_X86_MISC_HPET=n
+# Support ACPI
+PLATFORM_X86_MISC_ACPI=y
+# Support CMOS
+PLATFORM_X86_MISC_CMOS=y
 
 #
 # Devices
@@ -68,8 +75,12 @@ FBDEV_VESA=y
 FS_TMPFS=y
 FS_DEVFS=y
 FS_DEVPTS=y
-#FS_EXT2=y
+FS_EXT2=y
 FS_PROCFS=y
+FS_MINIX=y
 
 # Initramfs
 INITRAMFS_CPIO=y
+
+# Network
+NET_UNIX=y
