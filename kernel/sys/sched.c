@@ -6,6 +6,7 @@
 #include <sys/signal.h>
 #include <ds/queue.h>
 #include <dev/random.h>
+#include <sys/callout.h>
 
 #include <aquila/stat.h>
 
@@ -31,6 +32,8 @@ void sched_timer_tick(uint32_t period, int user)
 
     /* when an interrupt comes, in cycles, isn't predictable */
     random_add((uint32_t) arch_cycles());
+
+    callout_run(now);
 
     /* charge the tick to the running process (system calls run with
      * interrupts disabled, so kernel time is mostly missed) */
