@@ -25,9 +25,9 @@ MALLOC_DEFINE(M_HASHMAP_NODE, "hashmap-node", "hashmap node structure");
 int debug_kmalloc = 0;
 
 struct kvmem_node {
-    uint32_t addr : 28; /* Offseting (1GiB), 4-bytes aligned objects */
+    uint32_t addr : 28; /* Offset, in KVMEM_ALIGN units (4 GiB) */
     uint32_t free : 1;  /* Free or not flag */
-    uint32_t size : 26; /* Size of one object can be up to 256MiB */
+    uint32_t size : 26; /* Size, in KVMEM_ALIGN units (up to 1 GiB) */
     uint32_t next : 25; /* Index of the next node */
     struct malloc_type *type;
 };
@@ -37,8 +37,11 @@ size_t kvmem_obj_cnt;
 
 #define KVMEM_BASE       ARCH_KVMEM_BASE
 
-#define NODE_ADDR(node) (KVMEM_BASE + ((node).addr) * 4U)
-#define NODE_SIZE(node) (((node).size) * 4U)
+/* objects are 16-byte aligned (what x86-64 expects: stacks, fxsave) */
+#define KVMEM_ALIGN     16U
+
+#define NODE_ADDR(node) (KVMEM_BASE + ((node).addr) * KVMEM_ALIGN)
+#define NODE_SIZE(node) (((node).size) * KVMEM_ALIGN)
 #define LAST_NODE_INDEX (100000)
 #define MAX_NODE_SIZE   ((1UL << 26) - 1)
 
@@ -116,8 +119,8 @@ void print_node(unsigned i)
 
 void *kmalloc(size_t size, struct malloc_type *type, int flags)
 {
-    /* round size to 4-byte units */
-    size = (size + 3)/4;
+    /* round size to KVMEM_ALIGN units */
+    size = (size + KVMEM_ALIGN - 1) / KVMEM_ALIGN;
 
     /* Zero sized nodes are considered unused, so never hand one out */
     if (!size)
@@ -171,7 +174,7 @@ void *kmalloc(size_t size, struct malloc_type *type, int flags)
     void *obj = (void *) NODE_ADDR(nodes[i]);
 
     if (flags & M_ZERO) {
-        memset(obj, 0, size * 4);
+        memset(obj, 0, size * KVMEM_ALIGN);
     }
 
     return obj;
