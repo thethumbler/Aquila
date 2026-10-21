@@ -6,6 +6,13 @@
  *          - Volume 3, System Programming Guide
  *          - Chapter 4, Paging
  *
+ *  Every pmap has its own page directory, switching is loading it in cr3.
+ *  The kernel's half (from KERNEL_PDE) has all its page tables made at
+ *  boot, the directories share them, so the kernel's mappings are the same
+ *  in all of them and never change in a directory. The last entry of a
+ *  directory maps it on itself (PAGE_DIR, PAGE_TBL), the one before is
+ *  a table of the kernel's with the page mounted at MOUNT_ADDR, to reach
+ *  physical pages.
  */
 
 #include <core/arch.h>
@@ -29,6 +36,24 @@ static struct pmap *cur_pmap = NULL;
 
 static volatile uint32_t *bootstrap_processor_table = NULL;
 static volatile uint32_t last_page_table[1024] __aligned(PAGE_SIZE) = {0};
+
+/* the first entry of the kernel's half, 0xC0000000 */
+#define KERNEL_PDE  768
+
+/* the mounted page and the map being worked on are the same for everyone,
+ * what uses them can't be interrupted (and switched out) */
+static inline uint32_t irq_save(void)
+{
+    uint32_t eflags;
+    asm volatile("pushfl; popl %0; cli" : "=r"(eflags) :: "memory");
+    return eflags;
+}
+
+static inline void irq_restore(uint32_t eflags)
+{
+    if (eflags & 0x200)
+        asm volatile("sti" ::: "memory");
+}
 
 static inline void tlb_invalidate_page(uintptr_t virt)
 {
@@ -68,9 +93,11 @@ static inline uintptr_t frame_get(void)
         panic("Could not allocate frame");
     }
 
+    uint32_t eflags = irq_save();
     uintptr_t old = frame_mount(frame);
     memset(MOUNT_ADDR, 0, PAGE_SIZE);
     frame_mount(old);
+    irq_restore(eflags);
 
     return frame;
 }
@@ -221,7 +248,8 @@ static inline void page_unmap(vaddr_t vaddr)
 
             mm_page_decref(table);
 
-            if (mm_page_ref(table) == 0)
+            /* the kernel's tables are shared by all the directories */
+            if (mm_page_ref(table) == 0 && pdidx < KERNEL_PDE)
                 table_unmap(pdidx);
 
             tlb_invalidate_page(vaddr);
@@ -259,8 +287,6 @@ static void table_dump(paddr_t table)
     frame_mount(mnt);
 }
 
-#include "page_utils.h"
-
 struct pmap *pmap_switch(struct pmap *pmap)
 {
     if (!pmap)
@@ -268,23 +294,29 @@ struct pmap *pmap_switch(struct pmap *pmap)
 
     struct pmap *ret = cur_pmap;
 
-    if (cur_pmap && cur_pmap->map == pmap->map) {
+    if (pmap != cur_pmap) {
+        write_cr3(pmap->map);
         cur_pmap = pmap;
-        return ret;
     }
-
-    if (cur_pmap) { /* Store current directory mapping in old_dir */
-        copy_virtual_to_physical((void *) cur_pmap->map, (void *) bootstrap_processor_table, 768 * 4);
-    }
-
-    copy_physical_to_virtual((void *) bootstrap_processor_table, (void *) pmap->map, 768 * 4);
-    cur_pmap = pmap;
-    tlb_flush();
 
     return ret;
 }
 
 static struct pmap k_pmap;
+
+/* make `pmap''s entries reachable (PAGE_DIR, PAGE_TBL), with interrupts
+ * off until pmap_leave(): the kernel's are, in any directory */
+static struct pmap *pmap_enter(struct pmap *pmap, uint32_t *eflags)
+{
+    *eflags = irq_save();
+    return pmap == &k_pmap ? cur_pmap : pmap_switch(pmap);
+}
+
+static void pmap_leave(struct pmap *old, uint32_t eflags)
+{
+    pmap_switch(old);
+    irq_restore(eflags);
+}
 
 static void setup_i386_paging(void)
 {
@@ -354,6 +386,11 @@ void pmap_init(void)
 {
     setup_i386_paging();
     cur_pmap = &k_pmap;
+
+    /* all the kernel's tables, before there is any other directory */
+    for (int i = KERNEL_PDE; i < 1022; ++i)
+        if (!(PAGE_DIR[i] & PG_PRESENT))
+            table_map(table_alloc(), i, 0);
 }
 
 struct pmap *pmap_create(void)
@@ -367,6 +404,19 @@ struct pmap *pmap_create(void)
 
     pmap->map = frame_get();
     pmap->ref = 1;
+
+    /* the kernel's half, the same in every directory, and itself */
+    uint32_t eflags = irq_save();
+    uintptr_t old = frame_mount(pmap->map);
+    uint32_t *dir = MOUNT_ADDR;
+
+    for (int i = KERNEL_PDE; i < 1023; ++i)
+        dir[i] = PAGE_DIR[i];
+
+    dir[1023] = pmap->map | PG_PRESENT | PG_WRITE;
+
+    frame_mount(old);
+    irq_restore(eflags);
 
     return pmap;
 }
@@ -394,7 +444,8 @@ int pmap_add(struct pmap *pmap, vaddr_t va, paddr_t pa, uint32_t flags)
     if ((va & PAGE_MASK) || (pa & PAGE_MASK))
         return -EINVAL;
 
-    struct pmap *old_map = pmap_switch(pmap);
+    uint32_t eflags;
+    struct pmap *old_map = pmap_enter(pmap, &eflags);
 
     size_t pdidx = VDIR(va);
     size_t ptidx = VTBL(va);
@@ -402,7 +453,7 @@ int pmap_add(struct pmap *pmap, vaddr_t va, paddr_t pa, uint32_t flags)
     page_map(pa, pdidx, ptidx, flags);
     tlb_invalidate_page(va);
 
-    pmap_switch(old_map);
+    pmap_leave(old_map, eflags);
 
     return 0;
 }
@@ -412,14 +463,15 @@ void pmap_remove(struct pmap *pmap, vaddr_t sva, vaddr_t eva)
     if ((sva & PAGE_MASK) || (eva & PAGE_MASK))
         return;
 
-    struct pmap *old_map = pmap_switch(pmap);
+    uint32_t eflags;
+    struct pmap *old_map = pmap_enter(pmap, &eflags);
 
     while (sva < eva) {
         page_unmap(sva);
         sva += PAGE_SIZE;
     }
 
-    pmap_switch(old_map);
+    pmap_leave(old_map, eflags);
 }
 
 static void table_remove_all(paddr_t table)
@@ -443,9 +495,7 @@ static void table_remove_all(paddr_t table)
 
 void pmap_remove_all(struct pmap *pmap)
 {
-    //printk("pmap_remove_all(pmap=%p)\n", pmap);
-
-    struct pmap *old_map = pmap_switch(&k_pmap);
+    uint32_t eflags = irq_save();
 
     paddr_t base = pmap->map;
 
@@ -464,12 +514,7 @@ void pmap_remove_all(struct pmap *pmap)
     tlb_flush();
 
     frame_mount(old_mount);
-
-    pmap_switch(old_map);
-
-
-
-    return;
+    irq_restore(eflags);
 }
 
 void pmap_protect(struct pmap *pmap, vaddr_t sva, vaddr_t eva, uint32_t prot)
@@ -477,7 +522,8 @@ void pmap_protect(struct pmap *pmap, vaddr_t sva, vaddr_t eva, uint32_t prot)
     if (sva & PAGE_MASK)
         return;
 
-    struct pmap *old_map = pmap_switch(pmap);
+    uint32_t eflags;
+    struct pmap *old_map = pmap_enter(pmap, &eflags);
 
     while (sva < eva) {
         size_t pdidx = VDIR(sva);
@@ -489,7 +535,7 @@ void pmap_protect(struct pmap *pmap, vaddr_t sva, vaddr_t eva, uint32_t prot)
         sva += PAGE_SIZE;
     }
 
-    pmap_switch(old_map);
+    pmap_leave(old_map, eflags);
 }
 
 void pmap_copy(struct pmap *dst_map, struct pmap *src_map, vaddr_t dst_addr, size_t len,
@@ -506,9 +552,13 @@ void pmap_update(struct pmap *pmap)
 static char __copy_buf[PAGE_SIZE] __aligned(PAGE_SIZE);
 void pmap_page_copy(paddr_t src, paddr_t dst)
 {
-    copy_physical_to_virtual(__copy_buf, (char *) src, PAGE_SIZE);
-    copy_virtual_to_physical((char *) dst, __copy_buf, PAGE_SIZE);
-    return;
+    uint32_t eflags = irq_save();
+    uintptr_t old = frame_mount(src);
+    memcpy(__copy_buf, MOUNT_ADDR, PAGE_SIZE);
+    frame_mount(dst);
+    memcpy(MOUNT_ADDR, __copy_buf, PAGE_SIZE);
+    frame_mount(old);
+    irq_restore(eflags);
 }
 
 void pmap_page_protect(struct vm_page *pg, uint32_t flags)
@@ -538,20 +588,14 @@ int pmap_is_referenced(struct vm_page *pg)
 
 paddr_t arch_page_get_mapping(struct pmap *pmap, vaddr_t vaddr)
 {
-    struct pmap *old_map = pmap_switch(pmap);
+    uint32_t eflags;
+    struct pmap *old_map = pmap_enter(pmap, &eflags);
 
-    //printk("arch_page_get_mapping(vaddr=%p)\n", vaddr);
     uint32_t page = __page_get_mapping(vaddr);
 
-    if (page) {
-        pmap_switch(old_map);
+    pmap_leave(old_map, eflags);
 
-        return PHYSADDR(page);
-    }
-
-    pmap_switch(old_map);
-
-    return 0;
+    return page ? PHYSADDR(page) : 0;
 }
 
 int pmap_page_read(paddr_t paddr, off_t off, size_t size, void *buf)
@@ -560,10 +604,12 @@ int pmap_page_read(paddr_t paddr, off_t off, size_t size, void *buf)
         return -EINVAL;
 
     size_t sz = MIN(size, PAGE_SIZE - (size_t) off);
+    uint32_t eflags = irq_save();
     uintptr_t old = frame_mount(paddr);
     char *page = (char *) MOUNT_ADDR;
     memcpy(buf, page + off, sz);
     frame_mount(old);
+    irq_restore(eflags);
     return 0;
 }
 
@@ -573,9 +619,11 @@ int pmap_page_write(paddr_t paddr, off_t off, size_t size, void *buf)
         return -EINVAL;
 
     size_t sz = MIN(size, PAGE_SIZE - (size_t) off);
+    uint32_t eflags = irq_save();
     uintptr_t old = frame_mount(paddr);
     char *page = (char *) MOUNT_ADDR;
     memcpy(page + off, buf, sz);
     frame_mount(old);
+    irq_restore(eflags);
     return 0;
 }
