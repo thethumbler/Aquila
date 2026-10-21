@@ -1,9 +1,10 @@
 /*
- *          Intel 8254x (e1000) Ethernet controllers
+ *          Intel 8254x (e1000) and 82574L Ethernet controllers
  *
  * References:
  *      [1] - PCI/PCI-X Family of Gigabit Ethernet Controllers Software
  *            Developer's Manual (8254x), Intel, 317453
+ *      [2] - 82574 GbE Controller Family Datasheet, Intel, 317694
  *
  * The 82540EM is QEMU's default NIC on x86. Frames are received into the
  * buffers of a ring of descriptors the controller fills and interrupts
@@ -12,6 +13,9 @@
  * addresses given to the controller. A received frame is copied into a
  * netbuf and given to the stack, a frame to send is copied into a
  * transmit buffer.
+ *
+ * The 82574L (QEMU's e1000e) is driven the same (its legacy descriptors);
+ * it interrupts with MSI, when there's an APIC to take it.
  */
 
 #include <core/system.h>
@@ -125,7 +129,8 @@ static struct e1000 {
 
 /* the PCI devices (8086:xxxx) of the family */
 static const uint16_t device_ids[] = {
-    0x100E,     /* 82540EM (QEMU's) */
+    0x100E,     /* 82540EM (QEMU's e1000) */
+    0x10D3,     /* 82574L (QEMU's e1000e): MSI */
     0x100F,     /* 82545EM copper */
     0x1004,     /* 82543GC copper */
     0x1015,     /* 82540EM LOM */
@@ -358,7 +363,6 @@ static int e1000_probe(void)
      * and written 32 bits at a time */
     e1000.regs.type = IOADDR_MMIO8;
     e1000.regs.addr = (uintptr_t) arch_mmio_map(bar.addr, bar.size);
-    e1000.irq = pci_irq_line(&e1000.pci);
 
     /* reset, no interrupts until all is set up */
     reg_write(E1000_IMC, 0xFFFFFFFF);
@@ -383,12 +387,23 @@ static int e1000_probe(void)
     e1000.netif.priv = &e1000;
     link_check();
 
-    printk("e1000: %x:%x at %p, irq %d, link %s\n", 0x8086, device_ids[i],
-           (void *) (uintptr_t) bar.addr, e1000.irq, e1000.netif.flags & NETIF_RUNNING ? "up" : "down");
-
     netif_register(&e1000.netif);
 
-    x86_irq_handler_install(e1000.irq, e1000_irq);
+    /* its interrupts as messages if it can (MSI), else its line */
+    int irq = pci_msi_enable(&e1000.pci, e1000_irq);
+    int msi = irq >= 0;
+
+    if (!msi) {
+        irq = pci_irq_line(&e1000.pci);
+        x86_irq_handler_install(irq, e1000_irq);
+    }
+
+    e1000.irq = irq;
+
+    printk("e1000: %x:%x at %p, irq %d%s, link %s\n", 0x8086, device_ids[i],
+           (void *) (uintptr_t) bar.addr, e1000.irq, msi ? " (msi)" : "",
+           e1000.netif.flags & NETIF_RUNNING ? "up" : "down");
+
     reg_read(E1000_ICR);
     reg_write(E1000_IMS, ICR_LSC | ICR_RXT0 | ICR_RXDMT0 | ICR_RXO);
 
