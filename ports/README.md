@@ -48,8 +48,8 @@ replace `URL` and `SHA256`, and the sources are exported as
 `<name>-<version>/`.
 
 Other optional settings: `DEPENDS` (recipes to build first, ports or
-contrib/ ones), `ARCHS` (the architectures it builds for, e.g. `tcc`'s
-is `i386`), `FILE` (name
+contrib/ ones), `ARCHS` (the architectures it builds for, all if
+unset), `FILE` (name
 of the downloaded archive). Libraries and headers other ports build
 against go into `$STAGING`, which `CPPFLAGS` and `LDFLAGS` point at,
 and `pkg-config` only looks there (`--static`: libraries are static).

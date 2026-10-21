@@ -7,8 +7,6 @@
 # too: newlib's headers, startup files and archives from the sysroot.
 
 NAME=tcc
-# it makes i386 code
-ARCHS="i386"
 VERSION=0.9.28rc
 GIT=https://github.com/TinyCC/tinycc.git
 COMMIT=e23dabed154a8495f3ac1ff3cc9d04fa1c207893
@@ -18,7 +16,8 @@ build()
     # a native compiler for AquilaOS, built by the cross compiler: static
     # executables by default (no dynamic linking), no dlopen() and no
     # threads; no -run, no bounds checker and backtraces (no-run.patch)
-    ./configure --prefix=/usr --cpu=i386 --cross-prefix=i686-aquila- --cc=gcc --ar=ar \
+    # (the code it makes is the system's, $ARCH's: i386 or x86_64)
+    ./configure --prefix=/usr --cpu="$ARCH" --cross-prefix="$TARGET-" --cc=gcc --ar=ar \
         --sysincludepaths=/usr/lib/tcc/include:/usr/include \
         --libpaths={B}:/usr/lib --crtprefix=/usr/lib --tcc-switches=-static \
         --config-backtrace=no --config-bcheck=no --config-semlock=no \
@@ -31,15 +30,15 @@ build()
     # itself can't run here
     # (the sources are in AquilaOS's tree, its git commit isn't tcc's)
     GIT_DIR=/nonexistent make -j"$JOBS" tcc LIBS=-lm
-    make libtcc1.a LIBS=-lm i386-libtcc1-usegcc=yes
+    make libtcc1.a LIBS=-lm "$ARCH-libtcc1-usegcc=yes"
 
     # gcc built the C library, which calls its helper functions (libgcc,
     # e.g. __divmoddi4): they are added after tcc's own, which tcc links
     # last (the GCC Runtime Library Exception allows it)
     mkdir libgcc
-    (cd libgcc && i686-aquila-ar x "$($CC -print-libgcc-file-name)")
-    i686-aquila-ar q libtcc1.a libgcc/*.o
-    i686-aquila-ranlib libtcc1.a
+    (cd libgcc && $AR x "$($CC -print-libgcc-file-name)")
+    $AR q libtcc1.a libgcc/*.o
+    $RANLIB libtcc1.a
 
     install -d "$DESTDIR/usr/bin" "$DESTDIR/usr/lib/tcc/include"
     install -m 755 tcc "$DESTDIR/usr/bin/tcc"
