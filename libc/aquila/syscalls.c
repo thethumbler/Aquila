@@ -352,6 +352,12 @@ int setpgid(pid_t pid, pid_t pgid)
     return SYSCALL(SYS_setpgid, pid, pgid, 0);
 }
 
+/* System V's: a group of its own */
+int setpgrp(void)
+{
+    return setpgid(0, 0);
+}
+
 pid_t setsid(void)
 {
     return SYSCALL(SYS_setsid, 0, 0, 0);

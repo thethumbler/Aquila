@@ -158,6 +158,24 @@ diff -ruN a/newlib/libc/include/stdio.h b/newlib/libc/include/stdio.h
  
  #if __MISC_VISIBLE
  void	clearerr_unlocked (FILE *);
+diff -ruN a/newlib/libc/include/stdlib.h b/newlib/libc/include/stdlib.h
+--- a/newlib/libc/include/stdlib.h
++++ b/newlib/libc/include/stdlib.h
+@@ -156,6 +156,14 @@
+ #if __XSI_VISIBLE
+ void	setkey (const char *__key);
+ #endif
++#if defined(__aquila__) && __XSI_VISIBLE
++/* pseudo-terminals (libc/sys/aquila/pty.c) */
++int	posix_openpt (int);
++int	grantpt (int);
++int	unlockpt (int);
++char *	ptsname (int);
++int	ptsname_r (int, char *, size_t);
++#endif
+ void	srand (unsigned __seed);
+ double	strtod (const char *__restrict __n, char **__restrict __end_PTR);
+ double	_strtod_r (struct _reent *,const char *__restrict __n, char **__restrict __end_PTR);
 diff -ruN a/newlib/libc/include/sys/cdefs.h b/newlib/libc/include/sys/cdefs.h
 --- a/newlib/libc/include/sys/cdefs.h
 +++ b/newlib/libc/include/sys/cdefs.h

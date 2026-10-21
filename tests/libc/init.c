@@ -261,6 +261,35 @@ static void test_pthread(void)
     check("getpwuid_r small -> ERANGE", getpwuid_r(0, &pw, pwbuf, 3, &pwp), ERANGE);
     check("getpwnam_r missing", getpwnam_r("nobody-here", &pw, pwbuf, sizeof(pwbuf), &pwp) == 0 && pwp == NULL, 1);
 
+    /* pseudo-terminals, as xterm opens them */
+    struct { char *dev, *opt; } pts_args = {0, 0};
+    mknod("/dev/ptmx", S_IFCHR | 0666, (5 << 8) | 2);
+    mkdir("/dev/pts", 0755);
+    mount("devpts", "/dev/pts", 0, &pts_args);
+    int ptm = posix_openpt(O_RDWR | O_NOCTTY);
+    check("posix_openpt", ptm >= 0, 1);
+    check("grantpt", grantpt(ptm), 0);
+    check("unlockpt", unlockpt(ptm), 0);
+    char *pts = ptsname(ptm);
+    check("ptsname", pts && !strncmp(pts, "/dev/pts/", 9), 1);
+    char ptsbuf[4];
+    check("ptsname_r small -> ERANGE", ptsname_r(ptm, ptsbuf, sizeof(ptsbuf)), ERANGE);
+    int ptsfd = pts ? open(pts, O_RDWR | O_NOCTTY) : -1;
+    char ptc = 0;
+    check("pty slave", ptsfd >= 0 && write(ptm, "x\n", 2) == 2 && read(ptsfd, &ptc, 1) == 1 && ptc == 'x', 1);
+    close(ptsfd);
+    close(ptm);
+    errno = 0;
+    check("grantpt not a master -> EINVAL", grantpt(0) == -1 ? errno : 0, EINVAL);
+
+    /* setpgrp(): a group of its own */
+    pid_t pg = fork();
+    if (!pg)
+        _exit(setpgrp() == 0 && getpgrp() == getpid() ? 0 : 1);
+    int pgst;
+    waitpid(pg, &pgst, 0);
+    check("setpgrp", WEXITSTATUS(pgst), 0);
+
     DIR *d = opendir("/");
     struct dirent de, *dep = NULL;
     int entries = 0;

@@ -12,6 +12,7 @@ libc_a_SOURCES += \
 	%D%/netdb.c \
 	%D%/passwd_r.c \
 	%D%/pthread.c \
+	%D%/pty.c \
 	%D%/realpath.c \
 	%D%/shadow.c \
 	%D%/shm.c \
