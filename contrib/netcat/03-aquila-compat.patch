@@ -1,0 +1,187 @@
+AquilaOS: what Debian takes from libbsd (strtonum, readpassphrase) and
+libresolv (b64_ntop), in compat.c
+
+diff --git a/Makefile b/Makefile
+index ef2a679..2649b06 100644
+--- a/Makefile
++++ b/Makefile
+@@ -1,13 +1,14 @@
+ #	$OpenBSD: Makefile,v 1.7 2015/09/11 21:07:01 beck Exp $
+ 
+ PROG=	nc
+-SRCS=	netcat.c atomicio.c socks.c
++SRCS=	netcat.c atomicio.c socks.c compat.c
+ 
+ PKG_CONFIG ?= pkg-config
+-LIBS ?= `$(PKG_CONFIG) --libs libbsd` -lresolv
++# AquilaOS: compat.c has what libbsd and libresolv gave
++LIBS ?=
+ OBJS=  $(SRCS:.c=.o)
+-CFLAGS=  -g -O2
+-LDFLAGS=  -Wl,--no-add-needed
++CFLAGS ?= -O2
++LDFLAGS ?=
+ 
+ all: nc
+ nc: $(OBJS)
+diff --git a/compat.c b/compat.c
+new file mode 100644
+index 0000000..a7bcb50
+--- /dev/null
++++ b/compat.c
+@@ -0,0 +1,105 @@
++/* AquilaOS: strtonum(), b64_ntop() and readpassphrase(), which Debian
++ * takes from libbsd and libresolv */
++
++#include <errno.h>
++#include <fcntl.h>
++#include <stdlib.h>
++#include <string.h>
++#include <termios.h>
++#include <limits.h>
++#include <unistd.h>
++
++#include "compat.h"
++
++long long strtonum(const char *s, long long min, long long max, const char **errstr)
++{
++    char *end;
++    long long v = 0;
++
++    *errstr = NULL;
++
++    if (min > max) {
++        *errstr = "invalid";
++        errno = EINVAL;
++        return 0;
++    }
++
++    errno = 0;
++    v = strtoll(s, &end, 10);
++
++    if (s == end || *end) {
++        *errstr = "invalid";
++        errno = EINVAL;
++        return 0;
++    }
++
++    if ((v == LLONG_MIN && errno == ERANGE) || v < min) {
++        *errstr = "too small";
++        errno = ERANGE;
++        return 0;
++    }
++
++    if ((v == LLONG_MAX && errno == ERANGE) || v > max) {
++        *errstr = "too large";
++        errno = ERANGE;
++        return 0;
++    }
++
++    return v;
++}
++
++int b64_ntop(const unsigned char *src, size_t srclen, char *dst, size_t dstlen)
++{
++    static const char digits[] =
++        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
++    size_t out = 0;
++
++    for (size_t i = 0; i < srclen; i += 3) {
++        unsigned v = src[i] << 16;
++        size_t n = srclen - i;
++
++        if (n > 1) v |= src[i + 1] << 8;
++        if (n > 2) v |= src[i + 2];
++
++        if (out + 4 >= dstlen)
++            return -1;
++
++        dst[out++] = digits[v >> 18 & 63];
++        dst[out++] = digits[v >> 12 & 63];
++        dst[out++] = n > 1 ? digits[v >> 6 & 63] : '=';
++        dst[out++] = n > 2 ? digits[v & 63] : '=';
++    }
++
++    dst[out] = '\0';
++    return out;
++}
++
++/* the terminal's, without echo */
++char *readpassphrase(const char *prompt, char *buf, size_t len, int flags)
++{
++    int fd = open("/dev/tty", O_RDWR);
++    struct termios old, quiet;
++    size_t n = 0;
++    char c;
++
++    (void) flags;
++
++    if (fd < 0 || !len)
++        return NULL;
++
++    write(fd, prompt, strlen(prompt));
++    tcgetattr(fd, &old);
++    quiet = old;
++    quiet.c_lflag &= ~ECHO;
++    tcsetattr(fd, TCSAFLUSH, &quiet);
++
++    while (read(fd, &c, 1) == 1 && c != '\n' && c != '\r')
++        if (n < len - 1)
++            buf[n++] = c;
++
++    buf[n] = '\0';
++    tcsetattr(fd, TCSAFLUSH, &old);
++    write(fd, "\n", 1);
++    close(fd);
++    return buf;
++}
+diff --git a/compat.h b/compat.h
+new file mode 100644
+index 0000000..2131544
+--- /dev/null
++++ b/compat.h
+@@ -0,0 +1,16 @@
++/* AquilaOS: what Debian takes from libbsd and libresolv */
++
++#ifndef COMPAT_H
++#define COMPAT_H
++
++#include <stddef.h>
++
++long long strtonum(const char *s, long long min, long long max, const char **errstr);
++
++int b64_ntop(const unsigned char *src, size_t srclen, char *dst, size_t dstlen);
++
++#define RPP_ECHO_OFF    0x00
++#define RPP_REQUIRE_TTY 0x02
++char *readpassphrase(const char *prompt, char *buf, size_t len, int flags);
++
++#endif
+diff --git a/netcat.c b/netcat.c
+index 3bb403c..55a8c75 100644
+--- a/netcat.c
++++ b/netcat.c
+@@ -103,8 +103,7 @@
+ # include <tls.h>
+ #endif
+ #include <unistd.h>
+-#include <bsd/stdlib.h>
+-#include <bsd/string.h>
++#include "compat.h"
+ 
+ #include "atomicio.h"
+ 
+diff --git a/socks.c b/socks.c
+index d2bcfda..89cb312 100644
+--- a/socks.c
++++ b/socks.c
+@@ -37,8 +37,7 @@
+ #include <stdlib.h>
+ #include <string.h>
+ #include <unistd.h>
+-#include <resolv.h>
+-#include <bsd/readpassphrase.h>
++#include "compat.h"
+ #include "atomicio.h"
+ 
+ #define SOCKS_PORT	"1080"

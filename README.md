@@ -163,6 +163,7 @@ from source, see [tests/](tests/README.md).
 - [X] newlib 4.6 C library
 - [X] dash    (shell, contrib)
 - [X] sbase   (core utilities, contrib)
+- [X] netcat  (OpenBSD's nc, contrib)
 - [X] runit   (init and service supervision, contrib)
 - [X] aqbox   (system tools)
 - [X] kilo    (text editor, port)

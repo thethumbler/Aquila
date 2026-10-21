@@ -500,6 +500,7 @@ test_system()
         "1 flock /tmp/lk sh -c 'flock -n /tmp/lk true || echo lock-busy'"
         "1 sv status /etc/service/getty-ttyS0"
         "1 sv status /etc/service/dhcp; ifconfig eth0; ping -c 1 10.0.2.2; cat /etc/resolv.conf"
+        "1 nc -l 127.0.0.1 9000 > /tmp/nc &" "1 echo via-nc-\$((40 + 2)) | nc -N 127.0.0.1 9000; cat /tmp/nc"
         "3 poweroff"
     )
 
@@ -527,7 +528,7 @@ test_system()
                 '^g$' '(^|# )sbase$' 'l -> d/f' '^3,2,1$' '^2$' '^via-2-tty$' \
                 'Stopped +sleep 30' '^lock-busy$' 'run: /etc/service/getty-ttyS0: \(pid [0-9]+\)' \
                 'run: /etc/service/dhcp: \(pid [0-9]+\)' 'inet 10\.0\.2\.15 +netmask 255\.255\.255\.0' \
-                '1 packets transmitted, 1 received' '^nameserver 10\.0\.2\.3$' \
+                '1 packets transmitted, 1 received' '^nameserver 10\.0\.2\.3$' '^via-nc-42$' \
                 'kernel: power down'; do
         if ! grep -a -q -E -- "$want" "$log"; then
             echo "missing output: $want"
@@ -535,7 +536,7 @@ test_system()
         fi
     done
 
-    [ $missing = 0 ] && echo "wrong password rejected, guest denied /etc/shadow, root ran uname, ls, ps, cat, touch, pipelines, \$(...), a long line, ^C, ^Z, /dev/tty, sbase, flock, sv, DHCP (sdhcp) and poweroff"
+    [ $missing = 0 ] && echo "wrong password rejected, guest denied /etc/shadow, root ran uname, ls, ps, cat, touch, pipelines, \$(...), a long line, ^C, ^Z, /dev/tty, sbase, flock, sv, DHCP (sdhcp), nc and poweroff"
 }
 
 # the system installed on a hard disk (make hdd): booted from it with
