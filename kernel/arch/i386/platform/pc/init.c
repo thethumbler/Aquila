@@ -76,22 +76,37 @@ static int x86_pc_cmos_init(void)
 
 #define PIT_IRQ 0
 
+static int apic;
+
+/* the tick: the local APIC's timer, or the PIT */
 uint32_t platform_timer_setup(size_t period_ns, void (*handler)())
 {
+    if (apic)
+        return x86_lapic_timer_setup(period_ns, handler);
+
     uint32_t period = x86_pit_period_set(period_ns);
     x86_irq_handler_install(PIT_IRQ, handler);
     return period;
 }
 
-/* the interrupts: the 8259s' */
+/* the interrupts: the APIC's if there's one (and not apic=off), else the
+ * 8259s'; the 8259s are remapped either way */
 static void x86_pc_irq_init(void)
 {
     x86_irq_gates_setup();
 
-    if (x86_pc_pic_init())
-        printk("x86: no interrupt controller\n");
-    else
-        x86_irq_chip_set(&x86_pic_chip);
+    int pic = x86_pc_pic_init();
+
+    apic = x86_apic_setup && !x86_apic_setup();
+
+    if (!apic) {
+        if (pic)
+            printk("x86: no interrupt controller\n");
+        else
+            x86_irq_chip_set(&x86_pic_chip);
+    }
+
+    printk("x86: interrupts through the %s\n", x86_irq_chip_name());
 }
 
 int platform_init(void)

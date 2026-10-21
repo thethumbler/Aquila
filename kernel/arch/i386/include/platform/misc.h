@@ -34,6 +34,13 @@ int  x86_pic_setup(struct ioaddr *master, struct ioaddr *slave);
 void x86_pic_disable(void);
 extern struct x86_irq_chip x86_pic_chip;
 
+/* lapic.c, ioapic.c: the APIC; 0 if it's what brings the interrupts */
+int  x86_apic_setup(void) __attribute__((weak));
+uint32_t x86_lapic_timer_setup(uint32_t period_ns, x86_irq_handler_t handler) __attribute__((weak));
+
+/* sys/clock.c: it counts finer than the ticks (the TSC or the HPET) */
+int x86_clock_precise(void);
+
 int x86_i8042_setup(struct ioaddr *io);
 void x86_i8042_handler_register(int channel, void (*fun)(int));
 void x86_i8042_reboot(void);

@@ -58,10 +58,11 @@ static void x86_sched_handler(struct x86_regs *r)
 
 void arch_sched_init(void)
 {
+    /* the clock: the TSC or the HPET, else the ticks; then the ticks (the
+     * local APIC's timer is calibrated against the clock) */
+    x86_clock_init();
     timer_period = platform_timer_setup(2000000, x86_sched_handler);
-
-    /* the clock: the TSC or the HPET, else these ticks */
-    x86_clock_init(timer_period);
+    x86_clock_ticks(timer_period);
 }
 
 static void __arch_idle(void)

@@ -44,6 +44,8 @@ PLATFORM_X86_MISC_PIC=y
 PLATFORM_X86_MISC_PIT=y
 # Support i8042 PS/2 Controller
 PLATFORM_X86_MISC_I8042=y
+# Support the APIC (the 8259s without it, or with apic=off)
+PLATFORM_X86_MISC_APIC=y
 # Support HPET
 PLATFORM_X86_MISC_HPET=y
 # Support ACPI

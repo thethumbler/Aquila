@@ -6,7 +6,8 @@
  *     rate whatever the CPU does), calibrated against the HPET (or the
  *     PIT without one) over CALIBRATE_US
  *   - the HPET's main counter, its rate known
- *   - the timer's ticks (the PIT's, 2 ms): what there was before
+ *   - the timer's ticks (2 ms, the local APIC's or the PIT's): what there
+ *     was before
  *
  * clock=tsc|hpet|pit on the kernel's command line says which.
  *
@@ -150,13 +151,26 @@ static uint64_t tsc_calibrate(int hpet, const char **by)
     return t1 > t0 ? (ns << 32) / (t1 - t0) : 0;
 }
 
-/* the clock's source; the PIT's period (it ticks from now on) */
-void x86_clock_init(uint32_t period_ns)
+/* the timer ticks every `period_ns' from now on */
+void x86_clock_ticks(uint32_t period_ns)
+{
+    tick_period = period_ns;
+
+    if (source == SOURCE_PIT)
+        printk("clock: timer ticks, %d ns\n", period_ns);
+}
+
+int x86_clock_precise(void)
+{
+    return source != SOURCE_PIT;
+}
+
+/* the clock's source (before the timer ticks) */
+void x86_clock_init(void)
 {
     const char *want = NULL;
     int hpet = x86_hpet_init && !x86_hpet_init();
 
-    tick_period = period_ns;
     kargs_get("clock", &want);
 
     int forced = want ? !strcmp(want, "tsc") ? SOURCE_TSC : !strcmp(want, "hpet") ? SOURCE_HPET :
@@ -195,9 +209,6 @@ void x86_clock_init(uint32_t period_ns)
         mult = (x86_hpet_period_fs() << 32) / 1000000ULL;
         printk("clock: hpet, %ld fs a count\n", x86_hpet_period_fs());
     }
-
-    if (choice == SOURCE_PIT)
-        printk("clock: pit ticks, %d ns\n", period_ns);
 
     source = choice;
 

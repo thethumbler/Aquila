@@ -128,6 +128,9 @@ from source, see [tests/](tests/README.md).
 - [X] Monolithic kernel
 - [X] A clock to the nanosecond: the TSC (invariant) or the HPET, the
       PIT's ticks without them (`clock=tsc|hpet|pit`)
+- [X] Interrupts through the APIC (I/O APIC routes from ACPI's MADT, the
+      local APIC's timer as the tick, shared IRQs), the 8259 and the PIT
+      without one (`apic=off`); `/proc/interrupts`
 - [X] Kernel threads (process 0, `[kernel]`; `ps` shows them as `[net]`, ...)
 - [X] Virtual Filesystem
 - [ ] Loadable modules

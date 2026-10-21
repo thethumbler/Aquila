@@ -60,38 +60,62 @@ struct acpi_hpet {
     uint8_t  page_protection;
 } __packed;
 
-#define ACPI_MADT_LOCAL_APIC    0
-#define ACPI_MADT_IO_APIC       2
-#define ACPI_MADT_INT_SRC_OVERRIDE      3
+/* the MADT (signature "APIC"): the interrupt controllers, its entries
+ * after it, each a type and a length */
+#define ACPI_MADT_LOCAL_APIC        0
+#define ACPI_MADT_IO_APIC           1
+#define ACPI_MADT_INT_SRC_OVERRIDE  2
+#define ACPI_MADT_LOCAL_APIC_NMI    4
+
+#define ACPI_MADT_PCAT_COMPAT       0x1     /* there are 8259s too */
+
+/* an override's flags: polarity (bits 0-1), trigger mode (bits 2-3) */
+#define ACPI_MPS_POLARITY_MASK      0x3
+#define ACPI_MPS_POLARITY_HIGH      0x1
+#define ACPI_MPS_POLARITY_LOW       0x3
+#define ACPI_MPS_TRIGGER_MASK       0xc
+#define ACPI_MPS_TRIGGER_EDGE       0x4
+#define ACPI_MPS_TRIGGER_LEVEL      0xc
 
 struct acpi_madt_entry {
     uint8_t type;
     uint8_t length;
-    union {
-        struct { /* LOCAL APIC */
-            uint8_t processor_id;
-            uint8_t apic_id;
-            uint32_t flags;
-        } __packed local_apic;
-        struct { /* IO APIC */
-            uint8_t ioapic_id;
-            uint8_t __reserved;
-            uint32_t ioapic_address;
-            uint32_t global_system_interrupt_base;
-        } __packed ioapic;
-        struct { /* INTERRUPT SOURCE OVERRIDE */
-            uint8_t bus_source;
-            uint8_t irq_source;
-            uint32_t global_system_interrupt;
-        } __packed interrupt_source_override;
-    } __packed data;
-}__packed;
+} __packed;
+
+struct acpi_madt_local_apic {
+    struct acpi_madt_entry entry;
+    uint8_t  processor_id;
+    uint8_t  apic_id;
+    uint32_t flags;             /* bit 0: enabled */
+} __packed;
+
+struct acpi_madt_io_apic {
+    struct acpi_madt_entry entry;
+    uint8_t  id;
+    uint8_t  reserved;
+    uint32_t address;
+    uint32_t gsi_base;
+} __packed;
+
+struct acpi_madt_override {
+    struct acpi_madt_entry entry;
+    uint8_t  bus;               /* 0: ISA */
+    uint8_t  source;            /* the ISA IRQ */
+    uint32_t gsi;
+    uint16_t flags;
+} __packed;
+
+struct acpi_madt_local_apic_nmi {
+    struct acpi_madt_entry entry;
+    uint8_t  processor_id;      /* 0xff: all */
+    uint16_t flags;
+    uint8_t  lint;              /* LINT0 or LINT1 */
+} __packed;
 
 struct acpi_madt {
     struct acpi_sdt_header header;
-    uint32_t local_controller_address;
+    uint32_t local_apic_address;
     uint32_t flags;
-    struct acpi_madt_entry entry[0];
-}__packed;
+} __packed;
 
 #endif /* ! _X86_SDT_H */
