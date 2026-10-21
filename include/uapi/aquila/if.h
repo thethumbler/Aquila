@@ -19,20 +19,14 @@
 /* the hardware address's family (ifr_hwaddr) */
 #define ARPHRD_ETHER    1
 
-/* an address of an interface, room for a struct sockaddr_in */
-struct __ifaddr {
-    sa_family_t sa_family;
-    char sa_data[16];
-};
-
 struct ifreq {
     char ifr_name[IFNAMSIZ];
     union {
-        struct __ifaddr ifru_addr;
-        struct __ifaddr ifru_dstaddr;
-        struct __ifaddr ifru_broadaddr;
-        struct __ifaddr ifru_netmask;
-        struct __ifaddr ifru_hwaddr;
+        struct sockaddr ifru_addr;
+        struct sockaddr ifru_dstaddr;
+        struct sockaddr ifru_broadaddr;
+        struct sockaddr ifru_netmask;
+        struct sockaddr ifru_hwaddr;
         short ifru_flags;
         int   ifru_ifindex;
         int   ifru_mtu;

@@ -6,10 +6,12 @@
 
 #include <aquila/in.h>
 
+/* the addresses are struct sockaddr_in, as struct sockaddr (as Linux has
+ * them) */
 struct rtentry {
-    struct sockaddr_in rt_dst;
-    struct sockaddr_in rt_gateway;
-    struct sockaddr_in rt_genmask;
+    struct sockaddr rt_dst;
+    struct sockaddr rt_gateway;
+    struct sockaddr rt_genmask;
     unsigned short rt_flags;
     short rt_metric;
     char *rt_dev;

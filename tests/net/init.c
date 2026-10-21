@@ -129,7 +129,7 @@ static int ifreq(int fd, int req, struct ifreq *ifr)
     return SC(SYS_ioctl, fd, req, ifr);
 }
 
-static uint32_t ifaddr(const struct __ifaddr *a)
+static uint32_t ifaddr(const struct sockaddr *a)
 {
     return ((const struct sockaddr_in *) a)->sin_addr.s_addr;
 }

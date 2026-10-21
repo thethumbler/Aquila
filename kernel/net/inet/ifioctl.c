@@ -37,7 +37,7 @@ static int netif_index(struct netif *netif)
     return i;
 }
 
-static void ifaddr_put(struct __ifaddr *a, uint32_t ip)
+static void ifaddr_put(struct sockaddr *a, uint32_t ip)
 {
     struct sockaddr_in *sin = (struct sockaddr_in *) a;
 
@@ -46,7 +46,7 @@ static void ifaddr_put(struct __ifaddr *a, uint32_t ip)
     sin->sin_addr.s_addr = ip;
 }
 
-static int ifaddr_get(const struct __ifaddr *a, uint32_t *ip)
+static int ifaddr_get(const struct sockaddr *a, uint32_t *ip)
 {
     const struct sockaddr_in *sin = (const struct sockaddr_in *) a;
 
@@ -102,7 +102,11 @@ static int route(int request, struct rtentry *rt)
     if (uaccess_check(rt, sizeof(*rt)))
         return -EFAULT;
 
-    if (rt->rt_dst.sin_addr.s_addr || rt->rt_genmask.sin_addr.s_addr)
+    const struct sockaddr_in *dst = (const struct sockaddr_in *) &rt->rt_dst;
+    const struct sockaddr_in *mask = (const struct sockaddr_in *) &rt->rt_genmask;
+    const struct sockaddr_in *gateway = (const struct sockaddr_in *) &rt->rt_gateway;
+
+    if (dst->sin_addr.s_addr || mask->sin_addr.s_addr)
         return -EINVAL;
 
     if (request == SIOCDELRT) {
@@ -112,9 +116,9 @@ static int route(int request, struct rtentry *rt)
         return 0;
     }
 
-    uint32_t gw = rt->rt_gateway.sin_addr.s_addr;
+    uint32_t gw = gateway->sin_addr.s_addr;
 
-    if (!(rt->rt_flags & RTF_GATEWAY) || rt->rt_gateway.sin_family != AF_INET || !gw)
+    if (!(rt->rt_flags & RTF_GATEWAY) || gateway->sin_family != AF_INET || !gw)
         return -EINVAL;
 
     for (struct netif *netif = netifs; netif; netif = netif->next) {

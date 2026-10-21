@@ -15,7 +15,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-static const char *addr_of(struct __ifaddr *a)
+static const char *addr_of(struct sockaddr *a)
 {
     return inet_ntoa(((struct sockaddr_in *) a)->sin_addr);
 }

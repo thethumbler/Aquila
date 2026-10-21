@@ -25,16 +25,16 @@ AQBOX_APPLET(route)(int argc, char **argv)
     struct rtentry rt;
 
     memset(&rt, 0, sizeof(rt));
-    rt.rt_dst.sin_family = AF_INET;
-    rt.rt_genmask.sin_family = AF_INET;
+    rt.rt_dst.sa_family = AF_INET;
+    rt.rt_genmask.sa_family = AF_INET;
 
     unsigned long request;
 
     if (argc == 5 && !strcmp(argv[1], "add") && !strcmp(argv[2], "default") &&
         !strcmp(argv[3], "gw")) {
-        rt.rt_gateway.sin_family = AF_INET;
+        rt.rt_gateway.sa_family = AF_INET;
 
-        if (!inet_aton(argv[4], &rt.rt_gateway.sin_addr)) {
+        if (!inet_aton(argv[4], &((struct sockaddr_in *) &rt.rt_gateway)->sin_addr)) {
             fprintf(stderr, "route: %s: not an address\n", argv[4]);
             return 1;
         }
