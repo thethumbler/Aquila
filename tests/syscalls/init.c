@@ -20,6 +20,8 @@
  *   again, sigreturn with a forged frame stays in user mode
  * - orphans: init's, a stopped orphaned group's SIGHUP and SIGCONT, the
  *   terminal's stops and reads in an orphaned group
+ * - open files: shared by dup() and fork() (offset, status flags), kept
+ *   open by a call using one
  * - user memory that isn't mapped: EFAULT, the process goes on, a read's
  *   bytes stay, a buffer running into it is used up to it
  * - virtual terminals: KD* and VT_* ioctls, switching, VT_PROCESS
@@ -839,6 +841,72 @@ static void orphans(void)
 
     SC(SYS_close, p[0], 0, 0);
     SC(SYS_close, p[1], 0, 0);
+}
+
+
+/*
+ * Open files: the descriptors dup() and fork() copied refer to the same
+ * one, its offset and status flags (FD_CLOEXEC is each descriptor's); a
+ * call using one keeps it open while it waits, whatever is closed
+ */
+/* lseek's whence, as POSIX numbers them */
+#define SEEK_SET    0
+#define SEEK_CUR    1
+
+static int ofile_pipe[2];
+static volatile int ofile_read = -100;
+static char ofile_stack[8192] __attribute__((aligned(16)));
+
+static void ofile_reader(void *u, void *a)
+{
+    char b[8];
+    ofile_read = SC(SYS_read, ofile_pipe[0], b, sizeof(b));
+    SC(SYS_thread_exit, 0, 0, 0);
+    for (;;);
+    (void) u; (void) a;
+}
+
+static void open_files(void)
+{
+    int st;
+
+    /* fork: the child's read moves the parent's offset */
+    int fd = SC(SYS_open, "/init", O_RDONLY, 0);
+    int c = SC(SYS_fork, 0, 0, 0);
+    if (!c) {
+        char b[4];
+        SC(SYS_exit, SC(SYS_read, fd, b, 4) == 4 ? 0 : 1, 0, 0);
+    }
+    SC(SYS_waitpid, c, &st, 0);
+    check("open file: fork shares the offset", SC(SYS_lseek, fd, 0, SEEK_CUR), 4);
+
+    /* dup: the offset, the status flags; not FD_CLOEXEC */
+    int d = SC(SYS_fcntl, fd, F_DUPFD, 0);
+    SC(SYS_lseek, fd, 10, SEEK_SET);
+    check("open file: dup shares the offset", SC(SYS_lseek, d, 0, SEEK_CUR), 10);
+    SC(SYS_fcntl, d, F_SETFL, O_NONBLOCK);
+    check("open file: dup shares status flags", (SC(SYS_fcntl, fd, F_GETFL, 0) & O_NONBLOCK) != 0, 1);
+    SC(SYS_fcntl, d, F_SETFD, FD_CLOEXEC);
+    check("open file: FD_CLOEXEC is the descriptor's", SC(SYS_fcntl, fd, F_GETFD, 0), 0);
+    check("open file: close one", SC(SYS_close, d, 0, 0), 0);
+    check("open file: the other still reads", SC(SYS_lseek, fd, 0, SEEK_CUR), 10);
+    SC(SYS_close, fd, 0, 0);
+
+    /* a read waiting in a thread: the descriptor closed meanwhile, the
+     * read end stays open until the read returns */
+    struct aquila_sigaction ign = {1 /* SIG_IGN */, 0, 0}, dfl = {0 /* SIG_DFL */, 0, 0};
+    SC(SYS_sigaction, SIGPIPE, &ign, 0);
+    SC(SYS_pipe, ofile_pipe, 0, 0);
+    struct aquila_thread_args ut = {(uptr) &ofile_stack[8192], (uptr) ofile_reader, 0, 0, 0};
+    int tid = SC(SYS_thread_create, &ut, 0, 0);
+    aq_spin(20000000);
+    check("open file: closed while read", SC(SYS_close, ofile_pipe[0], 0, 0), 0);
+    check("open file: the reader is still there", SC(SYS_write, ofile_pipe[1], "data", 4), 4);
+    SC(SYS_thread_join, tid, 0, 0);
+    check("open file: the read got it", ofile_read, 4);
+    check("open file: then no reader", SC(SYS_write, ofile_pipe[1], "x", 1), -EPIPE);
+    SC(SYS_close, ofile_pipe[1], 0, 0);
+    SC(SYS_sigaction, SIGPIPE, &dfl, 0);
 }
 
 void aq_main(void)
@@ -2129,6 +2197,7 @@ void aq_main(void)
     exit_path_signals();
     user_memory();
     orphans();
+    open_files();
 
     aq_end();
 }
