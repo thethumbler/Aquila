@@ -34,9 +34,10 @@
 .long 0                         /* hebss_end_addr */
 .long 0                         /* heentry_addr */
 
+/* the screen, which the bootloader may change (Limine's resolution:) */
 .long 0                         /* mode_type */
-.long 1024                      /* mowidth */
-.long 768                       /* moheight */
+.long 1280                      /* mowidth */
+.long 800                       /* moheight */
 .long 32                        /* modepth */
 
 /*
