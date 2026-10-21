@@ -645,9 +645,14 @@ void aq_main(void)
     check("write bad elf", SC(SYS_write, fd, bad_elf, sizeof(bad_elf)), sizeof(bad_elf));
     SC(SYS_close, fd, 0, 0);
     c = SC(SYS_fork, 0, 0, 0);
-    if (!c) { SC(SYS_execve, "/tmp/bad", 0, 0); SC(SYS_exit, 99, 0, 0); }
+    if (!c) SC(SYS_exit, SC(SYS_execve, "/tmp/bad", 0, 0) == -ENOEXEC ? 98 : 99, 0, 0);
     check("bad elf wait", SC(SYS_waitpid, c, &st, 0), c);
+#ifdef __x86_64__
+    /* an i386 program: refused before the process's image is replaced */
+    check("i386 elf refused", st, 98 << 8);
+#else
     check("bad elf status", st, (SIGSEGV << 8) | SIGSEGV);
+#endif
 
     /* execute permission */
     SC(SYS_chmod, "/tmp/bad", 0644, 0);

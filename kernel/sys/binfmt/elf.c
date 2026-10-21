@@ -177,11 +177,14 @@ int binfmt_elf_check(struct vnode *vnode)
     if (vfs_read(vnode, 0, sizeof(hdr), &hdr) != sizeof(hdr))
         return -ENOEXEC;
 
-    /* Check header */
+    /* Check header, and that it is for this machine (e_machine is at the
+     * same place in both classes), before the old image is destroyed */
     if (hdr.e_ident[EI_MAG0] == ELFMAG0 &&
         hdr.e_ident[EI_MAG1] == ELFMAG1 &&
         hdr.e_ident[EI_MAG2] == ELFMAG2 &&
-        hdr.e_ident[EI_MAG3] == ELFMAG3)
+        hdr.e_ident[EI_MAG3] == ELFMAG3 &&
+        hdr.e_ident[EI_CLASS] == ELF_CLASS &&
+        hdr.e_machine == ELF_MACHINE)
         return 0;
 
     return -ENOEXEC;
