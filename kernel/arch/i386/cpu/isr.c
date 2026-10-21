@@ -111,15 +111,64 @@ static const int int_sig[32] = {
     /* 0x13 */ SIGFPE,  /* #XM */
 };
 
+/* a copy routine's instruction faulted (uaccess.S): it resumes at its
+ * fixup, which returns -EFAULT; 0 if `regs' wasn't in one */
+static int uaccess_fixup(struct x86_regs *regs)
+{
+    extern uintptr_t x86_uaccess_fixups[], x86_uaccess_fixups_end[];
+#if ARCH_BITS==32
+    uintptr_t ip = regs->eip;
+#else
+    uintptr_t ip = regs->rip;
+#endif
+
+    for (uintptr_t *f = x86_uaccess_fixups; f < x86_uaccess_fixups_end; f += 2) {
+        if (ip == f[0]) {
+#if ARCH_BITS==32
+            regs->eip = f[1];
+#else
+            regs->rip = f[1];
+#endif
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
 void __x86_isr(struct x86_regs *regs)
 {
     extern uint32_t __x86_isr_int_num;
     extern uint32_t __x86_isr_err_num;
 
     if (__x86_isr_int_num == 0xE && curthread) { /* Page Fault */
-        arch_mm_page_fault(read_cr2(), __x86_isr_err_num);
-        x86_return_to_user(regs, 0);
-        return;
+        uintptr_t addr = read_cr2();
+
+        if (!arch_mm_page_fault(addr, __x86_isr_err_num)) {
+            x86_return_to_user(regs, 0);
+            return;
+        }
+
+        /* user mode's: SIGSEGV, on its way back */
+        if ((regs->cs & 3) == 3) {
+            signal_force(curproc, SIGSEGV);
+            x86_return_to_user(regs, 0);
+            return;
+        }
+
+        /* the kernel's, copying from or to user memory: -EFAULT (its own
+         * side of the copy faulting is a bug, as anywhere) */
+        if (addr < USER_STACK && uaccess_fixup(regs))
+            return;
+
+        /* the kernel's, at a user address it didn't check: it can't go on
+         * (until every access goes through copyin and copyout) */
+        if (addr < USER_STACK)
+            signal_exit(SIGSEGV);
+
+        printk("kernel: page fault at %p\n", (void *) addr);
+        x86_dump_registers(regs);
+        panic("page fault in the kernel");
     }
 
     if (__x86_isr_int_num == 0x07) {  /* FPU Trap */

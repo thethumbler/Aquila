@@ -380,7 +380,7 @@ int arch_page_unmap(vaddr_t vaddr)
     return 0;
 }
 
-void arch_mm_page_fault(vaddr_t vaddr, int err)
+int arch_mm_page_fault(vaddr_t vaddr, int err)
 {
     int flags = 0;
 
@@ -389,7 +389,7 @@ void arch_mm_page_fault(vaddr_t vaddr, int err)
     flags |= err & 0x04? PF_USER    : 0;
     flags |= err & 0x10? PF_EXEC    : 0;
 
-    mm_page_fault(vaddr, flags);
+    return mm_page_fault(vaddr, flags);
 }
 
 int pmap_page_read(paddr_t paddr, off_t off, size_t size, void *buf)

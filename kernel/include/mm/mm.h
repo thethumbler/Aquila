@@ -28,6 +28,6 @@ int  mm_map(struct pmap *pmap, paddr_t paddr, vaddr_t vaddr, size_t size, int fl
 void mm_unmap(struct pmap *pmap, vaddr_t addr, size_t size);
 void mm_unmap_full(struct pmap *pmap, vaddr_t vaddr, size_t size);
 
-void mm_page_fault(vaddr_t vaddr, int flags);
+int  mm_page_fault(vaddr_t vaddr, int flags);
 
 #endif /* !_MM_MM_H */

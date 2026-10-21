@@ -82,7 +82,7 @@ typedef uint64_t paddr_t;
 typedef uint64_t vaddr_t;
 #endif
 
-void arch_mm_page_fault(vaddr_t vaddr, int err);
+int  arch_mm_page_fault(vaddr_t vaddr, int err);
 
 #include_next <mm/mm.h>
 

@@ -291,8 +291,10 @@ static inline int pf_zero(struct pf *pf)
  *
  * \param vaddr the virtual address that triggered the page fault
  * \param flags the flags associated with page fault
+ * \return 0 if it's resolved (the page is there now), -EFAULT if not:
+ * the architecture decides (a signal, a fixup, a panic)
  */
-void mm_page_fault(vaddr_t vaddr, int flags)
+int mm_page_fault(vaddr_t vaddr, int flags)
 {
     vaddr_t addr = PAGE_ALIGN(vaddr);
 
@@ -325,37 +327,21 @@ void mm_page_fault(vaddr_t vaddr, int flags)
 
     /* try to handle page present case */
     if (flags & PF_PRESENT && pf_present(&pf))
-        return;
+        return 0;
 
     /* check the anon layer for the page and handle if present */
     if (vm_entry->vm_anon && pf_anon(&pf))
-        return;
+        return 0;
 
     /* check the backening object for the page and handle if present */
     if (vm_entry->vm_object && pf_object(&pf))
-        return;
+        return 0;
 
     /* just zero out the page */
     if (pf_zero(&pf))
-        return;
+        return 0;
 
 sigsegv:
     curthread->fault_addr = vaddr;
-
-    /* user mode's: SIGSEGV, on its way back */
-    if (flags & PF_USER) {
-        signal_force(curproc, SIGSEGV);
-        return;
-    }
-
-    /* the kernel's, on its own memory: a bug */
-    if (vaddr >= USER_STACK) {
-        printk("kernel: page fault at %p, kernel mode\n", (void *) vaddr);
-        panic("page fault in the kernel");
-    }
-
-    /* the kernel's, through a bad pointer a process gave it: it can't go
-     * on (the faulting instruction would fault again), the process ends
-     * by SIGSEGV; copyin/copyout will make it EFAULT */
-    signal_exit(SIGSEGV);
+    return -EFAULT;
 }

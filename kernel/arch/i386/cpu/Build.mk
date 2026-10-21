@@ -5,5 +5,6 @@ obj-y += isr.o
 #obj-y += smp.o
 obj-y += fpu.o
 obj-y += cpu.o
+obj-y += uaccess.o
 obj-y += arith.o
 obj-y += trace.o
