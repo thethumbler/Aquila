@@ -47,9 +47,9 @@ case $ARCH in
         OUT=$TESTS/out
         QEMU=qemu-system-i386
         HOST_CC_ARCH=-m32
-        # the memory test: more than the old page tracking's 3 GiB can't
-        # be had (the rest is above 4 GiB), 2 GiB of it filled
-        MEMORY_TEST_RAM=3G MEMORY_TEST_FILL=2048
+        # the memory test: more RAM than the direct map's 768 MiB, which
+        # are used, 512 MiB of them filled
+        MEMORY_TEST_RAM=2G MEMORY_TEST_FILL=512
         CROSS_CC=$ROOT/build/toolchain/bin/i686-aquila-gcc ;;
     x86_64)
         OUT=$TESTS/out/x86_64
