@@ -17,7 +17,8 @@
  *   kept across a handler, the handler's signal blocked (SA_NODEFER),
  *   sa_mask, SA_RESETHAND, the mask restored, nested handlers,
  *   sigsuspend's EINTR and mask, a read stopped and continued is made
- *   again, sigreturn with a forged frame stays in user mode
+ *   again, sigreturn with a forged frame stays in user mode; a forked
+ *   child has its parent's SSE state
  * - orphans: init's, a stopped orphaned group's SIGHUP and SIGCONT, the
  *   terminal's stops and reads in an orphaned group
  * - open files: shared by dup() and fork() (offset, status flags), kept
@@ -436,6 +437,52 @@ static int sse_kept(void)
     return mx_before == mx_after;
 }
 
+/* xmm1 and MXCSR set, then fork: the child has them as the parent did
+ * (exits 0 if so); the parent's MXCSR is put back, the child's pid */
+__attribute__((target("sse")))
+static int sse_fork(void)
+{
+    static float in[4] __attribute__((aligned(16))) = {5.5f, 6.5f, 7.5f, 8.5f};
+    static float out[4] __attribute__((aligned(16)));
+    uint32_t mx_set = 0x7F80, mx_before, mx_after;     /* round toward zero */
+    long r = SYS_fork;
+
+#ifdef __x86_64__
+    asm volatile("stmxcsr %[mb]\n"
+                 "ldmxcsr %[ms]\n"
+                 "movaps %[in], %%xmm1\n"
+                 "int $0x80\n"
+                 "movaps %%xmm1, %[out]\n"
+                 "stmxcsr %[ma]\n"
+                 "ldmxcsr %[mb]\n"
+                 : [out] "=m"(out), [mb] "=m"(mx_before), [ma] "=m"(mx_after), "+a"(r)
+                 : [in] "m"(in), [ms] "m"(mx_set)
+                 : "xmm1", "memory", "rcx", "rdx", "rsi", "rdi", "r8", "r9", "r10", "r11");
+#else
+    asm volatile("stmxcsr %[mb]\n"
+                 "ldmxcsr %[ms]\n"
+                 "movaps %[in], %%xmm1\n"
+                 "int $0x80\n"
+                 "movaps %%xmm1, %[out]\n"
+                 "stmxcsr %[ma]\n"
+                 "ldmxcsr %[mb]\n"
+                 : [out] "=m"(out), [mb] "=m"(mx_before), [ma] "=m"(mx_after), "+a"(r)
+                 : [in] "m"(in), [ms] "m"(mx_set)
+                 : "xmm1", "memory", "ebx", "ecx", "edx");
+#endif
+
+    if (!r) {
+        int ok = mx_after == mx_set;
+
+        for (int i = 0; i < 4; ++i)
+            ok = ok && out[i] == in[i];
+
+        SC(SYS_exit, ok ? 0 : 1, 0, 0);
+    }
+
+    return r;
+}
+
 /* the kernel's struct sigframe (arch/i386/sys/signal.c) */
 struct test_regs {
 #ifdef __x86_64__
@@ -520,6 +567,11 @@ static void exit_path_signals(void)
     struct aquila_sigaction sa = {(uptr) sse_handler, 0, 0};
     SC(SYS_sigaction, SIGUSR1, &sa, 0);
     check("signal: the SSE state kept across a handler", sse_kept(), 1);
+    {
+        int fc = sse_fork(), fst = -1;
+        SC(SYS_waitpid, fc, &fst, 0);
+        check("fork: the child has the parent's SSE state", fst, 0);
+    }
 
     /* the handler's signal blocked while it runs: the second comes after */
     SC(SYS_sigmask, SIG_BLOCK, 0, &before);
