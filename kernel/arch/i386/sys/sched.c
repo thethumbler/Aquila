@@ -64,37 +64,14 @@ static void x86_sched_handler(struct x86_regs *r)
     ++timer_ticks;
     sched_timer_tick(timer_period, (r->cs & 3) == 3);
 
-    if (!kidle) {
-        struct x86_thread *arch = (struct x86_thread *) curthread->arch;
-
-        extern uintptr_t x86_read_ip(void);
-
-        volatile uintptr_t ip = 0, sp = 0, bp = 0;    
-#if ARCH_BITS==32
-        asm volatile("mov %%esp, %0":"=r"(sp)); /* read esp */
-        asm volatile("mov %%ebp, %0":"=r"(bp)); /* read ebp */
-#else
-        asm volatile("mov %%rsp, %0":"=r"(sp)); /* read rsp */
-        asm volatile("mov %%rbp, %0":"=r"(bp)); /* read rbp */
-#endif
-        ip = x86_read_ip();
-
-        if (ip == (uintptr_t) -1) {    /* Done switching */
-            return;
-        }
-
-#if ARCH_BITS==32
-        arch->eip = ip;
-        arch->esp = sp;
-        arch->ebp = bp;
-#else
-        arch->rip = ip;
-        arch->rsp = sp;
-        arch->rbp = bp;
-#endif
+    if (kidle) {
+        schedule();
+    } else {
+        /* the running thread goes back to the queue, all its registers
+         * saved */
+        extern void x86_preempt(void);
+        x86_preempt();
     }
-
-    schedule();
 }
 
 void arch_sched_init(void)

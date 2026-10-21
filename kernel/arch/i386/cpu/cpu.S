@@ -287,15 +287,6 @@ x86_jump_user:  /* eax, eip, cs, eflags, esp, ss */
     iretq
 #endif
 
-.global x86_read_ip
-x86_read_ip:
-#if ARCH_BITS==32
-    mov (%esp), %eax
-#else
-    mov (%rsp), %rax
-#endif
-    ret
-
 .global x86_goto
 x86_goto:
 #if ARCH_BITS==32
@@ -315,13 +306,51 @@ x86_goto:
 #endif
 
 
-.extern internal_arch_sleep
-.global x86_sleep
-x86_sleep:
+/*
+ * Switching away from the current thread, to kernel_idle (it sleeps) or
+ * schedule (another one may run): its registers are pushed, and where it
+ * resumes is kept (x86_thread_saved), a label here with the stack as it
+ * is. x86_goto() jumps back to it, the registers are popped and this
+ * returns.
+ */
+.macro SWITCH_OUT next
+#if ARCH_BITS==32
     push_context
-    call internal_arch_sleep
+    mov %esp, %ebp
+    push %ebp           /* bp */
+    push %ebp           /* sp */
+    push $1f            /* ip */
+    call x86_thread_saved
+    add $12, %esp
+    call \next
+1:
+    mov %ebp, %esp
     pop_context
     ret
+#else
+    push_context
+    mov %rsp, %rbp
+    lea 1f(%rip), %rdi  /* ip */
+    mov %rsp, %rsi      /* sp */
+    mov %rbp, %rdx      /* bp */
+    call x86_thread_saved
+    call \next
+1:
+    mov %rbp, %rsp
+    pop_context
+    ret
+#endif
+.endm
+
+.extern x86_thread_saved, kernel_idle, schedule
+
+.global x86_sleep
+x86_sleep:
+    SWITCH_OUT kernel_idle
+
+.global x86_preempt
+x86_preempt:
+    SWITCH_OUT schedule
 
 .global x86_fork_return
 x86_fork_return:

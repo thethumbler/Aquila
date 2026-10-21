@@ -179,24 +179,13 @@ void arch_thread_kill(struct thread *thread)
     thread->arch = NULL;
 }
 
-void internal_arch_sleep()
+/*
+ * Where the current thread resumes when it is switched back to (x86_goto):
+ * x86_sleep and x86_preempt record it, its registers on its kernel stack
+ */
+void x86_thread_saved(uintptr_t ip, uintptr_t sp, uintptr_t bp)
 {
     struct x86_thread *arch = curthread->arch;
-    extern uintptr_t x86_read_ip(void);
-
-    uintptr_t ip = 0, sp = 0, bp = 0;    
-#if ARCH_BITS==32
-    asm("mov %%esp, %0":"=r"(sp)); /* read esp */
-    asm("mov %%ebp, %0":"=r"(bp)); /* read ebp */
-#else
-    asm("mov %%rsp, %0":"=r"(sp)); /* read rsp */
-    asm("mov %%rbp, %0":"=r"(bp)); /* read rbp */
-#endif
-    ip = x86_read_ip();
-
-    if (ip == (uintptr_t) -1) {  /* Done switching */
-        return;
-    }
 
 #if ARCH_BITS==32
     arch->eip = ip;
@@ -207,5 +196,4 @@ void internal_arch_sleep()
     arch->rsp = sp;
     arch->rbp = bp;
 #endif
-    kernel_idle();
 }
