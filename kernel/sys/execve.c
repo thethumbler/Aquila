@@ -273,8 +273,17 @@ int proc_execve(struct thread *thread, const char *fn, char * const _argp[], cha
         }
     }
 
+    /* caught signals go back to their default action, ignored ones stay
+     * ignored (POSIX); the mask and the pending ones stay */
+    for (int i = 0; i <= SIG_MAX; ++i) {
+        if (proc->sigaction[i].sa_handler != SIG_IGN)
+            proc->sigaction[i].sa_handler = SIG_DFL;
+
+        proc->sigaction[i].sa_mask = 0;
+        proc->sigaction[i].sa_flags = 0;
+    }
+
     arch_sys_execve(proc, argc + 1, argp, envc + 1, envp);
-    memset(proc->sigaction, 0, sizeof(proc->sigaction));
 
 free_resources:
     exec_strings_free(argp, argc);

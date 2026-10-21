@@ -30,13 +30,12 @@ static int kproc_init(void)
     proc->name = strdup("[kernel]");
     proc->cwd  = strdup("/");
     proc->vm_space.pmap = kvm_space.pmap;
-    proc->sig_queue = queue_new();
     proc->running = 1;
 
     for (int i = 0; i < SIG_MAX; ++i)
         proc->sigaction[i].sa_handler = SIG_DFL;
 
-    if (!proc->name || !proc->cwd || !proc->sig_queue || session_new(proc))
+    if (!proc->name || !proc->cwd || session_new(proc))
         panic("kthread: can't make process 0");
 
     enqueue(procs, proc);

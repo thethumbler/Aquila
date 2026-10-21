@@ -76,8 +76,15 @@ ssize_t posix_file_write(struct file *file, void *buf, size_t size)
             if (!file->vnode->write_queue)
                 break;
 
-            /* Sleep on the file writers queue */
-            thread_queue_sleep(file->vnode->write_queue);
+            /* Sleep on the file writers queue; a signal: what was
+             * written, or the call ends for it */
+            int err = thread_queue_sleep(file->vnode->write_queue);
+
+            if (err) {
+                if ((size_t) retval == size)
+                    return err;
+                break;
+            }
         }
         
         /* Store written bytes count */

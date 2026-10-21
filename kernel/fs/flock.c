@@ -80,8 +80,10 @@ int vfs_file_flock(struct file *file, int op)
         if (op & LOCK_NB)
             return -EWOULDBLOCK;
 
-        if (thread_queue_sleep(&waiters))
-            return -EINTR;
+        int err = thread_queue_sleep(&waiters);
+
+        if (err)
+            return err;
     }
 
     if (!lock->type)

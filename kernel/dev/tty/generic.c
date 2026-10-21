@@ -71,7 +71,7 @@ static int tty_signal(struct tty *tty, char c)
 
     /* only queued: this runs from the driver, maybe in an interrupt */
     if (tty->fg)
-        signal_pgrp_post(tty->fg, sig);
+        signal_pgrp_send(tty->fg, sig);
 
     return 1;
 }
@@ -186,23 +186,21 @@ int tty_can_read(struct tty *tty, size_t buffered)
  * A process of the terminal's session that is not in its foreground
  * group reads it (SIGTTIN) or writes or changes it (SIGTTOU, writes only
  * with TOSTOP): its group is stopped until it is in the foreground.
- * Returns -EIO for a read with SIGTTIN ignored or blocked; a write goes
- * on then.
+ * Returns -EIO for a read with SIGTTIN ignored or blocked (a write goes
+ * on then); -ERESTARTSYS once it's sent: the call returns, the group stops
+ * on the way out, and the call is made again once continued.
  */
 int tty_background(struct tty *tty, int sig)
 {
     struct proc *proc = curproc;
 
-    while (tty->session && proc->pgrp->session == tty->session &&
-           tty->fg && proc->pgrp != tty->fg) {
+    if (tty->session && proc->pgrp->session == tty->session &&
+        tty->fg && proc->pgrp != tty->fg) {
         if ((proc->sigmask & (1UL << sig)) || proc->sigaction[sig].sa_handler == SIG_IGN)
             return sig == SIGTTIN ? -EIO : 0;
 
-        /* a handler interrupts the call (it returns to user mode) */
-        arch_syscall_return(curthread, -EINTR);
-
-        /* stops this process right away, it goes on here once continued */
         signal_pgrp_send(proc->pgrp, sig);
+        return -ERESTARTSYS;
     }
 
     return 0;
@@ -286,6 +284,8 @@ static size_t tty_ioctl_argsize(int request)
 
 int tty_ioctl(struct tty *tty, int request, void *argp)
 {
+    int err;
+
     /* argp comes straight from user space */
     if (uaccess_check(argp, tty_ioctl_argsize(request)))
         return -EFAULT;
@@ -297,7 +297,8 @@ int tty_ioctl(struct tty *tty, int request, void *argp)
         case TCSETS:
         case TCSETSW:   /* output is never waiting to be sent */
         case TCSETSF:
-            tty_background(tty, SIGTTOU);
+            if ((err = tty_background(tty, SIGTTOU)))
+                return err;
 
             if (request == TCSETSF)
                 tty_flush(tty, TCIFLUSH);
@@ -334,7 +335,8 @@ int tty_ioctl(struct tty *tty, int request, void *argp)
             if (session->ctty != tty)
                 return -ENOTTY;
 
-            tty_background(tty, SIGTTOU);
+            if ((err = tty_background(tty, SIGTTOU)))
+                return err;
 
             queue_for (node, session->pgps) {
                 struct pgroup *pg = node->value;

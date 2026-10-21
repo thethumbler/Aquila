@@ -34,7 +34,8 @@ void arch_yield(void);  /* the current thread runs again after the ready ones */
 void arch_sys_execve(struct proc *proc, int argc, char * const argp[], int envc, char * const envp[]);
 
 /* arch/ARCH/sys/signal.c */
-void arch_handle_signal(int sig);
+void arch_sigreturn(void);
+int  arch_sigcode_map(struct proc *proc);
 
 /* arch/ARCH/mm/mm.c */
 void arch_mm_setup(void);

@@ -105,8 +105,9 @@
 #define SYS_getpeername     92
 #define SYS_getsockopt      93
 #define SYS_setsockopt      94
+#define SYS_sigreturn       95  /* from the kernel's sigcode, a handler's return */
 
-#define SYS_MAX             94
+#define SYS_MAX             95
 
 /*
  * Arguments of the older system calls that take more than three, passed

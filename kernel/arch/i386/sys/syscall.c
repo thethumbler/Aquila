@@ -4,6 +4,7 @@
 #include <sys/sched.h>
 #include <sys/syscall.h>
 #include <sys/signal.h>
+#include <aquila/syscall.h>
 #include <aquila/errno.h>
 
 void arch_syscall(struct x86_regs *r)
@@ -19,8 +20,6 @@ void arch_syscall(struct x86_regs *r)
         return;
     }
 	
-    /* cleared on return, or when a signal interrupts the call */
-    curthread->in_syscall = 1;
 #if ARCH_BITS==32
     curthread->syscall_nr = r->eax;
 #else
@@ -37,8 +36,6 @@ void arch_syscall(struct x86_regs *r)
     syscall(r->rdi, r->rsi, r->rdx, r->r10, r->r8);
 #endif
 
-    curthread->in_syscall = 0;
-
     /* an urgent thread was woken during the call (the network's, by a
      * packet to ourselves): it runs before returning to user mode */
     if (sched_urgent) {
@@ -46,12 +43,9 @@ void arch_syscall(struct x86_regs *r)
         x86_preempt();
     }
 
-    /* signals that came during the call (deferred, or sent to itself) */
-    int sig = signal_next(curproc);
-    if (sig)
-        arch_handle_signal(sig);
-
-    signal_stop_pending();
+    /* the signals, the call restarted if one interrupted it (not
+     * sigreturn's: the registers are the frame's) */
+    x86_return_to_user(r, curthread->syscall_nr != SYS_sigreturn);
 }
 
 void arch_syscall_return(struct thread *thread, uintptr_t val)

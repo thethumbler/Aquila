@@ -69,9 +69,12 @@ ssize_t posix_file_read(struct file *file, void *buf, size_t size)
             /* nothing would wake a reader up, there is no more to read */
             return 0;
         } else {
-            /* Block until some data is available, or the time is up */
-            if (sched_wait(file->vnode->read_queue, until))
-                return 0;
+            /* Block until some data is available, or the time is up (0),
+             * or a signal comes */
+            int r = sched_wait(file->vnode->read_queue, until);
+
+            if (r)
+                return r < 0 ? r : 0;
         }
     }
 }

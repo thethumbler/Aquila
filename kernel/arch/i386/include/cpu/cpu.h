@@ -200,6 +200,12 @@ void x86_fpu_setup(void);
 void x86_fpu_enable(void);
 void x86_fpu_disable(void);
 void x86_fpu_trap(void);
+int  x86_fpu_save_to(void *buf);
+void x86_fpu_reset(void);
+void x86_fpu_load_from(const void *buf, int valid);
+
+/* sys/signal.c: back to user mode (its signals) from the context `r' */
+void x86_return_to_user(struct x86_regs *r, int syscall);
 
 //void pic_setup(void);
 //void pic_disable(void);

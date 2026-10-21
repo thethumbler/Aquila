@@ -73,7 +73,7 @@ void sched_timer_tick(uint32_t period, int user)
                 proc->alarm_node = NULL;
             }
 
-            signal_proc_post(proc, SIGALRM);
+            signal_proc_send(proc, SIGALRM);
         }
 
         node = next;
@@ -131,7 +131,8 @@ void sched_timer_cancel(struct thread *thread)
 
 /*
  * Sleep on `queue' until woken up, or until arch_rtime_ns() reaches
- * `until' (0: no limit). Returns 1 if the time is up.
+ * `until' (0: no limit). Returns 1 if the time is up, -ERESTARTSYS if a
+ * signal ended the sleep (thread_queue_sleep), 0 if woken up.
  */
 int sched_wait(struct queue *queue, uint64_t until)
 {
@@ -143,44 +144,27 @@ int sched_wait(struct queue *queue, uint64_t until)
         curthread->timer_node  = enqueue(timed, curthread);
     }
 
-    thread_queue_sleep(queue);
+    int err = thread_queue_sleep(queue);
     sched_timer_cancel(curthread);
+
+    if (err)
+        return err;
 
     return until && arch_rtime_ns() >= until;
 }
 
 /*
- * Sleep until arch_rtime_ns() reaches `until'. A signal that has a
- * handler interrupts the sleep without returning here: the system call
- * fails with EINTR (see sched_sleep_interrupted()).
+ * Sleep until arch_rtime_ns() reaches `until': 0, or -ERESTARTSYS if a
+ * signal ended the sleep before
  */
-void sched_sleep(uint64_t until)
+int sched_sleep(uint64_t until)
 {
-    /* woken early by an ignored signal: keep sleeping */
-    while (!sched_wait(naps, until))
+    int r;
+
+    while (!(r = sched_wait(naps, until)))
         ;
 
-    curthread->sleep_left = NULL;
-}
-
-/*
- * `thread' is about to run a signal handler instead of returning from a
- * system call, called with its address space active: give nanosleep()
- * the time it had left.
- */
-void sched_sleep_interrupted(struct thread *thread)
-{
-    struct aquila_timespec *left = thread->sleep_left;
-
-    if (!left)
-        return;
-
-    uint64_t now = arch_rtime_ns();
-    uint64_t ns = now < thread->sleep_until ? thread->sleep_until - now : 0;
-
-    left->tv_sec  = ns / 1000000000ULL;
-    left->tv_nsec = ns % 1000000000ULL;
-    thread->sleep_left = NULL;
+    return r < 0 ? r : 0;
 }
 
 void sched_thread_ready(struct thread *thread)

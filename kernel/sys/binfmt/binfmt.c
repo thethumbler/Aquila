@@ -61,6 +61,10 @@ static int binfmt_fmt_load(struct proc *proc, const char *path, struct vnode *vn
 
     proc->stack_vm  = stack_vm;
 
+    /* the sigcode page: signal handlers return into it */
+    if ((err = arch_sigcode_map(proc)))
+        goto error;
+
     struct thread *thread = (struct thread *) proc->threads.head->value;
     thread->stack_base = USER_STACK_BASE;
     thread->stack_size = USER_STACK_SIZE;

@@ -76,8 +76,10 @@ static int socket_unix_accept(struct file *file, struct file *conn, const struct
         if (file->flags & O_NONBLOCK)
             return -EAGAIN;
 
-        if (thread_queue_sleep(&socket->accept))
-            return -EINTR;
+        int err = thread_queue_sleep(&socket->accept);
+
+        if (err)
+            return err;
     }
 
     /* Allocate everything before taking the request off the queue */
@@ -218,8 +220,10 @@ static int socket_unix_connect(struct file *file, const struct sockaddr *addr, s
 
     /* Sleep until the connection is established */
     while (!request->connected) {
-        if (thread_queue_sleep(&request->connect))
-            return -EINTR;
+        int err = thread_queue_sleep(&request->connect);
+
+        if (err)
+            return err;
     }
 
     /* listening socket was closed before accepting us */
@@ -312,8 +316,10 @@ static ssize_t socket_unix_send(struct file *file, void *buf, size_t len, int fl
         if (file->flags & O_NONBLOCK)
             return retval ? retval : -EAGAIN;
 
-        if (thread_queue_sleep(send_queue))
-            return -EINTR;
+        int err = thread_queue_sleep(send_queue);
+
+        if (err)
+            return retval ? retval : err;
     }
 }
 
@@ -384,8 +390,10 @@ static ssize_t socket_unix_recv(struct file *file, void *buf, size_t len, int fl
         if (file->flags & O_NONBLOCK)
             return retval ? retval : -EAGAIN;
 
-        if (thread_queue_sleep(recv_queue))
-            return -EINTR;
+        int err = thread_queue_sleep(recv_queue);
+
+        if (err)
+            return retval ? retval : err;
     }
 }
 

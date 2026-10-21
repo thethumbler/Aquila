@@ -103,7 +103,7 @@ static int dma_transfer(struct ata_drive *drive, uint64_t lba, size_t count, int
      * the root, loading init at boot) the status is polled */
     while (!ch->done) {
         if (sched_running && curthread) {
-            thread_queue_sleep(&ch->irq_wait);
+            thread_queue_sleep_unint(&ch->irq_wait);
         } else {
             uint8_t bm_status = io_in8(&ch->bm, BM_STATUS);
 

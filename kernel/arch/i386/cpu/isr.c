@@ -117,38 +117,14 @@ void __x86_isr(struct x86_regs *regs)
     extern uint32_t __x86_isr_err_num;
 
     if (__x86_isr_int_num == 0xE && curthread) { /* Page Fault */
-        struct x86_thread *arch = curthread->arch;
-        //arch->regs = regs;
-
-#if ARCH_BITS==32
-        if (regs->eip == 0x0FFF) {  /* Signal return */
-#else
-        if (regs->rip == 0x0FFF) {  /* Signal return */
-#endif
-            /* Fix kstack and regs pointers*/
-            arch->regs = (struct x86_regs *) arch->kstack;
-            arch->kstack += sizeof(struct x86_regs); 
-            x86_kernel_stack_set(arch->kstack);
-
-            extern void return_from_signal(uintptr_t) __attribute__((noreturn));
-            return_from_signal((uintptr_t) arch->regs);
-        }
-
-        //x86_dump_registers(regs);
-        uintptr_t addr = read_cr2();
-
-        if (curthread)
-            curthread->in_fault++;
-
-        arch_mm_page_fault(addr, __x86_isr_err_num);
-
-        if (curthread)
-            curthread->in_fault--;
+        arch_mm_page_fault(read_cr2(), __x86_isr_err_num);
+        x86_return_to_user(regs, 0);
         return;
     }
 
     if (__x86_isr_int_num == 0x07) {  /* FPU Trap */
         x86_fpu_trap();
+        x86_return_to_user(regs, 0);
         return;
     }
     
@@ -176,7 +152,8 @@ void __x86_isr(struct x86_regs *regs)
 #else
         curthread->fault_addr = regs->rip;
 #endif
-        signal_proc_send(curproc, int_sig[__x86_isr_int_num]);
+        signal_force(curproc, int_sig[__x86_isr_int_num]);
+        x86_return_to_user(regs, 0);
         return;
     }
 

@@ -132,6 +132,8 @@ from source, see [tests/](tests/README.md).
       local APIC's timer as the tick, shared IRQs, MSI), the 8259 and the
       PIT without one (`apic=off`); `/proc/interrupts`
 - [X] Kernel threads (process 0, `[kernel]`; `ps` shows them as `[net]`, ...)
+- [X] POSIX signals, delivered on the way back to user mode (a handler's
+      frame keeps the FPU state, `sigreturn` from a kernel-mapped page)
 - [X] Virtual Filesystem
 - [ ] Loadable modules
 

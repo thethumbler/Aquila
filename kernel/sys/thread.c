@@ -40,38 +40,39 @@ int thread_kill(struct thread *thread)
     return 0;
 }
 
-int thread_queue_sleep(struct queue *queue)
+static void queue_sleep(struct queue *queue, state_t state)
 {
     if (!queue)
         panic("sleeping in a blackhole?");
 
-#ifdef DEBUG_SLEEP_QUEUE
-    printk("[%d:%d] %s: Sleeping on queue %p\n", curproc->pid, curthread->tid, curproc->name, queue);
-#endif
-
-    struct qnode *sleep_node = enqueue(queue, curthread);
-
     curthread->sleep_queue = queue;
-    curthread->sleep_node  = sleep_node;
-    curthread->state = ISLEEP;
+    curthread->sleep_node  = enqueue(queue, curthread);
+    curthread->state = state;
     arch_sleep();
+    curthread->state = RUNNABLE;
+}
 
-    /* a stop signal came while sleeping: stop now, then carry on (not in
-     * a page fault, which would stop holding the disk) */
-    if (!curthread->in_fault)
-        signal_stop_pending();
+/*
+ * Sleep on `queue' until woken up; a signal the process doesn't block
+ * ends the sleep (signal_to wakes it): -ERESTARTSYS, for the system call
+ * to return (its caller loops on what it waits for, a wakeup may be for
+ * something else). Not even asleep if one is pending already.
+ */
+int thread_queue_sleep(struct queue *queue)
+{
+    if (signal_interrupts(curthread))
+        return -ERESTARTSYS;
 
-    /* Woke up */
-    if (curthread->state != ISLEEP) {
-        /* A signal interrupted the sleep */
-#ifdef DEBUG_SLEEP_QUEUE
-        printk("[%d:%d] %s: Sleeping was interrupted by a signal\n", curproc->pid, curthread->tid, curproc->name);
-#endif
-        return -EINTR;
-    } else {
-        curthread->state = RUNNABLE;
-        return 0;
-    }
+    queue_sleep(queue, ISLEEP);
+
+    return signal_interrupts(curthread) ? -ERESTARTSYS : 0;
+}
+
+/* sleep on `queue' until woken up, whatever signal comes (a disk
+ * transfer, a page being read in: nothing may be left halfway) */
+void thread_queue_sleep_unint(struct queue *queue)
+{
+    queue_sleep(queue, USLEEP);
 }
 
 /* threads in select() and poll(): any wakeup makes them check again */

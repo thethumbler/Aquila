@@ -257,15 +257,9 @@ static void sys_kill(pid_t pid, int sig)
 {
     syscall_log(LOG_DEBUG, "kill(pid=%d, sig=%d)\n", pid, sig);
 
-    /* a signal sent to ourselves may be delivered right away and the
-     * handler returns to the saved user context, so set the return value
-     * before sending it */
-    arch_syscall_return(curthread, 0);
-
-    int ret = signal_send(pid, sig);
-
-    if (ret)
-        arch_syscall_return(curthread, ret);
+    /* one sent to ourselves is delivered before this returns to user
+     * mode (x86_return_to_user) */
+    arch_syscall_return(curthread, signal_send(pid, sig));
 }
 
 static int do_linkat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, int flags)
@@ -696,7 +690,7 @@ static void sys_waitpid(int pid, int *stat_loc, int options)
         }
 
         if (thread_queue_sleep(&curproc->wait_queue)) {
-            arch_syscall_return(curthread, -EINTR);
+            arch_syscall_return(curthread, -ERESTARTSYS);
             return;
         }
     }
@@ -802,8 +796,10 @@ static void sys_sigaction(int sig, const struct aquila_sigaction *act, struct aq
     if (oact)
         memcpy(oact, &curproc->sigaction[sig], sizeof(struct aquila_sigaction));
 
-    if (act)
+    if (act) {
         memcpy(&curproc->sigaction[sig], act, sizeof(struct aquila_sigaction));
+        signal_action_set(curproc, sig);
+    }
 
     arch_syscall_return(curthread, 0);
 }
@@ -1223,7 +1219,7 @@ static void sys_thread_join(int tid, void **value_ptr)
 
     while (thread->state != ZOMBIE) {
         if (thread_queue_sleep(&curproc->thread_join)) {
-            arch_syscall_return(curthread, -EINTR);
+            arch_syscall_return(curthread, -ERESTARTSYS);
             return;
         }
     }
@@ -1926,13 +1922,10 @@ static void sys_sigmask(int how, const sigset_t *set, sigset_t *oldset)
     if (oldset)
         *oldset = curproc->sigmask;
 
+    /* one no longer blocked is delivered before this returns to user
+     * mode */
     curproc->sigmask = mask & ~SIG_UNMASKABLE;
     arch_syscall_return(curthread, 0);
-
-    /* a signal that is no longer blocked is delivered before returning */
-    int signal = signal_next(curproc);
-    if (signal)
-        arch_handle_signal(signal);
 }
 
 static void sys_sigsuspend(const sigset_t *set)
@@ -1944,34 +1937,28 @@ static void sys_sigsuspend(const sigset_t *set)
         return;
     }
 
+    struct thread *thread = curthread;
     struct queue wait = {0};
 
-    /* returns when a signal handler ran, with the old mask; a signal can
-     * also be delivered when the thread is switched to (arch_thread_switch),
-     * which restores the mask from sigsuspend_mask */
-    arch_syscall_return(curthread, -EINTR);
+    /* the mask it replaces is the handler's frame's (sigreturn restores
+     * it), or comes back if it's restarted (x86_return_to_user) */
+    thread->sig_oldmask = curproc->sigmask;
+    thread->sig_oldmask_set = 1;
+    curproc->sigmask = *set & ~SIG_UNMASKABLE;
 
-    curthread->sigsuspend      = 1;
-    curthread->sigsuspend_mask = curproc->sigmask;
+    /* until a signal it doesn't block (nothing else wakes it up) */
+    while (!thread_queue_sleep(&wait))
+        ;
 
-    for (;;) {
-        curproc->sigmask = *set & ~SIG_UNMASKABLE;
+    /* EINTR once a handler ran; restarted if none did (a stop) */
+    arch_syscall_return(thread, -ERESTARTNOHAND);
+}
 
-        int signal = signal_next(curproc);
-
-        if (signal) {
-            curproc->sigmask = curthread->sigsuspend_mask;
-            curthread->sigsuspend = 0;
-            arch_handle_signal(signal);
-
-            /* the signal was ignored, keep waiting */
-            curthread->sigsuspend = 1;
-            continue;
-        }
-
-        /* signal_proc_send() wakes up the sleeping thread */
-        thread_queue_sleep(&wait);
-    }
+/* a handler returns (the kernel's sigcode calls this): its frame back */
+static void sys_sigreturn(void)
+{
+    syscall_log(LOG_DEBUG, "sigreturn()\n");
+    arch_sigreturn();
 }
 
 static void sys_getppid(void)
@@ -2047,11 +2034,11 @@ static void sys_select(struct aquila_select_args *args)
         return;
     }
 
-    /* pselect(): the mask while waiting, the old one is back after a
-     * handler ran (as in sigsuspend) or when this returns */
+    /* pselect(): the mask while waiting; the old one is back when this
+     * returns, or in the handler's frame (as in sigsuspend) */
     if (sigmask) {
-        curthread->sigsuspend      = 1;
-        curthread->sigsuspend_mask = curproc->sigmask;
+        curthread->sig_oldmask = curproc->sigmask;
+        curthread->sig_oldmask_set = 1;
         curproc->sigmask = *sigmask & ~SIG_UNMASKABLE;
     }
 
@@ -2100,29 +2087,19 @@ static void sys_select(struct aquila_select_args *args)
         if (count || ns == 0 || timed_out)
             break;
 
-        /* a signal the new mask lets through ends the wait: its handler
-         * runs with the old mask and returns to user mode with EINTR */
-        int sig = sigmask ? signal_next(curproc) : 0;
-
-        if (sig) {
-            curproc->sigmask = curthread->sigsuspend_mask;
-            curthread->sigsuspend = 0;
-            arch_syscall_return(curthread, -EINTR);
-            arch_handle_signal(sig);
-
-            /* the signal was ignored, keep waiting */
-            curthread->sigsuspend = 1;
-            curproc->sigmask = *sigmask & ~SIG_UNMASKABLE;
-            continue;
-        }
-
-        /* any wakeup in the system makes us look again */
+        /* any wakeup in the system makes us look again; a signal ends
+         * the wait: EINTR (POSIX: not restarted, but after a stop) */
         timed_out = sched_wait(&poll_queue, until);
+
+        if (timed_out < 0) {
+            arch_syscall_return(curthread, -ERESTARTNOHAND);
+            return;
+        }
     }
 
     if (sigmask) {
-        curproc->sigmask = curthread->sigsuspend_mask;
-        curthread->sigsuspend = 0;
+        curproc->sigmask = curthread->sig_oldmask;
+        curthread->sig_oldmask_set = 0;
     }
 
 #undef FD_BIT
@@ -2185,7 +2162,11 @@ static void sys_poll(struct pollfd *fds, nfds_t nfds, int timeout_ms)
         if (count || ns == 0 || timed_out)
             break;
 
-        timed_out = sched_wait(&poll_queue, until);
+        /* a signal ends the wait: EINTR (but after a stop) */
+        if ((timed_out = sched_wait(&poll_queue, until)) < 0) {
+            arch_syscall_return(curthread, -ERESTARTNOHAND);
+            return;
+        }
     }
 
     arch_syscall_return(curthread, count);
@@ -2505,10 +2486,23 @@ static void sys_nanosleep(const struct aquila_timespec *req, struct aquila_times
         return;
     }
 
-    uint64_t ns = req->tv_sec * 1000000000ULL + req->tv_nsec;
+    uint64_t until = arch_rtime_ns() + req->tv_sec * 1000000000ULL + req->tv_nsec;
 
-    curthread->sleep_left = rem;
-    sched_sleep(arch_rtime_ns() + ns);
+    if (sched_sleep(until)) {
+        /* a signal: the time left, EINTR once a handler ran (a stop: the
+         * whole time again, as it's restarted) */
+        if (rem) {
+            uint64_t now = arch_rtime_ns();
+            uint64_t left = now < until ? until - now : 0;
+
+            rem->tv_sec  = left / 1000000000ULL;
+            rem->tv_nsec = left % 1000000000ULL;
+        }
+
+        arch_syscall_return(curthread, -ERESTARTNOHAND);
+        return;
+    }
+
     arch_syscall_return(curthread, 0);
 }
 
@@ -2660,6 +2654,7 @@ void (*syscall_table[])() = {
     [SYS_getpeername]   = sys_getpeername,
     [SYS_getsockopt]    = sys_getsockopt,
     [SYS_setsockopt]    = sys_setsockopt,
+    [SYS_sigreturn]     = sys_sigreturn,
 };
 
 const size_t syscall_cnt = sizeof(syscall_table)/sizeof(syscall_table[0]);

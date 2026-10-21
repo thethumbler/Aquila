@@ -67,9 +67,11 @@ ssize_t pty_master_write(struct tty *tty, size_t size, void *buf)
         written += ringbuf_write(pty->out, size - written, (char *) buf + written);
 
         if (written != size) {
-            /* writes must always complete */
-            if (thread_queue_sleep(&pty->pts_read_queue))
-                return -EINTR;
+            /* writes must always complete, but for a signal */
+            int err = thread_queue_sleep(&pty->pts_read_queue);
+
+            if (err)
+                return written ? (ssize_t) written : err;
         }
     }
 
@@ -85,9 +87,11 @@ ssize_t pty_slave_write(struct tty *tty, size_t size, void *buf)
         written += ringbuf_write(pty->in, size - written, (char *) buf + written);
 
         if (written != size) {
-            /* writes must always complete */
-            if (thread_queue_sleep(&pty->pts_read_queue))
-                return -EINTR;
+            /* writes must always complete, but for a signal */
+            int err = thread_queue_sleep(&pty->pts_read_queue);
+
+            if (err)
+                return written ? (ssize_t) written : err;
         }
     }
 
@@ -219,8 +223,12 @@ ssize_t pts_write(struct devid *dd, off_t offset __unused, size_t size, void *bu
     struct pty *pty = pty_get(dd);
     if (!pty) return -ENXIO;
 
-    if (pty->tty->tios.c_lflag & TOSTOP)
-        tty_background(pty->tty, SIGTTOU);
+    if (pty->tty->tios.c_lflag & TOSTOP) {
+        int err = tty_background(pty->tty, SIGTTOU);
+
+        if (err)
+            return err;
+    }
 
     return tty_slave_write(pty->tty, size, buf);
 }

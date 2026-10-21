@@ -52,6 +52,10 @@
  * What a signal handler gets as its second argument (the C library's
  * siginfo_t), the third (ucontext) is NULL. si_addr is the faulting
  * address for SIGSEGV, SIGBUS, SIGILL and SIGFPE.
+ *
+ * A handler returns into a page the kernel maps in every process (below
+ * the stack), which makes the sigreturn system call: nothing in user
+ * space has to know about it.
  */
 struct aquila_siginfo {
     int           si_signo;
@@ -66,6 +70,8 @@ struct aquila_siginfo {
 #define SA_SIGINFO   0x2    /* every handler gets the siginfo anyway */
 #define SA_NOCLDWAIT 0x4    /* children don't stay zombies (SIGCHLD) */
 #define SA_RESTART   0x8    /* a call the signal interrupts is restarted */
+#define SA_NODEFER   0x10   /* not blocked while its handler runs */
+#define SA_RESETHAND 0x20   /* the handler goes (SIG_DFL) once it's run */
 #endif
 
 /* sigaction(2) argument, same layout as newlib's struct sigaction */

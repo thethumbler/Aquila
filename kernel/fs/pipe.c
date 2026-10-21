@@ -238,23 +238,14 @@ int pipefs_fifo_open(struct file *file)
     thread_queue_wakeup(pipe->queue);
 
     if (!(file->flags & O_NONBLOCK)) {
-        /* a signal must not abandon this, the end would stay open */
-        curthread->sig_defer = 1;
-
         while (which == END_READ ? !has_writers(pipe) :
                which == END_WRITE ? !has_readers(pipe) : 0) {
-            if (signal_pending(curproc)) {
-                curthread->sig_defer = 0;
-
+            if ((err = thread_queue_sleep(pipe->queue))) {
                 /* releases the pipe too if it was the only end */
                 vfs_close(end);
-                return -EINTR;
+                return err;
             }
-
-            thread_queue_sleep(pipe->queue);
         }
-
-        curthread->sig_defer = 0;
     }
 
     vfs_close(fifo);

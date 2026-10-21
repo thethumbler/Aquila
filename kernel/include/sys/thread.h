@@ -41,32 +41,21 @@ struct thread {
     /** Current sleep queue */
     struct queue *sleep_queue;
 
-    /** Executing a system call (it may be sleeping in it), which one */
-    int in_syscall;
+    /** The system call it's in (the last it made), to restart it */
     int syscall_nr;
 
     /** What the thread exited with (thread_exit), for thread_join */
     void *exit_value;
 
-    /** Signals are not delivered when the thread is switched to: a system
-     *  call that must clean up after being interrupted checks for them and
-     *  returns EINTR, they are delivered on the way out */
-    int sig_defer;
-
-    /** Handling a page fault (it may be sleeping in it, reading the page
-     *  from a disk): signals wait until it is done, the kernel code can't
-     *  be left halfway (holding the disk) */
-    int in_fault;
-
-    /** In sigsuspend(): the signal mask to restore when a signal is delivered */
-    int      sigsuspend;
-    sigset_t sigsuspend_mask;
+    /** In sigsuspend() or pselect(): the mask they replaced, which the
+     *  handler's frame keeps (sigreturn restores it), or which is restored
+     *  on the way out (signal_return) */
+    int      sig_oldmask_set;
+    sigset_t sig_oldmask;
     struct qnode *sleep_node;
 
-    /** In nanosleep(): when to wake up (arch_rtime_ns()) and where to
-     *  store the time left if a signal interrupts it */
+    /** Waiting with a deadline (sched_wait): when (arch_rtime_ns()) */
     uint64_t sleep_until;
-    void    *sleep_left;
 
     /** Address of the last fault, the si_addr of the signal it raised */
     uintptr_t fault_addr;
@@ -89,7 +78,8 @@ struct thread {
     int urgent;
 };
 
-int thread_queue_sleep(struct queue *queue);
+int  thread_queue_sleep(struct queue *queue);
+void thread_queue_sleep_unint(struct queue *queue);
 int thread_queue_wakeup(struct queue *queue);
 int thread_queue_wakeup_nopoll(struct queue *queue);
 

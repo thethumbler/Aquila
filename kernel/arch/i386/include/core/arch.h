@@ -8,8 +8,7 @@
 #define X86_CS      (0x18 | 3)
 
 struct x86_thread {
-    uintptr_t   kstack; /* Kernel stack, lowered while a signal handler runs
-                           (the interrupted context is kept on top) */
+    uintptr_t   kstack; /* Kernel stack (its top: the user context) */
     uintptr_t   kstack_base;    /* where it was allocated */
 
 #if ARCH_BITS==32
@@ -46,6 +45,9 @@ void arch_syscall(struct x86_regs *r);
 #define USER_STACK      (0x0000800000000000UL)
 #endif
 #define USER_STACK_BASE (USER_STACK - USER_STACK_SIZE)
+
+/* the sigcode page (sys/signal.c), below the stack */
+#define SIGCODE_ADDR    (USER_STACK_BASE - 0x1000)
 
 #if ARCH_BITS==32
 #define KERN_STACK_SIZE (8192U)  /* 8 KiB */

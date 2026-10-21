@@ -167,17 +167,9 @@ void __x86_irq_handler(struct x86_regs *r)
         x86_preempt();
     }
 
-    /* back to user mode (maybe after other threads ran): signals queued
-     * meanwhile (by drivers) are delivered, a stop that was left for the
-     * thread is taken now */
-    if ((r->cs & 3) == 3 && curthread && curthread->arch) {
-        int sig = curthread->sig_defer ? 0 : signal_next(curproc);
-
-        if (sig)
-            arch_handle_signal(sig);
-
-        signal_stop_pending();
-    }
+    /* back to user mode (maybe after other threads ran): the signals
+     * that came meanwhile */
+    x86_return_to_user(r, 0);
 }
 
 /* the vectors: 32 to 32 + 47, the local APIC's timer and spurious */

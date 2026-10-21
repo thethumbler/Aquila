@@ -111,12 +111,6 @@ int proc_fork(struct thread *thread, struct proc **ref)
         goto error;
     }
 
-    /* Allocate new signals queue */
-    if (!(fork->sig_queue = queue_new())) {
-        err = -ENOMEM;
-        goto error;
-    }
-
     /* copy file descriptors */
     if ((err = copy_fds(proc, fork)))
         goto error;
@@ -180,8 +174,6 @@ error:
             kfree(fork->name);
         if (fork->cwd)
             kfree(fork->cwd);
-        if (fork->sig_queue)
-            kfree(fork->sig_queue);
 
         /* free main thread (it never ran, no arch data) */
         struct thread *_thread = NULL;

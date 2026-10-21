@@ -1,5 +1,13 @@
 /**********************************************************************
  *                            Signals
+ *
+ * Sending a signal makes it pending (a bit of proc->sig_pending) and, if
+ * the process doesn't block it, wakes its threads that sleep where a
+ * signal may end the sleep (thread_queue_sleep): they return ERESTARTSYS
+ * and their system calls unwind. A signal is delivered on the way back to
+ * user mode only, the architecture's return path calling signal_take()
+ * (stops, default actions) and running the handler it returns: the
+ * kernel never leaves anything halfway for a signal.
  */
 
 #include <core/system.h>
@@ -71,7 +79,8 @@ static void signal_notify_parent(struct proc *proc)
 
 /*
  * Stop the current process by `sig', until SIGCONT or SIGKILL. Called by
- * its own thread, which sleeps here.
+ * its own thread on its way back to user mode (signal_take), which sleeps
+ * here; signals don't end the sleep, continuing (or killing) does.
  */
 void signal_stop(int sig)
 {
@@ -82,48 +91,32 @@ void signal_stop(int sig)
     signal_notify_parent(proc);
 
     while (proc->stopped)
-        thread_queue_sleep(&proc->stop_queue);
+        thread_queue_sleep_unint(&proc->stop_queue);
 }
 
-/* the thread is at a point where it may sleep: take a pending stop */
-void signal_stop_pending(void)
-{
-    int sig = curproc->stop_pending;
-
-    if (sig) {
-        curproc->stop_pending = 0;
-        signal_stop(sig);
-    }
-}
+#define STOP_SIGNALS    ((1UL << SIGSTOP) | (1UL << SIGTSTP) | (1UL << SIGTTIN) | (1UL << SIGTTOU))
 
 static int is_stop_signal(int sig)
 {
-    return sig == SIGSTOP || sig == SIGTSTP || sig == SIGTTIN || sig == SIGTTOU;
+    return !!(STOP_SIGNALS & (1UL << sig));
 }
 
-/* drop the pending signals for which drop() is true */
-static void signal_discard(struct proc *proc, int (*drop)(int))
+/* nothing would be done when it's delivered: its handler ignores it, or
+ * its default action does (SIGCONT's is done when it's sent) */
+static int signal_ignored(struct proc *proc, int sig)
 {
-    struct qnode *node = proc->sig_queue->head;
+    uintptr_t handler = proc->sigaction[sig].sa_handler;
 
-    while (node) {
-        struct qnode *next = node->next;
+    if (handler == SIG_IGN)
+        return 1;
 
-        if (drop((int)(intptr_t) node->value))
-            queue_node_remove(proc->sig_queue, node);
-
-        node = next;
-    }
+    return handler == SIG_DFL && (sig_default_action[sig] == SIGACT_IGNORE ||
+                                  sig_default_action[sig] == SIGACT_CONTINUE);
 }
 
-static int is_sigcont(int sig)
-{
-    return sig == SIGCONT;
-}
-
-/* send `signal' to proc, delivered right away if `now' and proc is the
- * current process (and doesn't block it), otherwise queued */
-static int signal_to(struct proc *proc, int signal, int now)
+/* make `signal' pending for proc, its sleeping threads woken if it isn't
+ * blocked: it's delivered on the way back to user mode */
+static int signal_to(struct proc *proc, int signal)
 {
     if (signal < 0 || signal > SIG_MAX)
         return -EINVAL;
@@ -132,18 +125,16 @@ static int signal_to(struct proc *proc, int signal, int now)
     if (proc == kproc)
         return -EPERM;
 
-    /* signal 0 only checks for existence, zombies can't be signalled
-     * (their signal queue and threads are already gone) */
+    /* signal 0 only checks for existence, zombies can't be signalled */
     if (!signal || !proc->running)
         return 0;
 
     /* a stop signal cancels a pending continue and the other way around,
      * SIGCONT (whatever its action) and SIGKILL resume a stopped process */
     if (is_stop_signal(signal)) {
-        signal_discard(proc, is_sigcont);
+        proc->sig_pending &= ~(1UL << SIGCONT);
     } else if (signal == SIGCONT || signal == SIGKILL) {
-        signal_discard(proc, is_stop_signal);
-        proc->stop_pending = 0;
+        proc->sig_pending &= ~STOP_SIGNALS;
 
         if (proc->stopped) {
             proc->stopped = 0;
@@ -157,92 +148,104 @@ static int signal_to(struct proc *proc, int signal, int now)
         }
     }
 
-    /* blocked signals stay pending until unblocked */
-    if (now && proc == curproc && !(proc->sigmask & (1UL << signal))) {
-        arch_handle_signal(signal);
-    } else {
-        enqueue(proc->sig_queue, (void *)(intptr_t) signal);
+    /* ignored when it's sent: discarded (POSIX lets us, blocked or not) */
+    if (signal_ignored(proc, signal))
+        return 0;
 
-        /* wake up main thread if sleeping - XXX; only that thread, not
-         * everything sleeping on the same queue. A stopped process keeps
-         * its signals pending until it is continued */
-        struct thread *thread = (struct thread *) proc->threads.head->value;
-        if (thread->state == ISLEEP && !proc->stopped)
+    proc->sig_pending |= 1UL << signal;
+
+    /* blocked: it waits; else the threads sleeping where a signal may end
+     * the sleep wake up, to return to user mode and take it */
+    if (proc->sigmask & (1UL << signal))
+        return 0;
+
+    queue_for (node, &proc->threads) {
+        struct thread *thread = node->value;
+
+        if (thread->state == ISLEEP && thread->sleep_node)
             thread_wakeup(thread);
     }
 
     return 0;
 }
 
-/**
- * \ingroup sys
- * \brief remove and return the first pending signal that is not blocked,
- * 0 if there is none
- */
-int signal_pending(struct proc *proc)
+/* sigaction() set its action: ignored now, it's no longer pending */
+void signal_action_set(struct proc *proc, int sig)
 {
-    queue_for (node, proc->sig_queue) {
-        int signal = (int)(intptr_t) node->value;
-
-        if (!(proc->sigmask & (1UL << signal)))
-            return 1;
-    }
-
-    return 0;
+    if (signal_ignored(proc, sig))
+        proc->sig_pending &= ~(1UL << sig);
 }
 
-int signal_next(struct proc *proc)
+int signal_interrupts(struct thread *thread)
 {
-    queue_for (node, proc->sig_queue) {
-        int signal = (int)(intptr_t) node->value;
+    struct proc *proc = thread->owner;
 
-        if (!(proc->sigmask & (1UL << signal))) {
-            queue_node_remove(proc->sig_queue, node);
-            return signal;
-        }
+    return proc && proc != kproc && (proc->sig_pending & ~proc->sigmask);
+}
+
+void signal_force(struct proc *proc, int signal)
+{
+    if ((proc->sigmask & (1UL << signal)) || proc->sigaction[signal].sa_handler == SIG_IGN) {
+        proc->sigmask &= ~(1UL << signal);
+        proc->sigaction[signal].sa_handler = SIG_DFL;
     }
 
-    return 0;
+    signal_to(proc, signal);
+}
+
+void signal_exit(int sig)
+{
+    curproc->exit = PROC_EXIT(sig, sig);
+    proc_kill(curproc);
+    arch_sleep();
+
+    for (;;);
+}
+
+int signal_take(void)
+{
+    struct proc *proc = curproc;
+
+    for (;;) {
+        sigset_t ready = proc->sig_pending & ~proc->sigmask;
+
+        if (!proc->running || !ready)
+            return 0;
+
+        /* SIGKILL first, then the lowest numbered */
+        int sig = (ready & (1UL << SIGKILL)) ? SIGKILL : __builtin_ctzl(ready);
+        proc->sig_pending &= ~(1UL << sig);
+
+        uintptr_t handler = proc->sigaction[sig].sa_handler;
+
+        if (handler == SIG_IGN)
+            continue;
+
+        if (handler != SIG_DFL)
+            return sig;
+
+        switch (sig_default_action[sig]) {
+            case SIGACT_ABORT:
+            case SIGACT_TERMINATE:
+                signal_exit(sig);
+            case SIGACT_STOP:
+                signal_stop(sig);
+                break;
+            default:
+                break;
+        }
+    }
 }
 
 int signal_proc_send(struct proc *proc, int signal)
 {
-    return signal_to(proc, signal, 1);
-}
-
-/* only queue it, for senders that can't have it delivered right away
- * (drivers, interrupts) */
-int signal_proc_post(struct proc *proc, int signal)
-{
-    return signal_to(proc, signal, 0);
-}
-
-int signal_pgrp_post(struct pgroup *pg, int signal)
-{
-    queue_for (node, pg->procs)
-        signal_proc_post(node->value, signal);
-
-    return 0;
+    return signal_to(proc, signal);
 }
 
 int signal_pgrp_send(struct pgroup *pg, int signal)
 {
-    int self = 0;
-
-    /* signals for other processes are only queued, but one for the
-     * current process may be handled right away and not return, so it
-     * goes last */
-    queue_for (node, pg->procs) {
-        struct proc *proc = node->value;
-
-        if (proc == curproc)
-            self = 1;
-        else
-            signal_proc_send(proc, signal);
-    }
-
-    if (self)
-        signal_proc_send(curproc, signal);
+    queue_for (node, pg->procs)
+        signal_to(node->value, signal);
 
     return 0;
 }
@@ -263,7 +266,7 @@ int signal_send(pid_t pid, int signal)
         if (!proc)
             return -ESRCH;
 
-        return signal_proc_send(proc, signal);
+        return signal_to(proc, signal);
     }
 
     if (pid == -1) {
@@ -275,7 +278,7 @@ int signal_send(pid_t pid, int signal)
             if (proc->pid == 1 || proc == curproc || proc == kproc)
                 continue;
 
-            signal_proc_send(proc, signal);
+            signal_to(proc, signal);
             found = 1;
         }
 
@@ -283,9 +286,8 @@ int signal_send(pid_t pid, int signal)
     }
 
     pid_t pgid = pid ? -pid : curproc->pgrp->pgid;
-    int found = 0, self = 0;
+    int found = 0;
 
-    /* the current process goes last, see signal_pgrp_send() */
     queue_for (node, procs) {
         struct proc *proc = node->value;
 
@@ -293,15 +295,8 @@ int signal_send(pid_t pid, int signal)
             continue;
 
         found = 1;
-
-        if (proc == curproc)
-            self = 1;
-        else
-            signal_proc_send(proc, signal);
+        signal_to(proc, signal);
     }
-
-    if (self)
-        signal_proc_send(curproc, signal);
 
     return found ? 0 : -ESRCH;
 }

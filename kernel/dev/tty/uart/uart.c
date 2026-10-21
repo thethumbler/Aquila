@@ -92,8 +92,12 @@ ssize_t uart_write(struct devid *dd, off_t offset __unused, size_t size, void *b
     struct uart *u = uart_get(dd->minor);
     if (!u) return -EIO;
 
-    if (u->tty->tios.c_lflag & TOSTOP)
-        tty_background(u->tty, SIGTTOU);
+    if (u->tty->tios.c_lflag & TOSTOP) {
+        int err = tty_background(u->tty, SIGTTOU);
+
+        if (err)
+            return err;
+    }
 
     return tty_slave_write(u->tty, size, buf);
 }

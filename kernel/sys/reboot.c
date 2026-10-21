@@ -57,5 +57,5 @@ void kernel_ctrlaltdel(void)
     struct proc *init = proc_pid_find(1);
 
     if (init)
-        signal_proc_post(init, SIGINT);
+        signal_proc_send(init, SIGINT);
 }

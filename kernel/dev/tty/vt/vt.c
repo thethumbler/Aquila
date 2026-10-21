@@ -264,7 +264,7 @@ static void vt_signal(struct vt *vt, int signal)
     struct proc *proc = proc_pid_find(vt->mode_pid);
 
     if (proc && signal > 0 && signal < NSIG)
-        signal_proc_post(proc, signal);
+        signal_proc_send(proc, signal);
 }
 
 static void vt_switch_now(int id)
@@ -400,8 +400,12 @@ static ssize_t vt_write(struct devid *dd, off_t offset __unused, size_t size, vo
     if (!vt || !vt->tty)
         return -EIO;
 
-    if (vt->tty->tios.c_lflag & TOSTOP)
-        tty_background(vt->tty, SIGTTOU);
+    if (vt->tty->tios.c_lflag & TOSTOP) {
+        int err = tty_background(vt->tty, SIGTTOU);
+
+        if (err)
+            return err;
+    }
 
     busy++;
     ssize_t ret = tty_slave_write(vt->tty, size, buf);
@@ -579,9 +583,12 @@ static int vt_kd_ioctl(struct vt *vt, int request, void *argp)
             if (arg < 0 || arg > VT_COUNT)
                 return -ENXIO;
 
-            while (arg && fg != &vts[arg - 1])
-                if (thread_queue_sleep(&active_queue))
-                    return -EINTR;
+            while (arg && fg != &vts[arg - 1]) {
+                int err = thread_queue_sleep(&active_queue);
+
+                if (err)
+                    return err;
+            }
 
             return 0;
     }

@@ -414,8 +414,10 @@ static ssize_t socket_inet_recv(struct file *file, void *buf, size_t len, int fl
         if ((file->flags & O_NONBLOCK) || (flags & MSG_DONTWAIT))
             return -EAGAIN;
 
-        if (sched_wait(&sock->recv_wait, until))
-            return -EAGAIN;
+        int r = sched_wait(&sock->recv_wait, until);
+
+        if (r)
+            return r < 0 ? r : -EAGAIN;
     }
 
     struct netbuf *nb = sock->recv_head;

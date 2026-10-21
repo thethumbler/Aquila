@@ -341,6 +341,21 @@ void mm_page_fault(vaddr_t vaddr, int flags)
 
 sigsegv:
     curthread->fault_addr = vaddr;
-    signal_proc_send(curproc, SIGSEGV);
-    return;
+
+    /* user mode's: SIGSEGV, on its way back */
+    if (flags & PF_USER) {
+        signal_force(curproc, SIGSEGV);
+        return;
+    }
+
+    /* the kernel's, on its own memory: a bug */
+    if (vaddr >= USER_STACK) {
+        printk("kernel: page fault at %p, kernel mode\n", (void *) vaddr);
+        panic("page fault in the kernel");
+    }
+
+    /* the kernel's, through a bad pointer a process gave it: it can't go
+     * on (the faulting instruction would fault again), the process ends
+     * by SIGSEGV; copyin/copyout will make it EFAULT */
+    signal_exit(SIGSEGV);
 }

@@ -253,7 +253,7 @@ diff -ruN a/newlib/libc/include/sys/signal.h b/newlib/libc/include/sys/signal.h
  } siginfo_t;
  #endif /* defined(_POSIX_REALTIME_SIGNALS) || __POSIX_VISIBLE >= 199309 */
  
-@@ -113,6 +116,29 @@
+@@ -113,6 +116,31 @@
  #define sa_sigaction  _signal_handlers._sigaction
  #endif
  
@@ -264,6 +264,8 @@ diff -ruN a/newlib/libc/include/sys/signal.h b/newlib/libc/include/sys/signal.h
 +                           /*   the siginfo to every handler) */
 +#define SA_NOCLDWAIT 0x4   /* Children don't stay zombies */
 +#define SA_RESTART   0x8   /* A call the signal interrupts is restarted */
++#define SA_NODEFER   0x10  /* Not blocked while its handler runs */
++#define SA_RESETHAND 0x20  /* The handler goes (SIG_DFL) once it's run */
 +
 +typedef void (*_sig_func_ptr)(int);
 +

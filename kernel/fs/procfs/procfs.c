@@ -338,7 +338,7 @@ static ssize_t procfs_proc_status(int pid, off_t off, size_t size, void *buf)
             "heap: 0x%x\n"
             "threads_nr: %d\n"
             "sigmask: 0x%x\n"
-            "sigpending: %d\n",
+            "sigpending: 0x%x\n",
             proc->name,
             proc->pid,
             proc->parent ? proc->parent->pid : 0,
@@ -349,7 +349,7 @@ static ssize_t procfs_proc_status(int pid, off_t off, size_t size, void *buf)
             proc->heap,
             proc->threads.count,
             (unsigned) proc->sigmask,
-            proc->sig_queue ? (int) proc->sig_queue->count : 0
+            (unsigned) proc->sig_pending
             );
 
     /* what each thread is doing: running (or ready to), sleeping (ISLEEP,

@@ -86,10 +86,9 @@ struct proc {
     /** File mode creation mask */
     mode_t mask;
 
-    /** stopped by this signal, 0 if not; a stop signal the thread takes
-     *  at its next safe point; what waitpid() has to report (WAIT_*) */
+    /** stopped by this signal, 0 if not; what waitpid() has to report
+     *  (WAIT_*) */
     int stopped;
-    int stop_pending;
     int wait_event;
 
     /** stopped threads sleep here */
@@ -132,8 +131,9 @@ struct proc {
     /** Threads join wait queue */
     struct queue thread_join;
 
-    /** Recieved signals queue */
-    struct queue *sig_queue;
+    /** Pending signals, (1 << sig): a signal sent again while pending is
+     *  delivered once (POSIX leaves it to us, as everyone) */
+    sigset_t sig_pending;
 
     /** Blocked signals, (1 << sig) */
     sigset_t sigmask;

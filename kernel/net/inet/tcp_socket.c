@@ -459,6 +459,7 @@ static int socket_tcp_listen(struct file *file, int backlog)
 static int socket_tcp_accept(struct file *file, struct file *conn, const struct sockaddr *addr, socklen_t *len)
 {
     struct tcp_pcb *pcb = file->socket->p;
+    int err;
 
     if (pcb->state != TCP_LISTEN)
         return -EINVAL;
@@ -472,8 +473,8 @@ static int socket_tcp_accept(struct file *file, struct file *conn, const struct 
         if (nonblock(file, 0))
             return -EAGAIN;
 
-        if (sched_wait(&pcb->wait, until))
-            return -EAGAIN;
+        if ((err = sched_wait(&pcb->wait, until)))
+            return err < 0 ? err : -EAGAIN;
 
         if (pcb->state != TCP_LISTEN)
             return -EINVAL;
@@ -515,7 +516,11 @@ static int socket_tcp_connect(struct file *file, const struct sockaddr *addr, so
             break;
         case TCP_SYN_SENT:
         case TCP_SYN_RECEIVED:
-            return -EALREADY;
+            /* blocking: a connect a signal interrupted, made again (it
+             * was restarted), waits for it as Linux's does */
+            if (nonblock(file, 0))
+                return -EALREADY;
+            goto wait;
         case TCP_LISTEN:
             return -EINVAL;
         default:
@@ -557,8 +562,11 @@ static int socket_tcp_connect(struct file *file, const struct sockaddr *addr, so
     if (nonblock(file, 0))
         return -EINPROGRESS;
 
+wait:
+    /* a signal: the connection goes on without us waiting */
     while (pcb->state == TCP_SYN_SENT || pcb->state == TCP_SYN_RECEIVED)
-        sched_wait(&pcb->wait, 0);
+        if ((err = sched_wait(&pcb->wait, 0)) < 0)
+            return err;
 
     if (pcb->connected && pcb->state != TCP_CLOSED)
         return 0;
@@ -578,6 +586,7 @@ static ssize_t socket_tcp_send(struct file *file, void *buf, size_t len, int fla
                                const struct sockaddr *to, socklen_t tolen)
 {
     struct tcp_pcb *pcb = file->socket->p;
+    int r;
     uint64_t until = deadline(pcb->sndtimeo);
     size_t sent = 0;
     char chunk[COPY_CHUNK];
@@ -597,8 +606,8 @@ static ssize_t socket_tcp_send(struct file *file, void *buf, size_t len, int fla
             if (nonblock(file, flags))
                 return sent ? (ssize_t) sent : -EAGAIN;
 
-            if (sched_wait(&pcb->wait, until))
-                return sent ? (ssize_t) sent : -EAGAIN;
+            if ((r = sched_wait(&pcb->wait, until)))
+                return sent ? (ssize_t) sent : r < 0 ? r : -EAGAIN;
 
             continue;
         }
@@ -614,8 +623,8 @@ static ssize_t socket_tcp_send(struct file *file, void *buf, size_t len, int fla
             if (nonblock(file, flags))
                 return sent ? (ssize_t) sent : -EAGAIN;
 
-            if (sched_wait(&pcb->wait, until))
-                return sent ? (ssize_t) sent : -EAGAIN;
+            if ((r = sched_wait(&pcb->wait, until)))
+                return sent ? (ssize_t) sent : r < 0 ? r : -EAGAIN;
 
             continue;
         }
@@ -649,6 +658,7 @@ static ssize_t socket_tcp_recv(struct file *file, void *buf, size_t len, int fla
                                struct sockaddr *from, socklen_t *fromlen)
 {
     struct tcp_pcb *pcb = file->socket->p;
+    int r;
     uint64_t until = deadline(pcb->rcvtimeo);
     size_t got = 0;
     char chunk[COPY_CHUNK];
@@ -697,8 +707,8 @@ static ssize_t socket_tcp_recv(struct file *file, void *buf, size_t len, int fla
         if (nonblock(file, flags))
             return got ? (ssize_t) got : -EAGAIN;
 
-        if (sched_wait(&pcb->wait, until))
-            return got ? (ssize_t) got : -EAGAIN;
+        if ((r = sched_wait(&pcb->wait, until)))
+            return got ? (ssize_t) got : r < 0 ? r : -EAGAIN;
     }
 
     if (from && fromlen)

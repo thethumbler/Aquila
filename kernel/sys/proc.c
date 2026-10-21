@@ -141,21 +141,11 @@ int proc_init(struct proc *proc)
         goto error;
     }
 
-    proc->sig_queue = queue_new();  /* Initalize signals queue */
-
-    if (!proc->sig_queue) {
-        err = -ENOMEM;
-        goto error;
-    }
-
     return 0;
 
 error:
     if (proc->fds)
         kfree(proc->fds);
-
-    if (proc->sig_queue)
-        kfree(proc->sig_queue);
 
     return err;
 }
@@ -229,10 +219,7 @@ void proc_kill(struct proc *proc)
     kfree(proc->fds);
     kfree(proc->cwd);
 
-    while (proc->sig_queue->count)
-        dequeue(proc->sig_queue);
-
-    kfree(proc->sig_queue);
+    proc->sig_pending = 0;
 
     /* Mark all children as orphans, nobody will wait for them anymore so
      * reap the ones that already exited (live ones are reaped on exit) */
