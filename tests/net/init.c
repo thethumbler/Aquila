@@ -13,6 +13,11 @@
  * - a datagram to 10.0.2.2:5002 is answered by "port unreachable"
  * - a datagram to 192.0.2.1:5003 goes through the gateway, and comes back
  * - a broadcast to 10.0.2.255:5004 goes (the peer checks it)
+ * - a TCP connection to 10.0.2.2:6000, which the peer plays segment by
+ *   segment: 200 bytes from it (out of order), 6500 to it (losses, a
+ *   zero window), then a reset
+ *
+ * TCP over loopback first, both ends here (and a child process).
  *
  * The frames are taken up the stack by the network's thread, [net], a
  * thread of process 0 (seen in /proc/0/status).
@@ -22,7 +27,9 @@
 
 #include <aquila/if.h>
 #include <aquila/in.h>
+#include <aquila/poll.h>
 #include <aquila/socket.h>
+#include <aquila/tcp.h>
 
 /* the kernel's struct timeval */
 struct tv {
@@ -261,6 +268,257 @@ static void interfaces(void)
     SC(SYS_close, fd, 0, 0);
 }
 
+/*
+ * TCP over loopback
+ */
+
+static int tcp(void)
+{
+    return SC(SYS_socket, AF_INET, SOCK_STREAM, 0);
+}
+
+static int tcp_listen(uint32_t addr, int port)
+{
+    int fd = tcp();
+
+    if (bind_to(fd, addr, port) || SC(SYS_listen, fd, 8, 0))
+        return -1;
+
+    return fd;
+}
+
+static int tcp_connect(int fd, uint32_t addr, int port)
+{
+    struct sockaddr_in s = sin(addr, port);
+    return SC(SYS_connect, fd, &s, sizeof(s));
+}
+
+static int tcp_accept(int fd)
+{
+    return SC(SYS_accept, fd, 0, 0);
+}
+
+static int send_all(int fd, const void *buf, int len)
+{
+    struct aquila_socket_io_args a = {fd, (void *) buf, len, 0, 0, 0};
+    return SC(SYS_send, &a, 0, 0);
+}
+
+static int recv_some(int fd, void *buf, int len, int flags)
+{
+    struct aquila_socket_io_args a = {fd, buf, len, flags, 0, 0};
+    return SC(SYS_recv, &a, 0, 0);
+}
+
+/* len bytes, or what there is until the end */
+static int recv_all(int fd, void *buf, int len)
+{
+    int got = 0, n;
+
+    while (got < len && (n = recv_some(fd, (char *) buf + got, len - got, 0)) > 0)
+        got += n;
+
+    return got ? got : n;
+}
+
+static int tcpopt(int fd, int name)
+{
+    int v = -1;
+    unsigned int len = sizeof(v);
+    int r = SC5(SYS_getsockopt, fd, IPPROTO_TCP, name, &v, &len);
+    return r ? r : v;
+}
+
+static int peer_port(int fd)
+{
+    struct sockaddr_in s;
+    unsigned int len = sizeof(s);
+
+    if (SC(SYS_getpeername, fd, &s, &len))
+        return -1;
+
+    return htons(s.sin_port);
+}
+
+#define BULK    (1024 * 1024)
+static unsigned char bulk[BULK];
+
+static unsigned char pattern(int i)
+{
+    return (unsigned char) (i * 7 + (i >> 9));
+}
+
+/* the child: connects, sends a megabyte, reads it back checked from the
+ * server (exit 0 if it was right) */
+static uint32_t bulk_addr;
+
+static void bulk_client(void)
+{
+    int c = tcp();
+
+    if (tcp_connect(c, bulk_addr, 8001))
+        SC(SYS_exit, 1, 0, 0);
+
+    for (int i = 0; i < BULK; ++i)
+        bulk[i] = pattern(i);
+
+    if (send_all(c, bulk, BULK) != BULK)
+        SC(SYS_exit, 2, 0, 0);
+
+    SC(SYS_shutdown, c, SHUT_WR, 0);
+
+    for (int i = 0; i < BULK; ++i)
+        bulk[i] = 0;
+
+    if (recv_all(c, bulk, BULK) != BULK)
+        SC(SYS_exit, 3, 0, 0);
+
+    for (int i = 0; i < BULK; ++i)
+        if (bulk[i] != pattern(i))
+            SC(SYS_exit, 4, 0, 0);
+
+    /* the server closed: the end */
+    char x;
+    SC(SYS_exit, recv_some(c, &x, 1, 0) == 0 ? 0 : 5, 0, 0);
+}
+
+/* a child that writes to a connection it shut down: SIGPIPE kills it */
+static int sigpipe_fd;
+
+static void sigpipe_child(void)
+{
+    struct aquila_sigaction dfl = {0 /* SIG_DFL */, 0, 0};
+    SC(SYS_sigaction, SIGPIPE, &dfl, 0);
+    send_all(sigpipe_fd, "x", 1);
+}
+
+static void tcp_loopback(void)
+{
+    uint32_t lo = ip4(127, 0, 0, 1);
+    char buf[64];
+
+    /* EPIPE, not SIGPIPE (checked on its own, below) */
+    struct aquila_sigaction ign = {1 /* SIG_IGN */, 0, 0};
+    SC(SYS_sigaction, SIGPIPE, &ign, 0);
+
+    int l = tcp_listen(lo, 8000);
+    check("tcp: listen", l >= 0, 1);
+    check("tcp: SO_ACCEPTCONN", intopt(l, SO_ACCEPTCONN), 1);
+    check("tcp: SO_TYPE", intopt(l, SO_TYPE), SOCK_STREAM);
+
+    int c = tcp();
+    check("tcp: connect", tcp_connect(c, lo, 8000), 0);
+    check("tcp: connect again", tcp_connect(c, lo, 8000), -EISCONN);
+
+    int s = tcp_accept(l);
+    check("tcp: accept", s >= 0, 1);
+    check("tcp: the ends' ports", peer_port(s) == port_of(c) && peer_port(c) == 8000 &&
+          port_of(s) == 8000, 1);
+
+    check("tcp: send", send_all(c, "hello, tcp", 10), 10);
+    check("tcp: MSG_PEEK", recv_some(s, buf, 5, MSG_PEEK), 5);
+
+    int avail = -1;
+    SC(SYS_ioctl, s, FIONREAD, &avail);
+    check("tcp: FIONREAD", avail, 10);
+
+    check("tcp: recv", recv_all(s, buf, 10), 10);
+    check("tcp: recv: the data", eq(buf, "hello, tcp", 10), 1);
+    check("tcp: recv: nothing", recv_some(s, buf, 1, MSG_DONTWAIT), -EAGAIN);
+
+    check("tcp: the other way", send_all(s, "back", 4), 4);
+    check("tcp: the other way: recv", recv_all(c, buf, 4) == 4 && eq(buf, "back", 4), 1);
+
+    int one = 1;
+    check("tcp: TCP_NODELAY", SC5(SYS_setsockopt, c, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one)), 0);
+    check("tcp: TCP_NODELAY: set", tcpopt(c, TCP_NODELAY), 1);
+    check("tcp: TCP_MAXSEG", tcpopt(c, TCP_MAXSEG) > 0, 1);
+
+    /* half-close: EOF one way, data still the other */
+    check("tcp: shutdown", SC(SYS_shutdown, c, SHUT_WR, 0), 0);
+    check("tcp: shutdown: EOF", recv_some(s, buf, 1, 0), 0);
+    check("tcp: shutdown: send after", send_all(c, "x", 1), -EPIPE);
+    sigpipe_fd = c;
+    check("tcp: shutdown: send after: SIGPIPE", aq_child_status(sigpipe_child) & 0x7f, SIGPIPE);
+    check("tcp: shutdown: the other way still", send_all(s, "late", 4), 4);
+    check("tcp: shutdown: the other way: recv", recv_all(c, buf, 4) == 4 && eq(buf, "late", 4), 1);
+    SC(SYS_close, s, 0, 0);
+    check("tcp: closed: EOF", recv_some(c, buf, 1, 0), 0);
+    SC(SYS_close, c, 0, 0);
+
+    /* ports */
+    int b = tcp();
+    check("tcp: bind: a listener's port", bind_to(b, 0, 8000), -EADDRINUSE);
+    SC(SYS_close, b, 0, 0);
+
+    /* nobody there */
+    c = tcp();
+    check("tcp: connect: refused", tcp_connect(c, lo, 8999), -ECONNREFUSED);
+    SC(SYS_close, c, 0, 0);
+
+    /* closed with data unread: reset */
+    c = tcp();
+    tcp_connect(c, lo, 8000);
+    s = tcp_accept(l);
+    send_all(c, "unread", 6);
+    recv_some(s, buf, 1, MSG_PEEK);
+    SC(SYS_close, s, 0, 0);
+    check("tcp: reset: recv", recv_some(c, buf, 1, 0), -ECONNRESET);
+
+    check("tcp: reset: send", send_all(c, "x", 1), -EPIPE);
+    SC(SYS_close, c, 0, 0);
+
+    /* non-blocking: connect, then poll() until it's writable */
+    c = tcp();
+    SC(SYS_fcntl, c, F_SETFL, O_NONBLOCK);
+    check("tcp: connect: non-blocking", tcp_connect(c, lo, 8000), -EINPROGRESS);
+
+    struct pollfd pfd = {c, POLLOUT, 0};
+    check("tcp: connect: poll", SC(SYS_poll, &pfd, 1, 2000), 1);
+    check("tcp: connect: writable", pfd.revents & POLLOUT, POLLOUT);
+    check("tcp: connect: SO_ERROR", intopt(c, SO_ERROR), 0);
+
+    s = tcp_accept(l);
+    pfd = (struct pollfd) {s, POLLIN, 0};
+    check("tcp: poll: nothing to read", SC(SYS_poll, &pfd, 1, 0), 0);
+    send_all(c, "p", 1);
+    check("tcp: poll: readable", SC(SYS_poll, &pfd, 1, 2000) == 1 && (pfd.revents & POLLIN), 1);
+    SC(SYS_close, s, 0, 0);
+    SC(SYS_close, c, 0, 0);
+
+    SC(SYS_fcntl, l, F_SETFL, O_NONBLOCK);
+    check("tcp: accept: non-blocking", tcp_accept(l), -EAGAIN);
+    SC(SYS_close, l, 0, 0);
+
+    /* a megabyte each way, with a child */
+    bulk_addr = lo;
+    l = tcp_listen(lo, 8001);
+    int pid = SC(SYS_fork, 0, 0, 0);
+
+    if (!pid) {
+        bulk_client();
+        SC(SYS_exit, 9, 0, 0);
+    }
+
+    s = tcp_accept(l);
+    int got = recv_all(s, bulk, BULK);
+    int right = got == BULK;
+
+    for (int i = 0; right && i < BULK; ++i)
+        right = bulk[i] == pattern(i);
+
+    check("tcp: a megabyte", got, BULK);
+    check("tcp: a megabyte: the data", right, 1);
+    check("tcp: a megabyte: then EOF", recv_some(s, buf, 1, 0), 0);
+    check("tcp: a megabyte: back", send_all(s, bulk, BULK), BULK);
+    SC(SYS_close, s, 0, 0);
+    SC(SYS_close, l, 0, 0);
+
+    int st = -1;
+    SC(SYS_waitpid, pid, &st, 0);
+    check("tcp: a megabyte: the child got it back", st, 0);
+}
+
 /* `needle' in the first `n' bytes of `s' */
 static int has(const char *s, int n, const char *needle)
 {
@@ -326,6 +584,24 @@ static void peer(void)
     setopt(fd, SO_BROADCAST, &one, sizeof(one));
     check("udp broadcast", sendto(fd, "everyone", 8, ip4(10, 0, 2, 255), 5004), 8);
 
+    /* TCP, the peer playing it by hand */
+    static unsigned char in[200], out[6500];
+    int t = tcp();
+
+    check("tcp to the peer: connect", tcp_connect(t, gw, 6000), 0);
+    check("tcp to the peer: 200 bytes", recv_all(t, in, 200), 200);
+
+    int order = 1;
+    for (int i = 0; i < 200; ++i)
+        order &= in[i] == i;
+    check("tcp to the peer: out of order, read in order", order, 1);
+
+    for (int i = 0; i < 6500; ++i)
+        out[i] = i * 7;
+    check("tcp to the peer: 6500 bytes", send_all(t, out, 6500), 6500);
+    check("tcp to the peer: reset", recv_some(t, in, 1, 0), -ECONNRESET);
+    SC(SYS_close, t, 0, 0);
+
     SC(SYS_close, fd, 0, 0);
     SC(SYS_close, go, 0, 0);
 }
@@ -336,6 +612,7 @@ void aq_main(void)
 
     kernel_thread();
     loopback();
+    tcp_loopback();
     interfaces();
     peer();
 

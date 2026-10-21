@@ -10,11 +10,14 @@
 # aqtest does: PASS/FAIL <name>, then "net: done".
 #
 # Its own checks first (ARP, pings), then it sends "go" to the guest's
-# test program (tests/net/init.c) and answers it, step by step.
+# test program (tests/net/init.c) and answers it, step by step; last, it
+# plays a TCP peer the guest connects to (10.0.2.2:6000), segment by
+# segment: losses, a segment out of order, a zero window, a reset.
 
 import socket
 import struct
 import sys
+import time
 
 GUEST_IP = bytes([10, 0, 2, 15])
 PEER_IP  = bytes([10, 0, 2, 2])
@@ -242,6 +245,142 @@ if f:
     ip, u = split(f)
     ok = udp_ok(ip, u) and f[0:6] == BROADCAST and u[8:] == b"everyone"
 check("guest: udp broadcast", ok)
+
+# TCP, scripted: the guest connects to 10.0.2.2:6000
+
+F, S, R, P, A = 1, 2, 4, 8, 16
+
+
+def tcp_seg(dport, seq, ack, flags, win=65535, data=b"", opts=b"", sport=6000):
+    h = struct.pack("!HHIIBBHHH", sport, dport, seq & 0xffffffff, ack & 0xffffffff,
+                    ((20 + len(opts)) // 4) << 4, flags, win, 0, 0) + opts + data
+    pseudo = PEER_IP + GUEST_IP + struct.pack("!BBH", 0, 6, len(h))
+    return h[:16] + struct.pack("!H", checksum(pseudo + h)) + h[18:]
+
+
+def tcp_send(dport, seq, ack, flags, win=65535, data=b"", opts=b"", sport=6000):
+    send(ipv4(guest_mac, GUEST_IP, 6, tcp_seg(dport, seq, ack, flags, win, data, opts, sport)))
+
+
+class Seg:
+    pass
+
+
+def guest_tcp(port=6000, timeout=3.0, data=False):
+    """the guest's next segment to `port' (with data, if `data')"""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        f = receive(guest_ipv4(6), tries=1)
+        if not f:
+            continue
+        ip, t = split(f)
+        pseudo = ip[12:20] + struct.pack("!BBH", 0, 6, len(t))
+        sp, dp, seq, ack, off, fl, win = struct.unpack("!HHIIBBH", t[:16])
+        if dp != port or checksum(pseudo + t) != 0:
+            continue
+        s = Seg()
+        hl = (off >> 4) * 4
+        s.sport, s.seq, s.ack, s.flags, s.win = sp, seq, ack, fl, win
+        s.opts, s.data, s.t = t[20:hl], t[hl:], time.time()
+        if data and not s.data:
+            continue
+        return s
+    return None
+
+
+def mss_of(opts):
+    i = 0
+    while i < len(opts) and opts[i] != 0:
+        if opts[i] == 1:
+            i += 1
+            continue
+        if opts[i] == 2 and opts[i + 1] == 4:
+            return struct.unpack("!H", opts[i + 2:i + 4])[0]
+        i += max(2, opts[i + 1])
+    return None
+
+
+sock.settimeout(0.5)
+OUT = bytes((i * 7) & 0xff for i in range(6500))
+got = {}
+
+syn = guest_tcp(timeout=30)
+check("tcp: the guest's SYN", syn is not None and syn.flags == S)
+if syn:
+    check("tcp: the SYN's MSS", mss_of(syn.opts) == 1460, str(mss_of(syn.opts)))
+    G, gport = syn.seq, syn.sport
+
+    # not answered: it comes again
+    syn2 = guest_tcp(timeout=4)
+    check("tcp: SYN retransmitted", syn2 is not None and syn2.flags == S and syn2.seq == G and
+          syn2.t - syn.t >= 0.8)
+
+    Y = 1000000
+    tcp_send(gport, Y, G + 1, S | A, opts=b"\x02\x04\x03\xe8")    # MSS 1000
+    a = guest_tcp()
+    check("tcp: the handshake's ACK", a is not None and a.ack == Y + 1 and a.seq == G + 1)
+
+    # the second half first
+    tcp_send(gport, Y + 101, G + 1, A | P, data=bytes(range(100, 200)))
+    a = guest_tcp()
+    check("tcp: out of order: a duplicate ACK", a is not None and a.ack == Y + 1)
+    tcp_send(gport, Y + 1, G + 1, A | P, data=bytes(range(100)))
+    a = guest_tcp()
+    check("tcp: out of order: both acked", a is not None and a.ack == Y + 201)
+
+    def take(s):
+        if s:
+            got[s.seq - G - 1] = s.data
+        return s
+
+    # its initial window: 4 segments of our MSS
+    segs = [take(guest_tcp(data=True)) for _ in range(4)]
+    check("tcp: the initial window, 4 segments of 1000",
+          all(s and len(s.data) == 1000 for s in segs) and
+          [s.seq - G - 1 for s in segs if s] == [0, 1000, 2000, 3000])
+
+    # the first lost: three duplicate ACKs
+    for _ in range(3):
+        tcp_send(gport, Y + 201, G + 1, A)
+    r = take(guest_tcp(data=True))
+    check("tcp: fast retransmit", r is not None and r.seq == G + 1 and len(r.data) == 1000)
+
+    # all acked: after recovery, ssthresh (2000)
+    tcp_send(gport, Y + 201, G + 4001, A)
+    n1, n2 = take(guest_tcp(data=True)), take(guest_tcp(data=True))
+    check("tcp: after recovery, two segments", n1 is not None and n2 is not None and
+          n1.seq == G + 4001 and n2.seq == G + 5001)
+
+    # the second of them lost: it comes again when the timer goes off
+    sent_at = time.time()
+    tcp_send(gport, Y + 201, G + 5001, A)
+    r = take(guest_tcp(data=True, timeout=5))
+    check("tcp: retransmitted on timeout", r is not None and r.seq == G + 5001 and
+          r.t - sent_at >= 0.8, str(r and (r.seq - G - 1, r.t - sent_at)))
+
+    # acked, and the window closed: probed
+    tcp_send(gport, Y + 201, G + 6001, A, win=0)
+    p = guest_tcp(data=True, timeout=8)
+    check("tcp: zero window probe", p is not None and p.seq == G + 6001 and len(p.data) == 1)
+
+    # open again: the rest
+    tcp_send(gport, Y + 201, G + 6001, A, win=65535)
+    deadline = time.time() + 5
+    while time.time() < deadline and sum(len(d) for o, d in got.items() if o >= 6000) < 500:
+        take(guest_tcp(data=True, timeout=1))
+    data = bytearray(6500)
+    for off, d in got.items():
+        data[off:off + len(d)] = d
+    check("tcp: the window opened: all 6500 bytes, right", bytes(data) == OUT)
+    tcp_send(gport, Y + 201, G + 6501, A)
+
+    # reset (the guest checks ECONNRESET)
+    tcp_send(gport, Y + 201, 0, R)
+
+# a SYN to a port nobody listens on: RST
+tcp_send(6999, 5000, 0, S, sport=6001)
+r = guest_tcp(port=6001)
+check("tcp: SYN to a closed port: RST", r is not None and r.flags == R | A and r.ack == 5001)
 
 print("net: done, fails=%d" % fails)
 sys.exit(1 if fails else 0)

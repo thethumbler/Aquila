@@ -68,8 +68,8 @@ which sets the address, the default route and `/etc/resolv.conf`, and
 renews the lease. On a disk, the `dhcp` service does it at every boot
 once enabled: `ln -s /etc/sv/dhcp /etc/service/`.
 
-Programs have UDP sockets and ping sockets (`SOCK_DGRAM`,
-`IPPROTO_ICMP`). TCP is not there yet.
+Programs have TCP (`SOCK_STREAM`), UDP and ping sockets (`SOCK_DGRAM`,
+`IPPROTO_ICMP`).
 
 ### i386
 
@@ -153,7 +153,9 @@ from source, see [tests/](tests/README.md).
 #### Network
 - [X] IPv4, ARP, ICMP (echo, unreachable), loopback
 - [X] UDP and ping sockets
-- [ ] TCP
+- [X] TCP     (RFC 9293: retransmission, NewReno congestion control,
+              delayed ACKs, Nagle, keepalive; no window scaling, SACK or
+              timestamps yet)
 - [X] DHCP    (sdhcp, contrib)
 
 #### System

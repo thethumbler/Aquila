@@ -11,7 +11,7 @@
 # QEMU uses KVM when /dev/kvm can be used, KVM=0 in the environment turns
 # it off.
 #
-# tests: ata cpu syscalls memory net ext2 libc system disk tcc (default: all)
+# tests: ata cpu syscalls memory net tcp ext2 libc system disk tcc (default: all)
 #
 # Requires gcc with 32-bit support, ld, cpio and qemu-system-i386 (or
 # qemu-system-x86_64). The ext2
@@ -26,7 +26,7 @@ set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 TESTS=$ROOT/tests
 
-ALL_TESTS="ata cpu syscalls memory net ext2 libc system disk tcc"
+ALL_TESTS="ata cpu syscalls memory net tcp ext2 libc system disk tcc"
 
 ARCH=x86_64
 build=1
@@ -316,6 +316,64 @@ test_net()
     if ! grep -q 'net: done' "$OUT/net/peer.log"; then
         echo "the peer did not finish ($pass passed, $fail failed):"
         tail -3 "$OUT/net/peer.log" | sed 's/^/    /'
+        return 1
+    fi
+
+    if ! grep -a -q 'aqtest: done' "$log"; then
+        echo "the guest did not finish ($pass passed, $fail failed):"
+        tail -3 "$log" | sed 's/^/    /'
+        return 1
+    fi
+
+    echo "$pass passed, $fail failed"
+    [ "$fail" = 0 ]
+}
+
+# TCP against another one: QEMU's user network has its own; the guest
+# (tests/tcp/init.c) and tests/tcp/host.py exchange megabytes through it
+# (guestfwd and hostfwd), both report their checks
+test_tcp()
+{
+    local log=$OUT/tcp/serial.log
+    local hport=$((20000 + RANDOM % 20000)) gport=$((40000 + RANDOM % 20000))
+
+    mkdir -p "$OUT/tcp"
+    rm -f "$log"
+
+    python3 "$TESTS/tcp/host.py" $hport $gport > "$OUT/tcp/host.log" 2>&1 &
+    local host=$!
+
+    # QEMU connects to its listener when it starts (guestfwd)
+    for _ in $(seq 100); do
+        grep -q listening "$OUT/tcp/host.log" 2>/dev/null && break
+        sleep 0.1
+    done
+
+    $QEMU $ACCEL -kernel "$KERNEL" -initrd "$OUT/tcp/initrd.img" -m 256 -display none \
+        -no-reboot -append "ip=10.0.2.15/24:10.0.2.2" -serial file:"$log" \
+        -netdev user,id=n0,hostfwd=tcp:127.0.0.1:$gport-:7000,guestfwd=tcp:10.0.2.100:7001-tcp:127.0.0.1:$hport \
+        -device e1000,netdev=n0 >/dev/null 2>&1 &
+    local pid=$!
+
+    for _ in $(seq 1800); do
+        grep -a -q 'aqtest: done\|Bailing out' "$log" 2>/dev/null && ! kill -0 $host 2>/dev/null && break
+        sleep 0.1
+    done
+
+    kill $pid $host 2>/dev/null
+    wait $pid $host 2>/dev/null
+    qemu_exited=0
+
+    log_problems "$log" && return 1
+
+    local pass fail
+    pass=$(cat "$OUT/tcp/host.log" "$log" | grep -a -c '^PASS')
+    fail=$(cat "$OUT/tcp/host.log" "$log" | grep -a -c '^FAIL')
+    cat "$OUT/tcp/host.log" "$log" | grep -a '^FAIL' | sed 's/^/    /'
+
+    if ! grep -q 'tcp: done' "$OUT/tcp/host.log"; then
+        echo "the host did not finish ($pass passed, $fail failed):"
+        tail -3 "$OUT/tcp/host.log" | sed 's/^/    /'
         return 1
     fi
 
@@ -682,7 +740,7 @@ needed=" $selected "
 case "$needed" in *" ata "*) needed="$needed cpu " ;; esac
 [ -x "$CROSS_CC" ] || needed=${needed/ libc / }
 
-for name in cpu syscalls memory net ext2 libc; do
+for name in cpu syscalls memory net tcp ext2 libc; do
     case "$needed" in
         *" $name "*)
             mkdir -p "$OUT/$name"
