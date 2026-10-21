@@ -22,6 +22,26 @@ diff -ruN a/dix/main.c b/dix/main.c
  #include "dpmsproc.h"
  #endif
  
+diff -ruN a/kdrive/linux/keyboard.c b/kdrive/linux/keyboard.c
+--- a/kdrive/linux/keyboard.c
++++ b/kdrive/linux/keyboard.c
+@@ -354,6 +354,16 @@
+ 		if (minKeyCode == NR_KEYS)
+ 			continue;
+ 
++		/* the Windows keys and Menu: no key on the console (K_HOLE) */
++		if (k[0] == NoSymbol) {
++			if (i == 125)
++				k[0] = XK_Super_L;
++			else if (i == 126)
++				k[0] = XK_Super_R;
++			else if (i == 127)
++				k[0] = XK_Menu;
++		}
++
+ 		if (k[3] == k[2])
+ 			k[3] = NoSymbol;
+ 		if (k[2] == k[1])
 diff -ruN a/kdrive/linux/linux.c b/kdrive/linux/linux.c
 --- a/kdrive/linux/linux.c
 +++ b/kdrive/linux/linux.c
@@ -98,6 +118,22 @@ diff -ruN a/kdrive/src/kinput.c b/kdrive/src/kinput.c
  static void KdNonBlockFd(int fd)
  {
  	int flags;
+@@ -494,11 +499,12 @@
+ 	{XK_Meta_L, Mod1Mask},
+ 	{XK_Meta_R, Mod1Mask},
+ 	{XK_Num_Lock, Mod2Mask},
+-	{XK_Super_L, Mod3Mask},
+-	{XK_Super_R, Mod3Mask},
++	/* as Xorg's: Super is Mod4 (dwm's Mod4Mask), Mode_switch Mod5 */
++	{XK_Super_L, Mod4Mask},
++	{XK_Super_R, Mod4Mask},
+ 	{XK_Hyper_L, Mod3Mask},
+ 	{XK_Hyper_R, Mod3Mask},
+-	{XK_Mode_switch, Mod4Mask},
++	{XK_Mode_switch, Mod5Mask},
+ };
+ 
+ #define NUM_SYM_MODS (sizeof(kdKeySymMods) / sizeof(kdKeySymMods[0]))
 diff -ruN a/mi/miinitext.c b/mi/miinitext.c
 --- a/mi/miinitext.c
 +++ b/mi/miinitext.c
