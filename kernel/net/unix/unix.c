@@ -8,7 +8,9 @@
 
 #include <aquila/fcntl.h>
 
-#define SOCKBUF 8192
+/* what a connection holds each way: X servers send replies of hundreds of
+ * KB (font metrics), each fill of the ring is a switch between processes */
+#define SOCKBUF 65536
 
 MALLOC_DEFINE(M_SOCKET, "socket", "socket struct");
 MALLOC_DEFINE(M_UN_SOCKET, "unix socket", "unix socket struct");

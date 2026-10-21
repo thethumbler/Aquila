@@ -24,6 +24,7 @@
 #include <aquila/fcntl.h>
 #include <aquila/mman.h>
 #include <aquila/time.h>
+#include <aquila/ioctl.h>
 #include <aquila/wait.h>
 #include <aquila/poll.h>
 
@@ -735,6 +736,22 @@ static void sys_ioctl(int fd, int request, void *argp)
 
     if (!file) {
         arch_syscall_return(curthread, -EBADF);
+        return;
+    }
+
+    /* the descriptor's own, whatever it is: non-blocking (as F_SETFL) */
+    if (request == FIONBIO) {
+        if (uaccess_check(argp, sizeof(int))) {
+            arch_syscall_return(curthread, -EFAULT);
+            return;
+        }
+
+        if (*(int *) argp)
+            file->flags |= O_NONBLOCK;
+        else
+            file->flags &= ~O_NONBLOCK;
+
+        arch_syscall_return(curthread, 0);
         return;
     }
 

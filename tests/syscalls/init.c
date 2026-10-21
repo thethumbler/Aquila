@@ -591,6 +591,15 @@ void aq_main(void)
         }
         int conn = SC(SYS_accept, ls, 0, 0);
 
+        /* FIONBIO, on a socket as on anything */
+        int on = 1;
+        check("FIONBIO", SC(SYS_ioctl, conn, FIONBIO, &on), 0);
+        check("FIONBIO sets O_NONBLOCK", (SC(SYS_fcntl, conn, F_GETFL, 0) & O_NONBLOCK) != 0, 1);
+        on = 0;
+        SC(SYS_ioctl, conn, FIONBIO, &on);
+        check("FIONBIO clears O_NONBLOCK", SC(SYS_fcntl, conn, F_GETFL, 0) & O_NONBLOCK, 0);
+        check("FIONBIO kaddr", SC(SYS_ioctl, conn, FIONBIO, KADDR), -EFAULT);
+
         /* non-blocking: nothing to read, no connection to accept */
         char nb;
         SC(SYS_fcntl, conn, F_SETFL, O_NONBLOCK);
