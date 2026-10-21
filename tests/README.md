@@ -32,6 +32,7 @@ and `fakeroot` (skipped if missing). Build output goes to
 | `ata`      | a disk on the first ATA channel is detected, over several boots |
 | `cpu`      | DF and segment registers are sanitized on kernel entry, user exceptions and port I/O raise signals, SSE works, entry stack alignment |
 | `syscalls` | kernel addresses are rejected (`EFAULT`), descriptor and signal checks, wait, threads, pipes, unix sockets, bad ELF files, descriptor flags and close-on-exec, symlinks, signal masks, process groups, copy-on-write after fork, the `*at()` calls, links, rename, permissions and attributes, `SIGPIPE`, `nanosleep`, clocks and `times` |
+| `memory`   | with 6 GiB of RAM (3 GiB on i386), 4.5 GiB (2 GiB) of anonymous memory filled, every page with where it is, and read back: memory above 4 GiB, and the kernel's small objects (slabs) for millions of pages |
 | `ext2`     | writes through singly and doubly indirect blocks and appends on an ext2 image, then `e2fsck` and a byte compare on the host |
 | `libc`     | errno and signal numbers, stdio, directories, fork/wait, crypt, passwd/shadow and group, truncate, signal masks, the `*at()` calls, `realpath`, `ttyname`, sleeping, `SIGPIPE` and C99 `printf` formats through newlib (needs `make toolchain`) |
 | `system`   | the initrd built from source (with contrib/, without ports/): logins on the serial console, then dash runs commands, pipelines, `$(...)`, a long line, `^C`, `/dev/tty` and sbase tools (needs `make toolchain` and `make`) |

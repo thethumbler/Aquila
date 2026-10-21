@@ -11,7 +11,7 @@
 # QEMU uses KVM when /dev/kvm can be used, KVM=0 in the environment turns
 # it off.
 #
-# tests: ata cpu syscalls ext2 libc system disk tcc (default: all)
+# tests: ata cpu syscalls memory ext2 libc system disk tcc (default: all)
 #
 # Requires gcc with 32-bit support, ld, cpio and qemu-system-i386 (or
 # qemu-system-x86_64). The ext2
@@ -26,7 +26,7 @@ set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 TESTS=$ROOT/tests
 
-ALL_TESTS="ata cpu syscalls ext2 libc system disk tcc"
+ALL_TESTS="ata cpu syscalls memory ext2 libc system disk tcc"
 
 ARCH=x86_64
 build=1
@@ -47,11 +47,16 @@ case $ARCH in
         OUT=$TESTS/out
         QEMU=qemu-system-i386
         HOST_CC_ARCH=-m32
+        # the memory test: more than the old page tracking's 3 GiB can't
+        # be had (the rest is above 4 GiB), 2 GiB of it filled
+        MEMORY_TEST_RAM=3G MEMORY_TEST_FILL=2048
         CROSS_CC=$ROOT/build/toolchain/bin/i686-aquila-gcc ;;
     x86_64)
         OUT=$TESTS/out/x86_64
         QEMU=qemu-system-x86_64
         HOST_CC_ARCH=-m64
+        # more than 4 GiB filled: pages above 4 GiB are used
+        MEMORY_TEST_RAM=6G MEMORY_TEST_FILL=4608
         CROSS_CC=$ROOT/build/toolchain/bin/x86_64-aquila-gcc ;;
     *)
         echo "error: unknown architecture: $ARCH" >&2
@@ -134,6 +139,9 @@ build_initrd()
         [ -f "$root/etc/shadow" ] && chmod 600 "$root/etc/shadow"
     fi
 
+    # how much the memory test fills, in MiB
+    [ "$name" = memory ] && echo "$MEMORY_TEST_FILL" > "$root/size"
+
     # the kernel's initramfs reads old binary cpio archives
     (cd "$root" && find . | cpio -o -H bin -R 0:0 --quiet) > "$OUT/$name/initrd.img"
 }
@@ -150,7 +158,7 @@ run_qemu()
     shift 3
 
     rm -f "$log"
-    $QEMU $ACCEL -kernel "$KERNEL" -m 256 -display none -no-reboot \
+    $QEMU $ACCEL -kernel "$KERNEL" -m "${QEMU_MEM:-256}" -display none -no-reboot \
         -serial file:"$log" "$@" >/dev/null 2>&1 &
 
     local pid=$! ticks=0
@@ -254,6 +262,14 @@ test_syscalls()
 {
     run_qemu "$OUT/syscalls/serial.log" 60 'aqtest: done' -initrd "$OUT/syscalls/initrd.img"
     aqtest_result "$OUT/syscalls/serial.log"
+}
+
+# much memory used: pages above 4 GiB on x86-64
+test_memory()
+{
+    QEMU_MEM=$MEMORY_TEST_RAM run_qemu "$OUT/memory/serial.log" 180 'aqtest: done' \
+        -initrd "$OUT/memory/initrd.img"
+    aqtest_result "$OUT/memory/serial.log"
 }
 
 test_ext2()
@@ -605,7 +621,7 @@ needed=" $selected "
 case "$needed" in *" ata "*) needed="$needed cpu " ;; esac
 [ -x "$CROSS_CC" ] || needed=${needed/ libc / }
 
-for name in cpu syscalls ext2 libc; do
+for name in cpu syscalls memory ext2 libc; do
     case "$needed" in
         *" $name "*)
             mkdir -p "$OUT/$name"
