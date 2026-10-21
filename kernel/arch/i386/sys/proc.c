@@ -19,6 +19,7 @@ void arch_proc_init(struct proc *proc)
 
     uintptr_t kstack_base = (uintptr_t) kmalloc(KERN_STACK_SIZE, &M_KERN_STACK, 0);
 
+    arch->kstack_base = kstack_base;
     arch->kstack = kstack_base + KERN_STACK_SIZE;   /* Kernel stack */
 #if ARCH_BITS==32
     arch->eip    = proc->entry;

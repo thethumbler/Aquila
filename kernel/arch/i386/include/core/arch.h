@@ -8,7 +8,9 @@
 #define X86_CS      (0x18 | 3)
 
 struct x86_thread {
-    uintptr_t   kstack; /* Kernel stack */
+    uintptr_t   kstack; /* Kernel stack, lowered while a signal handler runs
+                           (the interrupted context is kept on top) */
+    uintptr_t   kstack_base;    /* where it was allocated */
 
 #if ARCH_BITS==32
     uintptr_t   eip;

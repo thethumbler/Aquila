@@ -30,14 +30,15 @@ int arch_proc_fork(struct thread *thread, struct proc *fork)
         goto free_resources;
     }
 
-    ftarch->kstack = fkstack_base + KERN_STACK_SIZE;
+    /* the same stack (in a signal handler, the context it interrupted is
+     * on top, kstack below it) */
+    ftarch->kstack_base = fkstack_base;
+    ftarch->kstack = fkstack_base + (ptarch->kstack - ptarch->kstack_base);
+    memcpy((void *) fkstack_base, (void *) ptarch->kstack_base, KERN_STACK_SIZE);
 
-    /* Copy registers */
-    struct x86_regs *fork_regs = (void *) (ftarch->kstack - (ptarch->kstack - (uintptr_t) ptarch->regs));
+    /* the registers of the fork system call, at the same place */
+    struct x86_regs *fork_regs = (void *) (fkstack_base + ((uintptr_t) ptarch->regs - ptarch->kstack_base));
     ftarch->regs = fork_regs;
-
-    /* Copy kstack */
-    memcpy((void *) fkstack_base, (void *) (ptarch->kstack - KERN_STACK_SIZE), KERN_STACK_SIZE);
 
     extern void x86_fork_return();
 #if ARCH_BITS==32

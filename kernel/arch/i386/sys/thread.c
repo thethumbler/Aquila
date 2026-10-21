@@ -118,6 +118,7 @@ void arch_thread_create(struct thread *thread, uintptr_t stack, uintptr_t entry,
         return;
     }
 
+    arch->kstack_base = (uintptr_t) kstack;
     arch->kstack = (uintptr_t) kstack + KERN_STACK_SIZE;
 
     /* dummy return address */
@@ -165,8 +166,8 @@ void arch_thread_kill(struct thread *thread)
         x86_kernel_stack_set(esp);
     }
 
-    if (arch->kstack)
-        kfree((void *) (arch->kstack - KERN_STACK_SIZE));
+    if (arch->kstack_base)
+        kfree((void *) arch->kstack_base);
 
     if (arch->fpu_context)
         kfree(arch->fpu_context);
