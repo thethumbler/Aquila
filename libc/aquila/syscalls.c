@@ -906,9 +906,13 @@ char *getlogin(void)
 
 int getentropy(void *buf, size_t len)
 {
-    /* no kernel random source yet */
-    errno = ENOSYS;
-    return -1;
+    /* at most 256 bytes, as everywhere */
+    if (len > 256) {
+        errno = EIO;
+        return -1;
+    }
+
+    return SYSCALL(SYS_getrandom, buf, len, 0) < 0 ? -1 : 0;
 }
 
 int ftruncate(int fildes, off_t len)

@@ -5,7 +5,8 @@
  * checks that what programs see through libc matches the kernel: errno
  * values, signal numbers, struct stat, and a few library functions that
  * depend on the port (stdio, getline, opendir, pipes, fork/wait, sockets,
- * vectored I/O, the interval timer, addresses).
+ * vectored I/O, the interval timer, addresses, pseudo-terminals, random
+ * bytes).
  *
  * Reports in the aqtest format on the serial port.
  */
@@ -20,6 +21,7 @@
 #include <limits.h>
 #include <poll.h>
 #include <pthread.h>
+#include <pty.h>
 #include <pwd.h>
 #include <shadow.h>
 #include <setjmp.h>
@@ -281,6 +283,26 @@ static void test_pthread(void)
     close(ptm);
     errno = 0;
     check("grantpt not a master -> EINVAL", grantpt(0) == -1 ? errno : 0, EINVAL);
+
+    /* openpty(), as st uses it, with the window size set */
+    int opm = -1, ops = -1;
+    char opname[32] = "";
+    struct winsize ows = {24, 80, 0, 0}, gws = {0};
+    check("openpty", openpty(&opm, &ops, opname, NULL, &ows), 0);
+    check("openpty name", !strncmp(opname, "/dev/pts/", 9), 1);
+    check("openpty winsize", ioctl(ops, TIOCGWINSZ, &gws) == 0 && gws.ws_row == 24 && gws.ws_col == 80, 1);
+    check("openpty slave", write(opm, "y\n", 2) == 2 && read(ops, &ptc, 1) == 1 && ptc == 'y', 1);
+    close(ops);
+    close(opm);
+
+    /* getentropy(): arc4random() kills the process if it fails */
+    unsigned char ent[32] = {0}, ent2[32] = {0};
+    check("getentropy", getentropy(ent, sizeof(ent)), 0);
+    getentropy(ent2, sizeof(ent2));
+    check("getentropy differs", memcmp(ent, ent2, sizeof(ent)) != 0, 1);
+    errno = 0;
+    check("getentropy > 256 -> EIO", getentropy(ent, 257) == -1 ? errno : 0, EIO);
+    check("arc4random", arc4random() != arc4random() || arc4random() != arc4random(), 1);
 
     /* setpgrp(): a group of its own */
     pid_t pg = fork();

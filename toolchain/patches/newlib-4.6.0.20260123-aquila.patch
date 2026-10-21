@@ -238,7 +238,7 @@ diff -ruN a/newlib/libc/include/sys/signal.h b/newlib/libc/include/sys/signal.h
  } siginfo_t;
  #endif /* defined(_POSIX_REALTIME_SIGNALS) || __POSIX_VISIBLE >= 199309 */
  
-@@ -113,6 +116,27 @@
+@@ -113,6 +116,29 @@
  #define sa_sigaction  _signal_handlers._sigaction
  #endif
  
@@ -247,6 +247,8 @@ diff -ruN a/newlib/libc/include/sys/signal.h b/newlib/libc/include/sys/signal.h
 +#define SA_NOCLDSTOP 0x1   /* Do not generate SIGCHLD when children stop */
 +#define SA_SIGINFO   0x2   /* The handler is sa_sigaction (aquila passes */
 +                           /*   the siginfo to every handler) */
++#define SA_NOCLDWAIT 0x4   /* Children don't stay zombies */
++#define SA_RESTART   0x8   /* A call the signal interrupts is restarted */
 +
 +typedef void (*_sig_func_ptr)(int);
 +
