@@ -15,6 +15,7 @@ libc_a_SOURCES += \
 	%D%/pthread.c \
 	%D%/pty.c \
 	%D%/realpath.c \
+	%D%/resolv.c \
 	%D%/shadow.c \
 	%D%/shm.c \
 	%D%/syscalls.c \

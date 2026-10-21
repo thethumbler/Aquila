@@ -70,7 +70,9 @@ renews the lease. On a disk, the `dhcp` service does it at every boot
 once enabled: `ln -s /etc/sv/dhcp /etc/service/`.
 
 Programs have TCP (`SOCK_STREAM`), UDP and ping sockets (`SOCK_DGRAM`,
-`IPPROTO_ICMP`).
+`IPPROTO_ICMP`). Host names are looked up in `/etc/hosts`, then with
+the DNS servers `/etc/resolv.conf` names (DHCP's), e.g.
+`nc example.com 80`.
 
 ### i386
 
@@ -158,6 +160,8 @@ from source, see [tests/](tests/README.md).
               delayed ACKs, Nagle, keepalive; no window scaling, SACK or
               timestamps yet)
 - [X] DHCP    (sdhcp, contrib)
+- [X] DNS     (the C library's resolver: /etc/hosts, then DNS over UDP,
+              TCP for long answers)
 
 #### System
 - [X] newlib 4.6 C library

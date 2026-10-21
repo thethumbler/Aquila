@@ -1,0 +1,3 @@
+# host names and their addresses, looked up before the DNS
+127.0.0.1	localhost
+127.0.1.1	aquila

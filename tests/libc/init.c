@@ -120,11 +120,15 @@ static void test_x_support(void)
     struct sockaddr_in *sin = res ? (struct sockaddr_in *) res->ai_addr : NULL;
     check("getaddrinfo address", sin && sin->sin_addr.s_addr == htonl(0x0a000001) && sin->sin_port == htons(6000), 1);
     freeaddrinfo(res);
-    check("getaddrinfo name", getaddrinfo("example.org", NULL, NULL, &res), EAI_NONAME);
-    check("getaddrinfo bad service", getaddrinfo("1.2.3.4", "x11", NULL, &res), EAI_SERVICE);
+    /* no DNS server answers yet (test_resolver() has one): try again */
+    check("getaddrinfo name, no server", getaddrinfo("example.org", NULL, NULL, &res), EAI_AGAIN);
+    check("getaddrinfo bad service", getaddrinfo("1.2.3.4", "no-such-service", NULL, &res), EAI_SERVICE);
+    check("getaddrinfo x11 (/etc/services)", getaddrinfo("1.2.3.4", "x11", NULL, &res), 0);
+    freeaddrinfo(res);
     struct hostent *he = gethostbyname("10.0.0.2");
     check("gethostbyname numeric", he && he->h_length == 4 && !strcmp(he->h_name, "10.0.0.2"), 1);
-    check("gethostbyname name", gethostbyname("localhost") == NULL && h_errno == HOST_NOT_FOUND, 1);
+    he = gethostbyname("localhost");
+    check("gethostbyname localhost", he && ((struct in_addr *) he->h_addr_list[0])->s_addr == htonl(0x7f000001), 1);
 
     /* socket calls on a Unix socket */
     int s = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -276,6 +280,267 @@ static void test_tcp(void)
     close(c);
     close(s);
     close(l);
+}
+
+/*
+ * The resolver, against a DNS server of ours: a child on 127.0.0.1:53,
+ * UDP and TCP (/etc/resolv.conf says so, rootfs/)
+ */
+
+static int dns_put_name(unsigned char *p, const char *name)
+{
+    int n = 0;
+
+    while (*name) {
+        const char *dot = strchr(name, '.');
+        int len = dot ? dot - name : (int) strlen(name);
+        p[n++] = len;
+        memcpy(p + n, name, len);
+        n += len;
+        name += len + (dot != NULL);
+    }
+
+    p[n++] = 0;
+    return n;
+}
+
+/* an answer for the question in q (qlen bytes); its length */
+static int dns_answer(const unsigned char *q, int qlen, unsigned char *a, int tcp)
+{
+    char name[256];
+    int off = 12, o = 0;
+
+    while (q[off] && off < qlen) {
+        if (o)
+            name[o++] = '.';
+        memcpy(name + o, q + off + 1, q[off]);
+        o += q[off];
+        off += q[off] + 1;
+    }
+
+    name[o] = '\0';
+    int qtype = q[off + 2];
+    int qend = off + 5;
+
+    memcpy(a, q, qend);
+    a[2] = 0x81;            /* a response, recursion desired */
+    a[3] = 0x80;            /* recursion available */
+    a[6] = a[7] = 0;
+
+    int n = qend, an = 0;
+
+    /* an answer for the question's name (a pointer to it, offset 12) */
+#define RR(type, len) do { \
+        a[n++] = 0xc0; a[n++] = 12; a[n++] = 0; a[n++] = (type); a[n++] = 0; a[n++] = 1; \
+        a[n++] = 0; a[n++] = 0; a[n++] = 0; a[n++] = 60; a[n++] = 0; a[n++] = (len); an++; \
+    } while (0)
+#define A(x, y, z, w) do { RR(1, 4); a[n++] = x; a[n++] = y; a[n++] = z; a[n++] = w; } while (0)
+
+    if (qtype == 1 && !strcmp(name, "example.test")) {
+        A(192, 0, 2, 7);
+        A(192, 0, 2, 8);
+    } else if (qtype == 1 && !strcmp(name, "alias.test")) {
+        unsigned char target[64];
+        int tlen = dns_put_name(target, "example.test");
+        RR(5, tlen);
+        memcpy(a + n, target, tlen);
+        n += tlen;
+        /* example.test's A, its name in full */
+        n += dns_put_name(a + n, "example.test");
+        a[n++] = 0; a[n++] = 1; a[n++] = 0; a[n++] = 1;
+        a[n++] = 0; a[n++] = 0; a[n++] = 0; a[n++] = 60; a[n++] = 0; a[n++] = 4;
+        a[n++] = 192; a[n++] = 0; a[n++] = 2; a[n++] = 7;
+        an++;
+    } else if (qtype == 1 && !strcmp(name, "short.test")) {
+        A(192, 0, 2, 9);
+    } else if (qtype == 1 && !strcmp(name, "big.test")) {
+        /* too big for UDP, says the server: over TCP */
+        if (!tcp)
+            a[2] |= 0x02;
+        else
+            A(192, 0, 2, 10);
+    } else if (qtype == 12 && !strcmp(name, "7.2.0.192.in-addr.arpa")) {
+        unsigned char target[64];
+        int tlen = dns_put_name(target, "example.test");
+        RR(12, tlen);
+        memcpy(a + n, target, tlen);
+        n += tlen;
+    } else {
+        a[3] |= 3;          /* no such name */
+    }
+
+#undef A
+#undef RR
+
+    a[7] = an;
+    return n;
+}
+
+static void dns_server(void)
+{
+    struct sockaddr_in me = {0};
+    me.sin_family = AF_INET;
+    me.sin_port = htons(53);
+    me.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+    int u = socket(AF_INET, SOCK_DGRAM, 0), t = socket(AF_INET, SOCK_STREAM, 0);
+
+    if (bind(u, (struct sockaddr *) &me, sizeof(me)) || bind(t, (struct sockaddr *) &me, sizeof(me)) ||
+        listen(t, 4))
+        _exit(1);
+
+    /* ready */
+    write(3, "r", 1);
+
+    unsigned char q[512], a[1024];
+
+    for (;;) {
+        struct pollfd pfd[2] = {{u, POLLIN, 0}, {t, POLLIN, 0}};
+        poll(pfd, 2, -1);
+
+        if (pfd[0].revents) {
+            struct sockaddr_in from;
+            socklen_t len = sizeof(from);
+            int n = recvfrom(u, q, sizeof(q), 0, (struct sockaddr *) &from, &len);
+
+            if (n >= 12) {
+                int r = dns_answer(q, n, a, 0);
+                sendto(u, a, r, 0, (struct sockaddr *) &from, len);
+            }
+        }
+
+        if (pfd[1].revents) {
+            int c = accept(t, NULL, NULL);
+            unsigned char hdr[2];
+
+            if (c >= 0 && recv(c, hdr, 2, MSG_WAITALL) == 2) {
+                int n = hdr[0] << 8 | hdr[1];
+
+                if (n <= (int) sizeof(q) && recv(c, q, n, MSG_WAITALL) == n) {
+                    int r = dns_answer(q, n, a, 1);
+                    hdr[0] = r >> 8;
+                    hdr[1] = r & 0xff;
+                    send(c, hdr, 2, 0);
+                    send(c, a, r, 0);
+                }
+            }
+
+            close(c);
+        }
+    }
+}
+
+static int has_addr(struct addrinfo *res, const char *addr)
+{
+    for (; res; res = res->ai_next)
+        if (((struct sockaddr_in *) res->ai_addr)->sin_addr.s_addr == inet_addr(addr))
+            return 1;
+
+    return 0;
+}
+
+static int count_addrs(struct addrinfo *res)
+{
+    int n = 0;
+
+    for (; res; res = res->ai_next)
+        n++;
+
+    return n;
+}
+
+static void test_resolver(void)
+{
+    struct addrinfo hints = {0}, *res = NULL;
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+
+    /* /etc/hosts, no server needed */
+    check("getaddrinfo localhost", getaddrinfo("localhost", "80", &hints, &res), 0);
+    check("getaddrinfo localhost: 127.0.0.1", res && has_addr(res, "127.0.0.1") &&
+          ntohs(((struct sockaddr_in *) res->ai_addr)->sin_port) == 80, 1);
+    freeaddrinfo(res);
+
+    hints.ai_flags = AI_CANONNAME;
+    check("getaddrinfo from /etc/hosts (an alias)", getaddrinfo("filehost", NULL, &hints, &res), 0);
+    check("from /etc/hosts: its address and name", res && has_addr(res, "198.51.100.5") &&
+          res->ai_canonname && !strcmp(res->ai_canonname, "filehost.test"), 1);
+    freeaddrinfo(res);
+    hints.ai_flags = 0;
+
+    /* services */
+    struct servent *se = getservbyname("http", "tcp");
+    check("getservbyname http", se ? ntohs(se->s_port) : -1, 80);
+    se = getservbyport(htons(53), "udp");
+    check("getservbyport 53/udp", se && !strcmp(se->s_name, "domain"), 1);
+    check("getaddrinfo a service's name", getaddrinfo("127.0.0.1", "https", &hints, &res), 0);
+    check("getaddrinfo a service's name: its port", res ? ntohs(((struct sockaddr_in *) res->ai_addr)->sin_port) : -1, 443);
+    freeaddrinfo(res);
+    check("getaddrinfo AI_NUMERICHOST, a name", ({
+        struct addrinfo h = hints; h.ai_flags = AI_NUMERICHOST;
+        getaddrinfo("localhost", NULL, &h, &res); }), EAI_NONAME);
+
+    /* the DNS: our server */
+    int ready[2];
+    pipe(ready);
+    pid_t pid = fork();
+
+    if (!pid) {
+        dup2(ready[1], 3);
+        dns_server();
+        _exit(0);
+    }
+
+    char r;
+    read(ready[0], &r, 1);
+
+    check("dns: getaddrinfo", getaddrinfo("example.test", "80", &hints, &res), 0);
+    check("dns: both addresses", count_addrs(res) == 2 && has_addr(res, "192.0.2.7") &&
+          has_addr(res, "192.0.2.8"), 1);
+    freeaddrinfo(res);
+
+    hints.ai_flags = AI_CANONNAME;
+    check("dns: a CNAME", getaddrinfo("alias.test", NULL, &hints, &res), 0);
+    check("dns: a CNAME: the canonical name, the address", res && has_addr(res, "192.0.2.7") &&
+          res->ai_canonname && !strcmp(res->ai_canonname, "example.test"), 1);
+    freeaddrinfo(res);
+    hints.ai_flags = 0;
+
+    check("dns: the search domain", getaddrinfo("short", NULL, &hints, &res), 0);
+    check("dns: the search domain: short.test", res && has_addr(res, "192.0.2.9"), 1);
+    freeaddrinfo(res);
+
+    check("dns: truncated, over TCP", getaddrinfo("big.test", NULL, &hints, &res), 0);
+    check("dns: over TCP: the address", res && has_addr(res, "192.0.2.10"), 1);
+    freeaddrinfo(res);
+
+    check("dns: no such name", getaddrinfo("nx.test", NULL, &hints, &res), EAI_NONAME);
+
+    struct hostent *he = gethostbyname("example.test");
+    check("dns: gethostbyname", he && he->h_length == 4 && he->h_addr_list[0] && he->h_addr_list[1] &&
+          !he->h_addr_list[2], 1);
+    check("dns: gethostbyname nx", gethostbyname("nx.test") == NULL && h_errno == HOST_NOT_FOUND, 1);
+
+    struct sockaddr_in sin = {0};
+    char host[NI_MAXHOST], serv[NI_MAXSERV];
+    sin.sin_family = AF_INET;
+    sin.sin_port = htons(80);
+    sin.sin_addr.s_addr = inet_addr("192.0.2.7");
+    check("dns: getnameinfo (PTR)", getnameinfo((struct sockaddr *) &sin, sizeof(sin), host, sizeof(host),
+                                                 serv, sizeof(serv), NI_NAMEREQD), 0);
+    check("dns: getnameinfo: the name, the service", !strcmp(host, "example.test") && !strcmp(serv, "http"), 1);
+
+    sin.sin_addr.s_addr = inet_addr("127.0.0.1");
+    getnameinfo((struct sockaddr *) &sin, sizeof(sin), host, sizeof(host), NULL, 0, 0);
+    check("getnameinfo from /etc/hosts", strcmp(host, "localhost"), 0);
+    sin.sin_addr.s_addr = inet_addr("192.0.2.99");
+    check("getnameinfo NI_NAMEREQD, no name", getnameinfo((struct sockaddr *) &sin, sizeof(sin), host,
+                                                          sizeof(host), NULL, 0, NI_NAMEREQD), EAI_NONAME);
+
+    kill(pid, SIGKILL);
+    waitpid(pid, NULL, 0);
+    close(ready[0]);
+    close(ready[1]);
 }
 
 /* warn() and err(): the program's name, the message, errno's */
@@ -923,6 +1188,7 @@ int main(void)
     test_pthread();
     test_tcp();
     test_err();
+    test_resolver();
 
     /* virtual terminals */
     test_vt();

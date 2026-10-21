@@ -2,8 +2,8 @@
 #define _NETDB_H
 
 /*
- * Host and service names. There is no network yet, nor a resolver: names
- * aren't found (HOST_NOT_FOUND, EAI_NONAME), numeric IPv4 addresses are.
+ * Host and service names: IPv4 addresses from /etc/hosts and the DNS
+ * (/etc/resolv.conf's servers), services from /etc/services
  */
 
 #include <netinet/in.h>

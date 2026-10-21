@@ -1,0 +1,27 @@
+# network services: name, port/protocol, aliases
+echo		7/tcp
+echo		7/udp
+discard		9/tcp		sink null
+ftp-data	20/tcp
+ftp		21/tcp
+ssh		22/tcp
+telnet		23/tcp
+smtp		25/tcp		mail
+time		37/tcp
+domain		53/tcp
+domain		53/udp
+bootps		67/udp
+bootpc		68/udp
+tftp		69/udp
+gopher		70/tcp
+finger		79/tcp
+http		80/tcp		www
+pop3		110/tcp
+ntp		123/udp
+imap		143/tcp		imap2
+https		443/tcp
+syslog		514/udp
+submission	587/tcp
+imaps		993/tcp
+pop3s		995/tcp
+x11		6000/tcp
