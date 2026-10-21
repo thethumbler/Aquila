@@ -13,7 +13,7 @@
 # QEMU uses KVM when /dev/kvm can be used, KVM=0 in the environment turns
 # it off.
 #
-# tests: ata cpu syscalls memory clock irq net tcp ext2 libc system disk tcc (default: all)
+# tests: ata cpu syscalls memory kvmem clock irq net tcp ext2 libc system disk tcc (default: all)
 #
 # Requires gcc with 32-bit support, ld, cpio and qemu-system-i386 (or
 # qemu-system-x86_64). The ext2
@@ -28,7 +28,7 @@ set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 TESTS=$ROOT/tests
 
-ALL_TESTS="ata cpu syscalls memory clock irq net tcp ext2 libc system disk tcc"
+ALL_TESTS="ata cpu syscalls memory kvmem clock irq net tcp ext2 libc system disk tcc"
 
 ARCH=x86_64
 build=1
@@ -298,6 +298,37 @@ test_memory()
     QEMU_MEM=$MEMORY_TEST_RAM run_qemu "$OUT/memory/serial.log" 180 'aqtest: done' \
         -initrd "$OUT/memory/initrd.img"
     aqtest_result "$OUT/memory/serial.log"
+}
+
+# the kernel's allocator (mm/kvmem.c): its self-test at boot (kvmem.test),
+# its objects back once processes, programs and threads are gone; a
+# write past an object's end faults, at its guard page (kvmem.guard)
+test_kvmem()
+{
+    local log=$OUT/kvmem/serial.log glog=$OUT/kvmem/guard.log
+
+    run_qemu "$log" 60 'aqtest: done' -initrd "$OUT/kvmem/initrd.img" -append "kvmem.test"
+
+    if ! grep -a -q 'kvmem: self-test passed' "$log"; then
+        echo "self-test: $(grep -a 'kvmem: self-test' "$log" || echo 'not run')"
+        return 1
+    fi
+
+    local result
+    result=$(aqtest_result "$log") || { echo "$result"; return 1; }
+
+    run_qemu "$glog" 30 'Bailing out' -initrd "$OUT/kvmem/initrd.img" -append "kvmem.guard"
+
+    local at
+    at=$(grep -a -o "writing past [^ ]* end, at [0-9a-fA-Fx]*" "$glog" | awk '{print $NF}')
+
+    if [ -z "$at" ] || ! grep -a -q "CR2 = $at\|page fault at $at" "$glog"; then
+        echo "a write past an object's end, at ${at:-?}: no fault there"
+        tail -5 "$glog" | sed 's/^/    /'
+        return 1
+    fi
+
+    echo "self-test passed, ${result%% failed*} failed; a write past an object's end faulted at its guard page"
 }
 
 # the clock, from each source: the TSC (invariant, QEMU's invtsc), the
@@ -916,7 +947,7 @@ needed=" $selected "
 case "$needed" in *" ata "*) needed="$needed cpu " ;; esac
 [ -x "$CROSS_CC" ] || needed=${needed/ libc / }
 
-for name in cpu syscalls memory clock irq net tcp ext2 libc; do
+for name in cpu syscalls memory kvmem clock irq net tcp ext2 libc; do
     case "$needed" in
         *" $name "*)
             mkdir -p "$OUT/$name"
