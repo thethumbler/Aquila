@@ -44,11 +44,11 @@ int ipv4_is_local(uint32_t ip)
     return 0;
 }
 
-/* the address a packet to `dst' through `netif' is from: loopback's is
- * the one it's sent to */
+/* the address a packet to `dst' through `netif' is from: to one of ours
+ * (127/8 too), that one */
 uint32_t ipv4_source(struct netif *netif, uint32_t dst)
 {
-    return is_loopback(dst) ? dst : netif->ip;
+    return ipv4_is_local(dst) ? dst : netif->ip;
 }
 
 void ipv4_input(struct netif *netif, struct netbuf *nb, const uint8_t src_mac[6])
@@ -71,8 +71,8 @@ void ipv4_input(struct netif *netif, struct netbuf *nb, const uint8_t src_mac[6]
     if (ntohs(ih->frag) & 0x3fff)   /* more fragments, or an offset */
         goto drop;
 
-    /* the sender's hardware address, if it is on the link */
-    if (on_link(netif, ih->src))
+    /* the sender's hardware address, if it is on the link (lo has none) */
+    if (!(netif->flags & NETIF_LOOPBACK) && on_link(netif, ih->src))
         arp_update(netif, ih->src, src_mac);
 
     /* the payload: the header off (it stays before it, for ICMP errors),
@@ -111,6 +111,13 @@ struct netif *ipv4_route(uint32_t dst)
         if (!(netif->flags & NETIF_UP))
             continue;
 
+        /* lo: 127/8, nothing else */
+        if (netif->flags & NETIF_LOOPBACK) {
+            if (is_loopback(dst))
+                return netif;
+            continue;
+        }
+
         /* a broadcast goes from an interface without an address too (a
          * DHCP client's, from 0.0.0.0) */
         if (dst == 0xffffffff)
@@ -119,7 +126,8 @@ struct netif *ipv4_route(uint32_t dst)
         if (!netif->ip)
             continue;
 
-        if (on_link(netif, dst) || dst == 0xffffffff || ipv4_is_local(dst))
+        /* on its link, or its own address */
+        if (on_link(netif, dst) || dst == netif->ip)
             return netif;
 
         if (!gw && netif->gateway)

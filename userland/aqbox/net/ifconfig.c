@@ -35,9 +35,10 @@ static int show(int fd, const char *name)
     short flags = ifr.ifr_flags;
     ioctl(fd, SIOCGIFMTU, &ifr);
 
-    printf("%s: flags=%d<%s%s%s> mtu %d\n", name, flags,
+    printf("%s: flags=%d<%s%s%s%s> mtu %d\n", name, flags,
            flags & IFF_UP ? "UP," : "",
            flags & IFF_BROADCAST ? "BROADCAST," : "",
+           flags & IFF_LOOPBACK ? "LOOPBACK," : "",
            flags & IFF_RUNNING ? "RUNNING" : "", ifr.ifr_mtu);
 
     char addr[16], mask[16], bcast[16];
@@ -48,6 +49,11 @@ static int show(int fd, const char *name)
     strcpy(mask, addr_of(&ifr.ifr_netmask));
     ioctl(fd, SIOCGIFBRDADDR, &ifr);
     strcpy(bcast, addr_of(&ifr.ifr_broadaddr));
+
+    if (flags & IFF_LOOPBACK) {
+        printf("        inet %s  netmask %s\n        loop\n", addr, mask);
+        return 0;
+    }
 
     printf("        inet %s  netmask %s  broadcast %s\n", addr, mask, bcast);
 

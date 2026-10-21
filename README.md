@@ -52,8 +52,9 @@ for all targets.
 
 ### Network
 
-The kernel drives Intel 8254x Ethernet cards (e1000), QEMU's default.
-IPv4 is configured with the kernel argument `ip=<address>/<prefix
+The kernel drives Intel 8254x Ethernet cards (e1000), QEMU's default;
+`lo`, the loopback interface (127.0.0.1), is always there. IPv4 is
+configured with the kernel argument `ip=<address>/<prefix
 length>[:<gateway>]`, e.g. `ip=10.0.2.15/24:10.0.2.2` for QEMU's user
 network, or on the running system:
 
@@ -151,7 +152,7 @@ from source, see [tests/](tests/README.md).
 - [X] e1000   (Intel 8254x Ethernet)
 
 #### Network
-- [X] IPv4, ARP, ICMP (echo, unreachable), loopback
+- [X] IPv4, ARP, ICMP (echo, unreachable), the loopback interface (lo)
 - [X] UDP and ping sockets
 - [X] TCP     (RFC 9293: retransmission, NewReno congestion control,
               delayed ACKs, Nagle, keepalive; no window scaling, SACK or

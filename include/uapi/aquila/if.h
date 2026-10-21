@@ -18,6 +18,7 @@
 
 /* the hardware address's family (ifr_hwaddr) */
 #define ARPHRD_ETHER    1
+#define ARPHRD_LOOPBACK 772
 
 struct ifreq {
     char ifr_name[IFNAMSIZ];

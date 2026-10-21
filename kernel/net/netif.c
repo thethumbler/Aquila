@@ -3,6 +3,9 @@
  * the frames they receive (netif_input) and send the frames given to
  * them (transmit)
  *
+ * lo, the loopback interface, is always there (127.0.0.1/8) and first;
+ * the others are eth0, eth1, ..., in the order they are registered.
+ *
  * The frames received wait for the network's thread ([net], a kernel
  * thread), which takes them up the stack, NET_BUDGET at a time before the
  * others run again, and runs the network's callouts (net_callout_set).
@@ -13,6 +16,7 @@
 #include <core/system.h>
 #include <core/arch.h>
 #include <core/kargs.h>
+#include <core/module.h>
 #include <core/panic.h>
 #include <core/printk.h>
 #include <core/string.h>
@@ -27,7 +31,9 @@
 #define NET_BACKLOG     256     /* frames waiting, at most */
 
 struct netif *netifs;
-static int netifs_nr;
+static int ethers_nr;
+
+static struct netif loopback;
 
 static struct thread *net_thread;
 static struct queue net_wait;
@@ -166,9 +172,13 @@ struct netif *netif_find(const char *name)
     return NULL;
 }
 
+static void loopback_init(void);
+
 int netif_register(struct netif *netif)
 {
-    int n = netifs_nr++;
+    /* lo first */
+    if (netif != &loopback && !loopback.transmit)
+        loopback_init();
 
     if (!net_thread) {
         if (kthread_create("net", net_main, NULL, &net_thread))
@@ -177,22 +187,76 @@ int netif_register(struct netif *netif)
         net_thread->urgent = 1;
     }
 
-    snprintf(netif->name, sizeof(netif->name), "eth%d", n);
+    int n = -1;
+
+    if (!netif->name[0]) {
+        n = ethers_nr++;
+        snprintf(netif->name, sizeof(netif->name), "eth%d", n);
+    }
 
     if (!netif->mtu)
         netif->mtu = 1500;
 
-    netif->next = netifs;
-    netifs = netif;
+    /* in the order they come */
+    struct netif **p = &netifs;
+
+    while (*p)
+        p = &(*p)->next;
+
+    netif->next = NULL;
+    *p = netif;
 
     char mac[18];
-    printk("net: %s: %s\n", netif->name, mac_string(netif->mac, mac));
 
+    if (netif->flags & NETIF_LOOPBACK)
+        printk("net: %s: loopback, 127.0.0.1/8\n", netif->name);
+    else
+        printk("net: %s: %s\n", netif->name, mac_string(netif->mac, mac));
+
+    /* ip= is the first Ethernet interface's */
     if (n == 0)
         netif_config(netif);
 
     return 0;
 }
+
+/* lo's frames (a broadcast through it, SO_BINDTODEVICE) come back in;
+ * packets to 127/8 don't get here, ipv4_output() turns them around */
+static int loopback_transmit(struct netif *netif, struct netbuf *nb)
+{
+    struct netbuf *copy = netbuf_alloc();
+
+    if (!copy)
+        return -ENOBUFS;
+
+    memcpy(netbuf_put(copy, nb->len), nb->data, nb->len);
+    netif_input(netif, copy);
+    return 0;
+}
+
+static void loopback_init(void)
+{
+    if (loopback.transmit)
+        return;
+
+    strcpy(loopback.name, "lo");
+    loopback.ip       = htonl(0x7f000001);
+    loopback.netmask  = htonl(0xff000000);
+    loopback.flags    = NETIF_UP | NETIF_RUNNING | NETIF_LOOPBACK;
+    loopback.mtu      = 1500;     /* a netbuf's room, about */
+    loopback.transmit = loopback_transmit;
+
+    netif_register(&loopback);
+}
+
+/* lo is there without a network card too */
+static int loopback_module_init(void)
+{
+    loopback_init();
+    return 0;
+}
+
+MODULE_INIT(loopback, loopback_module_init, NULL)
 
 static void rx_queue(struct netif *netif, struct netbuf *nb)
 {

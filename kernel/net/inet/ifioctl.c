@@ -168,7 +168,7 @@ int inet_ifioctl(int request, void *argp)
 
     switch (request) {
         case SIOCGIFFLAGS:
-            ifr->ifr_flags = IFF_BROADCAST | IFF_MULTICAST |
+            ifr->ifr_flags = (netif->flags & NETIF_LOOPBACK ? IFF_LOOPBACK : IFF_BROADCAST | IFF_MULTICAST) |
                 (netif->flags & NETIF_UP ? IFF_UP : 0) |
                 (netif->flags & NETIF_RUNNING ? IFF_RUNNING : 0);
             return 0;
@@ -213,7 +213,7 @@ int inet_ifioctl(int request, void *argp)
 
         case SIOCGIFHWADDR:
             memset(&ifr->ifr_hwaddr, 0, sizeof(ifr->ifr_hwaddr));
-            ifr->ifr_hwaddr.sa_family = ARPHRD_ETHER;
+            ifr->ifr_hwaddr.sa_family = netif->flags & NETIF_LOOPBACK ? ARPHRD_LOOPBACK : ARPHRD_ETHER;
             memcpy(ifr->ifr_hwaddr.sa_data, netif->mac, 6);
             return 0;
 

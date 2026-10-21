@@ -6,6 +6,7 @@
 
 #define NETIF_UP        0x0001  /* configured, it takes packets */
 #define NETIF_RUNNING   0x0002  /* the link is up */
+#define NETIF_LOOPBACK  0x0004  /* lo: 127/8, what it sends comes back */
 
 /**
  * \ingroup net
@@ -13,7 +14,7 @@
  * frames, and its IPv4 configuration
  */
 struct netif {
-    char name[8];               /* eth0, eth1, ... */
+    char name[8];               /* lo, eth0, eth1, ... (the driver's, or ethN) */
     uint8_t mac[6];
     uint16_t mtu;
     int flags;

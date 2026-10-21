@@ -227,8 +227,17 @@ static void interfaces(void)
     struct ifconf ifc = {sizeof(list), {(char *) list}};
 
     check("SIOCGIFCONF", SC(SYS_ioctl, fd, SIOCGIFCONF, &ifc), 0);
-    check("SIOCGIFCONF: eth0", ifc.ifc_len == sizeof(struct ifreq) &&
-          eq(list[0].ifr_name, "eth0", 5) && ifaddr(&list[0].ifr_addr) == ip4(10, 0, 2, 15), 1);
+    check("SIOCGIFCONF: lo, then eth0", ifc.ifc_len == 2 * sizeof(struct ifreq) &&
+          eq(list[0].ifr_name, "lo", 3) && ifaddr(&list[0].ifr_addr) == ip4(127, 0, 0, 1) &&
+          eq(list[1].ifr_name, "eth0", 5) && ifaddr(&list[1].ifr_addr) == ip4(10, 0, 2, 15), 1);
+
+    struct ifreq lo = {"lo"};
+    check("lo: SIOCGIFFLAGS", SC(SYS_ioctl, fd, SIOCGIFFLAGS, &lo), 0);
+    check("lo: up, loopback", lo.ifr_flags & (IFF_UP | IFF_LOOPBACK | IFF_BROADCAST), IFF_UP | IFF_LOOPBACK);
+    SC(SYS_ioctl, fd, SIOCGIFNETMASK, &lo);
+    check("lo: 127/8", ifaddr(&lo.ifr_netmask), ip4(255, 0, 0, 0));
+    SC(SYS_ioctl, fd, SIOCGIFINDEX, &lo);
+    check("lo: index 1", lo.ifr_ifindex, 1);
 
     check("SIOCGIFADDR", ifreq(fd, SIOCGIFADDR, &ifr), 0);
     check("SIOCGIFADDR: it", ifaddr(&ifr.ifr_addr) == ip4(10, 0, 2, 15), 1);
@@ -241,7 +250,7 @@ static void interfaces(void)
     check("SIOCGIFMTU", ifreq(fd, SIOCGIFMTU, &ifr), 0);
     check("SIOCGIFMTU: it", ifr.ifr_mtu, 1500);
     check("SIOCGIFINDEX", ifreq(fd, SIOCGIFINDEX, &ifr), 0);
-    check("SIOCGIFINDEX: it", ifr.ifr_ifindex, 1);
+    check("SIOCGIFINDEX: it", ifr.ifr_ifindex, 2);
     check("SIOCGIFHWADDR", ifreq(fd, SIOCGIFHWADDR, &ifr), 0);
     check("SIOCGIFHWADDR: QEMU's", ifr.ifr_hwaddr.sa_family == ARPHRD_ETHER &&
           eq(ifr.ifr_hwaddr.sa_data, "\x52\x54\x00\x12\x34\x56", 6), 1);
