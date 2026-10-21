@@ -77,5 +77,6 @@ int socket_unix_create(struct file *file, int domain, int type, int protocol);
 
 /* AF_INET */
 int socket_inet_create(struct file *file, int domain, int type, int protocol);
+int socket_tcp_create(struct file *file, int domain, int type, int protocol);
 
 #endif /* ! _NET_SOCKET_H */

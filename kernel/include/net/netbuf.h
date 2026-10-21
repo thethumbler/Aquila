@@ -24,6 +24,11 @@ struct netbuf {
     /* where a datagram came from (in a socket's queue) */
     uint32_t src_ip;
     uint16_t src_port;
+
+    /* a TCP segment that came before its turn: where its data is, and if
+     * a FIN follows it */
+    uint32_t seq;
+    int fin;
 };
 
 #define NETBUF_SIZE     2048

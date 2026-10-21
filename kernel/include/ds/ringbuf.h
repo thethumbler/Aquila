@@ -114,6 +114,13 @@ static inline size_t ringbuf_read_noconsume(struct ringbuf *ring, off_t off, siz
     return n;
 }
 
+/* the first `n' bytes go, unread (at most what there is) */
+static inline void ringbuf_discard(struct ringbuf *ring, size_t n)
+{
+    n = MIN(n, ringbuf_available(ring));
+    ring->head = RING_INDEX(ring, ring->head + n);
+}
+
 static inline size_t ringbuf_write(struct ringbuf *ring, size_t n, char *buf)
 {
     size_t size = n;

@@ -180,6 +180,9 @@ int socket_inet_create(struct file *file, int domain, int type, int protocol)
 {
     uint8_t proto;
 
+    if (type == SOCK_STREAM && (!protocol || protocol == IPPROTO_TCP))
+        return socket_tcp_create(file, domain, type, protocol);
+
     if (type != SOCK_DGRAM)
         return -EPROTONOSUPPORT;
 
@@ -219,7 +222,7 @@ int socket_inet_create(struct file *file, int domain, int type, int protocol)
 }
 
 /* an AF_INET address of `len' bytes at `addr' */
-static int sockaddr_get(const struct sockaddr *addr, socklen_t len, uint32_t *ip, uint16_t *port)
+int inet_sockaddr_get(const struct sockaddr *addr, socklen_t len, uint32_t *ip, uint16_t *port)
 {
     const struct sockaddr_in *sin = (const struct sockaddr_in *) addr;
 
@@ -234,7 +237,7 @@ static int sockaddr_get(const struct sockaddr *addr, socklen_t len, uint32_t *ip
     return 0;
 }
 
-static void sockaddr_put(struct sockaddr *addr, socklen_t *len, uint32_t ip, uint16_t port)
+void inet_sockaddr_put(struct sockaddr *addr, socklen_t *len, uint32_t ip, uint16_t port)
 {
     struct sockaddr_in sin = {
         .sin_family = AF_INET,
@@ -254,7 +257,7 @@ static int socket_inet_bind(struct file *file, const struct sockaddr *addr, sock
     uint16_t port;
     int err;
 
-    if ((err = sockaddr_get(addr, len, &ip, &port)))
+    if ((err = inet_sockaddr_get(addr, len, &ip, &port)))
         return err;
 
     if (sock->lport)
@@ -287,7 +290,7 @@ static int socket_inet_connect(struct file *file, const struct sockaddr *addr, s
         return 0;
     }
 
-    if ((err = sockaddr_get(addr, len, &ip, &port)))
+    if ((err = inet_sockaddr_get(addr, len, &ip, &port)))
         return err;
 
     if (sock->proto == IP_PROTO_UDP && !port)
@@ -312,7 +315,7 @@ static ssize_t socket_inet_send(struct file *file, void *buf, size_t len, int fl
     int err;
 
     if (to) {
-        if ((err = sockaddr_get(to, tolen, &ip, &port)))
+        if ((err = inet_sockaddr_get(to, tolen, &ip, &port)))
             return err;
     } else if (sock->connected) {
         ip = sock->raddr;
@@ -421,7 +424,7 @@ static ssize_t socket_inet_recv(struct file *file, void *buf, size_t len, int fl
     memcpy(buf, nb->data, n);
 
     if (from && fromlen)
-        sockaddr_put(from, fromlen, nb->src_ip, nb->src_port);
+        inet_sockaddr_put(from, fromlen, nb->src_ip, nb->src_port);
 
     /* the rest of a datagram longer than the buffer goes too */
     if (!(flags & MSG_PEEK)) {
@@ -458,9 +461,9 @@ static int socket_inet_getname(struct file *file, struct sockaddr *addr, socklen
         if (!sock->connected)
             return -ENOTCONN;
 
-        sockaddr_put(addr, len, sock->raddr, sock->rport);
+        inet_sockaddr_put(addr, len, sock->raddr, sock->rport);
     } else {
-        sockaddr_put(addr, len, sock->laddr, sock->lport);
+        inet_sockaddr_put(addr, len, sock->laddr, sock->lport);
     }
 
     return 0;

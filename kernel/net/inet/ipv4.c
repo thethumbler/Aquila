@@ -8,6 +8,7 @@
 #include <core/string.h>
 #include <net/byteorder.h>
 #include <net/inet.h>
+#include <net/tcp.h>
 
 #include <aquila/errno.h>
 
@@ -85,6 +86,9 @@ void ipv4_input(struct netif *netif, struct netbuf *nb, const uint8_t src_mac[6]
             return;
         case IP_PROTO_UDP:
             udp_input(netif, nb, ih);
+            return;
+        case IP_PROTO_TCP:
+            tcp_input(netif, nb, ih);
             return;
     }
 

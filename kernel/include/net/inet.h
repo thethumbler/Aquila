@@ -10,6 +10,8 @@
 #include <net/netbuf.h>
 #include <net/netif.h>
 
+#include <aquila/socket.h>
+
 #define ETHER_TYPE_IPV4     0x0800
 #define ETHER_TYPE_ARP      0x0806
 
@@ -32,6 +34,7 @@ struct arp_hdr {
 } __packed;
 
 #define IP_PROTO_ICMP       1
+#define IP_PROTO_TCP        6
 #define IP_PROTO_UDP        17
 
 struct ipv4_hdr {
@@ -102,6 +105,8 @@ struct inet_sock *inet_sock_find(struct netif *netif, uint8_t proto, uint32_t lo
                                  uint32_t remote, uint16_t remote_port);
 void inet_sock_deliver(struct inet_sock *sock, struct netbuf *nb);
 void inet_sock_error(struct inet_sock *sock, int err);
+int  inet_sockaddr_get(const struct sockaddr *addr, socklen_t len, uint32_t *ip, uint16_t *port);
+void inet_sockaddr_put(struct sockaddr *addr, socklen_t *len, uint32_t ip, uint16_t port);
 
 /* the interfaces' requests (net/inet/ifioctl.c) */
 int inet_ifioctl(int request, void *argp);
