@@ -2,8 +2,9 @@
  *              Programmable Interrupt Controller (PIC)
  *                   (Legacy PIC (8259) support)
  *
- *  -- Should only be used when no APIC is avilable or APIC support 
- *  isn't built into the kernel.
+ *  An x86_irq_chip (irq.c): the interrupts when there's no APIC (or
+ *  apic=off). With the APIC, they are remapped (vectors 32 to 47) and
+ *  masked, they stay so.
  */
 
 #include <core/system.h>
@@ -80,7 +81,7 @@ static struct ioaddr slave;
 /* The mask value currently on slave:master */
 static uint16_t pic_mask = 0xFFFF;
 
-void x86_irq_mask(int irq)
+static void x86_irq_mask(int irq)
 {
     if (irq < 8) {  /* Master */
         pic_mask |= 1 << irq;
@@ -93,7 +94,7 @@ void x86_irq_mask(int irq)
     }
 }
 
-void x86_irq_unmask(int irq)
+static void x86_irq_unmask(int irq)
 {
     if (irq < 8) {  /* Master */
         pic_mask &= ~(1 << irq);
@@ -125,107 +126,43 @@ static void x86_irq_remap(void)
     io_out8(&slave,  PIC_DATA, ICW4);
 }
 
-extern void __x86_irq0 (void);
-extern void __x86_irq1 (void);
-extern void __x86_irq2 (void);
-extern void __x86_irq3 (void);
-extern void __x86_irq4 (void);
-extern void __x86_irq5 (void);
-extern void __x86_irq6 (void);
-extern void __x86_irq7 (void);
-extern void __x86_irq8 (void);
-extern void __x86_irq9 (void);
-extern void __x86_irq10(void);
-extern void __x86_irq11(void);
-extern void __x86_irq12(void);
-extern void __x86_irq13(void);
-extern void __x86_irq14(void);
-extern void __x86_irq15(void);
-
-static x86_irq_handler_t irq_handlers[16];
-
-void x86_irq_handler_install(unsigned irq, x86_irq_handler_t handler)
-{
-    if (irq < 16) {
-        x86_irq_unmask(irq);
-        irq_handlers[irq] = handler;
-    }
-}
-
-void x86_irq_handler_uninstall(unsigned irq)
-{
-    if (irq < 16) {
-        x86_irq_mask(irq);
-        irq_handlers[irq] = (x86_irq_handler_t) NULL;
-    }
-}
-
 #define IRQ_ACK 0x20
-static void x86_irq_ack(uint32_t irq_no)
+
+static void pic_chip_eoi(unsigned irq)
 {
-    if (irq_no > 7) /* IRQ fired from the Slave PIC */
+    if (irq >= 16)
+        return;
+
+    if (irq > 7) /* IRQ fired from the Slave PIC */
         io_out8(&slave, PIC_CMD, IRQ_ACK);
 
     io_out8(&master, PIC_CMD, IRQ_ACK);
 }
 
-void __x86_irq_handler(struct x86_regs *r)
+static void pic_chip_mask(unsigned irq)
 {
-    extern uint32_t __x86_isr_int_num;
-
-    x86_irq_handler_t handler = NULL;
-
-    if (__x86_isr_int_num > 47 || __x86_isr_int_num < 32) /* Out of range */
-        handler = NULL;
-    else
-        handler = irq_handlers[__x86_isr_int_num - 32];
-
-    x86_irq_ack(__x86_isr_int_num - 32);
-
-    if (handler)
-        handler(r);
-
-    sched_idle_wakeup();
-
-    /* an urgent thread was woken (the network's): it runs now, not at the
-     * next tick; the interrupted thread is ready again */
-    if (sched_urgent && (r->cs & 3) == 3 && curthread) {
-        extern void x86_preempt(void);
-        x86_preempt();
-    }
-
-    /* back to user mode (maybe after other threads ran): signals queued
-     * meanwhile (by drivers) are delivered, a stop that was left for the
-     * thread is taken now */
-    if ((r->cs & 3) == 3 && curthread && curthread->arch) {
-        int sig = curthread->sig_defer ? 0 : signal_next(curproc);
-
-        if (sig)
-            arch_handle_signal(sig);
-
-        signal_stop_pending();
-    }
+    if (irq < 16)
+        x86_irq_mask(irq);
 }
 
-static void x86_irq_gates_setup(void)
+static void pic_chip_unmask(unsigned irq)
 {
-    x86_idt_gate_set(32, (uintptr_t) __x86_irq0);
-    x86_idt_gate_set(33, (uintptr_t) __x86_irq1);
-    x86_idt_gate_set(34, (uintptr_t) __x86_irq2);
-    x86_idt_gate_set(35, (uintptr_t) __x86_irq3);
-    x86_idt_gate_set(36, (uintptr_t) __x86_irq4);
-    x86_idt_gate_set(37, (uintptr_t) __x86_irq5);
-    x86_idt_gate_set(38, (uintptr_t) __x86_irq6);
-    x86_idt_gate_set(39, (uintptr_t) __x86_irq7);
-    x86_idt_gate_set(40, (uintptr_t) __x86_irq8);
-    x86_idt_gate_set(41, (uintptr_t) __x86_irq9);
-    x86_idt_gate_set(42, (uintptr_t) __x86_irq10);
-    x86_idt_gate_set(43, (uintptr_t) __x86_irq11);
-    x86_idt_gate_set(44, (uintptr_t) __x86_irq12);
-    x86_idt_gate_set(45, (uintptr_t) __x86_irq13);
-    x86_idt_gate_set(46, (uintptr_t) __x86_irq14);
-    x86_idt_gate_set(47, (uintptr_t) __x86_irq15);
+    if (irq < 16)
+        x86_irq_unmask(irq);
 }
+
+static const char *pic_chip_describe(unsigned irq)
+{
+    return irq < 16 ? "8259 edge" : "";
+}
+
+struct x86_irq_chip x86_pic_chip = {
+    .name     = "8259",
+    .mask     = pic_chip_mask,
+    .unmask   = pic_chip_unmask,
+    .eoi      = pic_chip_eoi,
+    .describe = pic_chip_describe,
+};
 
 static int x86_pic_probe(void)
 {
@@ -268,8 +205,5 @@ int x86_pic_setup(struct ioaddr *_master, struct ioaddr *_slave)
 
     /* Mask all interrupts */
     x86_pic_disable();
-
-    /* Setup call gates */
-    x86_irq_gates_setup();
     return 0;
 }

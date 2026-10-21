@@ -123,6 +123,25 @@ static ssize_t procfs_uptime(off_t off, size_t size, char *buf)
     return 0;
 }
 
+/* proc/interrupts: the controller, the IRQs (the architecture's) */
+int arch_interrupts_info(char *buf, size_t size) __attribute__((weak));
+
+static ssize_t procfs_interrupts(off_t off, size_t size, char *buf)
+{
+    char info[2048];
+    int sz = arch_interrupts_info ? arch_interrupts_info(info, sizeof(info)) : 0;
+
+    sz = MIN(sz, (int) sizeof(info) - 1);
+
+    if (off < sz) {
+        ssize_t ret = MIN(size, (size_t)(sz - off));
+        memcpy(buf, info + off, ret);
+        return ret;
+    }
+
+    return 0;
+}
+
 /* proc/filesystems */
 static ssize_t procfs_filesystems(off_t off, size_t size, char *buf)
 {
@@ -288,6 +307,7 @@ static struct procfs_entry entries[] = {
     {"rdcmdline", procfs_rdcmdline},
     {"version", procfs_version},
     {"uptime",  procfs_uptime},
+    {"interrupts", procfs_interrupts},
     {"filesystems",  procfs_filesystems},
     //{"zoneinfo",  procfs_zoneinfo},
     {"buddyinfo", procfs_buddyinfo},

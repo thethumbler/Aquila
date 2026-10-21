@@ -6,6 +6,7 @@
 #include <sys/sched.h>
 
 #include "sys.h"
+#include <platform/misc.h>
 
 static uint32_t timer_period = 0;
 static uint64_t timer_ticks = 0;
@@ -50,14 +51,9 @@ static void x86_sched_handler(struct x86_regs *r)
     x86_clock_tick();
     sched_timer_tick(timer_period, (r->cs & 3) == 3);
 
-    if (kidle) {
-        schedule();
-    } else {
-        /* the running thread goes back to the queue, all its registers
-         * saved */
-        extern void x86_preempt(void);
-        x86_preempt();
-    }
+    /* the running thread goes back to the queue (all its registers
+     * saved), once the controller is done with the interrupt (irq.c) */
+    x86_irq_tick_switch();
 }
 
 void arch_sched_init(void)

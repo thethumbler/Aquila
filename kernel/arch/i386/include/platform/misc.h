@@ -6,10 +6,33 @@
 
 typedef void (*x86_irq_handler_t)(struct x86_regs *r);
 
-int  x86_pic_setup(struct ioaddr *master, struct ioaddr *slave);
-void x86_pic_disable(void);
+/* irq.c: IRQ n is vector 32 + n; the local APIC's timer an IRQ apart */
+#define X86_IRQ_NR          49
+#define X86_IRQ_TIMER       48
+#define X86_TIMER_VECTOR    0xF0
+#define X86_SPURIOUS_VECTOR 0xFF
+
+/* an interrupt controller: the 8259, or the APIC */
+struct x86_irq_chip {
+    const char *name;
+    void (*mask)(unsigned irq);
+    void (*unmask)(unsigned irq);
+    void (*eoi)(unsigned irq);
+    const char *(*describe)(unsigned irq);  /* for /proc/interrupts */
+    const char *timer;                      /* the tick's, if it's its own */
+};
+
+void x86_irq_chip_set(struct x86_irq_chip *chip);
+const char *x86_irq_chip_name(void);
+void x86_irq_gates_setup(void);
 void x86_irq_handler_install(unsigned irq, x86_irq_handler_t handler);
 void x86_irq_handler_uninstall(unsigned irq);
+void x86_irq_tick_switch(void);
+
+/* pic.c: the 8259s */
+int  x86_pic_setup(struct ioaddr *master, struct ioaddr *slave);
+void x86_pic_disable(void);
+extern struct x86_irq_chip x86_pic_chip;
 
 int x86_i8042_setup(struct ioaddr *io);
 void x86_i8042_handler_register(int channel, void (*fun)(int));

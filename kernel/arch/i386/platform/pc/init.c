@@ -75,6 +75,7 @@ static int x86_pc_cmos_init(void)
 }
 
 #define PIT_IRQ 0
+
 uint32_t platform_timer_setup(size_t period_ns, void (*handler)())
 {
     uint32_t period = x86_pit_period_set(period_ns);
@@ -82,10 +83,21 @@ uint32_t platform_timer_setup(size_t period_ns, void (*handler)())
     return period;
 }
 
+/* the interrupts: the 8259s' */
+static void x86_pc_irq_init(void)
+{
+    x86_irq_gates_setup();
+
+    if (x86_pc_pic_init())
+        printk("x86: no interrupt controller\n");
+    else
+        x86_irq_chip_set(&x86_pic_chip);
+}
+
 int platform_init(void)
 {
     x86_pc_pci_init();
-    x86_pc_pic_init();
+    x86_pc_irq_init();
     x86_pc_i8042_init();
     x86_pc_pit_init();
     x86_pc_cmos_init();

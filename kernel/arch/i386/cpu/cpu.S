@@ -205,7 +205,7 @@ isr_handler:
 #endif
 
 /*
- * IRQs -- external interrupt requists (from PIC)
+ * IRQs: external interrupts (the 8259's or the APIC's), irq.c handles them
  */
 .macro IRQ n, i
 .global __x86_irq\n
@@ -221,6 +221,8 @@ __x86_irq\n:
 #endif
 .endm
 
+/* IRQs 0 to 47: vectors 32 to 79 (the I/O APIC's pins, ISA's 16 under
+ * the 8259) */
 IRQ 0, 32
 IRQ 1, 33
 IRQ 2, 34
@@ -237,6 +239,50 @@ IRQ 12, 44
 IRQ 13, 45
 IRQ 14, 46
 IRQ 15, 47
+IRQ 16, 48
+IRQ 17, 49
+IRQ 18, 50
+IRQ 19, 51
+IRQ 20, 52
+IRQ 21, 53
+IRQ 22, 54
+IRQ 23, 55
+IRQ 24, 56
+IRQ 25, 57
+IRQ 26, 58
+IRQ 27, 59
+IRQ 28, 60
+IRQ 29, 61
+IRQ 30, 62
+IRQ 31, 63
+IRQ 32, 64
+IRQ 33, 65
+IRQ 34, 66
+IRQ 35, 67
+IRQ 36, 68
+IRQ 37, 69
+IRQ 38, 70
+IRQ 39, 71
+IRQ 40, 72
+IRQ 41, 73
+IRQ 42, 74
+IRQ 43, 75
+IRQ 44, 76
+IRQ 45, 77
+IRQ 46, 78
+IRQ 47, 79
+
+/* the local APIC's timer */
+IRQ 240, 240
+
+/* the local APIC's spurious interrupt: nothing to do, no EOI */
+.global __x86_spurious
+__x86_spurious:
+#if ARCH_BITS==32
+    iret
+#else
+    iretq
+#endif
 
 
 .extern __x86_irq_handler
