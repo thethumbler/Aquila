@@ -756,8 +756,9 @@ static void sys_ioctl(int fd, int request, void *argp)
         return;
     }
 
+    /* the socket checks its argument, for each request */
     if (file->flags & FILE_SOCKET) {
-        arch_syscall_return(curthread, -ENOTTY);
+        arch_syscall_return(curthread, socket_ioctl(file, request, argp));
         return;
     }
 
@@ -1620,7 +1621,22 @@ static void sys_send(struct aquila_socket_io_args *s)
         return;
     }
 
-    if ((err = socket_send(file, buf, len, flags))) {
+    /* sendto(): where to */
+    const struct sockaddr *to = NULL;
+    socklen_t tolen = 0;
+
+    if (s->addr) {
+        if (uaccess_check(s->addrlen, sizeof(socklen_t)) ||
+            uaccess_check(s->addr, *s->addrlen)) {
+            arch_syscall_return(curthread, -EFAULT);
+            return;
+        }
+
+        to = s->addr;
+        tolen = *s->addrlen;
+    }
+
+    if ((err = socket_send(file, buf, len, flags, to, tolen))) {
         arch_syscall_return(curthread, err);
         return; 
     }
@@ -1658,13 +1674,98 @@ static void sys_recv(struct aquila_socket_io_args *s)
         return;
     }
 
-    if ((err = socket_recv(file, buf, len, flags))) {
+    /* recvfrom(): where from */
+    struct sockaddr *from = NULL;
+    socklen_t *fromlen = NULL;
+
+    if (s->addr) {
+        if (uaccess_check(s->addrlen, sizeof(socklen_t)) ||
+            uaccess_check(s->addr, *s->addrlen)) {
+            arch_syscall_return(curthread, -EFAULT);
+            return;
+        }
+
+        from = s->addr;
+        fromlen = s->addrlen;
+    }
+
+    if ((err = socket_recv(file, buf, len, flags, from, fromlen))) {
         arch_syscall_return(curthread, err);
         return; 
     }
 
     arch_syscall_return(curthread, 0);
     return;
+}
+
+/* getsockname(), getpeername() */
+static void socket_name(int fd, struct sockaddr *addr, socklen_t *len, int peer)
+{
+    struct file *file = fd_file(fd);
+
+    if (!file) {
+        arch_syscall_return(curthread, -EBADF);
+        return;
+    }
+
+    if (uaccess_check(len, sizeof(socklen_t)) || uaccess_check(addr, *len)) {
+        arch_syscall_return(curthread, -EFAULT);
+        return;
+    }
+
+    arch_syscall_return(curthread, socket_getname(file, addr, len, peer));
+}
+
+static void sys_getsockname(int fd, struct sockaddr *addr, socklen_t *len)
+{
+    syscall_log(LOG_DEBUG, "getsockname(fd=%d, addr=%p, len=%p)\n", fd, addr, len);
+    socket_name(fd, addr, len, 0);
+}
+
+static void sys_getpeername(int fd, struct sockaddr *addr, socklen_t *len)
+{
+    syscall_log(LOG_DEBUG, "getpeername(fd=%d, addr=%p, len=%p)\n", fd, addr, len);
+    socket_name(fd, addr, len, 1);
+}
+
+static void sys_getsockopt(int fd, int level, int name, void *val, socklen_t *len)
+{
+    syscall_log(LOG_DEBUG, "getsockopt(fd=%d, level=%d, name=%d, val=%p, len=%p)\n",
+            fd, level, name, val, len);
+
+    struct file *file = fd_file(fd);
+
+    if (!file) {
+        arch_syscall_return(curthread, -EBADF);
+        return;
+    }
+
+    if (uaccess_check(len, sizeof(socklen_t)) || uaccess_check(val, *len)) {
+        arch_syscall_return(curthread, -EFAULT);
+        return;
+    }
+
+    arch_syscall_return(curthread, socket_getsockopt(file, level, name, val, len));
+}
+
+static void sys_setsockopt(int fd, int level, int name, const void *val, socklen_t len)
+{
+    syscall_log(LOG_DEBUG, "setsockopt(fd=%d, level=%d, name=%d, val=%p, len=%d)\n",
+            fd, level, name, val, len);
+
+    struct file *file = fd_file(fd);
+
+    if (!file) {
+        arch_syscall_return(curthread, -EBADF);
+        return;
+    }
+
+    if (uaccess_check(val, len)) {
+        arch_syscall_return(curthread, -EFAULT);
+        return;
+    }
+
+    arch_syscall_return(curthread, socket_setsockopt(file, level, name, val, len));
 }
 
 static void sys_umask(mode_t mask)
@@ -2550,6 +2651,10 @@ void (*syscall_table[])() = {
     [SYS_setitimer]     = sys_setitimer,
     [SYS_thread_self]   = sys_thread_self,
     [SYS_getrandom]     = sys_getrandom,
+    [SYS_getsockname]   = sys_getsockname,
+    [SYS_getpeername]   = sys_getpeername,
+    [SYS_getsockopt]    = sys_getsockopt,
+    [SYS_setsockopt]    = sys_setsockopt,
 };
 
 const size_t syscall_cnt = sizeof(syscall_table)/sizeof(syscall_table[0]);

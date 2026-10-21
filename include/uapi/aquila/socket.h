@@ -32,6 +32,27 @@ struct sockaddr {
 #define MSG_PEEK        0x0020
 #define MSG_TRUNC       0x0040
 #define MSG_WAITALL     0x0080
+#define MSG_DONTWAIT    0x0100
+
+/* socket options */
+#define SOL_SOCKET      1
+
+#define SO_DEBUG        1
+#define SO_REUSEADDR    2
+#define SO_TYPE         3
+#define SO_ERROR        4
+#define SO_DONTROUTE    5
+#define SO_BROADCAST    6
+#define SO_SNDBUF       7
+#define SO_RCVBUF       8
+#define SO_KEEPALIVE    9
+#define SO_OOBINLINE    10
+#define SO_LINGER       13
+#define SO_RCVLOWAT     18
+#define SO_SNDLOWAT     19
+#define SO_RCVTIMEO     20
+#define SO_SNDTIMEO     21
+#define SO_ACCEPTCONN   30
 
 #define SHUT_RD         0x0001
 #define SHUT_WR         0x0002

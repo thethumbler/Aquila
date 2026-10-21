@@ -101,8 +101,12 @@
 #define SYS_setitimer       88
 #define SYS_thread_self     89
 #define SYS_getrandom       90
+#define SYS_getsockname     91
+#define SYS_getpeername     92
+#define SYS_getsockopt      93
+#define SYS_setsockopt      94
 
-#define SYS_MAX             90
+#define SYS_MAX             94
 
 /*
  * Arguments of the older system calls that take more than three, passed
@@ -127,12 +131,15 @@ struct aquila_mmap_args {
     long    off;
 } __attribute__((packed));
 
-/* SYS_send, SYS_recv */
+/* SYS_send, SYS_recv: sendto() and recvfrom() too, the address (and its
+ * length) of where to send, or of where it came from; NULL if none */
 struct aquila_socket_io_args {
     int     fd;
     void   *buf;
     size_t  len;
     int     flags;
+    void   *addr;
+    unsigned int *addrlen;
 } __attribute__((packed));
 
 /* SYS_select, also pselect(): the signal mask while waiting, if sigmask */

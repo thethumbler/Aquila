@@ -39,7 +39,7 @@ int vfs_file_open(struct file *file)
 ssize_t vfs_file_read(struct file *file, void *buf, size_t nbytes)
 {
     if (file && file->flags & FILE_SOCKET)
-        return socket_recv(file, buf, nbytes, 0);
+        return socket_recv(file, buf, nbytes, 0, NULL, NULL);
 
     if (!file || !file->vnode)
         return -EINVAL;
@@ -67,7 +67,7 @@ ssize_t vfs_file_read(struct file *file, void *buf, size_t nbytes)
 ssize_t vfs_file_write(struct file *file, void *buf, size_t nbytes)
 {
     if (file && file->flags & FILE_SOCKET)
-        return socket_send(file, buf, nbytes, 0);
+        return socket_send(file, buf, nbytes, 0, NULL, 0);
 
     if (!file || !file->vnode)
         return -EINVAL;

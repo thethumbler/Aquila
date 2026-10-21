@@ -518,37 +518,26 @@ int listen(int fd, int backlog)
 
 ssize_t send(int fd, const void *buf, size_t len, int flags)
 {
-    struct aquila_socket_io_args args = {fd, (void *) buf, len, flags};
-    return SYSCALL(SYS_send, &args, 0, 0);
+    return sendto(fd, buf, len, flags, NULL, 0);
 }
 
 ssize_t recv(int fd, void *buf, size_t len, int flags)
 {
-    struct aquila_socket_io_args args = {fd, buf, len, flags};
-    return SYSCALL(SYS_recv, &args, 0, 0);
+    return recvfrom(fd, buf, len, flags, NULL, NULL);
 }
 
 ssize_t sendto(int fd, const void *buf, size_t len, int flags,
                const struct sockaddr *addr, socklen_t addrlen)
 {
-    /* only connected sockets, the address is theirs */
-    (void) addr; (void) addrlen;
-    return send(fd, buf, len, flags);
+    struct aquila_socket_io_args args = {fd, (void *) buf, len, flags, (void *) addr, &addrlen};
+    return SYSCALL(SYS_send, &args, 0, 0);
 }
 
 ssize_t recvfrom(int fd, void *buf, size_t len, int flags,
                  struct sockaddr *addr, socklen_t *addrlen)
 {
-    ssize_t ret = recv(fd, buf, len, flags);
-
-    /* the peer, unnamed */
-    if (ret >= 0 && addr && addrlen) {
-        if (*addrlen >= sizeof(sa_family_t))
-            addr->sa_family = AF_UNIX;
-        *addrlen = sizeof(sa_family_t);
-    }
-
-    return ret;
+    struct aquila_socket_io_args args = {fd, buf, len, flags, addr, addr ? addrlen : NULL};
+    return SYSCALL(SYS_recv, &args, 0, 0);
 }
 
 int shutdown(int fd, int how)
@@ -556,84 +545,24 @@ int shutdown(int fd, int how)
     return SYSCALL(SYS_shutdown, fd, how, 0);
 }
 
-/* a socket, it is AF_UNIX (the only kind) */
-static int socket_check(int fd)
-{
-    struct stat st;
-
-    if (fstat(fd, &st) < 0)
-        return -1;
-
-    if (!S_ISSOCK(st.st_mode)) {
-        errno = ENOTSOCK;
-        return -1;
-    }
-
-    return 0;
-}
-
-/* the kernel doesn't keep the names, they are unnamed AF_UNIX sockets */
-static int socket_name(int fd, struct sockaddr *addr, socklen_t *len)
-{
-    if (socket_check(fd) < 0)
-        return -1;
-
-    if (*len >= sizeof(sa_family_t))
-        addr->sa_family = AF_UNIX;
-
-    *len = sizeof(sa_family_t);
-    return 0;
-}
-
 int getsockname(int fd, struct sockaddr *addr, socklen_t *len)
 {
-    return socket_name(fd, addr, len);
+    return SYSCALL(SYS_getsockname, fd, addr, len);
 }
 
 int getpeername(int fd, struct sockaddr *addr, socklen_t *len)
 {
-    return socket_name(fd, addr, len);
+    return SYSCALL(SYS_getpeername, fd, addr, len);
 }
 
 int getsockopt(int fd, int level, int name, void *val, socklen_t *len)
 {
-    if (socket_check(fd) < 0)
-        return -1;
-
-    if (level != SOL_SOCKET || *len < sizeof(int)) {
-        errno = level != SOL_SOCKET ? ENOPROTOOPT : EINVAL;
-        return -1;
-    }
-
-    switch (name) {
-        case SO_ERROR:
-            *(int *) val = 0;
-            break;
-        case SO_TYPE:
-            *(int *) val = SOCK_STREAM;
-            break;
-        default:
-            errno = ENOPROTOOPT;
-            return -1;
-    }
-
-    *len = sizeof(int);
-    return 0;
+    return SYSCALL5(SYS_getsockopt, fd, level, name, val, len);
 }
 
 int setsockopt(int fd, int level, int name, const void *val, socklen_t len)
 {
-    (void) name; (void) val; (void) len;
-
-    if (socket_check(fd) < 0)
-        return -1;
-
-    if (level != SOL_SOCKET) {
-        errno = ENOPROTOOPT;
-        return -1;
-    }
-
-    return 0;
+    return SYSCALL5(SYS_setsockopt, fd, level, name, val, len);
 }
 
 mode_t umask(mode_t mask)

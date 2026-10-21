@@ -1,4 +1,5 @@
 #include <core/system.h>
+#include <aquila/ioctl.h>
 #include <sys/sched.h>
 #include <fs/vfs.h>
 #include <ds/ringbuf.h>
@@ -252,7 +253,8 @@ static int socket_unix_listen(struct file *file, int backlog)
     return 0;
 }
 
-static ssize_t socket_unix_send(struct file *file, void *buf, size_t len, int flags)
+static ssize_t socket_unix_send(struct file *file, void *buf, size_t len, int flags,
+                                const struct sockaddr *to, socklen_t tolen)
 {
     //printk("socket_unix_send(file=%p, buf=%p, len=%d, flags=%x)\n", file, buf, len, flags);
 
@@ -315,12 +317,20 @@ static ssize_t socket_unix_send(struct file *file, void *buf, size_t len, int fl
     }
 }
 
-static ssize_t socket_unix_recv(struct file *file, void *buf, size_t len, int flags)
+static ssize_t socket_unix_recv(struct file *file, void *buf, size_t len, int flags,
+                                struct sockaddr *from, socklen_t *fromlen)
 {
     //printk("socket_unix_recv(file=%p, buf=%p, len=%d, flags=%x)\n", file, buf, len, flags);
 
     if (file->socket->domain != AF_UNIX_CONN)
         return -ENOTCONN;
+
+    /* the peer, unnamed (names aren't kept) */
+    if (from && fromlen) {
+        if (*fromlen >= sizeof(sa_family_t))
+            from->sa_family = AF_UNIX;
+        *fromlen = sizeof(sa_family_t);
+    }
 
     struct un_conn *conn = file->socket->p;
 
@@ -528,6 +538,32 @@ static int socket_unix_shutdown(struct file *file, int how)
     return 0;
 }
 
+/* its name or its peer's: unnamed (names aren't kept) */
+static int socket_unix_getname(struct file *file, struct sockaddr *addr, socklen_t *len, int peer)
+{
+    if (*len >= sizeof(sa_family_t))
+        addr->sa_family = AF_UNIX;
+
+    *len = sizeof(sa_family_t);
+    return 0;
+}
+
+static int socket_unix_ioctl(struct file *file, int request, void *argp)
+{
+    if (request == FIONREAD) {
+        if (uaccess_check(argp, sizeof(int)))
+            return -EFAULT;
+
+        int n = socket_unix_can_read(file, 0);
+
+        /* a listening socket has connections, not bytes; the end is 0 */
+        *(int *) argp = file->socket->domain == AF_UNIX_CONN && n > 0 ? n : 0;
+        return 0;
+    }
+
+    return -ENOTTY;
+}
+
 static struct sock_ops socket_unix_ops = {
     .accept    = socket_unix_accept,
     .bind      = socket_unix_bind,
@@ -539,4 +575,6 @@ static struct sock_ops socket_unix_ops = {
     .can_write = socket_unix_can_write,
     .shutdown  = socket_unix_shutdown,
     .shut      = socket_unix_shut,
+    .getname   = socket_unix_getname,
+    .ioctl     = socket_unix_ioctl,
 };
