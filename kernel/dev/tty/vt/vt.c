@@ -380,7 +380,7 @@ static struct vt *vt_file(struct file *file)
     return vt_get(&VNODE_DEV(file->vnode));
 }
 
-static ssize_t vt_read(struct devid *dd, off_t offset __unused, size_t size, void *buf)
+static ssize_t vt_read(struct devid *dd, off_t offset __unused, struct iobuf *io)
 {
     struct vt *vt = vt_get(dd);
 
@@ -390,10 +390,10 @@ static ssize_t vt_read(struct devid *dd, off_t offset __unused, size_t size, voi
     int err = tty_background(vt->tty, SIGTTIN);
     if (err) return err;
 
-    return ringbuf_read(vt->in, size, buf);
+    return ringbuf_read_iobuf(vt->in, io->resid, io);
 }
 
-static ssize_t vt_write(struct devid *dd, off_t offset __unused, size_t size, void *buf)
+static ssize_t vt_write(struct devid *dd, off_t offset __unused, struct iobuf *io)
 {
     struct vt *vt = vt_get(dd);
 
@@ -408,7 +408,7 @@ static ssize_t vt_write(struct devid *dd, off_t offset __unused, size_t size, vo
     }
 
     busy++;
-    ssize_t ret = tty_slave_write(vt->tty, size, buf);
+    ssize_t ret = tty_write_iobuf(vt->tty, io, tty_slave_write);
     vt_reply(vt);
     refresh(vt, 0);
     busy--;
@@ -422,7 +422,8 @@ static int vt_in_use(struct vt *vt)
     return vt->tty && (vt->opens || vt->tty->session);
 }
 
-/* the size of the user buffer an ioctl request reads or writes */
+/* the size of the user buffer an ioctl request reads or writes (0: the
+ * argument is a value) */
 static size_t vt_ioctl_argsize(int request)
 {
     switch (request) {
@@ -444,7 +445,8 @@ static size_t vt_ioctl_argsize(int request)
     return 0;
 }
 
-/* KD* and VT_*, as on Linux: the argument is a pointer or a value */
+/* KD* and VT_*, as on Linux: the argument is a value, or a pointer to the
+ * kernel's copy of it (vt_ioctl) */
 static int vt_kd_ioctl(struct vt *vt, int request, void *argp)
 {
     int arg = (int) (uintptr_t) argp;
@@ -605,10 +607,25 @@ static int vt_ioctl(struct devid *dd, int request, void *argp)
 
     /* KD* are 0x4Bxx, VT_* 0x56xx */
     if ((request >> 8) == 0x4B || (request >> 8) == 0x56) {
-        if (uaccess_check(argp, vt_ioctl_argsize(request)))
+        size_t size = vt_ioctl_argsize(request);
+
+        if (!size)
+            return vt_kd_ioctl(vt, request, argp);
+
+        /* through the kernel's copy: in, then back out */
+        union {
+            char c;
+            int i;
+            struct vt_mode mode;
+            struct vt_stat stat;
+            struct kbentry kbe;
+        } arg;
+
+        if (copyin(&arg, argp, size))
             return -EFAULT;
 
-        return vt_kd_ioctl(vt, request, argp);
+        int err = vt_kd_ioctl(vt, request, &arg);
+        return err ? err : copyout(argp, &arg, size);
     }
 
     return tty_ioctl(vt->tty, request, argp);
@@ -707,11 +724,11 @@ struct dev vtdev = {
  * rows, columns, and the cursor's column and row (a byte each), then the
  * characters with their VGA attributes.
  */
-static ssize_t vcs_read(struct devid *dd, off_t offset, size_t size, void *_buf)
+static ssize_t vcs_read(struct devid *dd, off_t offset, struct iobuf *io)
 {
     int attrs = dd->minor & 128, id = dd->minor & 127;
     struct vt *vt = id ? (id <= VT_COUNT ? &vts[id - 1] : NULL) : fg;
-    uint8_t *buf = _buf;
+    uint8_t buf[256];
 
     if (!vt)
         return -ENXIO;
@@ -721,24 +738,39 @@ static ssize_t vcs_read(struct devid *dd, off_t offset, size_t size, void *_buf)
 
     size_t cells = vt->rows * vt->cols;
     size_t len = attrs ? 4 + 2 * cells : cells;
-    size_t n = 0;
+    size_t size = io->resid, done = 0;
 
     if (offset < 0)
         return -EINVAL;
 
-    for (size_t i = offset; i < len && n < size; ++i, ++n) {
-        if (attrs && i < 4) {
-            uint8_t header[] = {vt->rows, vt->cols, vt->col, vt->row};
-            buf[n] = header[i];
-        } else if (attrs) {
-            struct vt_cell c = vt->screen[(i - 4) / 2];
-            buf[n] = (i - 4) % 2 ? vt_vga_attr(c) : c.ch;
-        } else {
-            buf[n] = vt->screen[i].ch;
+    /* a piece at a time, out through the iobuf */
+    for (size_t i = offset; i < len && done < size; ) {
+        size_t n = 0;
+
+        for (; i < len && done + n < size && n < sizeof(buf); ++i, ++n) {
+            if (attrs && i < 4) {
+                uint8_t header[] = {vt->rows, vt->cols, vt->col, vt->row};
+                buf[n] = header[i];
+            } else if (attrs) {
+                struct vt_cell c = vt->screen[(i - 4) / 2];
+                buf[n] = (i - 4) % 2 ? vt_vga_attr(c) : c.ch;
+            } else {
+                buf[n] = vt->screen[i].ch;
+            }
         }
+
+        ssize_t r = iobuf_out(io, buf, n);
+
+        if (r < 0)
+            return done ? (ssize_t) done : r;
+
+        done += r;
+
+        if ((size_t) r < n)
+            break;
     }
 
-    return n;
+    return done;
 }
 
 static struct dev vcsdev = {

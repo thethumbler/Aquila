@@ -2,7 +2,7 @@
 #include <fs/vfs.h>
 #include <fs/rofs.h>
 
-ssize_t rofs_write(struct vnode *vnode, off_t offset, size_t size, void *buf)
+ssize_t rofs_write(struct vnode *vnode, off_t offset, struct iobuf *io)
 {
     return -EROFS;
 }

@@ -4,6 +4,7 @@
 #include <sys/proc.h>
 #include <sys/sched.h>
 #include <sys/signal.h>
+#include <sys/uaccess.h>
 #include <aquila/syscall.h>
 #include <ds/queue.h>
 #include <mm/pmap.h>
@@ -54,19 +55,31 @@ void arch_thread_switch(struct thread *thread)
 #endif
 }
 
-void arch_thread_create(struct thread *thread, uintptr_t stack, uintptr_t entry, uintptr_t uentry, uintptr_t arg)
+/* the thread starts at `entry' on the user stack `stack', below which its
+ * frame is pushed (its argument, the user entry point, a dummy return
+ * address): 0, -ENOMEM, -EFAULT if the stack isn't there */
+int arch_thread_create(struct thread *thread, uintptr_t stack, uintptr_t entry, uintptr_t uentry, uintptr_t arg)
 {
     /* thread->arch is left NULL on failure */
     thread->arch = NULL;
 
     struct x86_thread *arch = kmalloc(sizeof(struct x86_thread), &M_X86_THREAD, M_ZERO);
     if (!arch)
-        return;
+        return -ENOMEM;
 
     void *kstack = kmalloc(KERN_STACK_SIZE, &M_KERN_STACK, 0);
     if (!kstack) {
         kfree(arch);
-        return;
+        return -ENOMEM;
+    }
+
+    uintptr_t frame[3] = {0, uentry, arg};
+    stack -= sizeof(frame);
+
+    if (copyout((void *) stack, frame, sizeof(frame))) {
+        kfree(kstack);
+        kfree(arch);
+        return -EFAULT;
     }
 
     arch->kstack_base = (uintptr_t) kstack;
@@ -86,21 +99,13 @@ void arch_thread_create(struct thread *thread, uintptr_t stack, uintptr_t entry,
     arch->rip = entry;
 #endif
 
-    /* Push thread argument */
-    PUSH(stack, void *, arg);
-
-    /* Push user entry point */
-    PUSH(stack, void *, uentry);
-
-    /* Dummy return address */
-    PUSH(stack, void *, 0);
-
 #if ARCH_BITS==32
     arch->esp = stack;
 #else
     arch->rsp = stack;
 #endif
     thread->arch = arch;
+    return 0;
 }
 
 /* a kernel thread, which starts at `entry' (a function without arguments

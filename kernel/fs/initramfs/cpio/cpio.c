@@ -5,6 +5,7 @@
 
 #include <fs/vfs.h>
 #include <fs/initramfs.h>
+#include <fs/iobuf.h>
 #include <fs/posix.h>
 #include <fs/rofs.h>
 
@@ -299,16 +300,20 @@ static int cpio_load(struct vnode *dev, struct vnode **super)
     return 0;
 }
 
-static ssize_t cpio_read(struct vnode *vnode, off_t offset, size_t len, void *buf)
+static ssize_t cpio_read(struct vnode *vnode, off_t offset, struct iobuf *io)
 {
     if ((size_t) offset >= vnode->size)
         return 0;
 
-    len = MIN(len, vnode->size - offset);
     struct cpio *p = vnode->p;
     struct vnode *super = p->super;
 
-    return vfs_read(super, p->data + offset, len, buf);
+    /* no further than the file's end */
+    size_t cut = iobuf_limit(io, vnode->size - offset);
+    ssize_t ret = vfs_read_io(super, p->data + offset, io);
+    iobuf_unlimit(io, cut);
+
+    return ret;
 }
 
 static ssize_t cpio_readdir(struct vnode *node, off_t offset, struct dirent *dirent)

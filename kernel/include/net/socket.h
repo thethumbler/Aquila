@@ -3,6 +3,7 @@
 
 #include <core/system.h>
 #include <fs/vfs.h>
+#include <fs/iobuf.h>
 
 #include <aquila/socket.h>
 
@@ -26,11 +27,12 @@ struct sock_ops {
     int (*connect)(struct file *socket, const struct sockaddr *addr, socklen_t len);
     int (*listen) (struct file *socket, int backlog);
 
-    /* recvfrom(), sendto(): `from' and `to' NULL if the caller doesn't
-     * want, or doesn't give, an address */
-    ssize_t (*recv)(struct file *socket, void *buf, size_t len, int flags,
+    /* recvfrom(), sendto(): io->resid bytes through the iobuf, `from'
+     * and `to' (the kernel's) NULL if the caller doesn't want, or doesn't
+     * give, an address */
+    ssize_t (*recv)(struct file *socket, struct iobuf *io, int flags,
                     struct sockaddr *from, socklen_t *fromlen);
-    ssize_t (*send)(struct file *socket, void *buf, size_t len, int flags,
+    ssize_t (*send)(struct file *socket, struct iobuf *io, int flags,
                     const struct sockaddr *to, socklen_t tolen);
 
     /* its address, or its peer's */
@@ -61,8 +63,8 @@ int socket_bind(struct file *file, const struct sockaddr *addr, socklen_t len);
 int socket_accept(struct file *file, struct file *conn, const struct sockaddr *addr, socklen_t *len);
 int socket_connect(struct file *file, const struct sockaddr *addr, socklen_t len);
 int socket_listen(struct file *file, int backlog);
-int socket_send(struct file *file, void *buf, size_t len, int flags, const struct sockaddr *to, socklen_t tolen);
-int socket_recv(struct file *file, void *buf, size_t len, int flags, struct sockaddr *from, socklen_t *fromlen);
+ssize_t socket_send(struct file *file, struct iobuf *io, int flags, const struct sockaddr *to, socklen_t tolen);
+ssize_t socket_recv(struct file *file, struct iobuf *io, int flags, struct sockaddr *from, socklen_t *fromlen);
 int socket_getname(struct file *file, struct sockaddr *addr, socklen_t *len, int peer);
 int socket_getsockopt(struct file *file, int level, int name, void *val, socklen_t *len);
 int socket_setsockopt(struct file *file, int level, int name, const void *val, socklen_t len);

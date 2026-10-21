@@ -1,7 +1,13 @@
 #include <ext2.h>
 #include <core/time.h>
+#include <fs/iobuf.h>
 
-ssize_t ext2_read(struct vnode *node, off_t offset, size_t size, void *buf)
+/*
+ * A file's data moves a block at a time through a kernel buffer: the
+ * block's piece of the iobuf is copied in or out of it.
+ */
+
+ssize_t ext2_read(struct vnode *node, off_t offset, struct iobuf *io)
 {
     int err = 0;
 
@@ -10,81 +16,51 @@ ssize_t ext2_read(struct vnode *node, off_t offset, size_t size, void *buf)
     size_t bs = desc->bs;
     struct ext2_inode inode;
     
-    if ((err = ext2_inode_read(desc, node->ino, &inode))) {
-        /* TODO Error checking */
-    }
+    if ((err = ext2_inode_read(desc, node->ino, &inode)))
+        return err;
 
     if ((size_t) offset >= inode.size)
         return 0;
 
-    size = MIN(size, (size_t) (inode.size - offset));
+    size_t size = MIN(io->resid, (size_t) (inode.size - offset));
 
     /* a fast symbolic link keeps its target in the block pointers */
-    if (S_ISLNK(inode.mode) && !inode.blocks) {
-        memcpy(buf, (char *) inode.direct_pointer + offset, size);
-        return size;
-    }
+    if (S_ISLNK(inode.mode) && !inode.blocks)
+        return iobuf_out(io, (char *) inode.direct_pointer + offset, size);
     
-    char *read_buf = NULL;
+    char *block = kmalloc(bs, &M_BUFFER, 0);
 
-    ssize_t ret = 0;
-    char *_buf = buf;
+    if (!block)
+        return -ENOMEM;
 
-    /* Read up to block boundary */
-    if (offset % bs) {
-        size_t start = MIN(bs - offset % bs, size);
+    size_t done = 0;
+    ssize_t r = 0;
 
-        if (start) {
-            read_buf = kmalloc(bs, &M_BUFFER, 0);
-            ext2_inode_block_read(desc, &inode, offset/bs, read_buf);
-            memcpy(_buf, read_buf + (offset % bs), start);
+    while (done < size) {
+        size_t off = (offset + done) % bs;
+        size_t len = MIN(bs - off, size - done);
 
-            ret += start;
-            size -= start;
-            _buf += start;
-            offset += start;
+        ext2_inode_block_read(desc, &inode, (offset + done) / bs, block);
 
-            if (!size)
-                goto free_resources;
-        }
+        if ((r = iobuf_out(io, block + off, len)) < 0)
+            break;
+
+        done += r;
+
+        /* a fault stopped it */
+        if ((size_t) r < len)
+            break;
     }
 
-    /* Read whole blocks */
-    size_t count = size/bs;
-
-    while (count) {
-        ext2_inode_block_read(desc, &inode, offset/bs, _buf);
-
-        ret    += bs;
-        size   -= bs;
-        _buf   += bs;
-        offset += bs;
-        --count;
-    }
-
-    if (!size)
-        goto free_resources;
-
-    size_t end = size % bs;
-
-    if (end) {
-        if (!read_buf)
-            read_buf = kmalloc(bs, &M_BUFFER, 0);
-
-        ext2_inode_block_read(desc, &inode, offset/bs, read_buf);
-        memcpy(_buf, read_buf, end);
-        ret += end;
-    }
-
-free_resources:
-    if (read_buf)
-        kfree(read_buf);
-    return ret;
+    kfree(block);
+    return done ? (ssize_t) done : r;
 }
 
-ssize_t ext2_write(struct vnode *node, off_t offset, size_t size, void *buf)
+ssize_t ext2_write(struct vnode *node, off_t offset, struct iobuf *io)
 {
-    vfs_log(LOG_DEBUG, "ext2_write(inode=%p, offset=%d, size=%d, buf=%p)\n", node, offset, size, buf);
+    size_t size = io->resid;
+
+    vfs_log(LOG_DEBUG, "ext2_write(inode=%p, offset=%d, size=%d)\n", node, offset, size);
 
     int err = 0;
     struct ext2 *desc = node->p;
@@ -99,13 +75,18 @@ ssize_t ext2_write(struct vnode *node, off_t offset, size_t size, void *buf)
      * "fast" link, e2fsck expects those under 60 bytes) */
     if (S_ISLNK(node->mode) && !ext2_inode.blocks &&
         (size_t) offset + size < sizeof(ext2_inode.direct_pointer) + 12) {
-        memcpy((char *) ext2_inode.direct_pointer + offset, buf, size);
+        ssize_t r = iobuf_in(io, (char *) ext2_inode.direct_pointer + offset, size);
 
-        if ((size_t) offset + size > ext2_inode.size)
-            ext2_inode.size = node->size = (size_t) offset + size;
+        if (r <= 0)
+            return r;
 
-        return ext2_inode_write(desc, node->ino, &ext2_inode) < 0 ? -EIO : (ssize_t) size;
+        if ((size_t) offset + r > ext2_inode.size)
+            ext2_inode.size = node->size = (size_t) offset + r;
+
+        return ext2_inode_write(desc, node->ino, &ext2_inode) < 0 ? -EIO : r;
     }
+
+    size_t old_size = ext2_inode.size;
 
     if ((size_t) offset + size > ext2_inode.size) {
         ext2_inode.size = (size_t) offset + size;
@@ -114,71 +95,45 @@ ssize_t ext2_write(struct vnode *node, off_t offset, size_t size, void *buf)
 
     size = MIN(size, (size_t) (ext2_inode.size - offset));
     
-    char *write_buf = NULL;
+    char *block = kmalloc(bs, &M_BUFFER, 0);
 
-    ssize_t ret = 0;
-    char *_buf = buf;
+    if (!block)
+        return -ENOMEM;
 
-    /* Write up to block boundary */
-    if (offset % bs) {
-        size_t start = MIN(bs - offset % bs, size);
+    size_t done = 0;
+    ssize_t r = 0;
 
-        if (start) {
-            write_buf = kmalloc(bs, &M_BUFFER, 0);
-            ext2_inode_block_read(desc, &ext2_inode, offset/bs, write_buf);
-            memcpy(write_buf + (offset % bs), _buf, start);
+    while (done < size) {
+        size_t off = (offset + done) % bs;
+        size_t len = MIN(bs - off, size - done);
 
-            if ((err = ext2_inode_block_write(desc, &ext2_inode, node->ino, offset/bs, write_buf)))
-                goto free_resources;
+        /* part of a block: the rest of it stays */
+        if (off || len < bs)
+            ext2_inode_block_read(desc, &ext2_inode, (offset + done) / bs, block);
 
-            ret += start;
-            size -= start;
-            _buf += start;
-            offset += start;
+        if ((r = iobuf_in(io, block + off, len)) <= 0)
+            break;
 
-            if (!size)
-                goto free_resources;
+        if ((err = ext2_inode_block_write(desc, &ext2_inode, node->ino, (offset + done) / bs, block))) {
+            r = err;
+            break;
         }
+
+        done += r;
+
+        /* a fault stopped it */
+        if ((size_t) r < len)
+            break;
     }
 
-    /* Write whole blocks */
-    size_t count = size/bs;
+    kfree(block);
 
-    while (count) {
-        if ((err = ext2_inode_block_write(desc, &ext2_inode, node->ino, offset/bs, _buf)))
-            goto free_resources;
-
-        ret    += bs;
-        size   -= bs;
-        _buf   += bs;
-        offset += bs;
-        --count;
-    }
-
-    if (!size)
-        goto free_resources;
-
-    size_t end = size % bs;
-
-    if (end) {
-        if (!write_buf)
-            write_buf = kmalloc(bs, &M_BUFFER, 0);
-
-        ext2_inode_block_read(desc, &ext2_inode, offset/bs, write_buf);
-        memcpy(write_buf, _buf, end);
-
-        if ((err = ext2_inode_block_write(desc, &ext2_inode, node->ino, offset/bs, write_buf)))
-            goto free_resources;
-
-        ret += end;
-    }
-
-free_resources:
-    if (write_buf)
-        kfree(write_buf);
+    /* it stopped short: the file ends where the data does */
+    if (done < size && (size_t) offset + size > old_size)
+        ext2_trunc(node, MAX(old_size, (size_t) offset + done));
 
     /* report a short write if some data made it to disk */
-    return ret ? ret : err;
+    return done ? (ssize_t) done : r;
 }
 
 ssize_t ext2_readdir(struct vnode *dir, off_t offset, struct dirent *dirent)

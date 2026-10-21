@@ -8,6 +8,7 @@ struct tty;
 #include <aquila/termios.h>
 #include <aquila/ioctl.h>
 #include <sys/proc.h>
+#include <fs/iobuf.h>
 
 typedef ssize_t (*ttyio)(struct tty *tty, size_t size, void *buf);
 
@@ -64,6 +65,7 @@ int     tty_new(struct proc *proc, size_t buf_size, ttyio master, ttyio slave, v
 int     tty_free(struct tty *tty);
 ssize_t tty_master_write(struct tty *tty, size_t size, void *buf);
 ssize_t tty_slave_write(struct tty *tty, size_t size, void *buf);
+ssize_t tty_write_iobuf(struct tty *tty, struct iobuf *io, ttyio write);
 int     tty_ioctl(struct tty *tty, int request, void *argp);
 void    tty_open(struct tty *tty, struct file *file);
 void    tty_hangup(struct tty *tty);

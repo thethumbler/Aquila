@@ -18,6 +18,10 @@
  * (SIGCODE_ADDR, shared, read and execute), which makes the sigreturn
  * system call: the frame is read back, its registers checked (user
  * segments, no privileged flags), the mask and the FPU state restored.
+ *
+ * The frame is made in the kernel and goes out with copyout(), and comes
+ * back with copyin(): a stack that isn't there is the process's fault
+ * (SIGSEGV), not the kernel's.
  */
 
 #include <core/system.h>
@@ -137,20 +141,6 @@ int arch_sigcode_map(struct proc *proc)
     return 0;
 }
 
-/* both ends of [sp, sp + size) in a writable user mapping: writing the
- * frame can fault only to bring pages in */
-static int user_writable(uintptr_t sp, size_t size)
-{
-    if (uaccess_check((void *) sp, size))
-        return 0;
-
-    struct vm_space *vm_space = &curproc->vm_space;
-    struct vm_entry *first = vm_space_find(vm_space, sp);
-    struct vm_entry *last  = vm_space_find(vm_space, sp + size - 1);
-
-    return first && last && (first->flags & VM_UW) && (last->flags & VM_UW);
-}
-
 /* the handler of `sig' runs when `r' is returned to */
 static void deliver(struct x86_regs *r, int sig)
 {
@@ -179,35 +169,40 @@ static void deliver(struct x86_regs *r, int sig)
     uintptr_t new_sp = f - sizeof(uintptr_t);
 #endif
 
-    /* nowhere to put it: as a fault would, it can't go on */
-    if (sp < 4096 || !user_writable(new_sp, sp - new_sp))
-        signal_exit(SIGSEGV);
-
-    struct sigframe *frame = (struct sigframe *) f;
+    /* the frame, made here (zeroed: nothing of the kernel's goes out) */
+    struct sigframe frame;
+    struct sigframe *uframe = (struct sigframe *) f;
     int fault = sig == SIGSEGV || sig == SIGBUS || sig == SIGILL || sig == SIGFPE;
 
-    frame->info = (struct aquila_siginfo) {
+    memset(&frame, 0, sizeof(frame));
+    frame.info = (struct aquila_siginfo) {
         .si_signo = sig,
         .si_addr  = fault ? thread->fault_addr : 0,
     };
-    frame->mask = mask;
-    frame->regs = *r;
-    frame->fpu  = x86_fpu_save_to(frame->fxsave);
+    frame.mask = mask;
+    frame.regs = *r;
+    frame.fpu  = x86_fpu_save_to(frame.fxsave);
+
+    /* below it, what the handler returns to (and its arguments) */
+#if ARCH_BITS==32
+    uintptr_t args[I386_ARGS / sizeof(uintptr_t)] = {
+        SIGCODE_ADDR, sig, (uintptr_t) &uframe->info, 0, 0,
+    };
+#else
+    uintptr_t args[1] = {SIGCODE_ADDR};
+#endif
+
+    /* nowhere to put it: as a fault would, it can't go on */
+    if (sp < 4096 || copyout(uframe, &frame, sizeof(frame)) ||
+        copyout((void *) new_sp, args, sizeof(args)))
+        signal_exit(SIGSEGV);
 
     /* the handler starts with a clean FPU */
     x86_fpu_reset();
 
-#if ARCH_BITS==32
-    uintptr_t *args = (uintptr_t *) new_sp;
-    args[0] = SIGCODE_ADDR;
-    args[1] = sig;
-    args[2] = (uintptr_t) &frame->info;
-    args[3] = 0;
-    args[4] = 0;
-#else
-    *(uintptr_t *) new_sp = SIGCODE_ADDR;
+#if ARCH_BITS==64
     r->rdi = sig;
-    r->rsi = (uintptr_t) &frame->info;
+    r->rsi = (uintptr_t) &uframe->info;
     r->rdx = 0;
 #endif
 
@@ -274,12 +269,10 @@ void arch_sigreturn(void)
 
     struct sigframe frame;
 
-    if ((f & 15) || !user_writable(f, sizeof(frame))) {
+    if ((f & 15) || copyin(&frame, (void *) f, sizeof(frame))) {
         signal_force(curproc, SIGSEGV);
         return;
     }
-
-    memcpy(&frame, (void *) f, sizeof(frame));
 
     /* its registers, but user mode's segments, and no flags it couldn't
      * set itself */

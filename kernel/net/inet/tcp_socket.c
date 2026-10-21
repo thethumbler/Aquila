@@ -464,9 +464,6 @@ static int socket_tcp_accept(struct file *file, struct file *conn, const struct 
     if (pcb->state != TCP_LISTEN)
         return -EINVAL;
 
-    if (addr && (uaccess_check(len, sizeof(*len)) || uaccess_check(addr, *len)))
-        return -EFAULT;
-
     uint64_t until = deadline(pcb->rcvtimeo);
 
     while (!pcb->accept_head) {
@@ -582,14 +579,13 @@ static int can_send(struct tcp_pcb *pcb)
     return (pcb->state == TCP_ESTABLISHED || pcb->state == TCP_CLOSE_WAIT) && !pcb->fin_queued;
 }
 
-static ssize_t socket_tcp_send(struct file *file, void *buf, size_t len, int flags,
+static ssize_t socket_tcp_send(struct file *file, struct iobuf *io, int flags,
                                const struct sockaddr *to, socklen_t tolen)
 {
     struct tcp_pcb *pcb = file->socket->p;
     int r;
     uint64_t until = deadline(pcb->sndtimeo);
-    size_t sent = 0;
-    char chunk[COPY_CHUNK];
+    size_t sent = 0, len = io->resid;
 
     if (flags & MSG_OOB)
         return -EOPNOTSUPP;
@@ -629,11 +625,19 @@ static ssize_t socket_tcp_send(struct file *file, void *buf, size_t len, int fla
             continue;
         }
 
-        size_t n = MIN(MIN(room, len - sent), sizeof(chunk));
+        /* straight into the ring: [net] doesn't look past its tail */
+        ssize_t n = ringbuf_write_iobuf(pcb->sndbuf, MIN(room, len - sent), io);
 
-        memcpy(chunk, (char *) buf + sent, n);
-        ringbuf_write(pcb->sndbuf, n, chunk);
+        if (n < 0) {
+            if (!sent)
+                return n;
+            break;
+        }
+
         sent += n;
+
+        if (io->fault)
+            break;
     }
 
     tcp_output(pcb);
@@ -654,13 +658,13 @@ static void window_update(struct tcp_pcb *pcb)
         tcp_send_ack(pcb);
 }
 
-static ssize_t socket_tcp_recv(struct file *file, void *buf, size_t len, int flags,
+static ssize_t socket_tcp_recv(struct file *file, struct iobuf *io, int flags,
                                struct sockaddr *from, socklen_t *fromlen)
 {
     struct tcp_pcb *pcb = file->socket->p;
     int r;
     uint64_t until = deadline(pcb->rcvtimeo);
-    size_t got = 0;
+    size_t got = 0, len = io->resid;
     char chunk[COPY_CHUNK];
 
     if (flags & MSG_OOB)
@@ -672,18 +676,35 @@ static ssize_t socket_tcp_recv(struct file *file, void *buf, size_t len, int fla
     while (got < len) {
         size_t avail = ringbuf_available(pcb->rcvbuf);
 
+        /* a peek reads past what it read, it goes through a chunk */
         if ((flags & MSG_PEEK) && avail > got) {
             size_t n = ringbuf_read_noconsume(pcb->rcvbuf, got, MIN(len - got, sizeof(chunk)), chunk);
-            memcpy((char *) buf + got, chunk, n);
-            got += n;
+            ssize_t c = iobuf_out(io, chunk, n);
+
+            if (c < 0)
+                return got ? (ssize_t) got : c;
+
+            got += c;
+
+            if (io->fault)
+                break;
+
             continue;
         }
 
+        /* straight from the ring: [net] doesn't look before its head */
         if (avail && !(flags & MSG_PEEK)) {
-            size_t n = ringbuf_read(pcb->rcvbuf, MIN(len - got, sizeof(chunk)), chunk);
-            memcpy((char *) buf + got, chunk, n);
+            ssize_t n = ringbuf_read_iobuf(pcb->rcvbuf, len - got, io);
+
+            if (n < 0)
+                return got ? (ssize_t) got : n;
+
             got += n;
             window_update(pcb);
+
+            if (io->fault)
+                break;
+
             continue;
         }
 
@@ -878,11 +899,8 @@ static int socket_tcp_ioctl(struct file *file, int request, void *argp)
     struct tcp_pcb *pcb = file->socket->p;
 
     if (request == FIONREAD) {
-        if (uaccess_check(argp, sizeof(int)))
-            return -EFAULT;
-
-        *(int *) argp = ringbuf_available(pcb->rcvbuf);
-        return 0;
+        int n = ringbuf_available(pcb->rcvbuf);
+        return copyout(argp, &n, sizeof(n));
     }
 
     return inet_ifioctl(request, argp);

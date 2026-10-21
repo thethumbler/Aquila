@@ -515,8 +515,8 @@ static int ata_probe()
 struct dev atadev = {
     .name  = "ata",
     .probe = ata_probe,
-    .read  = ata_read,
-    .write = ata_write,
+    .bread  = ata_read,
+    .bwrite = ata_write,
     .getbs = ata_getbs,
     .sync  = ata_sync,
 

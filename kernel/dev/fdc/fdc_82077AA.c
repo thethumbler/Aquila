@@ -254,7 +254,7 @@ static ssize_t fdc_read(struct devid *dd, off_t offset, size_t size, void *buf)
 static struct dev fdcdev = {
     .name  = "fdc_82077AA",
     .probe = fdc_probe,
-    .read  = fdc_read,
+    .bread = fdc_read,
     .getbs = fdc_getbs,
 
     .fops = {

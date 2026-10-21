@@ -306,10 +306,11 @@ static int socket_inet_connect(struct file *file, const struct sockaddr *addr, s
     return 0;
 }
 
-static ssize_t socket_inet_send(struct file *file, void *buf, size_t len, int flags,
+static ssize_t socket_inet_send(struct file *file, struct iobuf *io, int flags,
                                 const struct sockaddr *to, socklen_t tolen)
 {
     struct inet_sock *sock = file->socket->p;
+    size_t len = io->resid;
     uint32_t ip;
     uint16_t port;
     int err;
@@ -360,9 +361,15 @@ static ssize_t socket_inet_send(struct file *file, void *buf, size_t len, int fl
     uint32_t src = sock->laddr && sock->laddr != 0xffffffff ? sock->laddr :
                    ipv4_source(netif, ip);
 
-    if (sock->proto == IP_PROTO_UDP) {
-        memcpy(netbuf_put(nb, len), buf, len);
+    /* the datagram whole, or not at all */
+    void *data = netbuf_put(nb, len);
 
+    if ((size_t) iobuf_in(io, data, len) != len) {
+        netbuf_free(nb);
+        return -EFAULT;
+    }
+
+    if (sock->proto == IP_PROTO_UDP) {
         struct udp_hdr *uh = netbuf_push(nb, sizeof(*uh));
         uh->src = sock->lport;
         uh->dst = port;
@@ -375,15 +382,13 @@ static ssize_t socket_inet_send(struct file *file, void *buf, size_t len, int fl
             uh->checksum = 0xffff;
     } else {
         /* ping: echo requests, with the socket's identifier */
-        struct icmp_hdr *icmp = (struct icmp_hdr *) buf;
+        struct icmp_hdr *icmp = data;
 
         if (len < sizeof(*icmp) || icmp->type != ICMP_ECHO_REQUEST || icmp->code) {
             netbuf_free(nb);
             return -EINVAL;
         }
 
-        icmp = netbuf_put(nb, len);
-        memcpy(icmp, buf, len);
         icmp->id = sock->lport;
         icmp->checksum = 0;
         icmp->checksum = inet_checksum(icmp, len);
@@ -395,7 +400,7 @@ static ssize_t socket_inet_send(struct file *file, void *buf, size_t len, int fl
     return len;
 }
 
-static ssize_t socket_inet_recv(struct file *file, void *buf, size_t len, int flags,
+static ssize_t socket_inet_recv(struct file *file, struct iobuf *io, int flags,
                                 struct sockaddr *from, socklen_t *fromlen)
 {
     struct inet_sock *sock = file->socket->p;
@@ -421,9 +426,12 @@ static ssize_t socket_inet_recv(struct file *file, void *buf, size_t len, int fl
     }
 
     struct netbuf *nb = sock->recv_head;
-    size_t n = MIN(len, nb->len);
 
-    memcpy(buf, nb->data, n);
+    /* a fault: the datagram stays */
+    ssize_t n = iobuf_out(io, nb->data, nb->len);
+
+    if (n < 0)
+        return n;
 
     if (from && fromlen)
         inet_sockaddr_put(from, fromlen, nb->src_ip, nb->src_port);
@@ -584,11 +592,8 @@ static int socket_inet_ioctl(struct file *file, int request, void *argp)
 
     /* the size of the next datagram */
     if (request == FIONREAD) {
-        if (uaccess_check(argp, sizeof(int)))
-            return -EFAULT;
-
-        *(int *) argp = sock->recv_head ? (int) sock->recv_head->len : 0;
-        return 0;
+        int n = sock->recv_head ? (int) sock->recv_head->len : 0;
+        return copyout(argp, &n, sizeof(n));
     }
 
     return inet_ifioctl(request, argp);

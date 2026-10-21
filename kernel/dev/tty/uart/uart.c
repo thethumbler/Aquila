@@ -76,7 +76,7 @@ static struct uart *uart_get(devid_t minor)
     return devices[minor - 64];
 }
 
-ssize_t uart_read(struct devid *dd, off_t offset __unused, size_t size, void *buf)
+ssize_t uart_read(struct devid *dd, off_t offset __unused, struct iobuf *io)
 {
     struct uart *u = uart_get(dd->minor);
     if (!u) return -EIO;
@@ -84,10 +84,10 @@ ssize_t uart_read(struct devid *dd, off_t offset __unused, size_t size, void *bu
     int err = tty_background(u->tty, SIGTTIN);
     if (err) return err;
 
-    return ringbuf_read(u->in, size, buf);
+    return ringbuf_read_iobuf(u->in, io->resid, io);
 }
 
-ssize_t uart_write(struct devid *dd, off_t offset __unused, size_t size, void *buf)
+ssize_t uart_write(struct devid *dd, off_t offset __unused, struct iobuf *io)
 {
     struct uart *u = uart_get(dd->minor);
     if (!u) return -EIO;
@@ -99,7 +99,7 @@ ssize_t uart_write(struct devid *dd, off_t offset __unused, size_t size, void *b
             return err;
     }
 
-    return tty_slave_write(u->tty, size, buf);
+    return tty_write_iobuf(u->tty, io, tty_slave_write);
 }
 
 /* a read found no data */

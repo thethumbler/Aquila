@@ -10,17 +10,21 @@ struct vnode;
 struct file;
 struct uio;
 struct vops;
+struct iobuf;
 
 #include <aquila/dirent.h>
 
 /**
  * \ingroup vfs
  * \brief file operations
+ *
+ * read and write move the bytes through an iobuf (fs/iobuf.h): its
+ * resid is how many are asked for
  */
 struct fops {
     int         (*open)    (struct file *file);
-    ssize_t     (*read)    (struct file *file, void *buf, size_t size);    
-    ssize_t     (*write)   (struct file *file, void *buf, size_t size);
+    ssize_t     (*read)    (struct file *file, struct iobuf *io);
+    ssize_t     (*write)   (struct file *file, struct iobuf *io);
     ssize_t     (*readdir) (struct file *file, struct dirent *dirent);  
     off_t       (*lseek)   (struct file *file, off_t offset, int whence);
     int         (*close)   (struct file *file);
@@ -62,8 +66,9 @@ struct uio {
  * \brief vnode operations
  */
 struct vops {
-    ssize_t (*read)    (struct vnode *vnode, off_t offset, size_t size, void *buf);
-    ssize_t (*write)   (struct vnode *vnode, off_t offset, size_t size, void *buf);
+    /* io->resid bytes at offset, through the iobuf */
+    ssize_t (*read)    (struct vnode *vnode, off_t offset, struct iobuf *io);
+    ssize_t (*write)   (struct vnode *vnode, off_t offset, struct iobuf *io);
     int     (*ioctl)   (struct vnode *vnode, int request, void *argp);
     int     (*close)   (struct vnode *vnode);
     int     (*trunc)   (struct vnode *vnode, off_t len);
@@ -216,6 +221,10 @@ int     vfs_vget(struct vnode *super, ino_t ino, struct vnode **vnode);
 
 int     vfs_map(struct vm_space *vm_space, struct vm_entry *vm_entry);
 
+ssize_t vfs_read_io(struct vnode *vnode, off_t offset, struct iobuf *io);
+ssize_t vfs_write_io(struct vnode *vnode, off_t offset, struct iobuf *io);
+
+/* the kernel's own: a kernel buffer */
 ssize_t vfs_read(struct vnode *vnode, off_t offset, size_t size, void *buf);
 ssize_t vfs_write(struct vnode *vnode, off_t offset, size_t size, void *buf);
 int     vfs_ioctl(struct vnode *vnode, unsigned long request, void *argp);
@@ -237,8 +246,8 @@ int     vfs_dir_empty(struct vnode *dir);
 
 /* file operations mappings */
 int     vfs_file_open(struct file *file);
-ssize_t vfs_file_read(struct file *file, void *buf, size_t size);    
-ssize_t vfs_file_write(struct file *file, void *buf, size_t size);
+ssize_t vfs_file_read(struct file *file, struct iobuf *io);
+ssize_t vfs_file_write(struct file *file, struct iobuf *io);
 ssize_t vfs_file_readdir(struct file *file, struct dirent *dirent);  
 off_t   vfs_file_lseek(struct file *file, off_t offset, int whence);
 ssize_t vfs_file_close(struct file *file);

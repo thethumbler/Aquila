@@ -83,6 +83,14 @@ static inline int strlen(const char *s)
     return _s - s;
 }
 
+/* the length of s, at most max (no NUL in max bytes) */
+static inline size_t strnlen(const char *s, size_t max)
+{
+    size_t n = 0;
+    while (n < max && s[n]) n++;
+    return n;
+}
+
 static inline char *strdup(const char *s)
 {
     int len = strlen(s);

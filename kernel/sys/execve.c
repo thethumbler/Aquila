@@ -10,36 +10,6 @@
 /* maximum total size of arguments and environment (strings + pointers) */
 #define EXEC_ARG_MAX    (128 * 1024)
 
-/* count the entries of a NULL-terminated user array of user strings,
- * validating every pointer and accounting their size into `total' */
-static int exec_strings_count(char * const u_strs[], int *count, size_t *total)
-{
-    int cnt = 0;
-
-    if (u_strs) {
-        for (;; ++cnt) {
-            if (uaccess_check(&u_strs[cnt], sizeof(char *)))
-                return -EFAULT;
-
-            const char *str = u_strs[cnt];
-
-            if (!str)
-                break;
-
-            if (uaccess_str_check(str))
-                return -EFAULT;
-
-            *total += strlen(str) + 1 + sizeof(char *);
-
-            if (*total > EXEC_ARG_MAX)
-                return -E2BIG;
-        }
-    }
-
-    *count = cnt;
-    return 0;
-}
-
 static void exec_strings_free(char **strs, int count)
 {
     if (!strs)
@@ -51,29 +21,76 @@ static void exec_strings_free(char **strs, int count)
     kfree(strs);
 }
 
-/* copy `count' validated user strings into a NULL-terminated kernel array */
-static int exec_strings_copy(char * const u_strs[], int count, char ***ref)
+/*
+ * A NULL-terminated user array of user strings into a NULL-terminated
+ * kernel array of kernel copies (*count of them), their size (strings and
+ * pointers) added to `total', no more than EXEC_ARG_MAX in all; each
+ * string comes in through `buf' (EXEC_ARG_MAX bytes).
+ */
+static int exec_strings_get(char * const u_strs[], char *buf, size_t *total, int *count, char ***ref)
 {
-    char **strs = kmalloc((count + 1) * sizeof(char *), &M_BUFFER, M_ZERO);
+    int cnt = 0, err = 0;
+    char *u;
+
+    /* how many */
+    for (; u_strs; ++cnt) {
+        if (copyin(&u, &u_strs[cnt], sizeof(u)))
+            return -EFAULT;
+
+        if (!u)
+            break;
+
+        if ((cnt + 1) * sizeof(char *) > EXEC_ARG_MAX)
+            return -E2BIG;
+    }
+
+    char **strs = kmalloc((cnt + 1) * sizeof(char *), &M_BUFFER, M_ZERO);
 
     if (!strs)
         return -ENOMEM;
 
-    for (int i = 0; i < count; ++i) {
-        /* revalidate, the user may have changed the array meanwhile */
-        if (!u_strs[i] || uaccess_str_check(u_strs[i])) {
-            exec_strings_free(strs, count);
-            return -EFAULT;
+    for (int i = 0; i < cnt; ++i) {
+        size_t room = EXEC_ARG_MAX - *total;
+        long len;
+
+        /* the array may have changed since it was counted */
+        if (copyin(&u, &u_strs[i], sizeof(u)) || !u) {
+            err = -EFAULT;
+            goto error;
         }
 
-        if (!(strs[i] = strdup(u_strs[i]))) {
-            exec_strings_free(strs, count);
-            return -ENOMEM;
+        if (!room || (len = copyinstr(buf, u, room)) == -ENAMETOOLONG) {
+            err = -E2BIG;
+            goto error;
         }
+
+        if (len < 0) {
+            err = len;
+            goto error;
+        }
+
+        *total += len + 1 + sizeof(char *);
+
+        if (*total > EXEC_ARG_MAX) {
+            err = -E2BIG;
+            goto error;
+        }
+
+        if (!(strs[i] = kmalloc(len + 1, &M_BUFFER, 0))) {
+            err = -ENOMEM;
+            goto error;
+        }
+
+        memcpy(strs[i], buf, len + 1);
     }
 
+    *count = cnt;
     *ref = strs;
     return 0;
+
+error:
+    exec_strings_free(strs, cnt);
+    return err;
 }
 
 /* how many interpreters may be scripts themselves */
@@ -201,29 +218,19 @@ int proc_execve(struct thread *thread, const char *fn, char * const _argp[], cha
     char **argp = NULL;
     char **envp = NULL;
 
-    if ((err = exec_strings_count(_argp, &argc, &total)))
-        return err;
+    /* the arguments and the environment: the kernel's copies */
+    char *buf = kmalloc(EXEC_ARG_MAX, &M_BUFFER, 0);
 
-    if ((err = exec_strings_count(_envp, &envc, &total)))
-        return err;
+    if (!buf)
+        return -ENOMEM;
 
-    if ((err = exec_strings_copy(_argp, argc, &argp)))
+    if (!(err = exec_strings_get(_argp, buf, &total, &argc, &argp)))
+        err = exec_strings_get(_envp, buf, &total, &envc, &envp);
+
+    kfree(buf);
+
+    if (err)
         goto free_resources;
-
-    if ((err = exec_strings_copy(_envp, envc, &envp)))
-        goto free_resources;
-
-    /* strings may have grown since they were counted */
-    total = 0;
-    for (int i = 0; i < argc; ++i)
-        total += strlen(argp[i]) + 1 + sizeof(char *);
-    for (int i = 0; i < envc; ++i)
-        total += strlen(envp[i]) + 1 + sizeof(char *);
-
-    if (total > EXEC_ARG_MAX) {
-        err = -E2BIG;
-        goto free_resources;
-    }
 
     /* scripts run as their interpreters */
     for (int depth = 0;; ++depth) {

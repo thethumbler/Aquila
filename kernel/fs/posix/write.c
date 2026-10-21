@@ -5,6 +5,7 @@
 #include <core/system.h>
 
 #include <fs/vfs.h>
+#include <fs/iobuf.h>
 
 #include <aquila/fcntl.h>
 #include <aquila/errno.h>
@@ -12,23 +13,22 @@
 /**
  * posix_file_write
  *
- * Writes up to `size' bytes from `buf' into a file.
+ * Writes up to io->resid bytes from the iobuf into a file.
  *
  * @file    File Descriptor for the function to operate on.
- * @buf     Buffer to read from.
- * @size    Number of bytes to write.
+ * @io      The buffer to empty.
  * @returns written bytes on success, or error-code on failure.
  */
 
-ssize_t posix_file_write(struct file *file, void *buf, size_t size)
+ssize_t posix_file_write(struct file *file, struct iobuf *io)
 {
     if (!(file->flags & (O_WRONLY | O_RDWR)))   /* File is not opened for writing */
         return -EBADF;
     
     if (file->flags & O_NONBLOCK) { /* Non-blocking I/O */
-        if (vfs_file_can_write(file, size)) {
-            /* write up to `size' from `buf' into file */
-            ssize_t retval = vfs_write(file->vnode, file->offset, size, buf);
+        if (vfs_file_can_write(file, io->resid)) {
+            /* write up to io->resid from the iobuf into file */
+            ssize_t retval = vfs_write_io(file->vnode, file->offset, io);
 
             if (retval < 0) /* Error */
                 return retval;
@@ -47,24 +47,21 @@ ssize_t posix_file_write(struct file *file, void *buf, size_t size)
             return -EAGAIN;
         }
     } else {    /* Blocking I/O */
-        ssize_t retval = size;
-        char *_buf = buf;
+        size_t size = io->resid;
         
-        while (size) {
-            ssize_t r = vfs_write(file->vnode, file->offset + (retval - size), size, _buf);
+        while (io->resid) {
+            ssize_t r = vfs_write_io(file->vnode, file->offset + (size - io->resid), io);
 
             if (r < 0) {    /* Error */
                 /* report the error only if nothing was written */
-                if ((size_t) retval == size)
+                if (io->resid == size)
                     return r;
                 break;
             }
 
-            size -= r;
-            _buf += r;
-
-            /* No bytes left to be written, or reached END-OF-FILE */
-            if (!size || vfs_file_eof(file))    /* Done writting */
+            /* No bytes left to be written, the buffer faulted, or reached
+             * END-OF-FILE */
+            if (!io->resid || io->fault || vfs_file_eof(file))    /* Done writting */
                 break;
 
             /* readers may be asleep waiting for what was just written
@@ -81,14 +78,14 @@ ssize_t posix_file_write(struct file *file, void *buf, size_t size)
             int err = thread_queue_sleep(file->vnode->write_queue);
 
             if (err) {
-                if ((size_t) retval == size)
+                if (io->resid == size)
                     return err;
                 break;
             }
         }
         
         /* Store written bytes count */
-        retval -= size;
+        ssize_t retval = size - io->resid;
 
         /* Update file offset */
         file->offset += retval;

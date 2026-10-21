@@ -29,7 +29,9 @@ void arch_sys_execve(struct proc *proc, int argc, char * const _argp[], int envc
     for (int i = 0; i < envc - 1; ++i)
         strings_size += strlen(envp[i]) + 1;
 
-    /* Start at the top of user stack */
+    /* Start at the top of user stack: the one the new image was just given
+     * (the kernel's own mapping, its writes fault only to bring pages
+     * in, they don't need copyout) */
     volatile char *stack = (volatile char *) USER_STACK;
     tlb_flush();
 

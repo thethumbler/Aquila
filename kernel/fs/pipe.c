@@ -40,13 +40,13 @@ static void pipefs_pfree(struct pipe *pipe)
     }
 }
 
-static ssize_t pipefs_read(struct vnode *node, off_t offset __unused, size_t size, void *buf)
+static ssize_t pipefs_read(struct vnode *node, off_t offset __unused, struct iobuf *io)
 {
     struct pipe *pipe = node->p;
-    return ringbuf_read(pipe->ring, size, buf);
+    return ringbuf_read_iobuf(pipe->ring, io->resid, io);
 }
 
-static ssize_t pipefs_write(struct vnode *node, off_t offset __unused, size_t size, void *buf)
+static ssize_t pipefs_write(struct vnode *node, off_t offset __unused, struct iobuf *io)
 {
     struct pipe *pipe = node->p;
 
@@ -54,7 +54,7 @@ static ssize_t pipefs_write(struct vnode *node, off_t offset __unused, size_t si
     if (!has_readers(pipe))
         return -EPIPE;
 
-    return ringbuf_write(pipe->ring, size, buf);
+    return ringbuf_write_iobuf(pipe->ring, io->resid, io);
 }
 
 static int pipefs_close(struct vnode *node)

@@ -11,13 +11,33 @@ struct dev kmsgdev;
 extern struct ringbuf *kmsg;
 extern struct queue *kmsg_wait;
 
-static ssize_t kmsgdev_read(struct devid *dd __unused, off_t offset, size_t size, void *buf)
+static ssize_t kmsgdev_read(struct devid *dd __unused, off_t offset, struct iobuf *io)
 {
-    //printk("kmsgdev_read(dd=%p, offset=%d, size=%d, buf=%p)\n", dd, offset, size, buf);
-    return ringbuf_read_noconsume(kmsg, offset, size, buf);
+    /* the ring from offset on, a piece at a time */
+    char tmp[256];
+    size_t size = io->resid, done = 0;
+
+    while (done < size) {
+        size_t len = ringbuf_read_noconsume(kmsg, offset + done, MIN(size - done, sizeof(tmp)), tmp);
+
+        if (!len)
+            break;
+
+        ssize_t r = iobuf_out(io, tmp, len);
+
+        if (r < 0)
+            return done ? (ssize_t) done : r;
+
+        done += r;
+
+        if ((size_t) r < len)
+            break;
+    }
+
+    return done;
 }
 
-static ssize_t kmsgdev_write(struct devid *dd __unused, off_t offset, size_t size, void *buf)
+static ssize_t kmsgdev_write(struct devid *dd __unused, off_t offset __unused, struct iobuf *io)
 {
     //printk("kmsg: [%d: %d] %s: ", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name);
     //char *_buf = (char *) buf;
@@ -28,19 +48,25 @@ static ssize_t kmsgdev_write(struct devid *dd __unused, off_t offset, size_t siz
     //printk("\n");
     //return ringbuf_write(kmsg, size, buf);
 
-    /* buf is not NUL-terminated, print exactly `size' bytes */
+    /* the buffer is not NUL-terminated, print exactly what it has */
     char tmp[65];
-    size_t done = 0;
+    size_t size = io->resid, done = 0;
 
     while (done < size) {
-        size_t len = MIN(size - done, sizeof(tmp) - 1);
-        memcpy(tmp, (char *) buf + done, len);
+        ssize_t len = iobuf_in(io, tmp, MIN(size - done, sizeof(tmp) - 1));
+
+        if (len < 0)
+            return done ? (ssize_t) done : len;
+
         tmp[len] = '\0';
         printk("%s", tmp);
         done += len;
+
+        if (io->fault)
+            break;
     }
 
-    return size;
+    return done;
 }
 
 static int kmsg_file_open(struct file *file)

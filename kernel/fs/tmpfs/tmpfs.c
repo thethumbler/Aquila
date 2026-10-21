@@ -12,6 +12,7 @@
 #include <mm/mm.h>
 
 #include <fs/vfs.h>
+#include <fs/iobuf.h>
 #include <fs/pseudofs.h>
 #include <fs/tmpfs.h>
 #include <fs/posix.h>
@@ -41,7 +42,7 @@ static int tmpfs_close(struct vnode *vnode)
     return 0;
 }
 
-static ssize_t tmpfs_read(struct vnode *node, off_t offset, size_t size, void *buf)
+static ssize_t tmpfs_read(struct vnode *node, off_t offset, struct iobuf *io)
 {
     if (offset < 0)
         return -EINVAL;
@@ -49,13 +50,13 @@ static ssize_t tmpfs_read(struct vnode *node, off_t offset, size_t size, void *b
     if ((size_t) offset >= node->size)
         return 0;
 
-    ssize_t r = MIN(node->size - offset, size);
-    memcpy(buf, (char *) node->p + offset, r);
-    return r;
+    return iobuf_out(io, (char *) node->p + offset, node->size - offset);
 }
 
-static ssize_t tmpfs_write(struct vnode *node, off_t offset, size_t size, void *buf)
+static ssize_t tmpfs_write(struct vnode *node, off_t offset, struct iobuf *io)
 {
+    size_t size = io->resid, old_size = node->size;
+
     if (offset < 0)
         return -EINVAL;
 
@@ -74,8 +75,14 @@ static ssize_t tmpfs_write(struct vnode *node, off_t offset, size_t size, void *
         node->size = sz;
     }
 
-    memcpy((char *) node->p + offset, buf, size);
-    return size;
+    ssize_t r = iobuf_in(io, (char *) node->p + offset, size);
+    size_t done = r > 0 ? r : 0;
+
+    /* a fault stopped it: the file ends where the data does */
+    if (done < size)
+        node->size = MAX(old_size, (size_t) offset + done);
+
+    return r;
 }
 
 static int tmpfs_trunc(struct vnode *vnode, off_t len)

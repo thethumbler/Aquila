@@ -3,6 +3,7 @@
 
 #include <core/system.h>
 #include <mm/mm.h>
+#include <fs/iobuf.h>
 
 #define RING_INDEX(ring, i) ((i) % ((ring)->size))
 
@@ -135,6 +136,56 @@ static inline size_t ringbuf_write(struct ringbuf *ring, size_t n, char *buf)
     }
 
     return size - n;
+}
+
+/*
+ * Between a ring and an iobuf (a read's or a write's buffer): up to n
+ * bytes, a contiguous piece of the ring at a time, a piece taken from (or
+ * put in) the ring only once it's copied: how many, -EFAULT if nothing
+ * was
+ */
+
+static inline ssize_t ringbuf_read_iobuf(struct ringbuf *ring, size_t n, struct iobuf *io)
+{
+    size_t done = 0;
+
+    n = MIN(n, io->resid);
+
+    while (done < n && ring->head != ring->tail) {
+        /* up to the tail, or the end of the ring */
+        size_t end = ring->tail > ring->head ? ring->tail : ring->size;
+        ssize_t r = iobuf_out(io, ring->buf + ring->head, MIN(n - done, end - ring->head));
+
+        if (r < 0)
+            return done ? (ssize_t) done : r;
+
+        ring->head = RING_INDEX(ring, ring->head + r);
+        done += r;
+    }
+
+    return done;
+}
+
+static inline ssize_t ringbuf_write_iobuf(struct ringbuf *ring, size_t n, struct iobuf *io)
+{
+    size_t done = 0;
+
+    n = MIN(n, io->resid);
+
+    while (done < n && RING_INDEX(ring, ring->tail + 1) != ring->head) {
+        /* up to the slot before the head, or the end of the ring */
+        size_t end = ring->head > ring->tail ? ring->head - 1 :
+                     ring->head ? ring->size : ring->size - 1;
+        ssize_t r = iobuf_in(io, ring->buf + ring->tail, MIN(n - done, end - ring->tail));
+
+        if (r < 0)
+            return done ? (ssize_t) done : r;
+
+        ring->tail = RING_INDEX(ring, ring->tail + r);
+        done += r;
+    }
+
+    return done;
 }
 
 static inline size_t ringbuf_write_overwrite(struct ringbuf *ring, size_t n, char *buf)

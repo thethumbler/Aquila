@@ -36,10 +36,10 @@ int vfs_file_open(struct file *file)
  * \ingroup vfs
  * \brief read from an open file
  */
-ssize_t vfs_file_read(struct file *file, void *buf, size_t nbytes)
+ssize_t vfs_file_read(struct file *file, struct iobuf *io)
 {
     if (file && file->flags & FILE_SOCKET)
-        return socket_recv(file, buf, nbytes, 0, NULL, NULL);
+        return socket_recv(file, io, 0, NULL, NULL);
 
     if (!file || !file->vnode)
         return -EINVAL;
@@ -49,7 +49,7 @@ ssize_t vfs_file_read(struct file *file, void *buf, size_t nbytes)
         return -EISDIR;
 
     if (ISDEV(file->vnode))
-        return kdev_file_read(&VNODE_DEV(file->vnode), file, buf, nbytes);
+        return kdev_file_read(&VNODE_DEV(file->vnode), file, io);
 
     if (!file->vnode->fs)
         return -EINVAL;
@@ -57,23 +57,23 @@ ssize_t vfs_file_read(struct file *file, void *buf, size_t nbytes)
     if (!file->vnode->fs->fops.read)
         return -ENOSYS;
 
-    return file->vnode->fs->fops.read(file, buf, nbytes);
+    return file->vnode->fs->fops.read(file, io);
 }
 
 /**
  * \ingroup vfs
  * \brief write to an open file
  */
-ssize_t vfs_file_write(struct file *file, void *buf, size_t nbytes)
+ssize_t vfs_file_write(struct file *file, struct iobuf *io)
 {
     if (file && file->flags & FILE_SOCKET)
-        return socket_send(file, buf, nbytes, 0, NULL, 0);
+        return socket_send(file, io, 0, NULL, 0);
 
     if (!file || !file->vnode)
         return -EINVAL;
 
     if (ISDEV(file->vnode))
-        return kdev_file_write(&VNODE_DEV(file->vnode), file, buf, nbytes);
+        return kdev_file_write(&VNODE_DEV(file->vnode), file, io);
 
     if (!file->vnode->fs)
         return -EINVAL;
@@ -81,7 +81,7 @@ ssize_t vfs_file_write(struct file *file, void *buf, size_t nbytes)
     if (!file->vnode->fs->fops.write)
         return -ENOSYS;
 
-    return file->vnode->fs->fops.write(file, buf, nbytes);
+    return file->vnode->fs->fops.write(file, io);
 }
 
 /**

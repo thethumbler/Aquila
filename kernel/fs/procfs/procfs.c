@@ -7,6 +7,7 @@
 #include <boot/boot.h>
 
 #include <fs/vfs.h>
+#include <fs/iobuf.h>
 #include <fs/devfs.h>
 #include <fs/posix.h>
 #include <fs/vcache.h>
@@ -510,7 +511,8 @@ static struct procfs_proc_entry proc_entries[] = {
 #define PROC_INO(pid)   (((pid) + 1) * (PROCFS_PROC_ENTRIES + 1))
 #define INO_PID(ino)    ((ino) / (PROCFS_PROC_ENTRIES + 1) - 1)
 
-static ssize_t procfs_read(struct vnode *node, off_t offset, size_t size, void *buf)
+/* an entry's text from offset, into the kernel's buf */
+static ssize_t procfs_entry_read(struct vnode *node, off_t offset, size_t size, char *buf)
 {
     size_t id = (size_t) node->p;
 
@@ -525,6 +527,39 @@ static ssize_t procfs_read(struct vnode *node, off_t offset, size_t size, void *
     }
 
     return -ENOSYS;
+}
+
+/* the text made a page at a time, out through the iobuf */
+static ssize_t procfs_read(struct vnode *node, off_t offset, struct iobuf *io)
+{
+    char *buf = kmalloc(PAGE_SIZE, &M_BUFFER, 0);
+
+    if (!buf)
+        return -ENOMEM;
+
+    size_t size = io->resid, done = 0;
+    ssize_t r = 0;
+
+    while (done < size) {
+        size_t len = MIN(size - done, PAGE_SIZE);
+
+        if ((r = procfs_entry_read(node, offset + done, len, buf)) <= 0)
+            break;
+
+        size_t made = r;
+
+        if ((r = iobuf_out(io, buf, made)) < 0)
+            break;
+
+        done += r;
+
+        /* the text's end, or a fault */
+        if ((size_t) r < len)
+            break;
+    }
+
+    kfree(buf);
+    return done ? (ssize_t) done : r;
 }
 
 static ssize_t procfs_readdir(struct vnode *vnode, off_t offset, struct dirent *dirent)

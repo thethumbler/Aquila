@@ -50,9 +50,11 @@ static int ifaddr_get(const struct sockaddr *a, uint32_t *ip)
 
 /* SIOCGIFCONF: as many interfaces as there is room for (how much is
  * needed, without a buffer) */
-static int ifconf(struct ifconf *ifc)
+static int ifconf(struct ifconf *uifc)
 {
-    if (uaccess_check(ifc, sizeof(*ifc)))
+    struct ifconf ifc;
+
+    if (copyin(&ifc, uifc, sizeof(ifc)))
         return -EFAULT;
 
     int n = 0;
@@ -60,37 +62,43 @@ static int ifconf(struct ifconf *ifc)
     for (struct netif *netif = netifs; netif; netif = netif->next)
         ++n;
 
-    if (!ifc->ifc_buf) {
-        ifc->ifc_len = n * sizeof(struct ifreq);
-        return 0;
+    if (!ifc.ifc_buf) {
+        ifc.ifc_len = n * sizeof(struct ifreq);
+        return copyout(uifc, &ifc, sizeof(ifc));
     }
 
-    if (ifc->ifc_len < 0 || uaccess_check(ifc->ifc_buf, ifc->ifc_len))
-        return -EFAULT;
+    if (ifc.ifc_len < 0)
+        return -EINVAL;
 
     int len = 0;
 
+    /* each made here, then out */
     for (struct netif *netif = netifs; netif; netif = netif->next) {
-        if (len + (int) sizeof(struct ifreq) > ifc->ifc_len)
+        if (len + (int) sizeof(struct ifreq) > ifc.ifc_len)
             break;
 
-        struct ifreq *ifr = (struct ifreq *) (ifc->ifc_buf + len);
-        memset(ifr, 0, sizeof(*ifr));
-        memcpy(ifr->ifr_name, netif->name, sizeof(netif->name));
-        ifaddr_put(&ifr->ifr_addr, netif->ip);
+        struct ifreq ifr;
+        memset(&ifr, 0, sizeof(ifr));
+        memcpy(ifr.ifr_name, netif->name, sizeof(netif->name));
+        ifaddr_put(&ifr.ifr_addr, netif->ip);
+
+        if (copyout(ifc.ifc_buf + len, &ifr, sizeof(ifr)))
+            return -EFAULT;
 
         len += sizeof(struct ifreq);
     }
 
-    ifc->ifc_len = len;
-    return 0;
+    ifc.ifc_len = len;
+    return copyout(uifc, &ifc, sizeof(ifc));
 }
 
 /* SIOCADDRT, SIOCDELRT: the default route (0.0.0.0/0 through a gateway),
  * to the interface on whose link the gateway is */
-static int route(int request, struct rtentry *rt)
+static int route(int request, struct rtentry *urt)
 {
-    if (uaccess_check(rt, sizeof(*rt)))
+    struct rtentry _rt, *rt = &_rt;
+
+    if (copyin(rt, urt, sizeof(*rt)))
         return -EFAULT;
 
     const struct sockaddr_in *dst = (const struct sockaddr_in *) &rt->rt_dst;
@@ -122,6 +130,8 @@ static int route(int request, struct rtentry *rt)
     return -ENETUNREACH;
 }
 
+static int ifreq_request(int request, struct ifreq *ifr);
+
 int inet_ifioctl(int request, void *argp)
 {
     switch (request) {
@@ -136,8 +146,9 @@ int inet_ifioctl(int request, void *argp)
             return route(request, argp);
     }
 
-    /* the requests of an interface, by its name */
-    struct ifreq *ifr = argp;
+    /* the requests of an interface, by its name: the kernel's copy of
+     * the ifreq, back out once done */
+    struct ifreq ifr;
 
     switch (request) {
         case SIOCGIFFLAGS: case SIOCSIFFLAGS:
@@ -150,9 +161,17 @@ int inet_ifioctl(int request, void *argp)
             return -ENOTTY;
     }
 
-    if (uaccess_check(ifr, sizeof(*ifr)))
+    if (copyin(&ifr, argp, sizeof(ifr)))
         return -EFAULT;
 
+    ifr.ifr_name[sizeof(ifr.ifr_name) - 1] = '\0';
+
+    int err = ifreq_request(request, &ifr);
+    return err ? err : copyout(argp, &ifr, sizeof(ifr));
+}
+
+static int ifreq_request(int request, struct ifreq *ifr)
+{
     struct netif *netif = netif_find(ifr->ifr_name);
 
     if (!netif)

@@ -82,7 +82,7 @@ int socket_listen(struct file *file, int backlog)
     return file->socket->ops->listen(file, backlog);
 }
 
-int socket_send(struct file *file, void *buf, size_t len, int flags, const struct sockaddr *to, socklen_t tolen)
+ssize_t socket_send(struct file *file, struct iobuf *io, int flags, const struct sockaddr *to, socklen_t tolen)
 {
     if (!file)
         return -EINVAL;
@@ -96,10 +96,10 @@ int socket_send(struct file *file, void *buf, size_t len, int flags, const struc
     if (!file->socket->ops || !file->socket->ops->send)
         return -EOPNOTSUPP;
 
-    return file->socket->ops->send(file, buf, len, flags, to, tolen);
+    return file->socket->ops->send(file, io, flags, to, tolen);
 }
 
-int socket_recv(struct file *file, void *buf, size_t len, int flags, struct sockaddr *from, socklen_t *fromlen)
+ssize_t socket_recv(struct file *file, struct iobuf *io, int flags, struct sockaddr *from, socklen_t *fromlen)
 {
     if (!(file->flags & FILE_SOCKET))
         return -ENOTSOCK;
@@ -107,7 +107,7 @@ int socket_recv(struct file *file, void *buf, size_t len, int flags, struct sock
     if (!file->socket->ops || !file->socket->ops->recv)
         return -EOPNOTSUPP;
 
-    return file->socket->ops->recv(file, buf, len, flags, from, fromlen);
+    return file->socket->ops->recv(file, io, flags, from, fromlen);
 }
 
 int socket_can_read(struct file *file, size_t len)

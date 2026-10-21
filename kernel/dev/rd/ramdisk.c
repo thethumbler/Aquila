@@ -66,8 +66,8 @@ static size_t rd_getbs(struct devid *dd __unused)
 struct dev rddev = {
     .name  = "ramdisk",
     .probe = rd_probe,
-    .read  = rd_read,
-    .write = rd_write,
+    .bread  = rd_read,
+    .bwrite = rd_write,
     .getbs = rd_getbs,
 };
 

@@ -5,6 +5,7 @@
 #include <core/system.h>
 
 #include <fs/vfs.h>
+#include <fs/iobuf.h>
 #include <core/arch.h>
 #include <dev/dev.h>
 #include <sys/sched.h>
@@ -15,22 +16,21 @@
 
 /**
  *
- * Reads up to `size` bytes from a file to `buf`.
+ * Reads up to io->resid bytes from a file into the iobuf.
  *
  * Conforming to `IEEE Std 1003.1, 2013 Edition'
  * 
  * @param file    File Descriptor for the function to operate on.
- * @param buf     Buffer to write to.
- * @param size    Number of bytes to read.
+ * @param io      The buffer to fill.
  * @param returns read bytes on success, or error-code on failure.
  */
 
-ssize_t posix_file_read(struct file *file, void *buf, size_t size)
+ssize_t posix_file_read(struct file *file, struct iobuf *io)
 {
     if (file->flags & O_WRONLY) /* File is not opened for reading */
         return -EBADF;
 
-    if (!size)
+    if (!io->resid)
         return 0;
     
     /* a device may limit the wait (a terminal's VTIME) */
@@ -47,7 +47,7 @@ ssize_t posix_file_read(struct file *file, void *buf, size_t size)
 
     int retval;
     for (;;) {
-        if ((retval = vfs_read(file->vnode, file->offset, size, buf)) > 0) {
+        if ((retval = vfs_read_io(file->vnode, file->offset, io)) > 0) {
             /* Update file offset */
             file->offset += retval;
             

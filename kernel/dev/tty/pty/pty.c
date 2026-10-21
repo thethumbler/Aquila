@@ -135,24 +135,24 @@ static int ptm_new(struct pty *pty, struct vnode **ref)
     return 0;
 }
 
-static ssize_t ptm_read(struct devid *dd, off_t offset __unused, size_t size, void *buf)
+static ssize_t ptm_read(struct devid *dd, off_t offset __unused, struct iobuf *io)
 {
     struct pty *pty = pty_get(dd);
     if (!pty) return -ENXIO;
 
-    size_t ret = ringbuf_read(pty->out, size, buf);  
+    ssize_t ret = ringbuf_read_iobuf(pty->out, io->resid, io);
 
     thread_queue_wakeup(&pty->pts_read_queue);
 
     return ret;
 }
 
-static ssize_t ptm_write(struct devid *dd, off_t offset __unused, size_t size, void *buf)
+static ssize_t ptm_write(struct devid *dd, off_t offset __unused, struct iobuf *io)
 {
     struct pty *pty = pty_get(dd);
     if (!pty) return -ENXIO;
 
-    return tty_master_write(pty->tty, size, buf);  
+    return tty_write_iobuf(pty->tty, io, tty_master_write);
 }
 
 static int pty_ioctl(struct devid *dd, int request, void *argp)
@@ -162,15 +162,12 @@ static int pty_ioctl(struct devid *dd, int request, void *argp)
 
     switch (request) {
         case TIOCGPTN:
-            if (uaccess_check(argp, sizeof(int)))
-                return -EFAULT;
-            *(int *) argp = pty->id;
-            return 0;
-        case TIOCSPTLCK:
-            if (uaccess_check(argp, sizeof(int)))
-                return -EFAULT;
-            *(int *) argp = 0;  /* FIXME */
-            return 0;
+            return copyout(argp, &pty->id, sizeof(int));
+        case TIOCSPTLCK: {
+            /* locking isn't kept: the slave is always unlocked */
+            int lock;
+            return copyin(&lock, argp, sizeof(lock));
+        }
     }
 
     return tty_ioctl(pty->tty, request, argp);  
@@ -207,7 +204,7 @@ static int pts_new(struct pty *pty, struct vnode **ref)
     return 0;
 }
 
-ssize_t pts_read(struct devid *dd, off_t offset __unused, size_t size, void *buf)
+ssize_t pts_read(struct devid *dd, off_t offset __unused, struct iobuf *io)
 {
     struct pty *pty = pty_get(dd);
     if (!pty) return -ENXIO;
@@ -215,10 +212,10 @@ ssize_t pts_read(struct devid *dd, off_t offset __unused, size_t size, void *buf
     int err = tty_background(pty->tty, SIGTTIN);
     if (err) return err;
 
-    return ringbuf_read(pty->in, size, buf);
+    return ringbuf_read_iobuf(pty->in, io->resid, io);
 }
 
-ssize_t pts_write(struct devid *dd, off_t offset __unused, size_t size, void *buf)
+ssize_t pts_write(struct devid *dd, off_t offset __unused, struct iobuf *io)
 {
     struct pty *pty = pty_get(dd);
     if (!pty) return -ENXIO;
@@ -230,7 +227,7 @@ ssize_t pts_write(struct devid *dd, off_t offset __unused, size_t size, void *bu
             return err;
     }
 
-    return tty_slave_write(pty->tty, size, buf);
+    return tty_write_iobuf(pty->tty, io, tty_slave_write);
 }
 
 /* a read found no data */

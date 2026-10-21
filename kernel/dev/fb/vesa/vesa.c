@@ -18,7 +18,7 @@ static struct fb_fix_screeninfo vesa_fix_screeninfo = {
 
 static struct fb_var_screeninfo vesa_var_screeninfo;
 
-static ssize_t fbdev_vesa_write(struct fbdev *fb, off_t offset, size_t size, void *buf)
+static ssize_t fbdev_vesa_write(struct fbdev *fb __unused, off_t offset, struct iobuf *io)
 {
     if (offset < 0)
         return -EINVAL;
@@ -26,13 +26,8 @@ static ssize_t fbdev_vesa_write(struct fbdev *fb, off_t offset, size_t size, voi
     if ((size_t) offset >= len)
         return 0;
 
-    /* Maximum possible write size */
-    size = MIN(size, len - (size_t) offset);
-    
-    /* Copy `size' bytes from buffer to ramdev */
-    memcpy((char *) vmem + offset, buf, size);
-
-    return size;
+    /* Copy what fits from the buffer into the framebuffer */
+    return iobuf_in(io, (char *) vmem + offset, MIN(io->resid, len - (size_t) offset));
 }
 
 static int fbdev_vesa_map(struct fbdev *fb, struct vm_space *vm_space, struct vm_entry *vm_entry)

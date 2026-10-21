@@ -136,8 +136,8 @@ uint32_t minix_dentry_find(struct minix *desc, struct minix_inode *m_inode, cons
 int minix_dentry_create(struct vnode *dir, const char *name, ino_t ino, mode_t mode);
 
 /* iops.c */
-ssize_t minix_read(struct vnode *inode, off_t offset, size_t size, void *buf);
-ssize_t minix_write(struct vnode *inode, off_t offset, size_t size, void *buf);
+ssize_t minix_read(struct vnode *inode, off_t offset, struct iobuf *io);
+ssize_t minix_write(struct vnode *inode, off_t offset, struct iobuf *io);
 
 ssize_t minix_readdir(struct vnode *dir, off_t offset, struct dirent *dirent);
 int minix_finddir(struct vnode *dir, const char *fn, struct dirent *dirent);

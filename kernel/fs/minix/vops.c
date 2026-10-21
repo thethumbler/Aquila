@@ -1,100 +1,62 @@
 #include <minix.h>
+#include <fs/iobuf.h>
 
-ssize_t minix_read(struct vnode *vnode, off_t offset, size_t size, void *buf)
+/*
+ * A file's data moves a block at a time through a kernel buffer: the
+ * block's piece of the iobuf is copied in or out of it.
+ */
+
+ssize_t minix_read(struct vnode *vnode, off_t offset, struct iobuf *io)
 {
-    //printk("minix_read(vnode=%p, offset=%d, size=%d, buf=%p)\n", vnode, offset, size, buf);
-
     int err = 0;
 
     struct minix *desc = vnode->p;
 
     size_t bs = desc->bs;
     struct minix_inode m_inode;
-    char *read_buf = NULL;
     
     if ((err = minix_inode_read(desc, vnode->ino, &m_inode)) < 0)
-        goto error;
+        return err;
 
     if ((size_t) offset >= m_inode.size)
         return 0;
 
-    size = MIN(size, (size_t) (m_inode.size - offset));
+    size_t size = MIN(io->resid, (size_t) (m_inode.size - offset));
+    char *block = kmalloc(bs, &M_BUFFER, 0);
 
-    ssize_t ret = 0;
-    char *_buf = buf;
+    if (!block)
+        return -ENOMEM;
 
-    /* Read up to block boundary */
-    if (offset % bs) {
-        size_t start = MIN(bs - offset % bs, size);
+    size_t done = 0;
+    ssize_t r = 0;
 
-        if (start) {
-            read_buf = kmalloc(bs, &M_BUFFER, 0);
+    while (done < size) {
+        size_t off = (offset + done) % bs;
+        size_t len = MIN(bs - off, size - done);
 
-            if ((err = minix_inode_block_read(desc, &m_inode, offset/bs, read_buf)) < 0)
-                goto error;
+        if ((r = minix_inode_block_read(desc, &m_inode, (offset + done) / bs, block)) < 0)
+            break;
 
-            memcpy(_buf, read_buf + (offset % bs), start);
+        if ((r = iobuf_out(io, block + off, len)) < 0)
+            break;
 
-            ret += start;
-            size -= start;
-            _buf += start;
-            offset += start;
+        done += r;
 
-            if (!size)
-                goto done;
-        }
+        /* a fault stopped it */
+        if ((size_t) r < len)
+            break;
     }
 
-    /* Read whole blocks */
-    size_t count = size/bs;
-
-    while (count) {
-        if ((err = minix_inode_block_read(desc, &m_inode, offset/bs, _buf)) < 0)
-            goto error;
-
-        ret    += bs;
-        size   -= bs;
-        _buf   += bs;
-        offset += bs;
-        --count;
-    }
-
-    if (!size)
-        goto done;
-
-    size_t end = size % bs;
-
-    if (end) {
-        if (!read_buf)
-            read_buf = kmalloc(bs, &M_BUFFER, 0);
-
-        if ((err = minix_inode_block_read(desc, &m_inode, offset/bs, read_buf)) < 0)
-            goto error;
-
-        memcpy(_buf, read_buf, end);
-        ret += end;
-    }
-
-done:
-    if (read_buf)
-        kfree(read_buf);
-
-    return ret;
-
-error:
-    if (read_buf)
-        kfree(read_buf);
-
-    return err;
+    kfree(block);
+    return done ? (ssize_t) done : r;
 }
 
-ssize_t minix_write(struct vnode *vnode, off_t offset, size_t size, void *buf)
+ssize_t minix_write(struct vnode *vnode, off_t offset, struct iobuf *io)
 {
-    //printk("minix_write(vnode=%p, offset=%d, size=%d, buf=%p)\n", vnode, offset, size, buf);
-
     int err = 0;
 
     struct minix *desc = vnode->p;
+    size_t size = io->resid, old_size = vnode->size;
 
     if ((size_t) offset + size > vnode->size) {
         minix_trunc(vnode, (size_t) offset + size);
@@ -102,92 +64,58 @@ ssize_t minix_write(struct vnode *vnode, off_t offset, size_t size, void *buf)
 
     size_t bs = desc->bs;
     struct minix_inode m_inode;
-    char *write_buf = NULL;
     
     if ((err = minix_inode_read(desc, vnode->ino, &m_inode)) < 0)
-        goto error;
+        return err;
 
     if ((size_t) offset >= m_inode.size) {
         m_inode.size = offset + size;
         if ((err = minix_inode_write(desc, vnode->ino, &m_inode)) < 0)
-            goto error;
+            return err;
     }
 
     size = MIN(size, (size_t) (m_inode.size - offset));
+    char *block = kmalloc(bs, &M_BUFFER, 0);
 
-    ssize_t ret = 0;
-    char *_buf = buf;
+    if (!block)
+        return -ENOMEM;
 
-    /* Write up to block boundary */
-    if (offset % bs) {
-        size_t start = MIN(bs - offset % bs, size);
+    size_t done = 0;
+    ssize_t r = 0;
 
-        if (start) {
-            write_buf = kmalloc(bs, &M_BUFFER, 0);
+    while (done < size) {
+        size_t off = (offset + done) % bs;
+        size_t len = MIN(bs - off, size - done);
 
-            if ((err = minix_inode_block_read(desc, &m_inode, offset/bs, write_buf)) < 0)
-                goto error;
+        /* part of a block: the rest of it stays */
+        if ((off || len < bs) &&
+            (r = minix_inode_block_read(desc, &m_inode, (offset + done) / bs, block)) < 0)
+            break;
 
-            memcpy(write_buf + (offset % bs), _buf, start);
+        if ((r = iobuf_in(io, block + off, len)) <= 0)
+            break;
 
-            if ((err = minix_inode_block_write(desc, &m_inode, vnode->ino, offset/bs, write_buf)) < 0)
-                goto error;
+        ssize_t w = minix_inode_block_write(desc, &m_inode, vnode->ino, (offset + done) / bs, block);
 
-            ret += start;
-            size -= start;
-            _buf += start;
-            offset += start;
-
-            if (!size)
-                goto done;
+        if (w < 0) {
+            r = w;
+            break;
         }
+
+        done += r;
+
+        /* a fault stopped it */
+        if ((size_t) r < len)
+            break;
     }
 
-    /* Write whole blocks */
-    size_t count = size/bs;
+    kfree(block);
 
-    while (count) {
-        if ((err = minix_inode_block_write(desc, &m_inode, vnode->ino, offset/bs, _buf)) < 0)
-            goto error;
+    /* it stopped short: the file ends where the data does */
+    if (done < size && (size_t) offset + size > old_size)
+        minix_trunc(vnode, MAX(old_size, (size_t) offset + done));
 
-        ret    += bs;
-        size   -= bs;
-        _buf   += bs;
-        offset += bs;
-        --count;
-    }
-
-    if (!size)
-        goto done;
-
-    size_t end = size % bs;
-
-    if (end) {
-        if (!write_buf)
-            write_buf = kmalloc(bs, &M_BUFFER, 0);
-
-        if ((err = minix_inode_block_read(desc, &m_inode, offset/bs, write_buf)) < 0)
-            goto error;
-
-        memcpy(write_buf, _buf, end);
-
-        if ((err = minix_inode_block_write(desc, &m_inode, vnode->ino, offset/bs, write_buf)) < 0)
-            goto error;
-
-        ret += end;
-    }
-
-done:
-    if (write_buf)
-        kfree(write_buf);
-
-    return ret;
-
-error:
-    if (write_buf)
-        kfree(write_buf);
-
-    return err;
+    return done ? (ssize_t) done : r;
 }
 
 ssize_t minix_readdir(struct vnode *dir, off_t off, struct dirent *dirent)

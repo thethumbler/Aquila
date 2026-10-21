@@ -105,21 +105,51 @@ void random_get(void *_buf, size_t len)
     memset(block, 0, sizeof(block));
 }
 
-static ssize_t randomdev_read(struct devid *dd __unused, off_t offset __unused, size_t size, void *buf)
+static ssize_t randomdev_read(struct devid *dd __unused, off_t offset __unused, struct iobuf *io)
 {
-    random_get(buf, size);
-    return size;
+    uint8_t buf[256];
+    size_t size = io->resid, done = 0;
+
+    while (done < size) {
+        size_t len = MIN(size - done, sizeof(buf));
+        random_get(buf, len);
+
+        ssize_t r = iobuf_out(io, buf, len);
+
+        if (r < 0) {
+            memset(buf, 0, sizeof(buf));
+            return done ? (ssize_t) done : r;
+        }
+
+        done += r;
+
+        if ((size_t) r < len)
+            break;
+    }
+
+    memset(buf, 0, sizeof(buf));
+    return done;
 }
 
 /* what is written is stirred in */
-static ssize_t randomdev_write(struct devid *dd __unused, off_t offset __unused, size_t size, void *_buf)
+static ssize_t randomdev_write(struct devid *dd __unused, off_t offset __unused, struct iobuf *io)
 {
-    uint8_t *buf = _buf;
+    uint8_t buf[256];
+    size_t size = io->resid, done = 0;
 
-    for (size_t i = 0; i < size; ++i)
-        random_add((uint32_t) buf[i] << (8 * (i % 4)));
+    while (done < size) {
+        ssize_t len = iobuf_in(io, buf, MIN(size - done, sizeof(buf)));
 
-    return size;
+        if (len <= 0)
+            return done ? (ssize_t) done : len;
+
+        for (ssize_t i = 0; i < len; ++i)
+            random_add((uint32_t) buf[i] << (8 * ((done + i) % 4)));
+
+        done += len;
+    }
+
+    return done;
 }
 
 struct dev randomdev = {

@@ -21,15 +21,13 @@ static struct sock_ops socket_unix_ops;
 
 static struct queue *sockets = QUEUE_NEW();  /* Open sockets */
 
-/* validate a user supplied AF_UNIX address */
+/* an AF_UNIX address (the kernel's copy, as big as a sockaddr_un): its
+ * path ends in it */
 static int unix_addr_check(const struct sockaddr *addr)
 {
     struct sockaddr_un *addr_un = (struct sockaddr_un *) addr;
 
-    if (uaccess_check(addr_un, sizeof(sa_family_t)))
-        return -EFAULT;
-
-    return uaccess_str_check(addr_un->sun_path);
+    return strnlen(addr_un->sun_path, sizeof(addr_un->sun_path)) < sizeof(addr_un->sun_path) ? 0 : -EINVAL;
 }
 
 /* wake up everyone sleeping on a connection, so they notice state changes */
@@ -257,10 +255,70 @@ static int socket_unix_listen(struct file *file, int backlog)
     return 0;
 }
 
-static ssize_t socket_unix_send(struct file *file, void *buf, size_t len, int flags,
+/*
+ * Between a connection's ring and an iobuf, a chunk at a time through the
+ * kernel: copying to or from user memory may sleep (a page brought in
+ * from the disk), and the peer may free the ring meanwhile (*ring_p NULL
+ * then). How many bytes moved, -EFAULT if a fault came first.
+ */
+static ssize_t ring_to_iobuf(struct ringbuf **ring_p, size_t n, struct iobuf *io)
+{
+    char chunk[256];
+    size_t done = 0;
+
+    while (done < n && *ring_p) {
+        size_t len = ringbuf_read_noconsume(*ring_p, 0, MIN(n - done, sizeof(chunk)), chunk);
+
+        if (!len)
+            break;
+
+        ssize_t r = iobuf_out(io, chunk, len);
+
+        if (r < 0)
+            return done ? (ssize_t) done : r;
+
+        /* out: off the ring */
+        if (*ring_p)
+            ringbuf_discard(*ring_p, r);
+
+        done += r;
+
+        if ((size_t) r < len)
+            break;
+    }
+
+    return done;
+}
+
+static ssize_t iobuf_to_ring(struct ringbuf **ring_p, size_t n, struct iobuf *io)
+{
+    char chunk[256];
+    size_t done = 0;
+
+    while (done < n && *ring_p) {
+        ssize_t len = iobuf_peek(io, chunk, MIN(n - done, sizeof(chunk)));
+
+        if (len <= 0)
+            return done ? (ssize_t) done : len;
+
+        if (!*ring_p)
+            break;
+
+        size_t w = ringbuf_write(*ring_p, len, chunk);
+        iobuf_skip(io, w);
+        done += w;
+
+        if (w < (size_t) len || io->fault)
+            break;
+    }
+
+    return done;
+}
+
+static ssize_t socket_unix_send(struct file *file, struct iobuf *io, int flags,
                                 const struct sockaddr *to, socklen_t tolen)
 {
-    //printk("socket_unix_send(file=%p, buf=%p, len=%d, flags=%x)\n", file, buf, len, flags);
+    size_t len = io->resid;
 
     if (file->socket->domain != AF_UNIX_CONN)
         return -ENOTCONN;
@@ -299,7 +357,8 @@ static ssize_t socket_unix_send(struct file *file, void *buf, size_t len, int fl
 
         size_t wlen = MIN(len - retval, SOCKBUF - ringbuf_available(ring));
 
-        incr = ringbuf_write(ring, wlen, (char *) buf + retval);
+        if ((incr = iobuf_to_ring(ring_p, wlen, io)) < 0)
+            return retval ? retval : incr;
 
         if (incr > 0)
             thread_queue_wakeup(recv_queue);
@@ -309,7 +368,7 @@ static ssize_t socket_unix_send(struct file *file, void *buf, size_t len, int fl
 
         retval += incr;
 
-        if ((size_t) retval == len)
+        if ((size_t) retval == len || io->fault)
             return retval;
 
         /* full: don't wait if the descriptor doesn't */
@@ -323,10 +382,10 @@ static ssize_t socket_unix_send(struct file *file, void *buf, size_t len, int fl
     }
 }
 
-static ssize_t socket_unix_recv(struct file *file, void *buf, size_t len, int flags,
+static ssize_t socket_unix_recv(struct file *file, struct iobuf *io, int flags,
                                 struct sockaddr *from, socklen_t *fromlen)
 {
-    //printk("socket_unix_recv(file=%p, buf=%p, len=%d, flags=%x)\n", file, buf, len, flags);
+    size_t len = io->resid;
 
     if (file->socket->domain != AF_UNIX_CONN)
         return -ENOTCONN;
@@ -369,7 +428,8 @@ static ssize_t socket_unix_recv(struct file *file, void *buf, size_t len, int fl
         if (!ring)  /* Connection closed */
             return retval;
 
-        incr = ringbuf_read(ring, len - retval, (char *) buf + retval);
+        if ((incr = ring_to_iobuf(ring_p, len - retval, io)) < 0)
+            return retval ? retval : incr;
 
         if (incr > 0)
             thread_queue_wakeup(send_queue);
@@ -383,7 +443,7 @@ static ssize_t socket_unix_recv(struct file *file, void *buf, size_t len, int fl
 
         retval += incr;
 
-        if ((size_t) retval == len)
+        if ((size_t) retval == len || io->fault)
             return retval;
 
         /* empty: don't wait if the descriptor doesn't */
@@ -559,14 +619,11 @@ static int socket_unix_getname(struct file *file, struct sockaddr *addr, socklen
 static int socket_unix_ioctl(struct file *file, int request, void *argp)
 {
     if (request == FIONREAD) {
-        if (uaccess_check(argp, sizeof(int)))
-            return -EFAULT;
-
         int n = socket_unix_can_read(file, 0);
 
         /* a listening socket has connections, not bytes; the end is 0 */
-        *(int *) argp = file->socket->domain == AF_UNIX_CONN && n > 0 ? n : 0;
-        return 0;
+        n = file->socket->domain == AF_UNIX_CONN && n > 0 ? n : 0;
+        return copyout(argp, &n, sizeof(n));
     }
 
     return -ENOTTY;

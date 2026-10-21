@@ -7,14 +7,15 @@
 
 struct dev nulldev;
 
-static ssize_t nulldev_read(struct devid *dd __unused, off_t offset __unused, size_t size __unused, void *buf __unused)
+static ssize_t nulldev_read(struct devid *dd __unused, off_t offset __unused, struct iobuf *io __unused)
 {
     return 0;
 }
 
-static ssize_t nulldev_write(struct devid *dd __unused, off_t offset __unused, size_t size, void *buf __unused)
+/* taken, unread */
+static ssize_t nulldev_write(struct devid *dd __unused, off_t offset __unused, struct iobuf *io)
 {
-    return size;
+    return iobuf_skip(io, io->resid);
 }
 
 struct dev nulldev = {

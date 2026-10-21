@@ -127,12 +127,10 @@ int thread_create(struct thread *thread, uintptr_t stack, uintptr_t entry, uintp
     if ((err = thread_new(thread->owner, &t)))
         return err;
 
-    arch_thread_create(t, stack, entry, uentry, arg);
-
-    if (!t->arch) {
+    if ((err = arch_thread_create(t, stack, entry, uentry, arg))) {
         queue_remove(&thread->owner->threads, t);
         kfree(t);
-        return -ENOMEM;
+        return err;
     }
 
     if (new_thread)

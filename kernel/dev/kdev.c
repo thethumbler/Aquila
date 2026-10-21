@@ -67,7 +67,7 @@ ssize_t kdev_bread(struct devid *dd, off_t offset, size_t size, void *buf)
         size_t start = MIN(bs - offset % bs, size);
 
         if (start) {
-            if ((err = dev->read(dd, offset/bs, 1, bbuf)) < 0)
+            if ((err = dev->bread(dd, offset/bs, 1, bbuf)) < 0)
                 goto error;
 
             memcpy(cbuf, bbuf + (offset % bs), start);
@@ -86,7 +86,7 @@ ssize_t kdev_bread(struct devid *dd, off_t offset, size_t size, void *buf)
     size_t count = size/bs;
 
     if (count) {
-        if ((err = dev->read(dd, offset/bs, count, cbuf)) < 0)
+        if ((err = dev->bread(dd, offset/bs, count, cbuf)) < 0)
             goto error;
 
         ret    += count * bs;
@@ -104,7 +104,7 @@ ssize_t kdev_bread(struct devid *dd, off_t offset, size_t size, void *buf)
         if (!bbuf && !(bbuf = kmalloc(bs, &M_KDEV_BLK, 0)))
             return -ENOMEM;
 
-        if ((err = dev->read(dd, offset/bs, 1, bbuf)) < 0)
+        if ((err = dev->bread(dd, offset/bs, 1, bbuf)) < 0)
             goto error;
 
         memcpy(cbuf, bbuf, end);
@@ -141,12 +141,12 @@ ssize_t kdev_bwrite(struct devid *dd, off_t offset, size_t size, void *buf)
         size_t start = MIN(bs - offset % bs, size);
 
         if (start) {
-            if ((err = dev->read(dd, offset/bs, 1, bbuf)) < 0)
+            if ((err = dev->bread(dd, offset/bs, 1, bbuf)) < 0)
                 goto error;
 
             memcpy(bbuf + (offset % bs), cbuf, start);
 
-            if ((err = dev->write(dd, offset/bs, 1, bbuf)) < 0)
+            if ((err = dev->bwrite(dd, offset/bs, 1, bbuf)) < 0)
                 goto error;
 
             ret    += start;
@@ -164,7 +164,7 @@ ssize_t kdev_bwrite(struct devid *dd, off_t offset, size_t size, void *buf)
     size_t count = size/bs;
 
     if (count) {
-        if ((err = dev->write(dd, offset/bs, count, cbuf)) < 0)
+        if ((err = dev->bwrite(dd, offset/bs, count, cbuf)) < 0)
             goto error;
 
         ret    += count * bs;
@@ -182,12 +182,12 @@ ssize_t kdev_bwrite(struct devid *dd, off_t offset, size_t size, void *buf)
         if (!bbuf && !(bbuf = kmalloc(bs, &M_KDEV_BLK, 0)))
             return -ENOMEM;
 
-        if ((err = dev->read(dd, offset/bs, 1, bbuf)) < 0)
+        if ((err = dev->bread(dd, offset/bs, 1, bbuf)) < 0)
             goto error;
 
         memcpy(bbuf, cbuf, end);
 
-        if ((err = dev->write(dd, offset/bs, 1, bbuf)) < 0)
+        if ((err = dev->bwrite(dd, offset/bs, 1, bbuf)) < 0)
             goto error;
 
         ret += end;
@@ -206,38 +206,69 @@ error:
     return err;
 }
 
-ssize_t kdev_read(struct devid *dd, off_t offset, size_t size, void *buf)
+/*
+ * A block device's bytes through an iobuf: a page at a time through a
+ * kernel buffer, kdev_bread() and kdev_bwrite() make blocks of them
+ */
+static ssize_t kdev_blk_io(struct devid *dd, off_t offset, struct iobuf *io, int write)
 {
-    //printk("kdev_read(dd=%p, offset=%d, size=%d, buf=%p)\n", dd, offset, size, buf);
+    char *buf = kmalloc(PAGE_SIZE, &M_KDEV_BLK, 0);
 
+    if (!buf)
+        return -ENOMEM;
+
+    size_t size = io->resid, done = 0;
+    ssize_t r = 0;
+
+    while (done < size) {
+        size_t len = MIN(size - done, PAGE_SIZE);
+
+        if (write) {
+            if ((r = iobuf_in(io, buf, len)) > 0)
+                r = kdev_bwrite(dd, offset + done, r, buf);
+        } else {
+            if ((r = kdev_bread(dd, offset + done, len, buf)) > 0)
+                r = iobuf_out(io, buf, r);
+        }
+
+        if (r <= 0)
+            break;
+
+        done += r;
+
+        /* the device's end, or a fault */
+        if ((size_t) r < len)
+            break;
+    }
+
+    kfree(buf);
+    return done ? (ssize_t) done : r;
+}
+
+ssize_t kdev_read(struct devid *dd, off_t offset, struct iobuf *io)
+{
     struct dev *dev = NULL;
     
     if (!(dev = kdev_get(dd)))
         return -ENXIO;
 
-    if (!dev->read)
-        return -ENXIO;
-
     if (S_ISCHR(dd->type))
-        return dev->read(dd, offset, size, buf);
+        return dev->read ? dev->read(dd, offset, io) : -ENXIO;
     else
-        return kdev_bread(dd, offset, size, buf);
+        return dev->bread ? kdev_blk_io(dd, offset, io, 0) : -ENXIO;
 }
 
-ssize_t kdev_write(struct devid *dd, off_t offset, size_t size, void *buf)
+ssize_t kdev_write(struct devid *dd, off_t offset, struct iobuf *io)
 {
     struct dev *dev = NULL;
 
     if (!(dev = kdev_get(dd)))
         return -ENXIO;
 
-    if (!dev->write)
-        return -ENXIO;
-
     if (S_ISCHR(dd->type))
-        return dev->write(dd, offset, size, buf);
+        return dev->write ? dev->write(dd, offset, io) : -ENXIO;
     else
-        return kdev_bwrite(dd, offset, size, buf);
+        return dev->bwrite ? kdev_blk_io(dd, offset, io, 1) : -ENXIO;
 }
 
 int kdev_ioctl(struct devid *dd, int request, void *argp)
@@ -279,7 +310,7 @@ int kdev_file_open(struct devid *dd, struct file *file)
     return dev->fops.open(file);
 }
 
-ssize_t kdev_file_read(struct devid *dd, struct file *file, void *buf, size_t size)
+ssize_t kdev_file_read(struct devid *dd, struct file *file, struct iobuf *io)
 {
     struct dev *dev = NULL;
 
@@ -289,10 +320,10 @@ ssize_t kdev_file_read(struct devid *dd, struct file *file, void *buf, size_t si
     if (!dev->fops.read)
         return -ENXIO;
 
-    return dev->fops.read(file, buf, size);
+    return dev->fops.read(file, io);
 }
 
-ssize_t kdev_file_write(struct devid *dd, struct file *file, void *buf, size_t size)
+ssize_t kdev_file_write(struct devid *dd, struct file *file, struct iobuf *io)
 {
     struct dev *dev = NULL;
 
@@ -302,7 +333,7 @@ ssize_t kdev_file_write(struct devid *dd, struct file *file, void *buf, size_t s
     if (!dev->fops.write)
         return -ENXIO;
 
-    return dev->fops.write(file, buf, size);
+    return dev->fops.write(file, io);
 }
 
 off_t kdev_file_lseek(struct devid *dd, struct file *file, off_t offset, int whence)

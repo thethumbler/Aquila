@@ -209,8 +209,8 @@ ino_t ext2_dentry_find(struct ext2 *desc, struct ext2_inode *inode, const char *
 int ext2_dentry_create(struct vnode *dir, const char *name, ino_t ino, mode_t mode);
 
 /* iops.c */
-ssize_t ext2_read(struct vnode *node, off_t offset, size_t size, void *buf);
-ssize_t ext2_write(struct vnode *node, off_t offset, size_t size, void *buf);
+ssize_t ext2_read(struct vnode *node, off_t offset, struct iobuf *io);
+ssize_t ext2_write(struct vnode *node, off_t offset, struct iobuf *io);
 ssize_t ext2_readdir(struct vnode *dir, off_t offset, struct dirent *dirent);
 int ext2_finddir(struct vnode *dir, const char *fn, struct dirent *dirent);
 

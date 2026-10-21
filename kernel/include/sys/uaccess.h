@@ -40,27 +40,6 @@ static inline int uaccess_check(const void *ptr, size_t len)
     return 0;
 }
 
-/**
- * \ingroup sys
- * \brief check that a NUL-terminated string lies entirely in user space
- *
- * \return 0 if the string is valid, -EFAULT otherwise.
- */
-static inline int uaccess_str_check(const char *str)
-{
-    uintptr_t addr = (uintptr_t) str;
-
-    if (!str || addr >= UACCESS_LIMIT)
-        return -EFAULT;
-
-    for (; addr < UACCESS_LIMIT; ++addr) {
-        if (!*(const char *) addr)
-            return 0;
-    }
-
-    return -EFAULT;
-}
-
 /* the architecture's copies with fault recovery: what wasn't copied (0:
  * all of it); a string's length (max without a NUL), -EFAULT */
 size_t arch_copy_user(void *dst, const void *src, size_t n);

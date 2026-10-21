@@ -42,24 +42,24 @@ struct fbdev *fbdev_primary(void)
     return &registered_fbs[0];
 }
 
-static ssize_t fbdev_read(struct devid *dd, off_t offset, size_t size, void *buf)
+static ssize_t fbdev_read(struct devid *dd, off_t offset, struct iobuf *io)
 {
     struct fbdev *fb = fbdev_get(dd);
 
     if (!fb || !fb->read)
         return -ENXIO;
 
-    return fb->read(fb, offset, size, buf);
+    return fb->read(fb, offset, io);
 }
 
-static ssize_t fbdev_write(struct devid *dd, off_t offset, size_t size, void *buf)
+static ssize_t fbdev_write(struct devid *dd, off_t offset, struct iobuf *io)
 {
     struct fbdev *fb = fbdev_get(dd);
 
     if (!fb || !fb->write)
         return -ENXIO;
 
-    return fb->write(fb, offset, size, buf);
+    return fb->write(fb, offset, io);
 }
 
 static int fbdev_ioctl(struct devid *dd, int request, void *argp)
@@ -73,25 +73,19 @@ static int fbdev_ioctl(struct devid *dd, int request, void *argp)
     case FBIOGET_FSCREENINFO:
         if (!fb->fix_screeninfo)
             return -ENXIO;
-        if (uaccess_check(argp, sizeof(struct fb_fix_screeninfo)))
-            return -EFAULT;
-        memcpy(argp, fb->fix_screeninfo, sizeof(struct fb_fix_screeninfo));
-        return 0;
+        return copyout(argp, fb->fix_screeninfo, sizeof(struct fb_fix_screeninfo));
     case FBIOGET_VSCREENINFO:
         if (!fb->var_screeninfo)
             return -ENXIO;
-        if (uaccess_check(argp, sizeof(struct fb_var_screeninfo)))
-            return -EFAULT;
-        memcpy(argp, fb->var_screeninfo, sizeof(struct fb_var_screeninfo));
-        return 0;
+        return copyout(argp, fb->var_screeninfo, sizeof(struct fb_var_screeninfo));
     case FBIOPUT_VSCREENINFO: {
         /* the mode can't be changed: only to the one it is, and the
          * caller gets what it is */
-        struct fb_var_screeninfo *var = fb->var_screeninfo, *new = argp;
+        struct fb_var_screeninfo *var = fb->var_screeninfo, _new, *new = &_new;
 
         if (!var)
             return -ENXIO;
-        if (uaccess_check(argp, sizeof(struct fb_var_screeninfo)))
+        if (copyin(new, argp, sizeof(*new)))
             return -EFAULT;
 
         if (new->xres != var->xres || new->yres != var->yres ||
@@ -101,17 +95,16 @@ static int fbdev_ioctl(struct devid *dd, int request, void *argp)
             new->xoffset || new->yoffset)
             return -EINVAL;
 
-        memcpy(argp, var, sizeof(struct fb_var_screeninfo));
-        return 0;
+        return copyout(argp, var, sizeof(struct fb_var_screeninfo));
     }
     case FBIOPAN_DISPLAY: {
         /* no panning, the virtual screen is the visible one */
-        struct fb_var_screeninfo *new = argp;
+        struct fb_var_screeninfo new;
 
-        if (uaccess_check(argp, sizeof(struct fb_var_screeninfo)))
+        if (copyin(&new, argp, sizeof(new)))
             return -EFAULT;
 
-        return new->xoffset || new->yoffset ? -EINVAL : 0;
+        return new.xoffset || new.yoffset ? -EINVAL : 0;
     }
     }
 

@@ -77,19 +77,26 @@ void ps2mouse_register(void)
     x86_i8042_handler_register(2, ps2mouse_handler);
 }
 
-static ssize_t ps2mouse_read(struct devid *dd __unused, off_t offset __unused, size_t size, void *buf)
+static ssize_t ps2mouse_read(struct devid *dd __unused, off_t offset __unused, struct iobuf *io)
 {
-    return ringbuf_read(mouse_ring, size, buf);
+    return ringbuf_read_iobuf(mouse_ring, io->resid, io);
 }
 
 /* commands to the mouse, it replies (an ACK to each byte, more to some) */
-static ssize_t ps2mouse_write(struct devid *dd __unused, off_t offset __unused, size_t size, void *_buf)
+static ssize_t ps2mouse_write(struct devid *dd __unused, off_t offset __unused, struct iobuf *io)
 {
-    uint8_t *buf = _buf;
+    size_t size = io->resid;
 
-    for (size_t i = 0; i < size; ++i)
-        if (x86_i8042_aux_write(buf[i]))
+    for (size_t i = 0; i < size; ++i) {
+        uint8_t c;
+        ssize_t r = iobuf_in(io, &c, 1);
+
+        if (r < 0)
+            return i ? (ssize_t) i : r;
+
+        if (x86_i8042_aux_write(c))
             return i ? (ssize_t) i : -EIO;
+    }
 
     return size;
 }

@@ -13,6 +13,8 @@ extern struct fbdev fbdev_vesa;
 /* Aquila driver API */
 
 #include <mm/vm.h>
+#include <fs/iobuf.h>
+
 struct fbdev {
     int type;
     void *data;
@@ -20,8 +22,8 @@ struct fbdev {
     struct fb_var_screeninfo *var_screeninfo;
 
     int     (*probe)(int id, struct fbdev *fb);
-    ssize_t (*read) (struct fbdev *fb, off_t offset, size_t size, void *buf);
-    ssize_t (*write)(struct fbdev *fb, off_t offset, size_t size, void *buf);
+    ssize_t (*read) (struct fbdev *fb, off_t offset, struct iobuf *io);
+    ssize_t (*write)(struct fbdev *fb, off_t offset, struct iobuf *io);
     int     (*ioctl)(struct fbdev *fb, int request, void *argp);
     int     (*map)  (struct fbdev *fb, struct vm_space *vm_space, struct vm_entry *vm_entry);
 };

@@ -261,50 +261,64 @@ ssize_t tty_slave_write(struct tty *tty, size_t size, void *_buf)
     }
 }
 
-/** size of the user buffer an ioctl request reads or writes */
-static size_t tty_ioctl_argsize(int request)
+/*
+ * A write to the terminal from an iobuf, to either side (`write':
+ * tty_master_write or tty_slave_write): a piece at a time through the
+ * kernel, the buffer passed over only as far as was taken
+ */
+ssize_t tty_write_iobuf(struct tty *tty, struct iobuf *io, ttyio write)
 {
-    switch (request) {
-        case TCGETS:
-        case TCSETS:
-        case TCSETSW:
-        case TCSETSF:
-            return sizeof(struct termios);
-        case TIOCGPGRP:
-        case TIOCSPGRP:
-        case TIOCGSID:
-            return sizeof(pid_t);
-        case TIOCGWINSZ:
-        case TIOCSWINSZ:
-            return sizeof(struct winsize);
+    char buf[256];
+    size_t size = io->resid, done = 0;
+
+    while (done < size) {
+        ssize_t len = iobuf_peek(io, buf, MIN(size - done, sizeof(buf)));
+
+        if (len <= 0)
+            return done ? (ssize_t) done : len;
+
+        ssize_t r = write(tty, len, buf);
+
+        if (r < 0)
+            return done ? (ssize_t) done : r;
+
+        iobuf_skip(io, r);
+        done += r;
+
+        /* it took no more, or a fault stopped the copy */
+        if (r < len || io->fault)
+            break;
     }
 
-    return 0;
+    return done;
 }
 
+/* argp is user space's: what a request reads comes in with copyin(),
+ * what it gives goes out with copyout() */
 int tty_ioctl(struct tty *tty, int request, void *argp)
 {
     int err;
 
-    /* argp comes straight from user space */
-    if (uaccess_check(argp, tty_ioctl_argsize(request)))
-        return -EFAULT;
-
     switch (request) {
         case TCGETS:
-            memcpy(argp, &tty->tios, sizeof(struct termios));
-            break;
+            return copyout(argp, &tty->tios, sizeof(struct termios));
         case TCSETS:
         case TCSETSW:   /* output is never waiting to be sent */
-        case TCSETSF:
+        case TCSETSF: {
+            struct termios tios;
+
+            if (copyin(&tios, argp, sizeof(tios)))
+                return -EFAULT;
+
             if ((err = tty_background(tty, SIGTTOU)))
                 return err;
 
             if (request == TCSETSF)
                 tty_flush(tty, TCIFLUSH);
 
-            memcpy(&tty->tios, argp, sizeof(struct termios));
+            tty->tios = tios;
             break;
+        }
         case TCFLSH:
             /* the argument is the value: TCIFLUSH, TCOFLUSH, TCIOFLUSH */
             if ((uintptr_t) argp > TCIOFLUSH)
@@ -320,17 +334,20 @@ int tty_ioctl(struct tty *tty, int request, void *argp)
             if (!tty->session)
                 return -ENOTTY;
 
-            *(pid_t *) argp = tty->session->sid;
-            break;
-        case TIOCGPGRP:
+            return copyout(argp, &tty->session->sid, sizeof(pid_t));
+        case TIOCGPGRP: {
             /* without one, a value that is no process group (POSIX) */
-            *(pid_t *) argp = tty->fg ? tty->fg->pgid : 0x7fffffff;
-            break;
+            pid_t pgid = tty->fg ? tty->fg->pgid : 0x7fffffff;
+            return copyout(argp, &pgid, sizeof(pgid));
+        }
         case TIOCSPGRP: {
             /* the caller's controlling terminal, a group of its session */
-            pid_t pgid = *(pid_t *) argp;
+            pid_t pgid;
             struct session *session = curproc->pgrp->session;
             struct pgroup *pgrp = NULL;
+
+            if (copyin(&pgid, argp, sizeof(pgid)))
+                return -EFAULT;
 
             if (session->ctty != tty)
                 return -ENOTTY;
@@ -353,11 +370,16 @@ int tty_ioctl(struct tty *tty, int request, void *argp)
             break;
         }
         case TIOCGWINSZ:
-            memcpy(argp, &tty->ws, sizeof(struct winsize));
+            return copyout(argp, &tty->ws, sizeof(struct winsize));
+        case TIOCSWINSZ: {
+            struct winsize ws;
+
+            if (copyin(&ws, argp, sizeof(ws)))
+                return -EFAULT;
+
+            tty->ws = ws;
             break;
-        case TIOCSWINSZ:
-            memcpy(&tty->ws, argp, sizeof(struct winsize));
-            break;
+        }
         case TIOCSCTTY: {
             /* a session leader without one takes a terminal no other
              * session has */

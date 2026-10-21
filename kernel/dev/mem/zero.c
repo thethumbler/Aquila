@@ -7,15 +7,15 @@
 
 struct dev zerodev;
 
-static ssize_t zerodev_read(struct devid *dd __unused, off_t offset __unused, size_t size, void *buf)
+static ssize_t zerodev_read(struct devid *dd __unused, off_t offset __unused, struct iobuf *io)
 {
-    memset(buf, 0, size);
-    return size;
+    return iobuf_zero(io, io->resid);
 }
 
-static ssize_t zerodev_write(struct devid *dd __unused, off_t offset __unused, size_t size, void *buf __unused)
+/* taken, unread */
+static ssize_t zerodev_write(struct devid *dd __unused, off_t offset __unused, struct iobuf *io)
 {
-    return size;
+    return iobuf_skip(io, io->resid);
 }
 
 struct dev zerodev = {

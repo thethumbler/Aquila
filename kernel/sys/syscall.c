@@ -16,6 +16,8 @@
 #include <sys/binfmt.h>
 #include <sys/uaccess.h>
 
+#include <fs/iobuf.h>
+
 #include <net/socket.h>
 
 #include <aquila/errno.h>
@@ -27,6 +29,7 @@
 #include <aquila/ioctl.h>
 #include <aquila/wait.h>
 #include <aquila/poll.h>
+#include <aquila/un.h>
 
 #include <fs/devpts.h>
 #include <fs/pipe.h>
@@ -55,6 +58,37 @@ static struct file *fd_file(int fd)
 }
 
 /*
+ * User memory: what a call reads from it comes in with copyin() and
+ * copyinstr() (a path: upath_get()), what it writes goes out with
+ * copyout(), data through an iobuf (fs/iobuf.h); a bad address is EFAULT.
+ * Below them the kernel works with its own copies only.
+ */
+
+/* the longest path (with its NUL) a call takes, as newlib's PATH_MAX */
+#define UPATH_MAX   1024
+
+/* user space's path into a kernel copy, *path (the caller kfree()s it) */
+static int upath_get(const char *upath, char **path)
+{
+    char *buf = kmalloc(UPATH_MAX, &M_BUFFER, 0);
+
+    *path = NULL;
+
+    if (!buf)
+        return -ENOMEM;
+
+    long len = copyinstr(buf, upath, UPATH_MAX);
+
+    if (len < 0) {
+        kfree(buf);
+        return len;
+    }
+
+    *path = buf;
+    return 0;
+}
+
+/*
  * uio to resolve `path' from the directory `dirfd' refers to, AT_FDCWD
  * for the working directory (absolute paths ignore dirfd)
  */
@@ -78,36 +112,43 @@ static int at_uio(int dirfd, const char *path, struct uio *uio)
     return 0;
 }
 
-/* absolute path of `path' from directory `dirfd', for calls taking two paths */
-static int at_path(int dirfd, const char *path, char **abs_path)
+/* absolute path of user space's `upath' from directory `dirfd', for
+ * calls taking two paths */
+static int at_path(int dirfd, const char *upath, char **abs_path)
 {
     struct uio uio;
+    char *path;
     int ret;
 
-    if (uaccess_str_check(path))
-        return -EFAULT;
-
-    if ((ret = at_uio(dirfd, path, &uio)))
+    if ((ret = upath_get(upath, &path)))
         return ret;
 
-    return vfs_parse_path(path, &uio, abs_path);
+    if (!(ret = at_uio(dirfd, path, &uio)))
+        ret = vfs_parse_path(path, &uio, abs_path);
+
+    kfree(path);
+    return ret;
 }
 
-/* look up `path' from `dirfd', AT_SYMLINK_NOFOLLOW in flags: don't follow a final link */
-static int at_lookup(int dirfd, const char *path, int flags, struct uio *uio, struct vnode **vnode)
+/* look up user space's `upath' from `dirfd', AT_SYMLINK_NOFOLLOW in
+ * flags: don't follow a final link */
+static int at_lookup(int dirfd, const char *upath, int flags, struct uio *uio, struct vnode **vnode)
 {
+    char *path;
     int ret;
 
-    if (uaccess_str_check(path))
-        return -EFAULT;
-
-    if ((ret = at_uio(dirfd, path, uio)))
+    if ((ret = upath_get(upath, &path)))
         return ret;
 
-    if (flags & AT_SYMLINK_NOFOLLOW)
-        uio->flags |= O_NOFOLLOW;
+    if (!(ret = at_uio(dirfd, path, uio))) {
+        if (flags & AT_SYMLINK_NOFOLLOW)
+            uio->flags |= O_NOFOLLOW;
 
-    return vfs_lookup(path, uio, vnode, NULL);
+        ret = vfs_lookup(path, uio, vnode, NULL);
+    }
+
+    kfree(path);
+    return ret;
 }
 
 static void sys_exit(int code)
@@ -146,23 +187,19 @@ static void sys_close(int fildes)
 
 static void sys_execve(const char *path, char * const argp[], char * const envp[])
 {
-    syscall_log(LOG_DEBUG, "execve(path=%s, argp=%p, envp=%p)\n", path, argp, envp);
+    syscall_log(LOG_DEBUG, "execve(path=%p, argp=%p, envp=%p)\n", path, argp, envp);
 
-    if (uaccess_str_check(path)) {
-        arch_syscall_return(curthread, -EFAULT);
+    char *fn;
+    int err = upath_get(path, &fn);
+
+    if (err) {
+        arch_syscall_return(curthread, err);
         return;
     }
 
-    if (!*path) {
+    if (!*fn) {
+        kfree(fn);
         arch_syscall_return(curthread, -ENOENT);
-        return;
-    }
-
-    int err = 0;
-    char *fn = strdup(path);
-
-    if (!fn) {
-        arch_syscall_return(curthread, -ENOMEM);
         return;
     }
 
@@ -207,22 +244,19 @@ static void sys_fstat(int fildes, struct aquila_stat *buf)
         return;
     }
 
-    if (uaccess_check(buf, sizeof(struct aquila_stat))) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
-    }
+    struct aquila_stat st;
+    memset(&st, 0, sizeof(st));
+    int ret = 0;
 
-    if (file->flags & FILE_SOCKET) {
-        /* sockets have no vnode, report a minimal stat */
-        memset(buf, 0, sizeof(struct aquila_stat));
-        buf->st_mode = S_IFSOCK;
-        arch_syscall_return(curthread, 0);
-        return;
-    }
+    /* sockets have no vnode, report a minimal stat */
+    if (file->flags & FILE_SOCKET)
+        st.st_mode = S_IFSOCK;
+    else
+        ret = vfs_stat(file->vnode, &st);
 
-    struct vnode *vnode = file->vnode;
+    if (!ret)
+        ret = copyout(buf, &st, sizeof(st));
 
-    int ret = vfs_stat(vnode, buf);
     arch_syscall_return(curthread, ret);
 }
 
@@ -288,13 +322,13 @@ static int do_linkat(int olddirfd, const char *oldpath, int newdirfd, const char
 
 static void sys_link(const char *oldpath, const char *newpath)
 {
-    syscall_log(LOG_DEBUG, "link(oldpath=%s, newpath=%s)\n", oldpath, newpath);
+    syscall_log(LOG_DEBUG, "link(oldpath=%p, newpath=%p)\n", oldpath, newpath);
     arch_syscall_return(curthread, do_linkat(AT_FDCWD, oldpath, AT_FDCWD, newpath, 0));
 }
 
 static void sys_linkat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, int flags)
 {
-    syscall_log(LOG_DEBUG, "linkat(olddirfd=%d, oldpath=%s, newdirfd=%d, newpath=%s, flags=%x)\n",
+    syscall_log(LOG_DEBUG, "linkat(olddirfd=%d, oldpath=%p, newdirfd=%d, newpath=%p, flags=%x)\n",
             olddirfd, oldpath, newdirfd, newpath, flags);
     arch_syscall_return(curthread, do_linkat(olddirfd, oldpath, newdirfd, newpath, flags));
 }
@@ -385,21 +419,26 @@ static int creat_path(const char *path, struct uio *uio, char **ref)
     return -ELOOP;
 }
 
-static int do_openat(int dirfd, const char *path, int oflags, mode_t mode)
+static int do_openat(int dirfd, const char *upath, int oflags, mode_t mode)
 {
     struct uio uio;
+    char *path;
     int ret;
 
-    if (uaccess_str_check(path))
-        return -EFAULT;
-
-    if ((ret = at_uio(dirfd, path, &uio)))
+    if ((ret = upath_get(upath, &path)))
         return ret;
+
+    if ((ret = at_uio(dirfd, path, &uio))) {
+        kfree(path);
+        return ret;
+    }
 
     int fd = proc_fd_get(curproc);  /* Find a free file descriptor */
 
-    if (fd == -1)   /* Reached maximum number of open file descriptors */
+    if (fd == -1) { /* Reached maximum number of open file descriptors */
+        kfree(path);
         return -EMFILE;
+    }
 
     struct vnode *vnode = NULL;
     char *abs_path = NULL;
@@ -480,18 +519,19 @@ done:
     }
 
     kfree(abs_path);
+    kfree(path);
     return ret;
 }
 
 static void sys_open(const char *path, int oflags, mode_t mode)
 {
-    syscall_log(LOG_DEBUG, "open(path=%s, oflags=0x%x, mode=0x%x)\n", path, oflags, mode);
+    syscall_log(LOG_DEBUG, "open(path=%p, oflags=0x%x, mode=0x%x)\n", path, oflags, mode);
     arch_syscall_return(curthread, do_openat(AT_FDCWD, path, oflags, mode));
 }
 
 static void sys_openat(int dirfd, const char *path, int oflags, mode_t mode)
 {
-    syscall_log(LOG_DEBUG, "openat(dirfd=%d, path=%s, oflags=0x%x, mode=0x%x)\n", dirfd, path, oflags, mode);
+    syscall_log(LOG_DEBUG, "openat(dirfd=%d, path=%p, oflags=0x%x, mode=0x%x)\n", dirfd, path, oflags, mode);
     arch_syscall_return(curthread, do_openat(dirfd, path, oflags, mode));
 }
 
@@ -511,7 +551,10 @@ static void sys_read(int fildes, void *buf, size_t nbytes)
         return;
     }
 
-    int ret = vfs_file_read(file, buf, nbytes);
+    struct iobuf io;
+    iobuf_init(&io, buf, nbytes, 1);
+
+    ssize_t ret = vfs_file_read(file, &io);
     arch_syscall_return(curthread, ret);
     return;
 }
@@ -554,26 +597,26 @@ static int do_fstatat(int dirfd, const char *path, struct aquila_stat *buf, int 
     if (flags & ~AT_SYMLINK_NOFOLLOW)
         return -EINVAL;
 
-    if (uaccess_check(buf, sizeof(struct aquila_stat)))
-        return -EFAULT;
-
     if ((ret = at_lookup(dirfd, path, flags, &uio, &vnode)))
         return ret;
 
-    ret = vfs_stat(vnode, buf);
+    struct aquila_stat st;
+    memset(&st, 0, sizeof(st));
+
+    ret = vfs_stat(vnode, &st);
     vfs_close(vnode);
-    return ret;
+    return ret ? ret : copyout(buf, &st, sizeof(st));
 }
 
 static void sys_stat(const char *path, struct aquila_stat *buf)
 {
-    syscall_log(LOG_DEBUG, "stat(path=%s, buf=%p)\n", path, buf);
+    syscall_log(LOG_DEBUG, "stat(path=%p, buf=%p)\n", path, buf);
     arch_syscall_return(curthread, do_fstatat(AT_FDCWD, path, buf, 0));
 }
 
 static void sys_fstatat(int dirfd, const char *path, struct aquila_stat *buf, int flags)
 {
-    syscall_log(LOG_DEBUG, "fstatat(dirfd=%d, path=%s, buf=%p, flags=%x)\n", dirfd, path, buf, flags);
+    syscall_log(LOG_DEBUG, "fstatat(dirfd=%d, path=%p, buf=%p, flags=%x)\n", dirfd, path, buf, flags);
     arch_syscall_return(curthread, do_fstatat(dirfd, path, buf, flags));
 }
 
@@ -583,35 +626,39 @@ static void sys_times(struct aquila_tms *buf)
 
     const uint64_t tick = 1000000000ULL / AQUILA_CLK_TCK;   /* ns */
 
-    if (uaccess_check(buf, sizeof(struct aquila_tms))) {
+    struct aquila_tms tms = {
+        .tms_utime  = curproc->utime / tick,
+        .tms_stime  = curproc->stime / tick,
+        .tms_cutime = curproc->cutime / tick,
+        .tms_cstime = curproc->cstime / tick,
+    };
+
+    if (copyout(buf, &tms, sizeof(tms))) {
         arch_syscall_return(curthread, -EFAULT);
         return;
     }
-
-    buf->tms_utime  = curproc->utime / tick;
-    buf->tms_stime  = curproc->stime / tick;
-    buf->tms_cutime = curproc->cutime / tick;
-    buf->tms_cstime = curproc->cstime / tick;
 
     /* elapsed real time, since boot */
     arch_syscall_return(curthread, (uint32_t) (arch_rtime_ns() / tick));
 }
 
-static int do_unlinkat(int dirfd, const char *path, int flags)
+static int do_unlinkat(int dirfd, const char *upath, int flags)
 {
     struct uio uio;
+    char *path;
     int ret;
 
     if (flags & ~AT_REMOVEDIR)
         return -EINVAL;
 
-    if (uaccess_str_check(path))
-        return -EFAULT;
-
-    if ((ret = at_uio(dirfd, path, &uio)))
+    if ((ret = upath_get(upath, &path)))
         return ret;
 
-    return (flags & AT_REMOVEDIR) ? vfs_rmdir(path, &uio) : vfs_unlink(path, &uio);
+    if (!(ret = at_uio(dirfd, path, &uio)))
+        ret = (flags & AT_REMOVEDIR) ? vfs_rmdir(path, &uio) : vfs_unlink(path, &uio);
+
+    kfree(path);
+    return ret;
 }
 
 static void sys_unlink(const char *path)
@@ -629,11 +676,6 @@ static void sys_unlinkat(int dirfd, const char *path, int flags)
 static void sys_waitpid(int pid, int *stat_loc, int options)
 {
     syscall_log(LOG_DEBUG, "waitpid(pid=%d, stat_loc=%p, options=0x%x)\n", pid, stat_loc, options);
-
-    if (stat_loc && uaccess_check(stat_loc, sizeof(int))) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
-    }
 
     /* pid > 0:   that child
      * pid == -1: any child
@@ -668,8 +710,11 @@ static void sys_waitpid(int pid, int *stat_loc, int options)
                 continue;
             }
 
-            if (stat_loc)
-                *stat_loc = status;
+            /* nowhere to put it: the child stays as it is */
+            if (stat_loc && copyout(stat_loc, &status, sizeof(status))) {
+                arch_syscall_return(curthread, -EFAULT);
+                return;
+            }
 
             arch_syscall_return(curthread, proc->pid);
 
@@ -712,7 +757,10 @@ static void sys_write(int fd, void *buf, size_t nbytes)
         return;
     }
 
-    int ret = vfs_file_write(file, buf, nbytes);
+    struct iobuf io;
+    iobuf_init(&io, buf, nbytes, 1);
+
+    ssize_t ret = vfs_file_write(file, &io);
     arch_syscall_return(curthread, ret);
 
     /* writing to a pipe no one reads: SIGPIPE, the write fails with
@@ -736,12 +784,14 @@ static void sys_ioctl(int fd, int request, void *argp)
 
     /* the descriptor's own, whatever it is: non-blocking (as F_SETFL) */
     if (request == FIONBIO) {
-        if (uaccess_check(argp, sizeof(int))) {
+        int on;
+
+        if (copyin(&on, argp, sizeof(on))) {
             arch_syscall_return(curthread, -EFAULT);
             return;
         }
 
-        if (*(int *) argp)
+        if (on)
             file->flags |= O_NONBLOCK;
         else
             file->flags &= ~O_NONBLOCK;
@@ -750,7 +800,8 @@ static void sys_ioctl(int fd, int request, void *argp)
         return;
     }
 
-    /* the socket checks its argument, for each request */
+    /* argp is user space's: the socket, the device copy what each
+     * request reads and writes */
     if (file->flags & FILE_SOCKET) {
         arch_syscall_return(curthread, socket_ioctl(file, request, argp));
         return;
@@ -771,14 +822,15 @@ static void sys_sigaction(int sig, const struct aquila_sigaction *act, struct aq
         return;
     }
 
-    if ((act && uaccess_check(act, sizeof(struct aquila_sigaction))) ||
-        (oact && uaccess_check(oact, sizeof(struct aquila_sigaction)))) {
+    struct aquila_sigaction new;
+
+    if (act && copyin(&new, act, sizeof(new))) {
         arch_syscall_return(curthread, -EFAULT);
         return;
     }
 
     if (act) {
-        uintptr_t handler = act->sa_handler;
+        uintptr_t handler = new.sa_handler;
 
         /* SIGKILL and SIGSTOP can not be caught or ignored */
         if ((sig == SIGKILL || sig == SIGSTOP) && handler != SIG_DFL) {
@@ -793,11 +845,13 @@ static void sys_sigaction(int sig, const struct aquila_sigaction *act, struct aq
         }
     }
 
-    if (oact)
-        memcpy(oact, &curproc->sigaction[sig], sizeof(struct aquila_sigaction));
+    if (oact && copyout(oact, &curproc->sigaction[sig], sizeof(struct aquila_sigaction))) {
+        arch_syscall_return(curthread, -EFAULT);
+        return;
+    }
 
     if (act) {
-        memcpy(&curproc->sigaction[sig], act, sizeof(struct aquila_sigaction));
+        curproc->sigaction[sig] = new;
         signal_action_set(curproc, sig);
     }
 
@@ -820,16 +874,17 @@ static void sys_readdir(int fd, struct dirent *dirent)
         return;
     }
 
-    if (uaccess_check(dirent, sizeof(struct dirent))) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
-    }
-
-    int ret = vfs_file_readdir(file, dirent);
+    struct dirent d;
+    memset(&d, 0, sizeof(d));
+    int ret = vfs_file_readdir(file, &d);
 
     /* filesystems don't report entry types yet */
-    if (ret > 0)
-        dirent->d_type = DT_UNKNOWN;
+    if (ret > 0) {
+        d.d_type = DT_UNKNOWN;
+
+        if (copyout(dirent, &d, sizeof(d)))
+            ret = -EFAULT;
+    }
 
     arch_syscall_return(curthread, ret);
     return;
@@ -842,48 +897,52 @@ static void sys_mount(struct aquila_mount_args *args)
         return;
     }
 
-    if (uaccess_check(args, sizeof(struct aquila_mount_args))) {
+    struct aquila_mount_args a;
+
+    if (copyin(&a, args, sizeof(a))) {
         arch_syscall_return(curthread, -EFAULT);
         return;
     }
 
-    const char *type = args->type;
-    const char *dir  = args->dir;
-    int flags = args->flags;
-    void *data = args->data;
+    char *type = NULL, *dir = NULL;
 
-    syscall_log(LOG_DEBUG, "mount(type=%s, dir=%s, flags=%x, data=%p)\n",
-            type, dir, flags, data);
-
-    if (uaccess_str_check(type) || uaccess_str_check(dir)) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
-    }
-
-    if (data) {
-        /* mount data is {char *dev; char *opt;} for all filesystems */
-        char **mdata = data;
-
-        if (uaccess_check(mdata, 2 * sizeof(char *)) ||
-            (mdata[0] && uaccess_str_check(mdata[0])) ||
-            (mdata[1] && uaccess_str_check(mdata[1]))) {
-            arch_syscall_return(curthread, -EFAULT);
-            return;
-        }
-    }
-
-    int ret = vfs_mount(type, dir, flags, data, &PROC_UIO(curproc));
-    arch_syscall_return(curthread, ret);
-    return;
-}
-
-static int do_mknodat(int dirfd, const char *path, mode_t mode, dev_t dev)
-{
-    struct uio uio;
+    /* mount data is {char *dev; char *opt;} for all filesystems: the
+     * kernel's copy of it, and of its strings */
+    char *udata[2], *data[2] = {NULL, NULL};
     int ret;
 
-    if (uaccess_str_check(path))
-        return -EFAULT;
+    if ((ret = upath_get(a.type, &type)) || (ret = upath_get(a.dir, &dir)))
+        goto done;
+
+    if (a.data) {
+        if (copyin(udata, a.data, sizeof(udata))) {
+            ret = -EFAULT;
+            goto done;
+        }
+
+        for (int i = 0; i < 2; ++i)
+            if (udata[i] && (ret = upath_get(udata[i], &data[i])))
+                goto done;
+    }
+
+    syscall_log(LOG_DEBUG, "mount(type=%s, dir=%s, flags=%x, data=%p)\n",
+            type, dir, a.flags, a.data);
+
+    ret = vfs_mount(type, dir, a.flags, a.data ? data : NULL, &PROC_UIO(curproc));
+
+done:
+    kfree(type);
+    kfree(dir);
+    kfree(data[0]);
+    kfree(data[1]);
+    arch_syscall_return(curthread, ret);
+}
+
+static int do_mknodat(int dirfd, const char *upath, mode_t mode, dev_t dev)
+{
+    struct uio uio;
+    char *path;
+    int ret;
 
     /* type 0 is a regular file */
     if (!(mode & S_IFMT))
@@ -904,15 +963,19 @@ static int do_mknodat(int dirfd, const char *path, mode_t mode, dev_t dev)
             return -EINVAL;
     }
 
-    if ((ret = at_uio(dirfd, path, &uio)))
+    if ((ret = upath_get(upath, &path)))
         return ret;
 
-    return vfs_mknod(path, mode, dev, &uio, NULL);
+    if (!(ret = at_uio(dirfd, path, &uio)))
+        ret = vfs_mknod(path, mode, dev, &uio, NULL);
+
+    kfree(path);
+    return ret;
 }
 
 static void sys_mkdir(const char *path, mode_t mode)
 {
-    syscall_log(LOG_DEBUG, "mkdir(path=%s, mode=%x)\n", path, mode);
+    syscall_log(LOG_DEBUG, "mkdir(path=%p, mode=%x)\n", path, mode);
     arch_syscall_return(curthread, do_mknodat(AT_FDCWD, path, S_IFDIR | (mode & 07777), 0));
 }
 
@@ -923,21 +986,18 @@ static void sys_uname(struct utsname *name)
 {
     syscall_log(LOG_DEBUG, "uname(name=%p)\n", name);
 
-    if (uaccess_check(name, sizeof(struct utsname))) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
-    }
+    struct utsname u;
+    memset(&u, 0, sizeof(u));
 
-    strcpy(name->sysname,  UTSNAME_SYSNAME);
-    strcpy(name->nodename, nodename);
-    strcpy(name->release,  UTSNAME_RELEASE);
+    strcpy(u.sysname,  UTSNAME_SYSNAME);
+    strcpy(u.nodename, nodename);
+    strcpy(u.release,  UTSNAME_RELEASE);
     /* the compiler's version string may be long */
-    size_t n = MIN(sizeof(name->version) - 1, (size_t) strlen(UTSNAME_VERSION));
-    memcpy(name->version, UTSNAME_VERSION, n);
-    name->version[n] = '\0';
-    strcpy(name->machine,  UTSNAME_MACHINE);
+    size_t n = MIN(sizeof(u.version) - 1, (size_t) strlen(UTSNAME_VERSION));
+    memcpy(u.version, UTSNAME_VERSION, n);
+    strcpy(u.machine,  UTSNAME_MACHINE);
 
-    arch_syscall_return(curthread, 0);
+    arch_syscall_return(curthread, copyout(name, &u, sizeof(u)));
     return;
 }
 
@@ -952,6 +1012,7 @@ static void sys_pipe(int fd[2])
 
     int err = 0;
     int fd1 = -1, fd2 = -1;
+    int fds[2];
 
     if ((fd1 = proc_fd_get(curproc)) == -1 || (fd2 = proc_fd_get(curproc)) == -1) {
         err = -EMFILE;
@@ -961,8 +1022,19 @@ static void sys_pipe(int fd[2])
     if ((err = pipefs_pipe(&curproc->fds[fd1], &curproc->fds[fd2])))
         goto error;
 
-    fd[0] = fd1;
-    fd[1] = fd2;
+    fds[0] = fd1;
+    fds[1] = fd2;
+
+    /* nowhere to say: the descriptors go again */
+    if (copyout(fd, fds, sizeof(fds))) {
+        vfs_file_close(&curproc->fds[fd1]);
+        vfs_file_close(&curproc->fds[fd2]);
+        curproc->fds[fd1] = (struct file) {0};
+        curproc->fds[fd2] = (struct file) {0};
+        arch_syscall_return(curthread, -EFAULT);
+        return;
+    }
+
     arch_syscall_return(curthread, 0);
     return;
 
@@ -1046,24 +1118,23 @@ static void sys_fcntl(int fd, int cmd, uintptr_t arg)
     arch_syscall_return(curthread, -EINVAL);
 }
 
-static void sys_chdir(const char *path)
+static void sys_chdir(const char *upath)
 {
-    syscall_log(LOG_DEBUG, "chdir(path=%s)\n", path);
+    syscall_log(LOG_DEBUG, "chdir(path=%p)\n", upath);
 
-    if (uaccess_str_check(path)) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
-    }
+    char *path = NULL;
+    char *abs_path = NULL;
+    struct vnode *vnode = NULL;
+    int ret = upath_get(upath, &path);
+
+    if (ret)
+        goto free_resources;
 
     if (!*path) {
-        arch_syscall_return(curthread, -ENOENT);
-        return;
+        ret = -ENOENT;
+        goto free_resources;
     }
 
-    int ret = 0;
-    char *abs_path = NULL;
-
-    struct vnode *vnode = NULL;
     ret = vfs_lookup(path, &PROC_UIO(curproc), &vnode, &abs_path);
 
     if (ret)
@@ -1095,6 +1166,7 @@ free_resources:
         vfs_close(vnode);
 
     kfree(abs_path);
+    kfree(path);
     arch_syscall_return(curthread, ret);
 }
 
@@ -1114,28 +1186,23 @@ static void sys_getcwd(char *buf, size_t size)
         return;
     }
 
-    if (uaccess_check(buf, len + 1)) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
-    }
-
-    memcpy(buf, curproc->cwd, len + 1);
-    arch_syscall_return(curthread, 0);
+    arch_syscall_return(curthread, copyout(buf, curproc->cwd, len + 1));
 }
 
 static void sys_thread_create(struct aquila_thread_args *__uthread)
 {
-    if (uaccess_check(__uthread, sizeof(struct aquila_thread_args))) {
+    struct aquila_thread_args a;
+
+    if (copyin(&a, __uthread, sizeof(a))) {
         arch_syscall_return(curthread, -EFAULT);
         return;
     }
 
     syscall_log(LOG_DEBUG,
             "thread_create(stack=%p, entry=%p, uentry=%p, arg=%p, attr=%p)\n",
-            __uthread->stack, __uthread->entry, __uthread->uentry,
-            __uthread->arg, __uthread->attr);
+            a.stack, a.entry, a.uentry, a.arg, a.attr);
 
-    uintptr_t stack = __uthread->stack;
+    uintptr_t stack = a.stack;
 
     /* the kernel pushes the initial frame (3 words) on the user stack */
     if (stack < 3 * sizeof(uintptr_t) ||
@@ -1147,7 +1214,7 @@ static void sys_thread_create(struct aquila_thread_args *__uthread)
     int err = 0;
     struct thread *thread = NULL;
 
-    if ((err = thread_create(curthread, stack, __uthread->entry, __uthread->uentry, __uthread->arg, __uthread->attr, &thread))) {
+    if ((err = thread_create(curthread, stack, a.entry, a.uentry, a.arg, a.attr, &thread))) {
         arch_syscall_return(curthread, err);
         return;
     }
@@ -1193,11 +1260,6 @@ static void sys_thread_join(int tid, void **value_ptr)
     struct proc *owner = curproc;
     struct thread *thread = NULL;
 
-    if (value_ptr && uaccess_check(value_ptr, sizeof(void *))) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
-    }
-
     queue_for (node, &owner->threads) {
         struct thread *_thread = node->value;
         if (_thread->tid == tid)
@@ -1210,13 +1272,6 @@ static void sys_thread_join(int tid, void **value_ptr)
         return;
     }
 
-    if (thread->state == ZOMBIE) {  /* Thread is terminated */
-        if (value_ptr)
-            *value_ptr = thread->exit_value;
-        arch_syscall_return(curthread, thread->tid);
-        return;
-    }
-
     while (thread->state != ZOMBIE) {
         if (thread_queue_sleep(&curproc->thread_join)) {
             arch_syscall_return(curthread, -ERESTARTSYS);
@@ -1224,8 +1279,11 @@ static void sys_thread_join(int tid, void **value_ptr)
         }
     }
 
-    if (value_ptr)
-        *value_ptr = thread->exit_value;
+    if (value_ptr && copyout(value_ptr, &thread->exit_value, sizeof(void *))) {
+        arch_syscall_return(curthread, -EFAULT);
+        return;
+    }
+
     arch_syscall_return(curthread, thread->tid);
 }
 
@@ -1338,9 +1396,13 @@ static void sys_getgid(void)
     arch_syscall_return(curthread, curproc->gid);
 }
 
-static void sys_mmap(struct aquila_mmap_args *args, void **ret)
+static void sys_mmap(struct aquila_mmap_args *uargs, void **ret)
 {
-    if (uaccess_check(args, sizeof(struct aquila_mmap_args)) || uaccess_check(ret, sizeof(void *))) {
+    struct aquila_mmap_args _args, *args = &_args;
+    void *none = NULL;
+
+    /* the address goes out at the end: where to, writable, first */
+    if (copyin(args, uargs, sizeof(*args)) || copyout(ret, &none, sizeof(none))) {
         arch_syscall_return(curthread, -EFAULT);
         return;
     }
@@ -1412,7 +1474,8 @@ static void sys_mmap(struct aquila_mmap_args *args, void **ret)
     if (!anon && !(args->flags & MAP_PRIVATE) && (err = vfs_map(vm_space, vm_entry)))
         goto error;
 
-    *ret = (void *) vm_entry->base;
+    void *addr = (void *) vm_entry->base;
+    err = copyout(ret, &addr, sizeof(addr));
 
     arch_syscall_return(curthread, err);
     return;
@@ -1488,6 +1551,43 @@ static void sys_socket(int domain, int type, int protocol)
     return;
 }
 
+/*
+ * Socket addresses: the kernel's copy, as big as the biggest (AF_UNIX's).
+ * One coming in is len bytes of user space's; one going out is the
+ * protocol's (*klen its size), as much of it as fits in user space's
+ * (*ulen bytes), *ulen then its size.
+ */
+union ksockaddr {
+    struct sockaddr sa;
+    struct sockaddr_un un;
+};
+
+static int sockaddr_copyin(union ksockaddr *k, const struct sockaddr *uaddr, socklen_t len)
+{
+    if (len > sizeof(*k))
+        return -EINVAL;
+
+    return copyin(k, uaddr, len);
+}
+
+/* user space's room for one going out: its size, at most ours */
+static int sockaddr_room(socklen_t *ulen, socklen_t *klen)
+{
+    if (copyin(klen, ulen, sizeof(*klen)))
+        return -EFAULT;
+
+    *klen = MIN(*klen, sizeof(union ksockaddr));
+    return 0;
+}
+
+static int sockaddr_copyout(struct sockaddr *uaddr, socklen_t *ulen, const union ksockaddr *k, socklen_t klen, socklen_t room)
+{
+    if (copyout(uaddr, k, MIN(klen, room)) || copyout(ulen, &klen, sizeof(klen)))
+        return -EFAULT;
+
+    return 0;
+}
+
 static void sys_accept(int fd, const struct sockaddr *addr, socklen_t *len)
 {
     syscall_log(LOG_DEBUG, "accept(fd=%d, addr=%p, len=%p)\n",
@@ -1509,11 +1609,31 @@ static void sys_accept(int fd, const struct sockaddr *addr, socklen_t *len)
 
     struct file *conn   = &curproc->fds[conn_fd];
 
+    union ksockaddr k;
+    memset(&k, 0, sizeof(k));
+    socklen_t room = 0, klen = 0;
     int err = 0;
-    if ((err = socket_accept(socket, conn, addr, len))) {
+
+    if (addr && (err = sockaddr_room(len, &room))) {
+        proc_fd_release(curproc, conn_fd);
+        arch_syscall_return(curthread, err);
+        return;
+    }
+
+    klen = room;
+
+    if ((err = socket_accept(socket, conn, addr ? &k.sa : NULL, addr ? &klen : NULL))) {
         proc_fd_release(curproc, conn_fd);
         arch_syscall_return(curthread, err);
         return; 
+    }
+
+    /* nowhere to say who: the connection goes */
+    if (addr && sockaddr_copyout((struct sockaddr *) addr, len, &k, klen, room)) {
+        vfs_file_close(conn);
+        *conn = (struct file) {0};
+        arch_syscall_return(curthread, -EFAULT);
+        return;
     }
 
     arch_syscall_return(curthread, conn_fd);
@@ -1532,9 +1652,11 @@ static void sys_bind(int fd, const struct sockaddr *addr, socklen_t len)
         return; 
     }
 
+    union ksockaddr k;
+    memset(&k, 0, sizeof(k));
     int err = 0;
 
-    if ((err = socket_bind(file, addr, len))) {
+    if ((err = sockaddr_copyin(&k, addr, len)) || (err = socket_bind(file, &k.sa, len))) {
         arch_syscall_return(curthread, err);
         return; 
     }
@@ -1555,9 +1677,11 @@ static void sys_connect(int fd, const struct sockaddr *addr, socklen_t len)
         return; 
     }
 
+    union ksockaddr k;
+    memset(&k, 0, sizeof(k));
     int err = 0;
 
-    if ((err = socket_connect(socket, addr, len))) {
+    if ((err = sockaddr_copyin(&k, addr, len)) || (err = socket_connect(socket, &k.sa, len))) {
         arch_syscall_return(curthread, err);
         return; 
     }
@@ -1588,9 +1712,11 @@ static void sys_listen(int fd, int backlog)
     return;
 }
 
-static void sys_send(struct aquila_socket_io_args *s)
+static void sys_send(struct aquila_socket_io_args *us)
 {
-    if (uaccess_check(s, sizeof(struct aquila_socket_io_args))) {
+    struct aquila_socket_io_args _s, *s = &_s;
+
+    if (copyin(s, us, sizeof(*s))) {
         arch_syscall_return(curthread, -EFAULT);
         return;
     }
@@ -1618,37 +1744,39 @@ static void sys_send(struct aquila_socket_io_args *s)
     }
 
     /* sendto(): where to */
-    const struct sockaddr *to = NULL;
+    union ksockaddr to;
+    memset(&to, 0, sizeof(to));
     socklen_t tolen = 0;
 
     if (s->addr) {
-        if (uaccess_check(s->addrlen, sizeof(socklen_t)) ||
-            uaccess_check(s->addr, *s->addrlen)) {
+        if (copyin(&tolen, s->addrlen, sizeof(tolen))) {
             arch_syscall_return(curthread, -EFAULT);
             return;
         }
 
-        to = s->addr;
-        tolen = *s->addrlen;
+        if ((err = sockaddr_copyin(&to, s->addr, tolen))) {
+            arch_syscall_return(curthread, err);
+            return;
+        }
     }
 
-    if ((err = socket_send(file, buf, len, flags, to, tolen))) {
-        arch_syscall_return(curthread, err);
+    struct iobuf io;
+    iobuf_init(&io, buf, len, 1);
 
-        /* to a connection that can't send anymore: SIGPIPE too, as
-         * write() (not with MSG_NOSIGNAL) */
-        if (err == -EPIPE && !(flags & MSG_NOSIGNAL))
-            signal_proc_send(curproc, SIGPIPE);
-        return; 
-    }
+    ssize_t ret = socket_send(file, &io, flags, s->addr ? &to.sa : NULL, tolen);
+    arch_syscall_return(curthread, ret);
 
-    arch_syscall_return(curthread, 0);
-    return;
+    /* to a connection that can't send anymore: SIGPIPE too, as write()
+     * (not with MSG_NOSIGNAL) */
+    if (ret == -EPIPE && !(flags & MSG_NOSIGNAL))
+        signal_proc_send(curproc, SIGPIPE);
 }
 
-static void sys_recv(struct aquila_socket_io_args *s)
+static void sys_recv(struct aquila_socket_io_args *us)
 {
-    if (uaccess_check(s, sizeof(struct aquila_socket_io_args))) {
+    struct aquila_socket_io_args _s, *s = &_s;
+
+    if (copyin(s, us, sizeof(*s))) {
         arch_syscall_return(curthread, -EFAULT);
         return;
     }
@@ -1676,27 +1804,26 @@ static void sys_recv(struct aquila_socket_io_args *s)
     }
 
     /* recvfrom(): where from */
-    struct sockaddr *from = NULL;
-    socklen_t *fromlen = NULL;
+    union ksockaddr from;
+    memset(&from, 0, sizeof(from));
+    socklen_t room = 0, fromlen = 0;
 
-    if (s->addr) {
-        if (uaccess_check(s->addrlen, sizeof(socklen_t)) ||
-            uaccess_check(s->addr, *s->addrlen)) {
-            arch_syscall_return(curthread, -EFAULT);
-            return;
-        }
-
-        from = s->addr;
-        fromlen = s->addrlen;
-    }
-
-    if ((err = socket_recv(file, buf, len, flags, from, fromlen))) {
+    if (s->addr && (err = sockaddr_room(s->addrlen, &room))) {
         arch_syscall_return(curthread, err);
-        return; 
+        return;
     }
 
-    arch_syscall_return(curthread, 0);
-    return;
+    fromlen = room;
+
+    struct iobuf io;
+    iobuf_init(&io, buf, len, 1);
+
+    ssize_t ret = socket_recv(file, &io, flags, s->addr ? &from.sa : NULL, s->addr ? &fromlen : NULL);
+
+    if (ret >= 0 && s->addr && sockaddr_copyout(s->addr, s->addrlen, &from, fromlen, room))
+        ret = -EFAULT;
+
+    arch_syscall_return(curthread, ret);
 }
 
 /* getsockname(), getpeername() */
@@ -1709,12 +1836,22 @@ static void socket_name(int fd, struct sockaddr *addr, socklen_t *len, int peer)
         return;
     }
 
-    if (uaccess_check(len, sizeof(socklen_t)) || uaccess_check(addr, *len)) {
-        arch_syscall_return(curthread, -EFAULT);
+    union ksockaddr k;
+    memset(&k, 0, sizeof(k));
+    socklen_t room, klen;
+    int err;
+
+    if ((err = sockaddr_room(len, &room))) {
+        arch_syscall_return(curthread, err);
         return;
     }
 
-    arch_syscall_return(curthread, socket_getname(file, addr, len, peer));
+    klen = room;
+
+    if (!(err = socket_getname(file, &k.sa, &klen, peer)))
+        err = sockaddr_copyout(addr, len, &k, klen, room);
+
+    arch_syscall_return(curthread, err);
 }
 
 static void sys_getsockname(int fd, struct sockaddr *addr, socklen_t *len)
@@ -1741,12 +1878,24 @@ static void sys_getsockopt(int fd, int level, int name, void *val, socklen_t *le
         return;
     }
 
-    if (uaccess_check(len, sizeof(socklen_t)) || uaccess_check(val, *len)) {
+    /* an option's value: the kernel's copy (the biggest is a timeval) */
+    char kval[64];
+    memset(kval, 0, sizeof(kval));
+    socklen_t room, klen;
+    int err;
+
+    if (copyin(&room, len, sizeof(room))) {
         arch_syscall_return(curthread, -EFAULT);
         return;
     }
 
-    arch_syscall_return(curthread, socket_getsockopt(file, level, name, val, len));
+    klen = room = MIN(room, sizeof(kval));
+
+    if (!(err = socket_getsockopt(file, level, name, kval, &klen)) &&
+        (copyout(val, kval, MIN(klen, room)) || copyout(len, &klen, sizeof(klen))))
+        err = -EFAULT;
+
+    arch_syscall_return(curthread, err);
 }
 
 static void sys_setsockopt(int fd, int level, int name, const void *val, socklen_t len)
@@ -1761,12 +1910,16 @@ static void sys_setsockopt(int fd, int level, int name, const void *val, socklen
         return;
     }
 
-    if (uaccess_check(val, len)) {
+    char kval[64];
+
+    len = MIN(len, sizeof(kval));
+
+    if (copyin(kval, val, len)) {
         arch_syscall_return(curthread, -EFAULT);
         return;
     }
 
-    arch_syscall_return(curthread, socket_setsockopt(file, level, name, val, len));
+    arch_syscall_return(curthread, socket_setsockopt(file, level, name, kval, len));
 }
 
 static void sys_umask(mode_t mask)
@@ -1803,13 +1956,13 @@ static int do_fchmodat(int dirfd, const char *path, mode_t mode, int flags)
 
 static void sys_chmod(const char *path, mode_t mode)
 {
-    syscall_log(LOG_DEBUG, "chmod(path=%s, mode=%o)\n", path, mode);
+    syscall_log(LOG_DEBUG, "chmod(path=%p, mode=%o)\n", path, mode);
     arch_syscall_return(curthread, do_fchmodat(AT_FDCWD, path, mode, 0));
 }
 
 static void sys_fchmodat(int dirfd, const char *path, mode_t mode, int flags)
 {
-    syscall_log(LOG_DEBUG, "fchmodat(dirfd=%d, path=%s, mode=%o, flags=%x)\n", dirfd, path, mode, flags);
+    syscall_log(LOG_DEBUG, "fchmodat(dirfd=%d, path=%p, mode=%o, flags=%x)\n", dirfd, path, mode, flags);
     arch_syscall_return(curthread, do_fchmodat(dirfd, path, mode, flags));
 }
 
@@ -1872,13 +2025,13 @@ static int do_faccessat(int dirfd, const char *path, int mode, int flags)
 
 static void sys_access(const char *path, int mode)
 {
-    syscall_log(LOG_DEBUG, "access(path=%s, mode=%d)\n", path, mode);
+    syscall_log(LOG_DEBUG, "access(path=%p, mode=%d)\n", path, mode);
     arch_syscall_return(curthread, do_faccessat(AT_FDCWD, path, mode, 0));
 }
 
 static void sys_faccessat(int dirfd, const char *path, int mode, int flags)
 {
-    syscall_log(LOG_DEBUG, "faccessat(dirfd=%d, path=%s, mode=%d, flags=%x)\n", dirfd, path, mode, flags);
+    syscall_log(LOG_DEBUG, "faccessat(dirfd=%d, path=%p, mode=%d, flags=%x)\n", dirfd, path, mode, flags);
     arch_syscall_return(curthread, do_faccessat(dirfd, path, mode, flags));
 }
 
@@ -1886,41 +2039,42 @@ static void sys_gettimeofday(struct timeval *tv, struct timezone *tz)
 {
     syscall_log(LOG_DEBUG, "gettimeofday(tv=%p, tz=%p)\n", tv, tz);
 
-    if ((tv && uaccess_check(tv, sizeof(struct timeval))) ||
-        (tz && uaccess_check(tz, sizeof(struct timezone)))) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
-    }
+    struct timeval ktv;
+    struct timezone ktz;
+    int err = gettimeofday(&ktv, &ktz);
 
-    arch_syscall_return(curthread, gettimeofday(tv, tz));
-    return;
+    if (!err && ((tv && copyout(tv, &ktv, sizeof(ktv))) || (tz && copyout(tz, &ktz, sizeof(ktz)))))
+        err = -EFAULT;
+
+    arch_syscall_return(curthread, err);
 }
 
 static void sys_sigmask(int how, const sigset_t *set, sigset_t *oldset)
 {
     syscall_log(LOG_DEBUG, "sigmask(how=%d, set=%p, oldset=%p)\n", how, set, oldset);
 
-    if ((set && uaccess_check(set, sizeof(sigset_t))) ||
-        (oldset && uaccess_check(oldset, sizeof(sigset_t)))) {
+    sigset_t kset, mask = curproc->sigmask;
+
+    if (set && copyin(&kset, set, sizeof(kset))) {
         arch_syscall_return(curthread, -EFAULT);
         return;
     }
 
-    sigset_t mask = curproc->sigmask;
-
     if (set) {
         switch (how) {
-            case SIG_BLOCK:   mask |= *set;  break;
-            case SIG_UNBLOCK: mask &= ~*set; break;
-            case SIG_SETMASK: mask = *set;   break;
+            case SIG_BLOCK:   mask |= kset;  break;
+            case SIG_UNBLOCK: mask &= ~kset; break;
+            case SIG_SETMASK: mask = kset;   break;
             default:
                 arch_syscall_return(curthread, -EINVAL);
                 return;
         }
     }
 
-    if (oldset)
-        *oldset = curproc->sigmask;
+    if (oldset && copyout(oldset, &curproc->sigmask, sizeof(sigset_t))) {
+        arch_syscall_return(curthread, -EFAULT);
+        return;
+    }
 
     /* one no longer blocked is delivered before this returns to user
      * mode */
@@ -1932,7 +2086,9 @@ static void sys_sigsuspend(const sigset_t *set)
 {
     syscall_log(LOG_DEBUG, "sigsuspend(set=%p)\n", set);
 
-    if (uaccess_check(set, sizeof(sigset_t))) {
+    sigset_t kset;
+
+    if (copyin(&kset, set, sizeof(kset))) {
         arch_syscall_return(curthread, -EFAULT);
         return;
     }
@@ -1944,7 +2100,7 @@ static void sys_sigsuspend(const sigset_t *set)
      * it), or comes back if it's restarted (x86_return_to_user) */
     thread->sig_oldmask = curproc->sigmask;
     thread->sig_oldmask_set = 1;
-    curproc->sigmask = *set & ~SIG_UNMASKABLE;
+    curproc->sigmask = kset & ~SIG_UNMASKABLE;
 
     /* until a signal it doesn't block (nothing else wakes it up) */
     while (!thread_queue_sleep(&wait))
@@ -1998,39 +2154,40 @@ static void sys_select(struct aquila_select_args *args)
 {
     syscall_log(LOG_DEBUG, "select(args=%p)\n", args);
 
-    if (uaccess_check(args, sizeof(struct aquila_select_args))) {
+    struct aquila_select_args a;
+
+    if (copyin(&a, args, sizeof(a))) {
         arch_syscall_return(curthread, -EFAULT);
         return;
     }
 
-    int nfds = args->nfds;
-    fd_set *readfds = args->readfds;
-    fd_set *writefds = args->writefds;
-    fd_set *exceptfds = args->exceptfds;
-    struct timeval *timeout = args->timeout;
+    int nfds = a.nfds;
+    fd_set *readfds = a.readfds;
+    fd_set *writefds = a.writefds;
+    fd_set *exceptfds = a.exceptfds;
+    sigset_t *sigmask = a.sigmask;
 
     if (nfds < 0 || nfds > FD_SETSIZE) {
         arch_syscall_return(curthread, -EINVAL);
         return;
     }
 
-    if ((readfds && uaccess_check(readfds, sizeof(fd_set))) ||
-        (writefds && uaccess_check(writefds, sizeof(fd_set))) ||
-        (exceptfds && uaccess_check(exceptfds, sizeof(fd_set))) ||
-        (timeout && uaccess_check(timeout, sizeof(struct timeval)))) {
+    /* what was asked (the sets are overwritten with the result), the
+     * kernel's copies */
+    fd_set want_read = {0}, want_write = {0}, out_read, out_write;
+    struct timeval timeout;
+    sigset_t mask;
+
+    if ((readfds && copyin(&want_read, readfds, sizeof(fd_set))) ||
+        (writefds && copyin(&want_write, writefds, sizeof(fd_set))) ||
+        (a.timeout && copyin(&timeout, a.timeout, sizeof(timeout))) ||
+        (sigmask && copyin(&mask, sigmask, sizeof(mask)))) {
         arch_syscall_return(curthread, -EFAULT);
         return;
     }
 
-    if (timeout && ((int64_t) timeout->tv_sec < 0 || timeout->tv_usec < 0 || timeout->tv_usec >= 1000000)) {
+    if (a.timeout && ((int64_t) timeout.tv_sec < 0 || timeout.tv_usec < 0 || timeout.tv_usec >= 1000000)) {
         arch_syscall_return(curthread, -EINVAL);
-        return;
-    }
-
-    sigset_t *sigmask = args->sigmask;
-
-    if (sigmask && uaccess_check(sigmask, sizeof(sigset_t))) {
-        arch_syscall_return(curthread, -EFAULT);
         return;
     }
 
@@ -2039,18 +2196,10 @@ static void sys_select(struct aquila_select_args *args)
     if (sigmask) {
         curthread->sig_oldmask = curproc->sigmask;
         curthread->sig_oldmask_set = 1;
-        curproc->sigmask = *sigmask & ~SIG_UNMASKABLE;
+        curproc->sigmask = mask & ~SIG_UNMASKABLE;
     }
 
-    /* what was asked, the sets are overwritten with the result */
-    fd_set want_read = {0}, want_write = {0}, out_read, out_write;
-
-    if (readfds)
-        want_read = *readfds;
-    if (writefds)
-        want_write = *writefds;
-
-    int64_t ns = timeout ? (int64_t) timeout->tv_sec * 1000000000 + timeout->tv_usec * 1000 : -1;
+    int64_t ns = a.timeout ? (int64_t) timeout.tv_sec * 1000000000 + timeout.tv_usec * 1000 : -1;
     uint64_t until = poll_deadline(ns);
     int count, timed_out = 0;
 
@@ -2105,12 +2254,14 @@ static void sys_select(struct aquila_select_args *args)
 #undef FD_BIT
 #undef FD_ADD
 
-    if (readfds)
-        *readfds = out_read;
-    if (writefds)
-        *writefds = out_write;
-    if (exceptfds)
-        *exceptfds = (fd_set) {0};
+    fd_set none = {0};
+
+    if ((readfds && copyout(readfds, &out_read, sizeof(fd_set))) ||
+        (writefds && copyout(writefds, &out_write, sizeof(fd_set))) ||
+        (exceptfds && copyout(exceptfds, &none, sizeof(fd_set)))) {
+        arch_syscall_return(curthread, -EFAULT);
+        return;
+    }
 
     arch_syscall_return(curthread, count);
 }
@@ -2124,7 +2275,17 @@ static void sys_poll(struct pollfd *fds, nfds_t nfds, int timeout_ms)
         return;
     }
 
-    if (nfds && uaccess_check(fds, nfds * sizeof(struct pollfd))) {
+    /* the kernel's copy, the events in it, the results out at the end */
+    size_t size = nfds * sizeof(struct pollfd);
+    struct pollfd *kfds = nfds ? kmalloc(size, &M_BUFFER, 0) : NULL;
+
+    if (nfds && !kfds) {
+        arch_syscall_return(curthread, -ENOMEM);
+        return;
+    }
+
+    if (copyin(kfds, fds, size)) {
+        kfree(kfds);
         arch_syscall_return(curthread, -EFAULT);
         return;
     }
@@ -2137,7 +2298,7 @@ static void sys_poll(struct pollfd *fds, nfds_t nfds, int timeout_ms)
         count = 0;
 
         for (nfds_t i = 0; i < nfds; ++i) {
-            struct pollfd *p = &fds[i];
+            struct pollfd *p = &kfds[i];
             struct file *file;
 
             p->revents = 0;
@@ -2164,11 +2325,15 @@ static void sys_poll(struct pollfd *fds, nfds_t nfds, int timeout_ms)
 
         /* a signal ends the wait: EINTR (but after a stop) */
         if ((timed_out = sched_wait(&poll_queue, until)) < 0) {
-            arch_syscall_return(curthread, -ERESTARTNOHAND);
-            return;
+            count = -ERESTARTNOHAND;
+            break;
         }
     }
 
+    if (count >= 0 && copyout(fds, kfds, size))
+        count = -EFAULT;
+
+    kfree(kfds);
     arch_syscall_return(curthread, count);
 }
 
@@ -2197,13 +2362,13 @@ static int do_fchownat(int dirfd, const char *path, uid_t owner, gid_t group, in
 
 static void sys_chown(const char *path, uid_t owner, gid_t group)
 {
-    syscall_log(LOG_DEBUG, "chown(path=%s, owner=%d, group=%d)\n", path, owner, group);
+    syscall_log(LOG_DEBUG, "chown(path=%p, owner=%d, group=%d)\n", path, owner, group);
     arch_syscall_return(curthread, do_fchownat(AT_FDCWD, path, owner, group, 0));
 }
 
 static void sys_fchownat(int dirfd, const char *path, uid_t owner, gid_t group, int flags)
 {
-    syscall_log(LOG_DEBUG, "fchownat(dirfd=%d, path=%s, owner=%d, group=%d, flags=%x)\n",
+    syscall_log(LOG_DEBUG, "fchownat(dirfd=%d, path=%p, owner=%d, group=%d, flags=%x)\n",
             dirfd, path, owner, group, flags);
     arch_syscall_return(curthread, do_fchownat(dirfd, path, owner, group, flags));
 }
@@ -2223,14 +2388,14 @@ static void sys_fchown(int fd, uid_t owner, gid_t group)
 
 static void sys_lchown(const char *path, uid_t owner, gid_t group)
 {
-    syscall_log(LOG_DEBUG, "lchown(path=%s, owner=%d, group=%d)\n", path, owner, group);
+    syscall_log(LOG_DEBUG, "lchown(path=%p, owner=%d, group=%d)\n", path, owner, group);
     arch_syscall_return(curthread, do_fchownat(AT_FDCWD, path, owner, group, AT_SYMLINK_NOFOLLOW));
 }
 
 /* `path' NULL: the file `dirfd' refers to (futimens) */
 static void sys_utimensat(int dirfd, const char *path, const struct aquila_timespec times[2], int flags)
 {
-    syscall_log(LOG_DEBUG, "utimensat(dirfd=%d, path=%s, times=%p, flags=%x)\n", dirfd, path, times, flags);
+    syscall_log(LOG_DEBUG, "utimensat(dirfd=%d, path=%p, times=%p, flags=%x)\n", dirfd, path, times, flags);
 
     struct vnode *vnode = NULL;
     struct uio uio = PROC_UIO(curproc);
@@ -2241,14 +2406,16 @@ static void sys_utimensat(int dirfd, const char *path, const struct aquila_times
         goto done;
     }
 
-    if (times && uaccess_check(times, 2 * sizeof(struct aquila_timespec))) {
+    struct aquila_timespec ktimes[2];
+
+    if (times && copyin(ktimes, times, sizeof(ktimes))) {
         ret = -EFAULT;
         goto done;
     }
 
     if (!path) {
         if ((vnode = fd_vnode(dirfd, &ret)))
-            ret = vfs_utimens(vnode, times, &uio);
+            ret = vfs_utimens(vnode, times ? ktimes : NULL, &uio);
 
         goto done;
     }
@@ -2256,7 +2423,7 @@ static void sys_utimensat(int dirfd, const char *path, const struct aquila_times
     if ((ret = at_lookup(dirfd, path, flags, &uio, &vnode)))
         goto done;
 
-    ret = vfs_utimens(vnode, times, &uio);
+    ret = vfs_utimens(vnode, times ? ktimes : NULL, &uio);
     vfs_close(vnode);
 
 done:
@@ -2265,49 +2432,59 @@ done:
 
 static void sys_rmdir(const char *path)
 {
-    syscall_log(LOG_DEBUG, "rmdir(path=%s)\n", path);
+    syscall_log(LOG_DEBUG, "rmdir(path=%p)\n", path);
     arch_syscall_return(curthread, do_unlinkat(AT_FDCWD, path, AT_REMOVEDIR));
 }
 
-static void sys_symlinkat(const char *target, int dirfd, const char *path)
+static void sys_symlinkat(const char *utarget, int dirfd, const char *upath)
 {
-    syscall_log(LOG_DEBUG, "symlinkat(target=%s, dirfd=%d, path=%s)\n", target, dirfd, path);
+    syscall_log(LOG_DEBUG, "symlinkat(target=%p, dirfd=%d, path=%p)\n", utarget, dirfd, upath);
 
+    char *target = NULL, *path = NULL;
     struct uio uio;
     int ret;
 
-    if (uaccess_str_check(target) || uaccess_str_check(path)) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
-    }
-
-    if (!(ret = at_uio(dirfd, path, &uio)))
+    if (!(ret = upath_get(utarget, &target)) &&
+        !(ret = upath_get(upath, &path)) &&
+        !(ret = at_uio(dirfd, path, &uio)))
         ret = vfs_symlink(target, path, &uio);
 
+    kfree(target);
+    kfree(path);
     arch_syscall_return(curthread, ret);
 }
 
-static void sys_readlinkat(int dirfd, const char *path, char *buf, size_t size)
+static void sys_readlinkat(int dirfd, const char *upath, char *buf, size_t size)
 {
-    syscall_log(LOG_DEBUG, "readlinkat(dirfd=%d, path=%s, buf=%p, size=%d)\n", dirfd, path, buf, size);
+    syscall_log(LOG_DEBUG, "readlinkat(dirfd=%d, path=%p, buf=%p, size=%d)\n", dirfd, upath, buf, size);
 
+    /* the target into the kernel's buffer (a path: no longer than one),
+     * then out */
+    char *path = NULL, *target = NULL;
     struct uio uio;
-    int ret;
+    ssize_t ret;
 
-    if (uaccess_str_check(path) || uaccess_check(buf, size)) {
+    if (uaccess_check(buf, size)) {
         arch_syscall_return(curthread, -EFAULT);
         return;
     }
 
-    if (!(ret = at_uio(dirfd, path, &uio)))
-        ret = vfs_readlink(path, &uio, buf, size);
+    if (!(ret = upath_get(upath, &path)) && !(ret = at_uio(dirfd, path, &uio))) {
+        if (!(target = kmalloc(UPATH_MAX, &M_BUFFER, 0)))
+            ret = -ENOMEM;
+        else if ((ret = vfs_readlink(path, &uio, target, MIN(size, UPATH_MAX))) > 0 &&
+                 copyout(buf, target, ret))
+            ret = -EFAULT;
+    }
 
+    kfree(path);
+    kfree(target);
     arch_syscall_return(curthread, ret);
 }
 
 static void sys_renameat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath)
 {
-    syscall_log(LOG_DEBUG, "renameat(olddirfd=%d, oldpath=%s, newdirfd=%d, newpath=%s)\n",
+    syscall_log(LOG_DEBUG, "renameat(olddirfd=%d, oldpath=%p, newdirfd=%d, newpath=%p)\n",
             olddirfd, oldpath, newdirfd, newpath);
 
     char *oabs = NULL, *nabs = NULL;
@@ -2362,7 +2539,9 @@ static void sys_setitimer(int which, const struct aquila_itimer *new, struct aqu
 {
     syscall_log(LOG_DEBUG, "setitimer(which=%d, new=%p, old=%p)\n", which, new, old);
 
-    if ((new && uaccess_check(new, sizeof(*new))) || (old && uaccess_check(old, sizeof(*old)))) {
+    struct aquila_itimer knew;
+
+    if (new && copyin(&knew, new, sizeof(knew))) {
         arch_syscall_return(curthread, -EFAULT);
         return;
     }
@@ -2373,17 +2552,20 @@ static void sys_setitimer(int which, const struct aquila_itimer *new, struct aqu
         return;
     }
 
-    struct aquila_itimer prev;
+    struct aquila_itimer prev = {0};
+
+    /* where the old one goes: writable, before the new one is set */
+    if (old && copyout(old, &prev, sizeof(prev))) {
+        arch_syscall_return(curthread, -EFAULT);
+        return;
+    }
 
     if (new)
-        sched_alarm(curproc, new->value, new->interval, &prev.value, &prev.interval);
+        sched_alarm(curproc, knew.value, knew.interval, &prev.value, &prev.interval);
     else
         sched_alarm_get(curproc, &prev.value, &prev.interval);
 
-    if (old)
-        *old = prev;
-
-    arch_syscall_return(curthread, 0);
+    arch_syscall_return(curthread, old ? copyout(old, &prev, sizeof(prev)) : 0);
 }
 
 /* random bytes, as many as asked (getentropy) */
@@ -2394,8 +2576,22 @@ static void sys_getrandom(void *buf, size_t len, unsigned flags __unused)
         return;
     }
 
-    random_get(buf, len);
-    arch_syscall_return(curthread, len);
+    /* a piece at a time through the kernel */
+    uint8_t kbuf[256];
+    size_t done = 0;
+
+    while (done < len) {
+        size_t n = MIN(len - done, sizeof(kbuf));
+        random_get(kbuf, n);
+
+        if (copyout((char *) buf + done, kbuf, n))
+            break;
+
+        done += n;
+    }
+
+    memset(kbuf, 0, sizeof(kbuf));
+    arch_syscall_return(curthread, done || !len ? (ssize_t) done : -EFAULT);
 }
 
 /* the calling thread's id (pthread_self) */
@@ -2475,18 +2671,19 @@ static void sys_nanosleep(const struct aquila_timespec *req, struct aquila_times
 {
     syscall_log(LOG_DEBUG, "nanosleep(req=%p, rem=%p)\n", req, rem);
 
-    if (uaccess_check(req, sizeof(struct aquila_timespec)) ||
-        (rem && uaccess_check(rem, sizeof(struct aquila_timespec)))) {
+    struct aquila_timespec kreq;
+
+    if (copyin(&kreq, req, sizeof(kreq))) {
         arch_syscall_return(curthread, -EFAULT);
         return;
     }
 
-    if (req->tv_nsec >= 1000000000) {
+    if (kreq.tv_nsec >= 1000000000) {
         arch_syscall_return(curthread, -EINVAL);
         return;
     }
 
-    uint64_t until = arch_rtime_ns() + req->tv_sec * 1000000000ULL + req->tv_nsec;
+    uint64_t until = arch_rtime_ns() + kreq.tv_sec * 1000000000ULL + kreq.tv_nsec;
 
     if (sched_sleep(until)) {
         /* a signal: the time left, EINTR once a handler ran (a stop: the
@@ -2494,9 +2691,15 @@ static void sys_nanosleep(const struct aquila_timespec *req, struct aquila_times
         if (rem) {
             uint64_t now = arch_rtime_ns();
             uint64_t left = now < until ? until - now : 0;
+            struct aquila_timespec krem = {
+                .tv_sec  = left / 1000000000ULL,
+                .tv_nsec = left % 1000000000ULL,
+            };
 
-            rem->tv_sec  = left / 1000000000ULL;
-            rem->tv_nsec = left % 1000000000ULL;
+            if (copyout(rem, &krem, sizeof(krem))) {
+                arch_syscall_return(curthread, -EFAULT);
+                return;
+            }
         }
 
         arch_syscall_return(curthread, -ERESTARTNOHAND);
@@ -2510,31 +2713,27 @@ static void sys_clock_gettime(int clock, struct aquila_timespec *ts)
 {
     syscall_log(LOG_DEBUG, "clock_gettime(clock=%d, ts=%p)\n", clock, ts);
 
-    if (uaccess_check(ts, sizeof(struct aquila_timespec))) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
-    }
-
+    struct aquila_timespec kts;
     struct timespec now;
     uint64_t ns;
 
     switch (clock) {
         case CLOCK_REALTIME:
             gettime(&now);
-            ts->tv_sec  = now.tv_sec;
-            ts->tv_nsec = now.tv_nsec;
+            kts.tv_sec  = now.tv_sec;
+            kts.tv_nsec = now.tv_nsec;
             break;
         case CLOCK_MONOTONIC:
             ns = arch_rtime_ns();
-            ts->tv_sec  = ns / 1000000000ULL;
-            ts->tv_nsec = ns % 1000000000ULL;
+            kts.tv_sec  = ns / 1000000000ULL;
+            kts.tv_nsec = ns % 1000000000ULL;
             break;
         default:
             arch_syscall_return(curthread, -EINVAL);
             return;
     }
 
-    arch_syscall_return(curthread, 0);
+    arch_syscall_return(curthread, copyout(ts, &kts, sizeof(kts)));
 }
 
 static void sys_sethostname(const char *name, size_t len)
@@ -2551,12 +2750,14 @@ static void sys_sethostname(const char *name, size_t len)
         return;
     }
 
-    if (uaccess_check(name, len)) {
+    char name_in[sizeof(nodename)];
+
+    if (copyin(name_in, name, len)) {
         arch_syscall_return(curthread, -EFAULT);
         return;
     }
 
-    memcpy(nodename, name, len);
+    memcpy(nodename, name_in, len);
     nodename[len] = '\0';
     arch_syscall_return(curthread, 0);
 }
