@@ -661,7 +661,7 @@ static void sys_waitpid(int pid, int *stat_loc, int options)
 
             found = 1;
 
-            if (!proc->running) {
+            if (proc->zombie) {
                 status = proc->exit;
             } else if ((options & WUNTRACED) && (proc->wait_event & WAIT_STOPPED)) {
                 proc->wait_event &= ~WAIT_STOPPED;
@@ -678,7 +678,7 @@ static void sys_waitpid(int pid, int *stat_loc, int options)
 
             arch_syscall_return(curthread, proc->pid);
 
-            if (!proc->running)
+            if (proc->zombie)
                 proc_reap(proc);
 
             return;

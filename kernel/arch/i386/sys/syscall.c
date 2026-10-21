@@ -21,6 +21,11 @@ void arch_syscall(struct x86_regs *r)
 	
     /* cleared on return, or when a signal interrupts the call */
     curthread->in_syscall = 1;
+#if ARCH_BITS==32
+    curthread->syscall_nr = r->eax;
+#else
+    curthread->syscall_nr = r->rax;
+#endif
 
 #if ARCH_BITS==32
     void (*syscall)(uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t) = syscall_table[r->eax];

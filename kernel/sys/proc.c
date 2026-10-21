@@ -212,9 +212,18 @@ void proc_kill(struct proc *proc)
         }
     }
 
+    /* what is left frees what the thread killing itself runs on (its map,
+     * its process once reaped), it must not be switched out until it is
+     * gone */
+    if (kill_curthread)
+        arch_interrupts_disable();
+
     struct vm_space *vm_space = &proc->vm_space;
     vm_space_destroy(vm_space);
     pmap_decref(vm_space->pmap);
+
+    /* nothing may switch to the freed map */
+    vm_space->pmap = kvm_space.pmap;
 
     /* Free kernel-space resources */
     kfree(proc->fds);
@@ -235,7 +244,7 @@ void proc_kill(struct proc *proc)
         if (_proc->parent == proc) {
             _proc->parent = NULL;
 
-            if (!_proc->running)
+            if (_proc->zombie)
                 proc_reap(_proc);
         }
     }
@@ -254,10 +263,20 @@ void proc_kill(struct proc *proc)
         session->leader = NULL;
     }
 
+    proc->zombie = 1;
+
     /* Wakeup parent if it is waiting for children */
     if (proc->parent) {
-        thread_queue_wakeup(&proc->parent->wait_queue);
-        signal_proc_send(proc->parent, SIGCHLD);
+        struct proc *parent = proc->parent;
+        int nowait = parent->sigaction[SIGCHLD].sa_handler == SIG_IGN ||
+                     (parent->sigaction[SIGCHLD].sa_flags & SA_NOCLDWAIT);
+
+        thread_queue_wakeup(&parent->wait_queue);
+        signal_proc_send(parent, SIGCHLD);
+
+        /* the parent doesn't wait for its children: no zombie */
+        if (nowait)
+            proc_reap(proc);
     } else { 
         /* Orphan zombie, just reap it */
         proc_reap(proc);

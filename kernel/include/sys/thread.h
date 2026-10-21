@@ -36,8 +36,9 @@ struct thread {
     /** Current sleep queue */
     struct queue *sleep_queue;
 
-    /** Executing a system call (it may be sleeping in it) */
+    /** Executing a system call (it may be sleeping in it), which one */
     int in_syscall;
+    int syscall_nr;
 
     /** What the thread exited with (thread_exit), for thread_join */
     void *exit_value;

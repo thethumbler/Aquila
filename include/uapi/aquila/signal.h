@@ -64,6 +64,8 @@ struct aquila_siginfo {
 #ifndef SA_NOCLDSTOP
 #define SA_NOCLDSTOP 0x1    /* no SIGCHLD when a child stops or continues */
 #define SA_SIGINFO   0x2    /* every handler gets the siginfo anyway */
+#define SA_NOCLDWAIT 0x4    /* children don't stay zombies (SIGCHLD) */
+#define SA_RESTART   0x8    /* a call the signal interrupts is restarted */
 #endif
 
 /* sigaction(2) argument, same layout as newlib's struct sigaction */

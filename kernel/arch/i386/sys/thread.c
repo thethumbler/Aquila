@@ -4,6 +4,7 @@
 #include <sys/proc.h>
 #include <sys/sched.h>
 #include <sys/signal.h>
+#include <aquila/syscall.h>
 #include <ds/queue.h>
 #include <mm/pmap.h>
 
@@ -44,7 +45,9 @@ void arch_thread_switch(struct thread *thread)
     x86_kernel_stack_set(arch->kstack);
     x86_fpu_disable();
 
-    int sig = thread->sig_defer || thread->in_fault ? 0 : signal_next(thread->owner);
+    /* (an exiting process has no signal queue left) */
+    int sig = thread->sig_defer || thread->in_fault || !thread->owner->running ?
+        0 : signal_next(thread->owner);
 
     /* the thread can't stop here, it takes the stop when it can sleep:
      * when it wakes up, or before returning to user mode */
@@ -61,10 +64,32 @@ void arch_thread_switch(struct thread *thread)
         }
 
         /* a system call blocked in the kernel fails with EINTR, otherwise
-         * the handler would return to it with the syscall number in eax */
+         * the handler would return to it with the syscall number in eax;
+         * or, SA_RESTART, it is made again once the handler returns (not
+         * the waits with a time, POSIX's exceptions) */
         if (thread->in_syscall) {
-            sched_sleep_interrupted(thread);
-            arch_syscall_return(thread, -EINTR);
+            int nr = thread->syscall_nr;
+            int restart = (thread->owner->sigaction[sig].sa_flags & SA_RESTART) &&
+                nr != SYS_nanosleep && nr != SYS_select && nr != SYS_poll &&
+                nr != SYS_sigsuspend;
+
+            /* it doesn't go back to the wait it was in, nor to its end */
+            sched_timer_cancel(thread);
+
+            if (restart) {
+                /* back to the int $0x80, with the number in eax */
+#if ARCH_BITS==32
+                arch->regs->eip -= 2;
+                arch->regs->eax = nr;
+#else
+                arch->regs->rip -= 2;
+                arch->regs->rax = nr;
+#endif
+                thread->in_syscall = 0;
+            } else {
+                sched_sleep_interrupted(thread);
+                arch_syscall_return(thread, -EINTR);
+            }
         }
 
         arch_handle_signal(sig);

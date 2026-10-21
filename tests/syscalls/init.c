@@ -12,6 +12,7 @@
  * - select, poll and terminal read timeouts (VTIME)
  * - flock
  * - anonymous memory (mmap), shutdown() of sockets, the interval timer
+ * - SA_RESTART, SA_NOCLDWAIT and an ignored SIGCHLD
  * - virtual terminals: KD* and VT_* ioctls, switching, VT_PROCESS
  */
 
@@ -1204,6 +1205,73 @@ void aq_main(void)
     ts = (struct aquila_timespec) {0, 100000000};
     SC(SYS_nanosleep, &ts, 0, 0);
     check("one shot", alarms, a1 + 1);
+
+    /* SA_RESTART: a read the signal comes in is made again, without it
+     * it fails with EINTR */
+    int rp[2];
+    char rb = 0;
+    SC(SYS_pipe, rp, 0, 0);
+    for (int restart = 1; restart >= 0; --restart) {
+        asa = (struct aquila_sigaction) {(u32) alarm_handler, 0, restart ? SA_RESTART : 0};
+        SC(SYS_sigaction, SIGALRM, &asa, 0);
+        c = SC(SYS_fork, 0, 0, 0);
+        if (!c) {
+            struct aquila_timespec d = {0, 150000000};
+            SC(SYS_nanosleep, &d, 0, 0);
+            SC(SYS_write, rp[1], "r", 1);
+            SC(SYS_exit, 0, 0, 0);
+        }
+        a1 = alarms;
+        it = (struct aquila_itimer) {50000000, 0};
+        SC(SYS_setitimer, AQUILA_ITIMER_REAL, &it, 0);
+        int got = SC(SYS_read, rp[0], &rb, 1);
+        check(restart ? "SA_RESTART read restarted" : "read interrupted", got, restart ? 1 : -EINTR);
+        check("the handler ran", alarms, a1 + 1);
+        SC(SYS_waitpid, c, &st, 0);
+        if (!restart)
+            SC(SYS_read, rp[0], &rb, 1);
+    }
+    SC(SYS_close, rp[0], 0, 0);
+    SC(SYS_close, rp[1], 0, 0);
+
+    /* a wait with a deadline that a handler interrupts doesn't leave
+     * the thread with the timer (it exits, the timer must not find it) */
+    SC(SYS_pipe, rp, 0, 0);
+    c = SC(SYS_fork, 0, 0, 0);
+    if (!c) {
+        struct pollfd tpf = {rp[0], POLLIN, 0};
+        it = (struct aquila_itimer) {30000000, 0};
+        SC(SYS_setitimer, AQUILA_ITIMER_REAL, &it, 0);
+        SC(SYS_exit, SC(SYS_poll, &tpf, 1, 400) == -EINTR, 0, 0);
+    }
+    SC(SYS_waitpid, c, &st, 0);
+    check("timed poll interrupted", st >> 8, 1);
+    ts = (struct aquila_timespec) {0, 500000000};
+    check("its deadline passes", SC(SYS_nanosleep, &ts, 0, 0), 0);
+    SC(SYS_close, rp[0], 0, 0);
+    SC(SYS_close, rp[1], 0, 0);
+
+    /* children of a parent that ignores SIGCHLD, or has SA_NOCLDWAIT,
+     * don't stay zombies: there is nothing to wait for */
+    struct aquila_sigaction csa = {1 /* SIG_IGN */, 0, 0};
+    SC(SYS_sigaction, SIGCHLD, &csa, 0);
+    c = SC(SYS_fork, 0, 0, 0);
+    if (!c)
+        SC(SYS_exit, 0, 0, 0);
+    ts = (struct aquila_timespec) {0, 50000000};
+    SC(SYS_nanosleep, &ts, 0, 0);
+    check("SIGCHLD ignored, no zombie", SC(SYS_waitpid, c, &st, 0), -ECHILD);
+    got_sig = 0;
+    csa = (struct aquila_sigaction) {(u32) handler, 0, SA_NOCLDWAIT};
+    SC(SYS_sigaction, SIGCHLD, &csa, 0);
+    c = SC(SYS_fork, 0, 0, 0);
+    if (!c)
+        SC(SYS_exit, 0, 0, 0);
+    SC(SYS_nanosleep, &ts, 0, 0);
+    check("SA_NOCLDWAIT, no zombie", SC(SYS_waitpid, c, &st, 0), -ECHILD);
+    check("SA_NOCLDWAIT, SIGCHLD still sent", got_sig, SIGCHLD);
+    csa = (struct aquila_sigaction) {0 /* SIG_DFL */, 0, 0};
+    SC(SYS_sigaction, SIGCHLD, &csa, 0);
 
     ts.tv_nsec = 1000000000;
     check("nanosleep bad nsec", SC(SYS_nanosleep, &ts, 0, 0), -EINVAL);

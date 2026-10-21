@@ -149,6 +149,10 @@ struct proc {
 
     /** Process is running? */
     int running;
+
+    /** proc_kill() is done with it, it can be reaped (it isn't done as soon
+     * as it stops running: closing its files may sleep) */
+    int zombie;
 };
 
 /* sys/fork.c */
