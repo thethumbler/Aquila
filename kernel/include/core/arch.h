@@ -49,6 +49,9 @@ uint64_t arch_rtime_ns(void);
 uint64_t arch_rtime_us(void);
 uint64_t arch_rtime_ms(void);
 
+/* a counter that changes as fast as the cpu runs (for randomness) */
+uint64_t arch_cycles(void);
+
 int arch_time_get(struct timespec *ts);
 
 void arch_stack_trace(void);

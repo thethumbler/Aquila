@@ -34,6 +34,7 @@
 
 #include <mm/vm.h>
 #include <sys/reboot.h>
+#include <dev/random.h>
 
 static int syscall_log_level = LOG_NONE;
 LOGGER_DEFINE(syscall, syscall_log, syscall_log_level)
@@ -2298,6 +2299,18 @@ static void sys_setitimer(int which, const struct aquila_itimer *new, struct aqu
     arch_syscall_return(curthread, 0);
 }
 
+/* random bytes, as many as asked (getentropy) */
+static void sys_getrandom(void *buf, size_t len, unsigned flags __unused)
+{
+    if (uaccess_check(buf, len)) {
+        arch_syscall_return(curthread, -EFAULT);
+        return;
+    }
+
+    random_get(buf, len);
+    arch_syscall_return(curthread, len);
+}
+
 /* the calling thread's id (pthread_self) */
 static void sys_thread_self(void)
 {
@@ -2536,6 +2549,7 @@ void (*syscall_table[])() = {
     [SYS_shutdown]      = sys_shutdown,
     [SYS_setitimer]     = sys_setitimer,
     [SYS_thread_self]   = sys_thread_self,
+    [SYS_getrandom]     = sys_getrandom,
 };
 
 const size_t syscall_cnt = sizeof(syscall_table)/sizeof(syscall_table[0]);

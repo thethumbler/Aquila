@@ -25,6 +25,13 @@ uint64_t arch_rtime_ms(void)
     return timer_ticks * timer_period / 1000000ULL;
 }
 
+uint64_t arch_cycles(void)
+{
+    uint32_t lo, hi;
+    asm volatile("rdtsc" : "=a"(lo), "=d"(hi));
+    return ((uint64_t) hi << 32) | lo;
+}
+
 static uint64_t first_measured_time = 0;
 
 static void x86_sched_handler(struct x86_regs *r) 

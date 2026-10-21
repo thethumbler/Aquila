@@ -12,7 +12,7 @@
  * - select, poll and terminal read timeouts (VTIME)
  * - flock
  * - anonymous memory (mmap), shutdown() of sockets, the interval timer
- * - SA_RESTART, SA_NOCLDWAIT and an ignored SIGCHLD
+ * - SA_RESTART, SA_NOCLDWAIT and an ignored SIGCHLD, getrandom
  * - virtual terminals: KD* and VT_* ioctls, switching, VT_PROCESS
  */
 
@@ -1272,6 +1272,18 @@ void aq_main(void)
     check("SA_NOCLDWAIT, SIGCHLD still sent", got_sig, SIGCHLD);
     csa = (struct aquila_sigaction) {0 /* SIG_DFL */, 0, 0};
     SC(SYS_sigaction, SIGCHLD, &csa, 0);
+
+    /* getrandom */
+    unsigned char r0b[16] = {0}, r1b[16] = {0};
+    check("getrandom kaddr", SC(SYS_getrandom, KADDR, 16, 0), -EFAULT);
+    check("getrandom", SC(SYS_getrandom, r0b, 16, 0), 16);
+    SC(SYS_getrandom, r1b, 16, 0);
+    int rsame = 0, rzero = 0;
+    for (int i = 0; i < 16; ++i) {
+        rsame += r0b[i] == r1b[i];
+        rzero += !r0b[i];
+    }
+    check("getrandom differs", rsame < 8 && rzero < 8, 1);
 
     ts.tv_nsec = 1000000000;
     check("nanosleep bad nsec", SC(SYS_nanosleep, &ts, 0, 0), -EINVAL);

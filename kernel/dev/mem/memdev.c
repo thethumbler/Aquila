@@ -25,9 +25,8 @@ struct dev *memdev_mux(struct devid *dd)
         case 7: /* /dev/full */
             break;
         case 8: /* /dev/random */
-            break;
         case 9: /* /dev/urandom */
-            break;
+            return &randomdev;
         case 10: /* /dev/aio */
             break;
         case 11: /* /dev/kmsg */

@@ -100,8 +100,9 @@
 #define SYS_shutdown        87
 #define SYS_setitimer       88
 #define SYS_thread_self     89
+#define SYS_getrandom       90
 
-#define SYS_MAX             89
+#define SYS_MAX             90
 
 /*
  * Arguments of the older system calls that take more than three, passed
