@@ -58,4 +58,10 @@ int      pci_bar(struct pci_dev *dev, int id, struct pci_bar *bar);
 void     pci_enable(struct pci_dev *dev);
 uint8_t  pci_irq_line(struct pci_dev *dev);
 
+#define PCI_CAP_MSI     0x05
+#define PCI_CAP_MSIX    0x11
+
+uint8_t  pci_cap_find(struct pci_dev *dev, uint8_t id);
+int      pci_msi_enable(struct pci_dev *dev, void (*handler)());
+
 #endif /* ! _DEV_PCI_H */

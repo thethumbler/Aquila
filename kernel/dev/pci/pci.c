@@ -1,5 +1,6 @@
 #include <core/system.h>
 #include <core/module.h>
+#include <core/arch.h>
 
 #include <dev/pci.h>
 #include <cpu/io.h>
@@ -267,6 +268,71 @@ void pci_enable(struct pci_dev *dev)
 uint8_t pci_irq_line(struct pci_dev *dev)
 {
     return pci_reg8_read(dev, PCI_INTERRUPT_LINE);
+}
+
+#define PCI_STATUS              0x06
+#define PCI_STATUS_CAP_LIST     0x10
+#define PCI_CAPABILITIES        0x34
+#define PCI_COMMAND_INTX_OFF    0x400
+
+/* the offset of its capability `id' (PCI_CAP_*), 0 if it has none */
+uint8_t pci_cap_find(struct pci_dev *dev, uint8_t id)
+{
+    if (!(pci_reg16_read(dev, PCI_STATUS) & PCI_STATUS_CAP_LIST))
+        return 0;
+
+    uint8_t off = pci_reg8_read(dev, PCI_CAPABILITIES) & 0xfc;
+
+    /* at most 48 of them (they're 4 bytes at least, past the header) */
+    for (int i = 0; off && i < 48; ++i) {
+        if (pci_reg8_read(dev, off) == id)
+            return off;
+
+        off = pci_reg8_read(dev, off + 1) & 0xfc;
+    }
+
+    return 0;
+}
+
+/* MSI's capability: its message control, the message's address (its
+ * high half if it's 64-bit), the data after it */
+#define MSI_CTRL                2
+#define MSI_ADDR                4
+#define MSI_CTRL_ENABLE         0x0001
+#define MSI_CTRL_MME            0x0070      /* the messages enabled: 1 */
+#define MSI_CTRL_64BIT          0x0080
+
+/*
+ * The device's interrupts as messages (MSI): one, its IRQ to `handler';
+ * its legacy line (INTx) off. The IRQ, -1 if it can't (no capability, or
+ * the architecture takes no MSI: the line it is, then).
+ */
+int pci_msi_enable(struct pci_dev *dev, void (*handler)())
+{
+    uint8_t cap = pci_cap_find(dev, PCI_CAP_MSI);
+    uint64_t addr;
+    uint32_t data;
+    int irq;
+
+    if (!cap || !arch_msi_alloc || (irq = arch_msi_alloc(handler, &addr, &data)) < 0)
+        return -1;
+
+    uint16_t ctrl = pci_reg16_read(dev, cap + MSI_CTRL);
+
+    pci_reg16_write(dev, cap + MSI_CTRL, ctrl & ~(MSI_CTRL_ENABLE | MSI_CTRL_MME));
+    pci_reg32_write(dev, cap + MSI_ADDR, (uint32_t) addr);
+
+    if (ctrl & MSI_CTRL_64BIT) {
+        pci_reg32_write(dev, cap + MSI_ADDR + 4, (uint32_t) (addr >> 32));
+        pci_reg16_write(dev, cap + MSI_ADDR + 8, data);
+    } else {
+        pci_reg16_write(dev, cap + MSI_ADDR + 4, data);
+    }
+
+    pci_reg16_write(dev, PCI_COMMAND, pci_reg16_read(dev, PCI_COMMAND) | PCI_COMMAND_INTX_OFF);
+    pci_reg16_write(dev, cap + MSI_CTRL, (ctrl & ~MSI_CTRL_MME) | MSI_CTRL_ENABLE);
+
+    return irq;
 }
 
 MODULE_INIT(pci, pci_prope, NULL)
