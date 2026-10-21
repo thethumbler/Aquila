@@ -1,0 +1,24 @@
+diff -ruN a/config.def.h b/config.def.h
+--- a/config.def.h
++++ b/config.def.h
+@@ -74,7 +74,7 @@
+ static int bellvolume = 0;
+ 
+ /* default TERM value */
+-char *termname = "st-256color";
++char *termname = "xterm-256color";
+ 
+ /*
+  * spaces per tab
+diff -ruN a/st.c b/st.c
+--- a/st.c
++++ b/st.c
+@@ -20,7 +20,7 @@
+ #include "st.h"
+ #include "win.h"
+ 
+-#if   defined(__linux)
++#if   defined(__linux) || defined(__aquila__)
+  #include <pty.h>
+ #elif defined(__OpenBSD__) || defined(__NetBSD__) || defined(__APPLE__)
+  #include <util.h>

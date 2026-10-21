@@ -58,8 +58,14 @@ host's `/usr/lib`.
 
 | port       | version  |                                                     |
 |------------|----------|-----------------------------------------------------|
+| dmenu      | 5.3      | `dmenu` and `dmenu_run` in `/usr/bin`, the menu of dwm (Alt+p) |
+| dwm        | 6.5      | `dwm` in `/usr/bin`, a tiling window manager (its default configuration: Alt is the modifier, Alt+Shift+Enter opens st) |
+| expat      | 2.6.4    | library only (XML, for fontconfig)                  |
 | font-cursor-misc | 1.0.4 | the cursor font, for X servers                 |
+| font-dejavu | 2.37    | DejaVu Sans and Sans Mono (regular and bold, TrueType) in `/usr/share/fonts/dejavu`, the fonts of Xft programs |
 | font-misc-misc | 1.1.3  | the fixed width fonts of X (`fixed`, `6x13`, `9x15`, ...) in `/usr/share/fonts/X11/misc` (BDF, there is no `bdftopcf`): Unicode, and ISO 8859-1 (made by the recipe) which the usual names are |
+| fontconfig | 2.15.0   | library, `/etc/fonts`, and `fc-cache`, `fc-list` and `fc-match` in `/usr/bin` |
+| freetype   | 2.13.3   | library only (the font rasterizer)                  |
 | kilo       | 323d93b  | `kilo` in `/usr/bin`                                |
 | libfontenc | 1.1.8    | library only (for libXfont)                         |
 | libice     | 1.1.2    | library only (for libSM)                            |
@@ -73,11 +79,15 @@ host's `/usr/lib`.
 | libxdmcp   | 1.1.5    | library only (for TinyX)                            |
 | libxext    | 1.3.6    | library only (X extensions)                         |
 | libxfont   | 1.5.4    | library only, bitmap fonts (for TinyX)              |
+| libxft     | 2.3.8    | library only (text through FreeType and fontconfig) |
+| libxinerama | 1.1.5   | library only (for dwm)                              |
 | libxmu     | 1.2.1    | library only (miscellaneous utilities of X clients) |
 | libxpm     | 3.5.17   | library only (X pixmaps)                            |
+| libxrender | 0.9.12   | library only (RENDER, for Xft)                      |
 | libxt      | 1.3.1    | library only (the X Toolkit Intrinsics)             |
 | lua        | 5.5.1    | `lua` and `luac` in `/usr/bin`                      |
 | ncurses    | 6.6      | library only, wide characters, the vt100, ansi, linux, xterm and xterm-256color descriptions built in (no terminfo database) |
+| st         | 0.9.2    | `st` in `/usr/bin`, the terminal of dwm (Xft fonts, TERM=xterm-256color) |
 | tcc        | mob e23dabe | `tcc` (also `cc`) in `/usr/bin`, compiling static programs on AquilaOS; with the C library's headers in `/usr/include` and archives in `/usr/lib`; no `-run` (no `mprotect()`) |
 | tinyx      | 1.2.0 (feab72c) | `Xfbdev` (also `X`) and `startx` (X and twm with an xterm, or `~/.xinitrc`) in `/usr/bin`: X on the framebuffer, the keyboard and mouse of a virtual terminal; clients through a Unix socket (`:0`). Its changes to X.Org's code are GPLv3 |
 | twm        | 1.0.13.1 | `twm` in `/usr/bin`, the window manager of X        |

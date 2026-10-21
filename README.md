@@ -8,11 +8,11 @@ tools. Intended to be fully **POSIX** compliant.
 Everything is built from source into `build/`. On a Linux host you need
 a C/C++ compiler with 32-bit support, `make`, `bison`, `flex`, `texinfo`,
 GMP, MPFR and MPC development headers, `wget`, `nasm`, `cpio`, `xorriso`
-and `qemu-system-i386`. On Debian/Ubuntu:
+and `qemu-system-i386` (and `gperf` for the ports). On Debian/Ubuntu:
 
 ```
 sudo apt install build-essential gcc-multilib bison flex texinfo libgmp-dev \
-    libmpfr-dev libmpc-dev wget nasm cpio xorriso qemu-system-x86
+    libmpfr-dev libmpc-dev wget nasm cpio xorriso qemu-system-x86 gperf
 ```
 
 Then:
