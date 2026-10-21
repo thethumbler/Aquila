@@ -28,6 +28,11 @@ struct thread {
     /** Thread owner process */
     struct proc *owner;
 
+    /** A kernel thread's (process 0's): its name, and what it runs */
+    const char *name;
+    void (*kentry)(void *arg);
+    void *karg;
+
     /** Thread stack */
     uintptr_t stack;
     uintptr_t stack_base;

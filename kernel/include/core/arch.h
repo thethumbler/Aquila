@@ -12,6 +12,7 @@ void arch_sleep(void);
 
 /* arch/ARCH/sys/thread.c */
 void arch_thread_create(struct thread *thread, uintptr_t stack, uintptr_t entry, uintptr_t uentry, uintptr_t arg);
+void arch_kthread_create(struct thread *thread, uintptr_t entry);
 void arch_thread_kill(struct thread *thread);
 void arch_thread_spawn(struct thread *thread);
 void arch_thread_switch(struct thread *thread); // __attribute__((noreturn));

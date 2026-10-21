@@ -8,3 +8,4 @@ obj-y += execve.o
 obj-y += signal.o
 obj-y += reboot.o
 obj-y += callout.o
+obj-y += kthread.o

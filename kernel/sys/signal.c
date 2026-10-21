@@ -9,6 +9,7 @@
 
 #include <sys/proc.h>
 #include <sys/signal.h>
+#include <sys/kthread.h>
 #include <sys/sched.h>
 
 #include <aquila/errno.h>
@@ -126,6 +127,10 @@ static int signal_to(struct proc *proc, int signal, int now)
 {
     if (signal < 0 || signal > SIG_MAX)
         return -EINVAL;
+
+    /* the kernel's threads (process 0) take none */
+    if (proc == kproc)
+        return -EPERM;
 
     /* signal 0 only checks for existence, zombies can't be signalled
      * (their signal queue and threads are already gone) */
@@ -267,7 +272,7 @@ int signal_send(pid_t pid, int signal)
         queue_for (node, procs) {
             struct proc *proc = node->value;
 
-            if (proc->pid == 1 || proc == curproc)
+            if (proc->pid == 1 || proc == curproc || proc == kproc)
                 continue;
 
             signal_proc_send(proc, signal);

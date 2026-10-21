@@ -152,6 +152,45 @@ void arch_thread_create(struct thread *thread, uintptr_t stack, uintptr_t entry,
     thread->arch = arch;
 }
 
+/* a kernel thread, which starts at `entry' (a function without arguments
+ * that never returns) on its kernel stack once it is switched to */
+void arch_kthread_create(struct thread *thread, uintptr_t entry)
+{
+    /* thread->arch is left NULL on failure */
+    thread->arch = NULL;
+
+    struct x86_thread *arch = kmalloc(sizeof(struct x86_thread), &M_X86_THREAD, M_ZERO);
+    if (!arch)
+        return;
+
+    void *kstack = kmalloc(KERN_STACK_SIZE, &M_KERN_STACK, 0);
+    if (!kstack) {
+        kfree(arch);
+        return;
+    }
+
+    arch->kstack_base = (uintptr_t) kstack;
+    arch->kstack = (uintptr_t) kstack + KERN_STACK_SIZE;
+
+    /* as if it was called: a return address, none */
+    uintptr_t sp = arch->kstack;
+    PUSH(sp, void *, 0);
+
+#if ARCH_BITS==32
+    arch->eflags = X86_EFLAGS;
+    arch->eip = entry;
+    arch->esp = sp;
+    arch->ebp = 0;
+#else
+    arch->rflags = X86_EFLAGS;
+    arch->rip = entry;
+    arch->rsp = sp;
+    arch->rbp = 0;
+#endif
+
+    thread->arch = arch;
+}
+
 void arch_thread_kill(struct thread *thread)
 {
     struct x86_thread *arch = (struct x86_thread *) thread->arch;

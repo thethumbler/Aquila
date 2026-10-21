@@ -342,7 +342,8 @@ static ssize_t procfs_proc_status(int pid, off_t off, size_t size, void *buf)
                             states[thread->state] : "?";
 
         sz += snprintf(status_buf + sz, sizeof(status_buf) - sz,
-                "thread %d: %s%s%s%s\n", thread->tid, state,
+                "thread %d%s%s: %s%s%s%s\n", thread->tid,
+                thread->name ? " " : "", thread->name ? thread->name : "", state,
                 thread->sleep_node ? " on a queue" : "",
                 thread->timer_node ? " with a deadline" : "",
                 thread->sched_node ? " (ready)" : thread == curthread ? " (current)" : "");
@@ -484,6 +485,11 @@ static struct procfs_proc_entry proc_entries[] = {
 
 #define PROCFS_PROC_ENTRIES  (sizeof(proc_entries)/sizeof(proc_entries[0]))
 
+/* a process's directory, its entries' inodes follow (from pid 0, whose
+ * directory isn't inode 0) */
+#define PROC_INO(pid)   (((pid) + 1) * (PROCFS_PROC_ENTRIES + 1))
+#define INO_PID(ino)    ((ino) / (PROCFS_PROC_ENTRIES + 1) - 1)
+
 static ssize_t procfs_read(struct vnode *node, off_t offset, size_t size, void *buf)
 {
     size_t id = (size_t) node->p;
@@ -492,7 +498,7 @@ static ssize_t procfs_read(struct vnode *node, off_t offset, size_t size, void *
         if (id < PROCFS_ENTRIES)
             return entries[id].read(offset, size, buf);
     } else {
-        size_t pid = node->ino / (PROCFS_PROC_ENTRIES + 1);
+        size_t pid = INO_PID(node->ino);
         id -= 1;
         if (id < PROCFS_PROC_ENTRIES)
             return proc_entries[id].read(pid, offset, size, buf);
@@ -544,7 +550,7 @@ static ssize_t procfs_readdir(struct vnode *vnode, off_t offset, struct dirent *
             --offset;
         }
     } else if (vnode->ino > 0) {
-        size_t pid = vnode->ino / (PROCFS_PROC_ENTRIES + 1);
+        size_t pid = INO_PID(vnode->ino);
 
         if (offset == 0) {
             dirent->d_ino = 0;
@@ -580,7 +586,7 @@ static int procfs_finddir(struct vnode *parent, const char *name, struct dirent 
         }
 
         if (!strcmp(name, "self")) {
-            dirent->d_ino = curproc->pid * (PROCFS_PROC_ENTRIES + 1);
+            dirent->d_ino = PROC_INO(curproc->pid);
             return 0;
         }
 
@@ -590,16 +596,16 @@ static int procfs_finddir(struct vnode *parent, const char *name, struct dirent 
             snprintf(buf, 10, "%d", proc->pid);
 
             if (!strcmp(buf, name)) {
-                dirent->d_ino = proc->pid * (PROCFS_PROC_ENTRIES + 1);
+                dirent->d_ino = PROC_INO(proc->pid);
                 return 0;
             }
         }
     } else if (parent->ino > 0) {
-        size_t pid = parent->ino / (PROCFS_PROC_ENTRIES + 1);
+        size_t pid = INO_PID(parent->ino);
 
         for (size_t i = 0; i < PROCFS_PROC_ENTRIES; ++i) {
             if (!strcmp(proc_entries[i].name, name)) {
-                dirent->d_ino  = pid * (PROCFS_PROC_ENTRIES + 1) + i + 1;
+                dirent->d_ino  = PROC_INO(pid) + i + 1;
                 return 0;
             }
         }
@@ -647,7 +653,7 @@ static int procfs_vget(struct vnode *super, ino_t ino, struct vnode **vnode)
             return -ENOENT;
         }
     } else {
-        size_t pid = ino / (PROCFS_PROC_ENTRIES + 1);
+        size_t pid = INO_PID(ino);
         size_t id  = ino % (PROCFS_PROC_ENTRIES + 1);
         struct vnode *node = NULL;
 
