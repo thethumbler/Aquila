@@ -5,6 +5,7 @@ libc_a_SOURCES += \
 	%D%/atfile.c \
 	%D%/crypt.c \
 	%D%/dirent.c \
+	%D%/err.c \
 	%D%/flockfile.c \
 	%D%/group.c \
 	%D%/inet.c \

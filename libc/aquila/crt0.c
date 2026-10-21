@@ -10,6 +10,9 @@
 #include <stdlib.h>
 
 extern char **environ;
+
+/* the program's name, for err(3) and the like (the BSDs') */
+char *__progname = "";
 extern int main(int argc, char **argv, char **envp);
 
 extern void __libc_init_array(void);
@@ -39,6 +42,14 @@ asm(".globl _start\n"
 void _start_c(int argc, char **argv, char **envp)
 {
     environ = envp;
+
+    if (argc > 0 && argv[0]) {
+        char *p = argv[0];
+        __progname = p;
+        for (; *p; ++p)
+            if (*p == '/')
+                __progname = p + 1;
+    }
 
     /* constructors (.init, .init_array) and destructors at exit */
     __libc_init_array();

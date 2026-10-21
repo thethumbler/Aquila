@@ -12,6 +12,44 @@ struct sockaddr_storage {
     char __ss_data[124];
 } __attribute__((aligned(8)));
 
+/* socket()'s and accept4()'s flags, or-ed with the type (the C library
+ * sets them on the descriptor, as fcntl() does) */
+#define SOCK_NONBLOCK   0x4000      /* O_NONBLOCK */
+#define SOCK_CLOEXEC    0x40000     /* O_CLOEXEC */
+
+/* sendmsg() and recvmsg(): data from and to several buffers; ancillary
+ * data (descriptors, SCM_RIGHTS) isn't passed: EOPNOTSUPP */
+struct iovec;
+
+struct msghdr {
+    void         *msg_name;
+    socklen_t     msg_namelen;
+    struct iovec *msg_iov;
+    int           msg_iovlen;
+    void         *msg_control;
+    socklen_t     msg_controllen;
+    int           msg_flags;
+};
+
+struct cmsghdr {
+    socklen_t cmsg_len;
+    int       cmsg_level;
+    int       cmsg_type;
+};
+
+#define SCM_RIGHTS      1
+
+#define CMSG_ALIGN(len)     (((len) + sizeof(long) - 1) & ~(sizeof(long) - 1))
+#define CMSG_DATA(cmsg)     ((unsigned char *) (cmsg) + CMSG_ALIGN(sizeof(struct cmsghdr)))
+#define CMSG_SPACE(len)     (CMSG_ALIGN(sizeof(struct cmsghdr)) + CMSG_ALIGN(len))
+#define CMSG_LEN(len)       (CMSG_ALIGN(sizeof(struct cmsghdr)) + (len))
+#define CMSG_FIRSTHDR(mhdr) \
+    ((mhdr)->msg_controllen >= sizeof(struct cmsghdr) ? (struct cmsghdr *) (mhdr)->msg_control : (struct cmsghdr *) 0)
+#define CMSG_NXTHDR(mhdr, cmsg) \
+    ((unsigned char *) (cmsg) + CMSG_ALIGN((cmsg)->cmsg_len) + sizeof(struct cmsghdr) > \
+     (unsigned char *) (mhdr)->msg_control + (mhdr)->msg_controllen ? (struct cmsghdr *) 0 : \
+     (struct cmsghdr *) ((unsigned char *) (cmsg) + CMSG_ALIGN((cmsg)->cmsg_len)))
+
 struct linger {
     int l_onoff;
     int l_linger;
@@ -35,5 +73,9 @@ int getsockname(int fd, struct sockaddr *addr, socklen_t *len);
 int getpeername(int fd, struct sockaddr *addr, socklen_t *len);
 int getsockopt(int fd, int level, int name, void *val, socklen_t *len);
 int setsockopt(int fd, int level, int name, const void *val, socklen_t len);
+
+int accept4(int fd, struct sockaddr *addr, socklen_t *len, int flags);
+ssize_t sendmsg(int fd, const struct msghdr *msg, int flags);
+ssize_t recvmsg(int fd, struct msghdr *msg, int flags);
 
 #endif /* ! _SYS_SOCKET_H */

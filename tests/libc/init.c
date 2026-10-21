@@ -17,6 +17,7 @@
 #include <netinet/tcp.h>
 #include <crypt.h>
 #include <dirent.h>
+#include <err.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <grp.h>
@@ -237,7 +238,85 @@ static void test_tcp(void)
 
     fclose(f);
     close(s);
+
+    /* SOCK_NONBLOCK, SOCK_CLOEXEC and accept4(), set by the C library */
+    c = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+    check("SOCK_NONBLOCK", (fcntl(c, F_GETFL) & O_NONBLOCK) != 0, 1);
+    check("SOCK_CLOEXEC", fcntl(c, F_GETFD) & FD_CLOEXEC, FD_CLOEXEC);
+    check("tcp connect non-blocking", connect(c, (struct sockaddr *) &addr, sizeof(addr)) == -1 ? errno : 0, EINPROGRESS);
+
+    struct pollfd pfd = {c, POLLOUT, 0};
+    poll(&pfd, 1, 2000);
+    s = accept4(l, NULL, NULL, SOCK_NONBLOCK);
+    check("accept4", s >= 0 && (fcntl(s, F_GETFL) & O_NONBLOCK), 1);
+    check("accept4 bad flags", accept4(l, NULL, NULL, 0x1) == -1 ? errno : 0, EINVAL);
+
+    /* sendmsg() and recvmsg(): the pieces, no control data */
+    struct iovec out[2] = {{"msg-", 4}, {"pieces", 6}};
+    struct msghdr mh = {0};
+    mh.msg_iov = out;
+    mh.msg_iovlen = 2;
+    check("sendmsg", sendmsg(c, &mh, 0), 10);
+
+    char a[3], b[16] = {0};
+    struct iovec in[2] = {{a, 3}, {b, sizeof(b) - 1}};
+    struct msghdr rh = {0};
+    rh.msg_iov = in;
+    rh.msg_iovlen = 2;
+    pfd = (struct pollfd) {s, POLLIN, 0};
+    poll(&pfd, 1, 2000);
+    check("recvmsg", recvmsg(s, &rh, 0), 10);
+    check("recvmsg: the pieces", !memcmp(a, "msg", 3) && !strcmp(b, "-pieces"), 1);
+
+    char cbuf[CMSG_SPACE(sizeof(int))];
+    mh.msg_control = cbuf;
+    mh.msg_controllen = sizeof(cbuf);
+    check("sendmsg with control data -> EOPNOTSUPP", sendmsg(c, &mh, 0) == -1 ? errno : 0, EOPNOTSUPP);
+
+    close(c);
+    close(s);
     close(l);
+}
+
+/* warn() and err(): the program's name, the message, errno's */
+static void test_err(void)
+{
+    int p[2];
+    pipe(p);
+
+    pid_t pid = fork();
+
+    if (!pid) {
+        dup2(p[1], 2);
+        errno = ENOENT;
+        warn("file %d", 7);
+        warnx("plain");
+        errno = EACCES;
+        err(3, "fatal");
+    }
+
+    close(p[1]);
+
+    char buf[256] = {0};
+    int n = 0, r;
+
+    while ((r = read(p[0], buf + n, sizeof(buf) - 1 - n)) > 0)
+        n += r;
+
+    close(p[0]);
+
+    int st;
+    waitpid(pid, &st, 0);
+
+    extern char *__progname;
+    char want[256];
+    snprintf(want, sizeof(want), "%s: file 7: No such file or directory\n%s: plain\n%s: fatal: Permission denied\n",
+             __progname, __progname, __progname);
+
+    check("err: exit status", WEXITSTATUS(st), 3);
+    check("warn, warnx, err: the messages", !strcmp(buf, want), 1);
+    if (strcmp(buf, want))
+        fprintf(out, "    got: %s", buf);
 }
 
 static void *pt_key_seen;
@@ -843,6 +922,7 @@ int main(void)
     test_x_support();
     test_pthread();
     test_tcp();
+    test_err();
 
     /* virtual terminals */
     test_vt();

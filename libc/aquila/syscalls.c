@@ -17,6 +17,7 @@
 #include <sys/utsname.h>
 #include <sys/wait.h>
 #include <sys/resource.h>
+#include <sys/uio.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -491,14 +492,98 @@ int munmap(void *addr, size_t len)
     return SYSCALL(SYS_munmap, addr, len, 0);
 }
 
+/* SOCK_NONBLOCK and SOCK_CLOEXEC on a new descriptor */
+static int sock_flags(int fd, int flags)
+{
+    if (fd < 0)
+        return fd;
+
+    if (flags & SOCK_NONBLOCK)
+        fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
+
+    if (flags & SOCK_CLOEXEC)
+        fcntl(fd, F_SETFD, FD_CLOEXEC);
+
+    return fd;
+}
+
 int socket(int domain, int type, int protocol)
 {
-    return SYSCALL(SYS_socket, domain, type, protocol);
+    int flags = type & (SOCK_NONBLOCK | SOCK_CLOEXEC);
+    return sock_flags(SYSCALL(SYS_socket, domain, type & ~flags, protocol), flags);
 }
 
 int accept(int fd, struct sockaddr *addr, socklen_t *len)
 {
     return SYSCALL(SYS_accept, fd, addr, len);
+}
+
+int accept4(int fd, struct sockaddr *addr, socklen_t *len, int flags)
+{
+    if (flags & ~(SOCK_NONBLOCK | SOCK_CLOEXEC)) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    return sock_flags(accept(fd, addr, len), flags);
+}
+
+/* sendmsg() and recvmsg(): one buffer for the pieces, through sendto()
+ * and recvfrom(); no ancillary data */
+ssize_t sendmsg(int fd, const struct msghdr *msg, int flags)
+{
+    if (msg->msg_controllen) {
+        errno = EOPNOTSUPP;
+        return -1;
+    }
+
+    size_t len = 0;
+    for (int i = 0; i < msg->msg_iovlen; ++i)
+        len += msg->msg_iov[i].iov_len;
+
+    char *buf = malloc(len ? len : 1);
+    if (!buf)
+        return -1;
+
+    size_t off = 0;
+    for (int i = 0; i < msg->msg_iovlen; ++i) {
+        memcpy(buf + off, msg->msg_iov[i].iov_base, msg->msg_iov[i].iov_len);
+        off += msg->msg_iov[i].iov_len;
+    }
+
+    ssize_t r = sendto(fd, buf, len, flags, msg->msg_name, msg->msg_namelen);
+    free(buf);
+    return r;
+}
+
+ssize_t recvmsg(int fd, struct msghdr *msg, int flags)
+{
+    size_t len = 0;
+    for (int i = 0; i < msg->msg_iovlen; ++i)
+        len += msg->msg_iov[i].iov_len;
+
+    char *buf = malloc(len ? len : 1);
+    if (!buf)
+        return -1;
+
+    socklen_t namelen = msg->msg_namelen;
+    ssize_t r = recvfrom(fd, buf, len, flags, msg->msg_name, msg->msg_name ? &namelen : NULL);
+
+    if (r >= 0) {
+        size_t off = 0;
+        for (int i = 0; i < msg->msg_iovlen && off < (size_t) r; ++i) {
+            size_t n = msg->msg_iov[i].iov_len < (size_t) r - off ? msg->msg_iov[i].iov_len : (size_t) r - off;
+            memcpy(msg->msg_iov[i].iov_base, buf + off, n);
+            off += n;
+        }
+
+        msg->msg_namelen = namelen;
+        msg->msg_controllen = 0;
+        msg->msg_flags = 0;
+    }
+
+    free(buf);
+    return r;
 }
 
 int bind(int fd, const struct sockaddr *addr, socklen_t len)
