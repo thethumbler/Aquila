@@ -11,9 +11,11 @@
  * An x86_irq_chip (irq.c), when the CPU has an APIC and ACPI's MADT says
  * where they are (apic=off keeps the 8259):
  *
- * - the local APIC (the boot CPU's): enabled (spurious vector 0xFF), its
- *   LINT0 (the 8259's) masked, LINT1 the NMI as the MADT says; its timer
- *   is the scheduler's tick, periodic, calibrated against the clock
+ * - the local APIC (each CPU's): enabled (spurious vector 0xFF), its
+ *   LINT0 (the 8259's) masked, LINT1 the NMI as the MADT says; the boot
+ *   CPU's timer is the scheduler's tick, periodic, calibrated against the
+ *   clock. The MADT's local APICs are the CPUs, an IPI starts the others
+ *   (cpu/smp.c)
  * - the I/O APICs: IRQ n goes to the pin the MADT's overrides say (ISA's,
  *   0 is 2 on most machines), edge and active high but as they say; the
  *   PCI lines (from the devices' configuration space) are overridden as
@@ -36,12 +38,15 @@
 #include <cpu/msr.h>
 #include <cpu/sdt.h>
 #include <platform/misc.h>
+#include <sys/cpu.h>
 
 /* the local APIC's registers */
 #define LAPIC_ID        0x020
 #define LAPIC_TPR       0x080
 #define LAPIC_EOI       0x0B0
 #define LAPIC_SVR       0x0F0
+#define LAPIC_ICR_LO    0x300
+#define LAPIC_ICR_HI    0x310
 #define LAPIC_LVT_TIMER 0x320
 #define LAPIC_LVT_LINT0 0x350
 #define LAPIC_LVT_LINT1 0x360
@@ -58,6 +63,10 @@
 
 #define APIC_BASE_ENABLE    0x800
 
+/* the interrupt command register: an IPI's delivery, sent when its low
+ * half is written */
+#define ICR_PENDING     0x1000
+
 /* the I/O APIC's: a register selected, then read or written */
 #define IOAPIC_SEL      0x00
 #define IOAPIC_WIN      0x10
@@ -72,6 +81,13 @@
 
 static volatile uint32_t *lapic;
 static uint32_t lapic_id;
+
+/* the local APICs the MADT has, enabled: the CPUs */
+static uint32_t cpu_ids[CPUS_MAX];
+static int cpu_ids_nr;
+
+/* the LINT the NMI comes through (the MADT's) */
+static int nmi_lint = 1;
 
 static struct ioapic {
     volatile uint32_t *regs;
@@ -242,6 +258,46 @@ static int cpu_has_apic(void)
     return !!(d & (1 << 9));
 }
 
+/* the running CPU's local APIC: enabled (spurious vector 0xFF), its timer
+ * off, the NMI's LINT as the MADT says, the other masked (the 8259's) */
+void x86_lapic_cpu_setup(void)
+{
+    msr_write(APIC_BASE, msr_read(APIC_BASE) | APIC_BASE_ENABLE);
+
+    lapic_write(LAPIC_TPR, 0);
+    lapic_write(LAPIC_LVT_TIMER, LVT_MASKED);
+    lapic_write(LAPIC_LVT_ERROR, LVT_MASKED);
+    lapic_write(nmi_lint ? LAPIC_LVT_LINT1 : LAPIC_LVT_LINT0, LVT_NMI);
+    lapic_write(nmi_lint ? LAPIC_LVT_LINT0 : LAPIC_LVT_LINT1, LVT_MASKED);
+    lapic_write(LAPIC_SVR, SVR_ENABLE | X86_SPURIOUS_VECTOR);
+}
+
+/* the CPUs' local APIC IDs (the boot CPU's among them), into `ids': how
+ * many, 0 without the APIC */
+int x86_apic_cpus(uint32_t *ids, int max)
+{
+    if (!lapic)
+        return 0;
+
+    int n = MIN(cpu_ids_nr, max);
+
+    for (int i = 0; i < n; ++i)
+        ids[i] = cpu_ids[i];
+
+    return n;
+}
+
+/* an IPI, `icr' (its delivery mode, vector, ...) to the local APIC `id',
+ * once it is sent */
+void x86_lapic_ipi(uint32_t id, uint32_t icr)
+{
+    lapic_write(LAPIC_ICR_HI, id << 24);
+    lapic_write(LAPIC_ICR_LO, icr);
+
+    while (lapic_read(LAPIC_ICR_LO) & ICR_PENDING)
+        ;
+}
+
 /* 0 if the APIC brings the interrupts from now on */
 int x86_apic_setup(void)
 {
@@ -266,10 +322,16 @@ int x86_apic_setup(void)
     }
 
     uint8_t *p = (uint8_t *) (madt + 1), *end = (uint8_t *) madt + madt->header.length;
-    int nmi_lint = 1;
 
     for (; p + 2 <= end && p[1] >= 2; p += p[1]) {
         switch (p[0]) {
+            case ACPI_MADT_LOCAL_APIC: {
+                struct acpi_madt_local_apic *e = (void *) p;
+
+                if ((e->flags & ACPI_MADT_ENABLED) && cpu_ids_nr < CPUS_MAX)
+                    cpu_ids[cpu_ids_nr++] = e->apic_id;
+                break;
+            }
             case ACPI_MADT_IO_APIC: {
                 struct acpi_madt_io_apic *e = (void *) p;
 
@@ -306,17 +368,11 @@ int x86_apic_setup(void)
         return -1;
     }
 
-    /* the local APIC: enabled, where the MADT says */
-    msr_write(APIC_BASE, msr_read(APIC_BASE) | APIC_BASE_ENABLE);
+    /* the local APIC: where the MADT says, the boot CPU's */
     lapic = arch_mmio_map(madt->local_apic_address, 4096);
+    x86_lapic_cpu_setup();
     lapic_id = lapic_read(LAPIC_ID) >> 24;
-
-    lapic_write(LAPIC_TPR, 0);
-    lapic_write(LAPIC_LVT_TIMER, LVT_MASKED);
-    lapic_write(LAPIC_LVT_ERROR, LVT_MASKED);
-    lapic_write(nmi_lint ? LAPIC_LVT_LINT1 : LAPIC_LVT_LINT0, LVT_NMI);
-    lapic_write(nmi_lint ? LAPIC_LVT_LINT0 : LAPIC_LVT_LINT1, LVT_MASKED);
-    lapic_write(LAPIC_SVR, SVR_ENABLE | X86_SPURIOUS_VECTOR);
+    cpus[0].arch.apic_id = lapic_id;
 
     /* every pin masked, until there's a handler */
     for (int i = 0; i < ioapics_nr; ++i)

@@ -39,6 +39,12 @@ extern struct x86_irq_chip x86_pic_chip;
 /* lapic.c, ioapic.c: the APIC; 0 if it's what brings the interrupts */
 int  x86_apic_setup(void) __attribute__((weak));
 uint32_t x86_lapic_timer_setup(uint32_t period_ns, x86_irq_handler_t handler) __attribute__((weak));
+void x86_lapic_cpu_setup(void);
+int  x86_apic_cpus(uint32_t *ids, int max);
+void x86_lapic_ipi(uint32_t id, uint32_t icr);
+
+/* cpu/smp.c: the other CPUs started (with the APIC) */
+void x86_smp_init(void);
 
 /* sys/clock.c: it counts finer than the ticks (the TSC or the HPET) */
 int x86_clock_precise(void);

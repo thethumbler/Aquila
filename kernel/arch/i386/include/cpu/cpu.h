@@ -115,6 +115,7 @@ struct thread;
 
 /* the CPU's own (struct cpu's arch) */
 struct arch_cpu {
+    uint32_t apic_id;           /* its local APIC's */
     struct x86_gdt_entry gdt[X86_GDT_NR];
     struct x86_tss tss __aligned(8);
     struct pmap *pmap;          /* CR3's (pmap_switch) */

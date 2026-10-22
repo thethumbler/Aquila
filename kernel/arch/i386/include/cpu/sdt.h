@@ -69,6 +69,8 @@ struct acpi_hpet {
 
 #define ACPI_MADT_PCAT_COMPAT       0x1     /* there are 8259s too */
 
+#define ACPI_MADT_ENABLED           0x1     /* a local APIC's: its CPU is there */
+
 /* an override's flags: polarity (bits 0-1), trigger mode (bits 2-3) */
 #define ACPI_MPS_POLARITY_MASK      0x3
 #define ACPI_MPS_POLARITY_HIGH      0x1

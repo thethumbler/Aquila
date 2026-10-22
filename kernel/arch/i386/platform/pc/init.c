@@ -116,6 +116,10 @@ int platform_init(void)
     x86_pc_i8042_init();
     x86_pc_pit_init();
     x86_pc_cmos_init();
-    
+
+    /* the other CPUs (the PIT times their start) */
+    if (apic)
+        x86_smp_init();
+
     return 0;
 }

@@ -13,7 +13,8 @@
 # QEMU uses KVM when /dev/kvm can be used, KVM=0 in the environment turns
 # it off.
 #
-# tests: ata cpu syscalls memory kvmem clock irq net tcp ext2 libc system disk tcc curl bash (default: all)
+# tests: ata cpu syscalls memory kvmem clock irq smp net tcp ext2 libc system disk tcc curl bash
+# (default: all)
 #
 # Requires gcc with 32-bit support, ld, cpio and qemu-system-i386 (or
 # qemu-system-x86_64). The ext2
@@ -28,7 +29,7 @@ set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 TESTS=$ROOT/tests
 
-ALL_TESTS="ata cpu syscalls memory kvmem clock irq net tcp ext2 libc system disk tcc curl bash"
+ALL_TESTS="ata cpu syscalls memory kvmem clock irq smp net tcp ext2 libc system disk tcc curl bash"
 
 ARCH=x86_64
 build=1
@@ -463,6 +464,57 @@ test_irq()
     done
 
     [ $fails = 0 ] && echo "through the apic and the 8259:$summary; the 82540EM's IRQ 11 (level under the apic), the 82574L's MSI (its line with the 8259), q35"
+    [ $fails = 0 ]
+}
+
+# the other CPUs started (cpu/smp.c), 4 of them, with the pc and q35
+# machines; smp=off, and apic=off (no local APIC to start them with): the
+# boot CPU only. The cpu test's programs pass each time.
+test_smp()
+{
+    local fails=0
+
+    # name, QEMU's arguments, the kernel's command line, the smp line
+    # (none: no line)
+    local modes=(
+        "pc|-smp 4||smp: 4 CPUs"
+        "q35|-machine q35 -smp 4||smp: 4 CPUs"
+        "smp=off|-smp 4|smp=off|smp: off (smp=off), 4 CPUs"
+        "apic=off|-smp 4|apic=off|"
+    )
+
+    for m in "${modes[@]}"; do
+        local name qargs karg want
+        IFS='|' read -r name qargs karg want <<< "$m"
+        local log=$OUT/smp/${name%%=*}.log
+
+        mkdir -p "$OUT/smp"
+        rm -f "$log"
+        $QEMU_BIN $ACCEL $qargs -kernel "$KERNEL" -initrd "$OUT/cpu/initrd.img" -m 256 \
+            -display none -no-reboot -append "$karg" -serial file:"$log" >/dev/null 2>&1 &
+        local pid=$!
+
+        for _ in $(seq 300); do
+            grep -a -q 'aqtest: done\|Bailing out' "$log" 2>/dev/null && break
+            sleep 0.1
+        done
+
+        kill $pid 2>/dev/null
+        wait $pid 2>/dev/null
+
+        local problem="" got
+        got=$(grep -a '^smp: ' "$log" | head -1 | tr -d '\r')
+        grep -a -q 'aqtest: done, fails=0' "$log" ||
+            problem="$problem; did not pass ($(grep -a '^FAIL\|Bailing' "$log" | head -2 | tr '\n' ' '))"
+        [ "$got" = "${want}" ] || problem="$problem; '${got:-no smp line}', not '${want:-no smp line}'"
+
+        if [ -n "$problem" ]; then
+            echo "$name: ${problem#; }"
+            fails=$((fails + 1))
+        fi
+    done
+
+    echo "4 CPUs started (pc, q35), the boot CPU only with smp=off and apic=off"
     [ $fails = 0 ]
 }
 
@@ -1063,9 +1115,9 @@ for name in $selected; do
     esac
 done
 
-# test programs (the ata test boots the cpu test's initrd)
+# test programs (the ata and smp tests boot the cpu test's initrd)
 needed=" $selected "
-case "$needed" in *" ata "*) needed="$needed cpu " ;; esac
+case "$needed" in *" ata "*|*" smp "*) needed="$needed cpu " ;; esac
 [ -x "$CROSS_CC" ] || needed=${needed/ libc / }
 
 for name in cpu syscalls memory kvmem clock irq net tcp ext2 libc; do
