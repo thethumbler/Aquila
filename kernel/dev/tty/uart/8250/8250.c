@@ -60,9 +60,13 @@ ssize_t uart_8250_transmit(struct uart *u __unused, char c)
 
 void uart_8250_irq()
 {
-    if (serial_received()) {
+    /* every byte the FIFO has: one interrupt may come for several, and
+     * another may not come for those left (v86's 16550 doesn't) */
+    while (serial_received()) {
         if (uart_8250.vnode) /* If open */
             uart_recieve_handler(&uart_8250, 1);
+        else
+            uart_8250_receive(&uart_8250);
     }
 
     if (serial_empty()) {
