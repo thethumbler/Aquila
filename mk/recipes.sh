@@ -99,7 +99,7 @@ aquila_config_sub()
         cat > "$f" <<'EOF'
 #!/bin/sh
 case "$1" in
-    *-aquila*) echo i686-pc-aquila ;;
+    *-aquila*) echo "${1%%-*}-pc-aquila" ;;
     *) exec sh "$(dirname "$0")/config.sub.orig" "$@" ;;
 esac
 EOF
