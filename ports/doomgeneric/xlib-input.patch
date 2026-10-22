@@ -1,0 +1,95 @@
+--- a/doomgeneric/doomgeneric_xlib.c
++++ b/doomgeneric/doomgeneric_xlib.c
+@@ -58,8 +58,26 @@
+     case XK_Shift_R:
+ 		key = KEY_RSHIFT;
+ 		break;
++    case XK_Alt_L:
++    case XK_Alt_R:
++		key = KEY_LALT;
++		break;
++    case XK_BackSpace:
++		key = KEY_BACKSPACE;
++		break;
++    case XK_Tab:
++		key = KEY_TAB;
++		break;
+ 	default:
+-		key = tolower(key);
++		// aquila: F1 to F12; other keys than Latin-1 aren't Doom's
++		if (key >= XK_F1 && key <= XK_F10)
++			key = KEY_F1 + (key - XK_F1);
++		else if (key == XK_F11 || key == XK_F12)
++			key = key == XK_F11 ? KEY_F11 : KEY_F12;
++		else if (key > 0xff)
++			key = 0;
++		else
++			key = tolower(key);
+ 		break;
+ 	}
+ 
+@@ -70,6 +88,9 @@
+ {
+ 	unsigned char key = convertToDoomKey(keyCode);
+ 
++	if (!key)
++		return;
++
+ 	unsigned short keyData = (pressed << 8) | key;
+ 
+ 	s_KeyQueue[s_KeyQueueWriteIndex] = keyData;
+@@ -107,6 +128,8 @@
+ 
+     XSetForeground(s_Display, s_Gc, whiteColor);
+ 
++    // aquila: X servers without XKB (TinyX) can't say which releases
++    // are auto-repeat's, DG_DrawFrame drops them
+     XkbSetDetectableAutoRepeat(s_Display, 1, 0);
+ 
+     // Wait for the MapNotify event
+@@ -121,6 +144,9 @@
+         }
+     }
+ 
++    // aquila: the keyboard comes here, wherever the pointer is
++    XSetInputFocus(s_Display, s_Window, RevertToParent, CurrentTime);
++
+     s_Image = XCreateImage(s_Display, DefaultVisual(s_Display, s_Screen), depth, ZPixmap, 0, (char *)DG_ScreenBuffer, DOOMGENERIC_RESX, DOOMGENERIC_RESX, 32, 0);
+ }
+ 
+@@ -133,16 +159,33 @@
+         {
+             XEvent e;
+             XNextEvent(s_Display, &e);
++            // aquila: the core keymap (XLookupKeysym), XKB's needs the
++            // server to have XKB, which TinyX doesn't
+             if (e.type == KeyPress)
+             {
+-                KeySym sym = XkbKeycodeToKeysym(s_Display, e.xkey.keycode, 0, 0);
++                KeySym sym = XLookupKeysym(&e.xkey, 0);
+                 //printf("KeyPress:%d sym:%d\n", e.xkey.keycode, sym);
+ 
+                 addKeyToQueue(1, sym);
+             }
+             else if (e.type == KeyRelease)
+             {
+-                KeySym sym = XkbKeycodeToKeysym(s_Display, e.xkey.keycode, 0, 0);
++                // a release right before a press of the key, at the same
++                // time, is the auto-repeat's: the key is still held
++                if (XEventsQueued(s_Display, QueuedAfterReading))
++                {
++                    XEvent next;
++                    XPeekEvent(s_Display, &next);
++
++                    if (next.type == KeyPress && next.xkey.time == e.xkey.time &&
++                        next.xkey.keycode == e.xkey.keycode)
++                    {
++                        XNextEvent(s_Display, &next);
++                        continue;
++                    }
++                }
++
++                KeySym sym = XLookupKeysym(&e.xkey, 0);
+                 //printf("KeyRelease:%d sym:%d\n", e.xkey.keycode, sym);
+                 addKeyToQueue(0, sym);
+             }

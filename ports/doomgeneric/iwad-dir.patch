@@ -1,0 +1,12 @@
+--- a/doomgeneric/d_iwad.c
++++ b/doomgeneric/d_iwad.c
+@@ -615,6 +615,9 @@
+ #else
+     AddIWADDir (FILES_DIR);
+ 
++    // aquila: where IWADs are installed under Unix too
++    AddIWADDir ("/usr/share/games/doom");
++
+     // Don't run this function again.
+ 
+     iwad_dirs_built = true;
