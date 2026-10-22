@@ -234,12 +234,21 @@ int pipefs_fifo_open(struct file *file)
     if (!end)
         goto e_nomem;
 
+    if (which != END_WRITE)
+        pipe->r_opens++;
+    if (which != END_READ)
+        pipe->w_opens++;
+
     /* the other end may be waiting for this one */
     thread_queue_wakeup(pipe->queue);
 
+    /* until the other side opens, or has: one that opened, wrote and
+     * closed while this one waited to run again counts (POSIX) */
+    unsigned long r_seen = pipe->r_opens, w_seen = pipe->w_opens;
+
     if (!(file->flags & O_NONBLOCK)) {
-        while (which == END_READ ? !has_writers(pipe) :
-               which == END_WRITE ? !has_readers(pipe) : 0) {
+        while (which == END_READ ? !has_writers(pipe) && pipe->w_opens == w_seen :
+               which == END_WRITE ? !has_readers(pipe) && pipe->r_opens == r_seen : 0) {
             if ((err = thread_queue_sleep(pipe->queue))) {
                 /* releases the pipe too if it was the only end */
                 vfs_close(end);

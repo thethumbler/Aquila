@@ -317,8 +317,6 @@ void proc_kill(struct proc *proc)
         }
     }
 
-    kfree(proc->name);
-
     /* the end of the session: the controlling terminal hangs up (a zombie
      * stays in its process group until it is reaped, waitpid matches it
      * by group) */
@@ -354,6 +352,9 @@ int proc_reap(struct proc *proc)
 
     queue_node_remove(proc->pgrp->procs, proc->pgrp_node);
     pgrp_release(proc->pgrp);
+
+    /* its name stays with the zombie (ps, /proc show it) */
+    kfree(proc->name);
 
     queue_remove(procs, proc);
     kfree(proc);

@@ -23,6 +23,11 @@ struct pipe {
     /** readers and writers sleep here */
     struct queue *queue;
 
+    /** a FIFO's opens for reading and for writing, so far: an open waiting
+     *  for the other side sees it came, even if it's gone already */
+    unsigned long r_opens;
+    unsigned long w_opens;
+
     /** the FIFO this is the pipe of, NULL for pipe() */
     struct vnode *fifo;
 
