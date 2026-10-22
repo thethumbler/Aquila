@@ -4,6 +4,7 @@
 #include <mm/mm.h>
 #include <sys/proc.h>
 #include <sys/sched.h>
+#include <sys/lock.h>
 
 #include "sys.h"
 #include <platform/misc.h>
@@ -65,8 +66,13 @@ void arch_sched_init(void)
     x86_clock_ticks(timer_period);
 }
 
+/* the idle loop, on the CPU's idle stack: the kernel lock goes (an
+ * interrupt takes it, and lets it go if it comes back here) */
 static void __arch_idle(void)
 {
+    if (kernel_lock_held())
+        kernel_unlock();
+
     for (;;) {
         asm volatile("sti; hlt; cli;");
     }

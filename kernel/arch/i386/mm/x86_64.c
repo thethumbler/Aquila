@@ -100,11 +100,6 @@ static uint64_t *pte_get(struct pmap *pmap, vaddr_t va, int make)
     return &t[IDX(va, 0)];
 }
 
-static inline void tlb_invalidate_page(vaddr_t va)
-{
-    asm volatile("invlpg (%0)" :: "r"(va) : "memory");
-}
-
 struct pmap *pmap_switch(struct pmap *pmap)
 {
     if (!pmap)
@@ -113,6 +108,7 @@ struct pmap *pmap_switch(struct pmap *pmap)
     struct pmap *ret = cur_pmap;
 
     if (pmap != cur_pmap) {
+        pmap_loaded(cur_pmap, pmap);
         write_cr3(pmap->map);
         cur_pmap = pmap;
     }
@@ -140,6 +136,7 @@ void pmap_init(void)
     k_pmap.map = read_cr3() & ~PAGE_MASK;
     k_pmap.ref = 1;
     kvm_space.pmap = &k_pmap;
+    pmap_loaded(NULL, &k_pmap);
     cur_pmap = &k_pmap;
 
     uint64_t *pml4 = table(k_pmap.map);
@@ -182,8 +179,8 @@ static struct pmap *pmap_alloc(void)
 
 static void pmap_release(struct pmap *pmap)
 {
-    if (pmap == cur_pmap)
-        pmap_switch(&k_pmap);
+    /* no CPU has it loaded anymore */
+    tlb_shootdown(pmap, 0, 0, 1);
 
     if (pmap->map)
         table_free(pmap->map);
@@ -250,10 +247,12 @@ int pmap_add(struct pmap *pmap, vaddr_t va, paddr_t pa, uint32_t flags)
     if (!pte)
         return -EINVAL;
 
+    uint64_t old = *pte;
     *pte = pa | pte_flags(flags);
 
-    if (pmap == cur_pmap || pmap == &k_pmap)
-        tlb_invalidate_page(va);
+    /* another page was there */
+    if (old & PG_PRESENT)
+        tlb_shootdown(pmap, va, va + PAGE_SIZE, 0);
 
     return 0;
 }
@@ -263,16 +262,20 @@ void pmap_remove(struct pmap *pmap, vaddr_t sva, vaddr_t eva)
     if ((sva & PAGE_MASK) || (eva & PAGE_MASK))
         return;
 
-    for (; sva < eva; sva += PAGE_SIZE) {
-        uint64_t *pte = pte_get(pmap, sva, 0);
+    vaddr_t first = eva, last = sva;
+
+    for (vaddr_t va = sva; va < eva; va += PAGE_SIZE) {
+        uint64_t *pte = pte_get(pmap, va, 0);
 
         if (pte && (*pte & PG_PRESENT)) {
             *pte = 0;
-
-            if (pmap == cur_pmap || pmap == &k_pmap)
-                tlb_invalidate_page(sva);
+            first = MIN(first, va);
+            last = va + PAGE_SIZE;
         }
     }
+
+    if (first < last)
+        tlb_shootdown(pmap, first, last, 0);
 }
 
 /* the tables of the user half, from `level' down; the pages they map
@@ -305,8 +308,7 @@ void pmap_remove_all(struct pmap *pmap)
         }
     }
 
-    if (pmap == cur_pmap)
-        tlb_flush();
+    tlb_shootdown(pmap, 0, USER_STACK, 0);
 }
 
 void pmap_protect(struct pmap *pmap, vaddr_t sva, vaddr_t eva, uint32_t prot)
@@ -314,16 +316,20 @@ void pmap_protect(struct pmap *pmap, vaddr_t sva, vaddr_t eva, uint32_t prot)
     if (sva & PAGE_MASK)
         return;
 
-    for (; sva < eva; sva += PAGE_SIZE) {
-        uint64_t *pte = pte_get(pmap, sva, 0);
+    vaddr_t first = eva, last = sva;
+
+    for (vaddr_t va = sva; va < eva; va += PAGE_SIZE) {
+        uint64_t *pte = pte_get(pmap, va, 0);
 
         if (pte && (*pte & PG_PRESENT)) {
             *pte = PG_ADDR(*pte) | pte_flags(prot);
-
-            if (pmap == cur_pmap || pmap == &k_pmap)
-                tlb_invalidate_page(sva);
+            first = MIN(first, va);
+            last = va + PAGE_SIZE;
         }
     }
+
+    if (first < last)
+        tlb_shootdown(pmap, first, last, 0);
 }
 
 void pmap_copy(struct pmap *dst_map, struct pmap *src_map, vaddr_t dst_addr, size_t len,

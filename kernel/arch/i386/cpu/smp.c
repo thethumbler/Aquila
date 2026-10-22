@@ -10,8 +10,8 @@
  * INIT IPI, then a startup IPI (twice if it doesn't answer): it starts in
  * real mode at the trampoline's page (trampoline.S), which brings it to the
  * kernel, x86_ap_start(), on its own idle stack. It has its own GDT, TSS
- * and %gs (curcpu()), and its local APIC; it says it's there, and halts,
- * interrupts off.
+ * and %gs (curcpu()), and its local APIC; it says it's there, and idles
+ * (the TLB's IPIs come).
  *
  * The trampoline's page tables map its page where it is, and the kernel's
  * half as the kernel's tables do (the kernel's entries of the top table
@@ -24,6 +24,7 @@
 #include <core/system.h>
 #include <core/kargs.h>
 #include <core/string.h>
+#include <core/arch.h>
 #include <cpu/cpu.h>
 #include <cpu/msr.h>
 #include <cpu/smp.h>
@@ -78,8 +79,10 @@ static void __attribute__((noreturn)) x86_ap_start(struct cpu *cpu)
     asm volatile("" ::: "memory");
     ap_started = 1;
 
-    for (;;)
-        asm volatile("cli; hlt");
+    /* idle: interrupts on, the IPIs come */
+    cpu->idle = 1;
+    arch_idle();
+    __builtin_unreachable();
 }
 
 /* the trampoline's page tables: its page, where it is, and the kernel's

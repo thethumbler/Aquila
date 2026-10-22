@@ -4,6 +4,7 @@
 #include <sys/proc.h>
 #include <sys/sched.h>
 #include <sys/signal.h>
+#include <sys/lock.h>
 #include <sys/uaccess.h>
 #include <aquila/syscall.h>
 #include <ds/queue.h>
@@ -18,6 +19,22 @@ do {\
     *((type *) (stack)) = (type) (value);\
 } while (0)
 
+/* the current thread to user mode, the first time, from its own kernel
+ * stack: the kernel lock goes, another CPU may run the thread that was
+ * running here (its stack) once it does */
+static void __attribute__((noreturn)) thread_spawn(void)
+{
+    struct x86_thread *arch = curthread->arch;
+
+    kernel_unlock();
+
+#if ARCH_BITS==32
+    x86_jump_user(arch->eax, arch->eip, X86_CS, arch->eflags, arch->esp, X86_SS);
+#else
+    x86_jump_user(arch->rax, arch->rip, X86_CS, arch->rflags, arch->rsp, X86_SS);
+#endif
+}
+
 void arch_thread_spawn(struct thread *thread)
 {
     struct x86_thread *arch  = thread->arch;
@@ -26,12 +43,7 @@ void arch_thread_spawn(struct thread *thread)
     pmap_switch(pmap);
 
     x86_kernel_stack_set(arch->kstack);
-
-#if ARCH_BITS==32
-    x86_jump_user(arch->eax, arch->eip, X86_CS, arch->eflags, arch->esp, X86_SS);
-#else
-    x86_jump_user(arch->rax, arch->rip, X86_CS, arch->rflags, arch->rsp, X86_SS);
-#endif
+    x86_goto((uintptr_t) thread_spawn, 0, arch->kstack);
 }
 
 void arch_thread_switch(struct thread *thread)

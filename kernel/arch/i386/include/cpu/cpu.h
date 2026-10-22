@@ -122,6 +122,8 @@ struct arch_cpu {
     struct thread *fpu_thread;  /* whose state the FPU has */
     int tick_switch;            /* the tick asked for a switch (irq.c) */
     uintptr_t idle_stack;       /* the idle loop's, its top */
+    uint64_t tlb_flushes;       /* done for another CPU (mm/tlb.c) */
+    uint64_t kernel_gen;        /* its TLB has the kernel's mappings as of */
 };
 
 /* the running CPU's struct cpu: its first member points to it, at %gs:0

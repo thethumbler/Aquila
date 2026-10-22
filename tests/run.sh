@@ -2,9 +2,11 @@
 #
 # Build the kernel with the host toolchain and run the QEMU test suite.
 #
-# usage: tests/run.sh [-a arch] [-k args] [-n] [-v] [test...]
+# usage: tests/run.sh [-a arch] [-c cpus] [-k args] [-n] [-v] [test...]
 #
 #   -a      the architecture: x86_64 (default) or i386
+#   -c      the CPUs QEMU has (-smp), every boot (but the irq and smp
+#           tests', which choose)
 #   -k      more for the kernel's command line, every boot (e.g. apic=off;
 #           but the disk test's, Limine's configuration says it)
 #   -n      don't rebuild the kernel, use the existing image
@@ -35,10 +37,12 @@ ARCH=x86_64
 build=1
 verbose=0
 kargs=
+smp=
 
-while getopts "a:k:nvh" opt; do
+while getopts "a:c:k:nvh" opt; do
     case $opt in
         a) ARCH=$OPTARG ;;
+        c) smp=$OPTARG ;;
         k) kargs=$OPTARG ;;
         n) build=0 ;;
         v) verbose=1 ;;
@@ -111,15 +115,15 @@ fi
 
 KERNEL=$(ls "$OUT"/build/kernel/kernel-*.$ARCH 2>/dev/null | head -1)
 
-# -k: QEMU through a wrapper that adds them to -append (a script, timeout
-# runs it); QEMU_BIN is QEMU itself
+# -k, -c: QEMU through a wrapper that adds them to -append, and -smp (a
+# script, timeout runs it); QEMU_BIN is QEMU itself
 QEMU_BIN=$QEMU
 
-if [ -n "$kargs" ]; then
+if [ -n "$kargs" ] || [ -n "$smp" ]; then
     QEMU=$OUT/qemu-kargs
     cat > "$QEMU" <<EOF
 #!/bin/bash
-args=() append=0 kernel=0
+args=(${smp:+-smp $smp}) append=0 kernel=0
 while [ \$# -gt 0 ]; do
     case "\$1" in
         -append) args+=(-append "\$2 $kargs"); append=1; shift 2; continue ;;
@@ -127,7 +131,7 @@ while [ \$# -gt 0 ]; do
     esac
     args+=("\$1"); shift
 done
-[ \$append = 1 ] || [ \$kernel = 0 ] || args+=(-append "$kargs")
+[ \$append = 1 ] || [ \$kernel = 0 ] || [ -z "$kargs" ] || args+=(-append "$kargs")
 exec $QEMU_BIN "\${args[@]}"
 EOF
     chmod +x "$QEMU"

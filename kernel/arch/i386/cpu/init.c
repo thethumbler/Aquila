@@ -13,6 +13,7 @@
 #include <cpu/cpu.h>
 #include <ds/bitmap.h>
 #include <sys/cpu.h>
+#include <sys/lock.h>
 #include <mm/mm.h>
 #include <mm/vm.h>
 #include <video/vbe.h>
@@ -31,6 +32,9 @@ void x86_cpu_init(void)
     cpus_count = 1;
 
     x86_gdt_setup(bsp, VMA(0x100000ULL));
+
+    /* the kernel's, until the first process runs */
+    kernel_lock();
 
     earlycon_init();
     printk("x86: Welcome to AquilaOS!\n");

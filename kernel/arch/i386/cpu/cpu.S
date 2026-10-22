@@ -266,8 +266,9 @@ IRQ 45, 77
 IRQ 46, 78
 IRQ 47, 79
 
-/* the local APIC's timer */
+/* the local APIC's timer, the TLB's IPI */
 IRQ 240, 240
+IRQ 241, 241
 
 /* the local APIC's spurious interrupt: nothing to do, no EOI */
 .global __x86_spurious
@@ -398,8 +399,10 @@ x86_sleep:
 x86_preempt:
     SWITCH_OUT schedule
 
+.extern kernel_unlock
 .global x86_fork_return
-x86_fork_return:    /* to user mode, the system call's frame */
+x86_fork_return:    /* to user mode, the system call's frame, on its stack */
+    call kernel_unlock
 #if ARCH_BITS==32
     pop_context
     add $8, %esp        /* vec, err */

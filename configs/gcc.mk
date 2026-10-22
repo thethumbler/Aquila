@@ -3,7 +3,7 @@ CC := i686-aquila-gcc
 CFLAGS += \
 		-std=gnu11 -nostdlib -ffreestanding -m32 \
 		-O3 -Wall -Wextra -Werror \
-		-Wno-unused -Wno-unused-parameter -march=i386 \
+		-Wno-unused -Wno-unused-parameter -march=i686 \
 		-funsigned-bitfields -fuse-ld=bfd
 
 AS := $(CC)

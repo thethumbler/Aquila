@@ -192,6 +192,12 @@ static void apic_eoi(unsigned irq)
     lapic_write(LAPIC_EOI, 0);
 }
 
+/* the running CPU's local APIC is done with its interrupt (an IPI) */
+void x86_lapic_eoi(void)
+{
+    lapic_write(LAPIC_EOI, 0);
+}
+
 static const char *apic_describe(unsigned irq)
 {
     static char buf[32];

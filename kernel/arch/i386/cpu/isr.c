@@ -10,6 +10,7 @@
 #include <cpu/cpu.h>
 #include <sys/sched.h>
 #include <sys/signal.h>
+#include <sys/lock.h>
 #include <mm/mm.h>
 
 extern void __x86_isr0 (void);
@@ -136,7 +137,7 @@ static int uaccess_fixup(struct x86_regs *regs)
     return 0;
 }
 
-void __x86_isr(struct x86_regs *regs)
+static void isr_dispatch(struct x86_regs *regs)
 {
     unsigned vec = regs->vec;
 
@@ -216,6 +217,21 @@ void __x86_isr(struct x86_regs *regs)
         printk("Unhandled interrupt %d\n", vec);
         panic("Kernel Exception");
     }
+}
+
+/* an exception, or a system call: with the kernel lock, taken if it came
+ * from user mode (an exception in the kernel has it already) */
+void __x86_isr(struct x86_regs *regs)
+{
+    int took = !kernel_lock_held();
+
+    if (took)
+        kernel_lock();
+
+    isr_dispatch(regs);
+
+    if (took)
+        kernel_unlock();
 }
 
 void x86_isr_setup(void)

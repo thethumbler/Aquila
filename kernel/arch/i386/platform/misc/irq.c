@@ -24,6 +24,8 @@
 #include <platform/misc.h>
 #include <sys/sched.h>
 #include <sys/signal.h>
+#include <sys/lock.h>
+#include <mm/pmap.h>
 
 MALLOC_DEFINE(M_IRQ, "irq", "IRQ handler");
 
@@ -123,7 +125,7 @@ void x86_irq_tick_switch(void)
     curcpu()->arch.tick_switch = 1;
 }
 
-void __x86_irq_handler(struct x86_regs *r)
+static void irq_dispatch(struct x86_regs *r)
 {
     uint32_t vec = r->vec;
     unsigned irq = vec == X86_TIMER_VECTOR ? X86_IRQ_TIMER : vec - 32;
@@ -168,7 +170,33 @@ void __x86_irq_handler(struct x86_regs *r)
     x86_return_to_user(r, 0);
 }
 
-/* the vectors: 32 to 32 + 47, the local APIC's timer and spurious */
+/*
+ * An interrupt: with the kernel lock, which it takes if it came from user
+ * mode or the idle loop (an exception in the kernel has it already), and
+ * lets go of before going back there. The TLB's IPI is done without it:
+ * the CPU that sent it has it, waiting.
+ */
+void __x86_irq_handler(struct x86_regs *r)
+{
+    if (r->vec == X86_TLB_VECTOR) {
+        x86_tlb_ipi();
+        x86_lapic_eoi();
+        return;
+    }
+
+    int took = !kernel_lock_held();
+
+    if (took)
+        kernel_lock();
+
+    irq_dispatch(r);
+
+    if (took)
+        kernel_unlock();
+}
+
+/* the vectors: 32 to 32 + 47, the local APIC's timer and TLB IPI, and its
+ * spurious interrupt */
 void x86_irq_gates_setup(void)
 {
     extern void __x86_irq0(void), __x86_irq1(void), __x86_irq2(void), __x86_irq3(void),
@@ -183,7 +211,7 @@ void x86_irq_gates_setup(void)
         __x86_irq36(void), __x86_irq37(void), __x86_irq38(void), __x86_irq39(void),
         __x86_irq40(void), __x86_irq41(void), __x86_irq42(void), __x86_irq43(void),
         __x86_irq44(void), __x86_irq45(void), __x86_irq46(void), __x86_irq47(void),
-        __x86_irq240(void), __x86_spurious(void);
+        __x86_irq240(void), __x86_irq241(void), __x86_spurious(void);
 
     static void (*stubs[48])(void) = {
         __x86_irq0, __x86_irq1, __x86_irq2, __x86_irq3, __x86_irq4, __x86_irq5,
@@ -200,6 +228,7 @@ void x86_irq_gates_setup(void)
         x86_idt_gate_set(32 + i, (uintptr_t) stubs[i]);
 
     x86_idt_gate_set(X86_TIMER_VECTOR, (uintptr_t) __x86_irq240);
+    x86_idt_gate_set(X86_TLB_VECTOR, (uintptr_t) __x86_irq241);
     x86_idt_gate_set(X86_SPURIOUS_VECTOR, (uintptr_t) __x86_spurious);
 }
 
@@ -222,6 +251,17 @@ int arch_interrupts_info(char *buf, size_t size)
                      chip_of(irq) && chip_of(irq)->describe ? chip_of(irq)->describe(irq) : "");
 
         n += snprintf(buf + n, size - n, "%s", line);
+    }
+
+    /* the TLB flushes the CPUs did for another (mm/tlb.c), each CPU's */
+    if (cpus_count > 1 && (size_t) n < size) {
+        n += snprintf(buf + n, size - n, "tlb:");
+
+        for (int i = 0; i < cpus_count && (size_t) n < size; ++i)
+            n += snprintf(buf + n, size - n, " %ld", cpus[i].arch.tlb_flushes);
+
+        if ((size_t) n < size)
+            n += snprintf(buf + n, size - n, "\n");
     }
 
     return n;

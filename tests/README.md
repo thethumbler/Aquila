@@ -10,6 +10,7 @@ tests/run.sh -n         # reuse the kernel image from the last build
 tests/run.sh -v         # print the serial log of failed tests
 tests/run.sh -a i386    # the i386 kernel and system (default: x86_64)
 tests/run.sh -k apic=off    # more for the kernel's command line, every boot
+tests/run.sh -c 4       # QEMU with 4 CPUs, every boot (but the irq and smp tests)
 ```
 
 The kernel is built with the host compiler through
