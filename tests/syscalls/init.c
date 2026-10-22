@@ -1787,6 +1787,25 @@ void aq_main(void)
     check("nonblocking reader", fd >= 0, 1);
     check("nonblocking reader EOF", SC(SYS_read, fd, fbuf, 8), 0);
     SC(SYS_close, fd, 0, 0);
+    /* the reader waits first; the writer opens, writes and closes before
+     * it runs again: the reader's open is done (a writer came), it reads
+     * what was written (bash's process substitution on a pipeline). The
+     * reader's alarm ends it if it waits for ever */
+    c = SC(SYS_fork, 0, 0, 0);
+    if (!c) {
+        struct aquila_itimer it = {2000000000ull, 0};
+        SC(SYS_setitimer, AQUILA_ITIMER_REAL, &it, 0);
+        int r = SC(SYS_open, "/tmp/fifo", O_RDONLY, 0);
+        char rb[8] = {0};
+        SC(SYS_exit, r >= 0 && SC(SYS_read, r, rb, 8) == 4 && rb[0] == 'r' ? 0 : 1, 0, 0);
+    }
+    aq_spin(20000000);
+    int w = SC(SYS_open, "/tmp/fifo", O_WRONLY, 0);
+    SC(SYS_write, w, "race", 4);
+    SC(SYS_close, w, 0, 0);
+    SC(SYS_waitpid, c, &st, 0);
+    check("fifo: a writer gone before the waiting reader runs", st, 0);
+
     fd = SC(SYS_open, "/tmp/fifo", O_RDWR, 0);
     check("fifo O_RDWR", fd >= 0, 1);
     check("O_RDWR write", SC(SYS_write, fd, "rw", 2), 2);

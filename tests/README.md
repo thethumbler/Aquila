@@ -45,6 +45,7 @@ and `fakeroot` (skipped if missing). Build output goes to
 | `disk`     | the system installed on a hard disk image (`mk/hdd.sh`): booted from it with Limine twice, a file written on the first boot is read on the second (`mk/hdd-kernel.sh` and `mk/hdd-update.sh` put the kernel and an updated system on it in between), `e2fsck` is clean (needs `make toolchain` and `make`) |
 | `tcc`      | the tcc port (`make ports`) on AquilaOS: compiles and runs programs against the C library and libm (skipped without the port) |
 | `curl`     | the curl port (`make ports`) on AquilaOS, against HTTPS servers on the host with a CA made for the test: the page fetched over TLS 1.3, a certificate for another name and one from an unknown CA refused (skipped without the port) |
+| `bash`     | the bash port (`make ports`) on AquilaOS: a script of its features run as a program (arrays, strings, functions, process substitution, `pipefail`, background jobs and `wait`, traps, extended globs), its version and the machine type it reports (skipped without the port) |
 
 A test fails on a `FAIL` line, a kernel panic, a guest reset (QEMU runs
 with `-no-reboot`) or if it doesn't finish in time.

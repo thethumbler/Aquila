@@ -13,7 +13,7 @@
 # QEMU uses KVM when /dev/kvm can be used, KVM=0 in the environment turns
 # it off.
 #
-# tests: ata cpu syscalls memory kvmem clock irq net tcp ext2 libc system disk tcc curl (default: all)
+# tests: ata cpu syscalls memory kvmem clock irq net tcp ext2 libc system disk tcc curl bash (default: all)
 #
 # Requires gcc with 32-bit support, ld, cpio and qemu-system-i386 (or
 # qemu-system-x86_64). The ext2
@@ -28,7 +28,7 @@ set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 TESTS=$ROOT/tests
 
-ALL_TESTS="ata cpu syscalls memory kvmem clock irq net tcp ext2 libc system disk tcc curl"
+ALL_TESTS="ata cpu syscalls memory kvmem clock irq net tcp ext2 libc system disk tcc curl bash"
 
 ARCH=x86_64
 build=1
@@ -856,36 +856,35 @@ test_disk()
     echo "booted from the disk twice, the file written on the first boot kept (a kernel and system update between), e2fsck clean"
 }
 
-# the tcc port (make ports) on AquilaOS: compiling and running programs,
-# with the C library and libm
-test_tcc()
+# ports_initrd <test> [overlay]: an initrd of the system with the ports
+# (make ports), and the overlay's files, in $OUT/<test>/build
+ports_initrd()
 {
-    local log=$OUT/tcc/serial.log
-    local ports=$MAIN_BUILD/ports/root
+    local dir=$OUT/$1
 
-    if [ ! -x "$CROSS_CC" ]; then
-        echo "SKIP: no ${CROSS_CC##*/} toolchain, run make toolchain"
-        return 0
-    fi
-
-    if [ ! -x "$ports/usr/bin/tcc" ]; then
-        echo "SKIP: the tcc port isn't built, run make ports"
-        return 0
-    fi
-
-    mkdir -p "$OUT/tcc"
-    make -C "$ROOT" initrd CONFIG=$ARCH-pc BUILDDIR="$OUT/tcc/build" TOOLCHAIN="$ROOT/build/toolchain" \
-        CONTRIB_ROOT="$MAIN_BUILD/contrib/root" PORTS_ROOT="$ports" \
-        > "$OUT/tcc/build.log" 2>&1 || {
-        tail -20 "$OUT/tcc/build.log"
+    mkdir -p "$dir"
+    make -C "$ROOT" initrd CONFIG=$ARCH-pc BUILDDIR="$dir/build" TOOLCHAIN="$ROOT/build/toolchain" \
+        CONTRIB_ROOT="$MAIN_BUILD/contrib/root" PORTS_ROOT="$MAIN_BUILD/ports/root" \
+        ${2:+ROOTFS_OVERLAY="$2"} > "$dir/build.log" 2>&1 || {
+        tail -20 "$dir/build.log"
         return 1
     }
+}
 
-    local fifo=$OUT/tcc/input
+# ports_session <test> [qemu args...]: boots that initrd, logs in as root
+# on the serial console and types the commands read from stdin, each once
+# the shell prompts again, then powers off; the session is in
+# $OUT/<test>/serial.log
+ports_session()
+{
+    local dir=$OUT/$1
+    shift
+    local log=$dir/serial.log fifo=$dir/input
+
     rm -f "$fifo" "$log.raw"
     mkfifo "$fifo"
-    timeout 120 $QEMU $ACCEL -kernel "$KERNEL" -initrd "$OUT/tcc/build/initrd.img" \
-        -append earlycon=ttyS0 -m 256 -display none -no-reboot -serial stdio \
+    timeout 120 $QEMU $ACCEL -kernel "$KERNEL" -initrd "$dir/build/initrd.img" \
+        -append earlycon=ttyS0 -m 256 -display none -no-reboot -serial stdio "$@" \
         < "$fifo" > "$log.raw" 2>/dev/null &
     local pid=$!
 
@@ -907,26 +906,60 @@ test_tcc()
         printf '%s\r' "$line" >&3
         n=$((n + 1))
         prompts $n || break
-    done <<'END'
-cd /tmp; printf '#include <stdio.h>\nint main(void) { printf("tcc-%%d\\n", 6 * 7); return 0; }\n' > a.c
-tcc -o a a.c && ./a
-printf '#include <stdio.h>\n#include <math.h>\nint main(void) { long long b = 1LL << 40; printf("sqrt=%%.1f div=%%lld\\n", sqrt(2.25), b / 3); return 0; }\n' > m.c
-tcc -o m m.c -lm && ./m
-END
+    done
     printf 'poweroff\r' >&3
     wait $pid
     exec 3>&-
     tr -d '\r' < "$log.raw" > "$log"
+}
 
-    local missing=0 want
-    for want in '^tcc-42$' '^sqrt=1\.5 div=366503875925$'; do
+# expect_lines <log> <pattern...>: every pattern (an extended regular
+# expression) is in the log, else which aren't
+expect_lines()
+{
+    local log=$1 missing=0 want
+    shift
+
+    for want in "$@"; do
         if ! grep -a -q -E -- "$want" "$log"; then
             echo "missing output: $want"
             missing=1
         fi
     done
 
-    [ $missing = 0 ] && echo "compiled and ran programs on AquilaOS, with libc and libm"
+    return $missing
+}
+
+# the port's program, else why the test is skipped (printed, 0)
+port_present()
+{
+    if [ ! -x "$CROSS_CC" ]; then
+        echo "SKIP: no ${CROSS_CC##*/} toolchain, run make toolchain"
+        return 1
+    fi
+
+    if [ ! -x "$MAIN_BUILD/ports/root$2" ]; then
+        echo "SKIP: the $1 port isn't built, run make ports"
+        return 1
+    fi
+}
+
+# the tcc port (make ports) on AquilaOS: compiling and running programs,
+# with the C library and libm
+test_tcc()
+{
+    port_present tcc /usr/bin/tcc || return 0
+    ports_initrd tcc || return 1
+
+    ports_session tcc <<'END'
+cd /tmp; printf '#include <stdio.h>\nint main(void) { printf("tcc-%%d\\n", 6 * 7); return 0; }\n' > a.c
+tcc -o a a.c && ./a
+printf '#include <stdio.h>\n#include <math.h>\nint main(void) { long long b = 1LL << 40; printf("sqrt=%%.1f div=%%lld\\n", sqrt(2.25), b / 3); return 0; }\n' > m.c
+tcc -o m m.c -lm && ./m
+END
+
+    expect_lines "$OUT/tcc/serial.log" '^tcc-42$' '^sqrt=1\.5 div=366503875925$' &&
+        echo "compiled and ran programs on AquilaOS, with libc and libm"
 }
 
 # HTTPS with the curl port (TLS through Mbed TLS), from the system to
@@ -935,18 +968,9 @@ END
 # page fetched over TLS 1.3, the wrong name and the unknown CA refused
 test_curl()
 {
-    local log=$OUT/curl/serial.log
-    local ports=$MAIN_BUILD/ports/root dir=$OUT/curl
+    local dir=$OUT/curl
 
-    if [ ! -x "$CROSS_CC" ]; then
-        echo "SKIP: no ${CROSS_CC##*/} toolchain, run make toolchain"
-        return 0
-    fi
-
-    if [ ! -x "$ports/usr/bin/curl" ]; then
-        echo "SKIP: the curl port isn't built, run make ports"
-        return 0
-    fi
+    port_present curl /usr/bin/curl || return 0
 
     rm -rf "$dir/pki" "$dir/overlay"
     mkdir -p "$dir/pki" "$dir/overlay/etc"
@@ -965,13 +989,7 @@ test_curl()
     ) > "$dir/pki.log" 2>&1 || { tail -5 "$dir/pki.log"; return 1; }
 
     cp "$dir/pki/ca.pem" "$dir/overlay/etc/test-ca.pem"
-
-    make -C "$ROOT" initrd CONFIG=$ARCH-pc BUILDDIR="$dir/build" TOOLCHAIN="$ROOT/build/toolchain" \
-        CONTRIB_ROOT="$MAIN_BUILD/contrib/root" PORTS_ROOT="$ports" ROOTFS_OVERLAY="$dir/overlay" \
-        > "$dir/build.log" 2>&1 || {
-        tail -20 "$dir/build.log"
-        return 1
-    }
+    ports_initrd curl "$dir/overlay" || return 1
 
     # two free ports, the servers on them
     local p1 p2
@@ -988,56 +1006,48 @@ print(*[x.getsockname()[1] for x in s])')
 
     for _ in $(seq 100); do [ -f "$dir/ready1" ] && [ -f "$dir/ready2" ] && break; sleep 0.1; done
 
-    local fifo=$dir/input
-    rm -f "$fifo" "$log.raw"
-    mkfifo "$fifo"
-    timeout 120 $QEMU $ACCEL -kernel "$KERNEL" -initrd "$dir/build/initrd.img" \
-        -append earlycon=ttyS0 -m 256 -display none -no-reboot -serial stdio \
-        -netdev user,id=n0 -device e1000,netdev=n0 \
-        < "$fifo" > "$log.raw" 2>/dev/null &
-    local pid=$!
-
-    prompts()
-    {
-        for _ in $(seq 600); do
-            [ "$(grep -a -c '^# ' "$log.raw")" -ge "$1" ] && return 0
-            sleep 0.1
-        done
-        return 1
-    }
-
-    exec 3> "$fifo"
-    local n=1 line
-    for _ in $(seq 600); do grep -a -q 'login: ' "$log.raw" && break; sleep 0.1; done
-    printf 'root\r' >&3
-    prompts 1
-    while IFS= read -r line; do
-        printf '%s\r' "$line" >&3
-        n=$((n + 1))
-        prompts $n || break
-    done <<END
+    ports_session curl -netdev user,id=n0 -device e1000,netdev=n0 <<END
 ifconfig eth0 up; sdhcp eth0; sleep 3
 curl -sS --cacert /etc/test-ca.pem --resolve aquila.test:$p1:10.0.2.2 https://aquila.test:$p1/
 curl -sSv --cacert /etc/test-ca.pem --resolve aquila.test:$p1:10.0.2.2 -o /dev/null https://aquila.test:$p1/ 2>&1 | grep 'Handshake complete'
 curl -sS --cacert /etc/test-ca.pem --resolve aquila.test:$p2:10.0.2.2 https://aquila.test:$p2/; echo "wrong-name=\$?"
 curl -sS --resolve aquila.test:$p1:10.0.2.2 https://aquila.test:$p1/; echo "unknown-ca=\$?"
 END
-    printf 'poweroff\r' >&3
-    wait $pid
-    exec 3>&-
+
     kill $s1 $s2 2>/dev/null
     wait $s1 $s2 2>/dev/null
-    tr -d '\r' < "$log.raw" > "$log"
 
-    local missing=0 want
-    for want in '^aquila-tls-ok$' 'mbedTLS: TLSv1\.3 Handshake complete' '^wrong-name=60$' '^unknown-ca=60$'; do
-        if ! grep -a -q -E -- "$want" "$log"; then
-            echo "missing output: $want"
-            missing=1
-        fi
-    done
+    expect_lines "$dir/serial.log" '^aquila-tls-ok$' 'mbedTLS: TLSv1\.3 Handshake complete' \
+        '^wrong-name=60$' '^unknown-ca=60$' &&
+        echo "HTTPS over TLS 1.3: the page fetched, the wrong name and the unknown CA refused"
+}
 
-    [ $missing = 0 ] && echo "HTTPS over TLS 1.3: the page fetched, the wrong name and the unknown CA refused"
+# the bash port: a script of its features (tests/bash/test.sh) run as a
+# program, its version and the machine it says it's on
+test_bash()
+{
+    local dir=$OUT/bash
+
+    port_present bash /bin/bash || return 0
+
+    rm -rf "$dir/overlay"
+    mkdir -p "$dir/overlay/usr/share"
+    install -m 755 "$TESTS/bash/test.sh" "$dir/overlay/usr/share/bash-test.sh"
+    ports_initrd bash "$dir/overlay" || return 1
+
+    ports_session bash <<'END'
+bash --version | head -1; bash -c 'echo "hosttype: $HOSTTYPE"'
+/usr/share/bash-test.sh
+END
+
+    local cpu
+    [ "$ARCH" = i386 ] && cpu=i686 || cpu=$ARCH
+
+    expect_lines "$dir/serial.log" '^GNU bash, version 5\.3\.20' "^hosttype: $cpu\$" \
+        '^arrays: one two three four n=8$' '^strings: hello, aquilaos AquilaOS Hello, bashOS 15$' \
+        '^mapfile: 3 b read: x\|y z$' '^functions: 3628800$' '^procsub: left right $' \
+        '^pipefail: 1$' '^jobs: 0 7$' '^trap: USR1$' '^globs: a.c b.h 1 2 3 007$' &&
+        echo "bash 5.3: arrays, strings, functions, process substitution, jobs, traps and globs"
 }
 
 #
