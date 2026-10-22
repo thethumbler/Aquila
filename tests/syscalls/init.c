@@ -490,9 +490,9 @@ static int sse_fork(void)
 struct test_regs {
 #ifdef __x86_64__
     uint64_t r15, r14, r13, r12, r11, r10, r9, r8, rdi, rsi, rbp, rbx, rcx, rdx, rax,
-             ip, cs, flags, sp, ss;
+             vec, err, ip, cs, flags, sp, ss;
 #else
-    uint32_t edi, esi, ebp, ebx, ecx, edx, eax, gs, fs, es, ds, ip, cs, flags, sp, ss;
+    uint32_t edi, esi, ebp, ebx, ecx, edx, eax, gs, fs, es, ds, vec, err, ip, cs, flags, sp, ss;
 #endif
 };
 
@@ -560,6 +560,20 @@ static void garbage_sigreturn(void)
 {
     /* nothing mapped there */
     sigreturn_at(0x10000);
+}
+
+/* user mode's %gs is its own: a null one, through interrupts and system
+ * calls (the kernel finds its CPU with its own) */
+static void user_gs(void)
+{
+    asm volatile("mov %0, %%gs" :: "r"(0));
+    aq_spin(20000000);
+
+    int ok = SC(SYS_getpid, 0, 0, 0) > 0;
+    uptr gs;
+    asm volatile("mov %%gs, %0" : "=r"(gs));
+
+    SC(SYS_exit, ok && !(gs & 0xffff) ? 0 : 1, 0, 0);
 }
 
 static void exit_path_signals(void)
@@ -663,6 +677,7 @@ static void exit_path_signals(void)
     /* sigreturn can't leave user mode, a frame nowhere kills */
     check("signal: forged sigreturn stays in user mode", aq_child_status(forged_sigreturn), 0);
     check("signal: sigreturn with no frame: SIGSEGV", aq_child_status(garbage_sigreturn) & 0x7f, SIGSEGV);
+    check("cpu: user mode's %gs, null, its own", aq_child_status(user_gs), 0);
 
     sa = (struct aquila_sigaction) {0, 0, 0};
     SC(SYS_sigaction, SIGUSR1, &sa, 0);

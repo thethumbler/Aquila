@@ -12,7 +12,10 @@
 #include <aquila/stat.h>
 
 struct queue *ready_queue = QUEUE_NEW();   /* Ready threads queue */
-struct thread *curthread = NULL;
+
+/* the processors: cpus[0] the one that booted */
+struct cpu cpus[CPUS_MAX];
+int cpus_count;
 
 /* threads waiting with a deadline (thread->sleep_until), on any queue */
 static struct queue *timed = QUEUE_NEW();
@@ -38,7 +41,7 @@ void sched_timer_tick(uint32_t period, int user)
 
     /* charge the tick to the running process (system calls run with
      * interrupts disabled, so kernel time is mostly missed) */
-    if (!kidle && curthread) {
+    if (!curcpu()->idle && curthread) {
         if (user)
             curproc->utime += period;
         else
@@ -194,10 +197,9 @@ void sched_thread_wake(struct thread *thread)
 
 /* the current thread is done running (it sleeps, or exited): another
  * ready one runs now, or the CPU idles until an interrupt */
-int kidle = 0;
 void kernel_idle(void)
 {
-    kidle = 1;
+    curcpu()->idle = 1;
 
     if (ready_queue->count)
         schedule();
@@ -209,7 +211,7 @@ void kernel_idle(void)
  * than at the next timer tick (a disk request would wait for one each) */
 void sched_idle_wakeup(void)
 {
-    if (kidle && ready_queue->count)
+    if (curcpu()->idle && ready_queue->count)
         schedule();
 }
 
@@ -247,10 +249,10 @@ void schedule() /* Called from arch-specific timer event handler */
 
     sched_urgent = 0;
 
-    if (!kidle)
+    if (!curcpu()->idle)
         sched_thread_ready(curthread);
 
-    kidle = 0;
+    curcpu()->idle = 0;
 
     if (!ready_queue->count) /* No ready threads, idle */
         kernel_idle();

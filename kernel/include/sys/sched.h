@@ -3,13 +3,14 @@
 
 #include <core/system.h>
 #include <sys/proc.h>
+#include <sys/cpu.h>
 #include <ds/queue.h>
 
 extern struct queue *ready_queue;
-extern struct thread *curthread;
-#define curproc (curthread->owner)
 
-extern int kidle;
+/* the thread running on this CPU (NULL when it idles), and its process */
+#define curthread (curcpu()->thread)
+#define curproc (curthread->owner)
 
 /* processes run, a thread may sleep (before, at boot, only the kernel) */
 extern int sched_running;

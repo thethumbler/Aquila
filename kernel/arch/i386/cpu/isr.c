@@ -138,13 +138,12 @@ static int uaccess_fixup(struct x86_regs *regs)
 
 void __x86_isr(struct x86_regs *regs)
 {
-    extern uint32_t __x86_isr_int_num;
-    extern uint32_t __x86_isr_err_num;
+    unsigned vec = regs->vec;
 
-    if (__x86_isr_int_num == 0xE && curthread) { /* Page Fault */
+    if (vec == 0xE && curthread) { /* Page Fault */
         uintptr_t addr = read_cr2();
 
-        if (!arch_mm_page_fault(addr, __x86_isr_err_num)) {
+        if (!arch_mm_page_fault(addr, regs->err)) {
             x86_return_to_user(regs, 0);
             return;
         }
@@ -169,13 +168,13 @@ void __x86_isr(struct x86_regs *regs)
         panic("page fault in the kernel");
     }
 
-    if (__x86_isr_int_num == 0x07) {  /* FPU Trap */
+    if (vec == 0x07) {  /* FPU Trap */
         x86_fpu_trap();
         x86_return_to_user(regs, 0);
         return;
     }
     
-    if (__x86_isr_int_num == 0x80) {  /* syscall */
+    if (vec == 0x80) {  /* syscall */
         if (!curthread)
             panic("syscall without a current thread");
 
@@ -188,8 +187,8 @@ void __x86_isr(struct x86_regs *regs)
 
 
     /* Exception caused by user code, signal the process instead of panicking */
-    if (__x86_isr_int_num < 32 && (regs->cs & 3) == 3 && curthread
-            && int_sig[__x86_isr_int_num]) {
+    if (vec < 32 && (regs->cs & 3) == 3 && curthread
+            && int_sig[vec]) {
         struct x86_thread *arch = curthread->arch;
         arch->regs = regs;
 
@@ -199,22 +198,22 @@ void __x86_isr(struct x86_regs *regs)
 #else
         curthread->fault_addr = regs->rip;
 #endif
-        signal_force(curproc, int_sig[__x86_isr_int_num]);
+        signal_force(curproc, int_sig[vec]);
         x86_return_to_user(regs, 0);
         return;
     }
 
-    if (__x86_isr_int_num < 32) {
-        const char *msg = int_msg[__x86_isr_int_num];
-        printk("Recieved interrupt %d [err=%d]: %s\n", __x86_isr_int_num, __x86_isr_err_num, msg);
+    if (vec < 32) {
+        const char *msg = int_msg[vec];
+        printk("Recieved interrupt %d [err=%d]: %s\n", vec, (int) regs->err, msg);
 
-        if (__x86_isr_int_num == 0x0E) { /* Page Fault */
+        if (vec == 0x0E) { /* Page Fault */
             printk("CR2 = %p\n", read_cr2());
         }
         x86_dump_registers(regs);
         panic("Kernel Exception");
     } else {
-        printk("Unhandled interrupt %d\n", __x86_isr_int_num);
+        printk("Unhandled interrupt %d\n", vec);
         panic("Kernel Exception");
     }
 }

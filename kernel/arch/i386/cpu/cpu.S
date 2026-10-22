@@ -20,26 +20,16 @@ x86_cpuid_check:
 /*
  * ISRs -- Interrupt Service Routines
  *
- * Until kernel_entry loads them, the data segment registers are what user
- * code left, maybe a null selector: the stubs reach memory through SS,
- * which the CPU loads with the kernel's on entry.
+ * Each stub pushes the error code (0 if the CPU pushed none) and the
+ * vector, struct x86_regs' vec and err, and jumps to the common code.
  */
-
-.global __x86_isr_int_num, __x86_isr_err_num
-__x86_isr_int_num: .long 0
-__x86_isr_err_num: .long 0
 
 .macro ISR_NOERR v
 .global __x86_isr\v
 __x86_isr\v:
     cli
-#if ARCH_BITS==32
-    movl $0,  %ss:(__x86_isr_err_num)
-    movl $\v, %ss:(__x86_isr_int_num)
-#else
-    movl $0,  __x86_isr_err_num(%rip)
-    movl $\v, __x86_isr_int_num(%rip)
-#endif
+    push $0
+    push $\v
     jmp isr_handler
 .endm
 
@@ -47,18 +37,22 @@ __x86_isr\v:
 .global __x86_isr\v
 __x86_isr\v:
     cli
-#if ARCH_BITS==32
-    popl %ss:(__x86_isr_err_num)
-    movl $\v, %ss:(__x86_isr_int_num)
+    push $\v
     jmp isr_handler
-#else
-    push %rbx
-    movq 8(%rsp), %rbx
-    movl %ebx, __x86_isr_err_num(%rip)
-    pop  %rbx
-    add  $8, %rsp
-    movl $\v, __x86_isr_int_num(%rip)
-    jmp isr_handler
+.endm
+
+/*
+ * x86_64: %gs is the kernel's (its GS base, curcpu()) while in the kernel,
+ * user mode's in user mode; swapgs exchanges them when the interrupt came
+ * from user mode, and when going back to it. `cs' is where the
+ * interrupted CS is on the stack.
+ */
+.macro swapgs_if_user cs
+#if ARCH_BITS==64
+    testb $3, \cs(%rsp)
+    jz 1f
+    swapgs
+1:
 #endif
 .endm
 
@@ -129,9 +123,9 @@ __x86_isr\v:
 /*
  * Prepare the kernel environment on entry from an interrupt/exception:
  * user code may have left any data segment selectors loaded (or set the
- * direction flag), so load the kernel data segments and clear DF. The
- * interrupted context's selectors are saved by push_context and restored
- * by pop_context.
+ * direction flag), so load the kernel data segments (and on i386 %gs, the
+ * CPU's) and clear DF. The interrupted context's selectors are saved by
+ * push_context and restored by pop_context.
  */
 .macro kernel_entry
     cld
@@ -140,6 +134,7 @@ __x86_isr\v:
     mov %ax, %ds
     mov %ax, %es
     mov %ax, %fs
+    mov $0x38, %ax      /* X86_SEL_CPU: curcpu() */
     mov %ax, %gs
 #endif
 .endm
@@ -194,13 +189,17 @@ isr_handler:
     call __x86_isr
     pop %eax
     pop_context
+    add $8, %esp        /* vec, err */
     iret
 #else
+    swapgs_if_user 24
     push_context
     kernel_entry
     mov %rsp, %rdi
     call __x86_isr
     pop_context
+    swapgs_if_user 24
+    add $16, %rsp       /* vec, err */
     iretq
 #endif
 
@@ -210,15 +209,10 @@ isr_handler:
 .macro IRQ n, i
 .global __x86_irq\n
 __x86_irq\n:
-#if ARCH_BITS==32
     cli
-    movl $\i, %ss:(__x86_isr_int_num)
+    push $0
+    push $\i
     jmp irq_stub
-#else
-    cli
-    movl $\i, __x86_isr_int_num(%rip)
-    jmp irq_stub
-#endif
 .endm
 
 /* IRQs 0 to 47: vectors 32 to 79 (the I/O APIC's pins, ISA's 16 under
@@ -294,13 +288,17 @@ irq_stub:
     call __x86_irq_handler
     pop %eax
     pop_context
+    add $8, %esp        /* vec, err */
     iret
 #else
+    swapgs_if_user 24
     push_context
     kernel_entry
     mov %rsp, %rdi
     call __x86_irq_handler
     pop_context
+    swapgs_if_user 24
+    add $16, %rsp       /* vec, err */
     iretq
 #endif
 
@@ -317,6 +315,8 @@ x86_jump_user:  /* eax, eip, cs, eflags, esp, ss */
     iret
 #else
     pop  %rax   /* Caller return address */
+    /* user mode's GS base (the kernel's kept), before loading %gs sets it */
+    swapgs
     /* set segments */
     mov  $0x20 | 0x3, %ax
     movw %ax, %ds
@@ -399,12 +399,15 @@ x86_preempt:
     SWITCH_OUT schedule
 
 .global x86_fork_return
-x86_fork_return:
+x86_fork_return:    /* to user mode, the system call's frame */
 #if ARCH_BITS==32
     pop_context
+    add $8, %esp        /* vec, err */
     iret
 #else
     pop_context
+    swapgs
+    add $16, %rsp       /* vec, err */
     iretq
 #endif
 

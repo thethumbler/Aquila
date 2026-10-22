@@ -72,15 +72,13 @@ static void __arch_idle(void)
     }
 }
 
-static char __idle_stack[8192] __aligned(16);
-
 void arch_idle(void)
 {
     curthread = NULL;
 
     uintptr_t esp = VMA(0x100000);
     x86_kernel_stack_set(esp);
-    uintptr_t stack = (uintptr_t) __idle_stack + 8192;
+    uintptr_t stack = curcpu()->arch.idle_stack;
     extern void x86_goto(uintptr_t eip, uintptr_t ebp, uintptr_t esp) __attribute__((noreturn));
     x86_goto((uintptr_t) __arch_idle, stack, stack);
 }
@@ -104,7 +102,7 @@ static void __arch_cur_thread_kill(void)
 
 void arch_cur_thread_kill(void)
 {
-    uintptr_t stack = (uintptr_t) __idle_stack + 8192;
+    uintptr_t stack = curcpu()->arch.idle_stack;
 
     extern void x86_goto(uintptr_t eip, uintptr_t ebp, uintptr_t esp) __attribute__((noreturn));
     x86_goto((uintptr_t) __arch_cur_thread_kill, stack, stack);

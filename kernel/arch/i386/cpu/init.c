@@ -12,22 +12,28 @@
 #include <core/string.h>
 #include <cpu/cpu.h>
 #include <ds/bitmap.h>
+#include <sys/cpu.h>
 #include <mm/mm.h>
 #include <mm/vm.h>
 #include <video/vbe.h>
 
-struct x86_cpu cpus[32];
-int cpus_count;
 struct boot *__kboot;
+
+/* the boot CPU's idle loop's */
+static char bsp_idle_stack[8192] __aligned(16);
 
 void x86_cpu_init(void)
 {
+    /* the boot CPU's own, first (curcpu(), curthread) */
+    struct cpu *bsp = &cpus[0];
+    bsp->id = 0;
+    bsp->arch.idle_stack = (uintptr_t) bsp_idle_stack + sizeof(bsp_idle_stack);
+    cpus_count = 1;
+
+    x86_gdt_setup(bsp, VMA(0x100000ULL));
+
     earlycon_init();
     printk("x86: Welcome to AquilaOS!\n");
-
-    printk("x86: installing GDT\n");
-    x86_gdt_setup();
-    x86_tss_setup(VMA(0x100000ULL));
 
     printk("x86: installing IDT\n");
     x86_idt_setup();

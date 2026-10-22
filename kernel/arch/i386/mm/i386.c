@@ -20,6 +20,7 @@
 #include <core/string.h>
 #include <core/system.h>
 #include <cpu/cpu.h>
+#include <sys/cpu.h>
 
 #include <mm/pmap.h>
 #include <mm/buddy.h>
@@ -43,7 +44,9 @@ MALLOC_DEFINE(M_PMAP, "pmap", "physical memory map structure");
 #define KERNEL_PDE  768
 
 static struct pmap k_pmap;
-static struct pmap *cur_pmap = NULL;
+
+/* the running CPU's (in its CR3) */
+#define cur_pmap (curcpu()->arch.pmap)
 
 static inline uint32_t *table(paddr_t paddr)
 {

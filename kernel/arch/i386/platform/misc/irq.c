@@ -48,9 +48,6 @@ static struct x86_irq_chip *chip_of(unsigned irq)
     return irqs[irq].chip ? irqs[irq].chip : chip;
 }
 
-/* the scheduler's tick asked for a switch (x86_irq_tick_switch) */
-static int tick_switch;
-
 void x86_irq_chip_set(struct x86_irq_chip *c)
 {
     chip = c;
@@ -123,13 +120,12 @@ void x86_irq_handler_uninstall(unsigned irq)
 /* the tick: switch to the next thread once the interrupt is done */
 void x86_irq_tick_switch(void)
 {
-    tick_switch = 1;
+    curcpu()->arch.tick_switch = 1;
 }
 
 void __x86_irq_handler(struct x86_regs *r)
 {
-    extern uint32_t __x86_isr_int_num;
-    uint32_t vec = __x86_isr_int_num;
+    uint32_t vec = r->vec;
     unsigned irq = vec == X86_TIMER_VECTOR ? X86_IRQ_TIMER : vec - 32;
 
     if (irq < X86_IRQ_NR) {
@@ -147,10 +143,10 @@ void __x86_irq_handler(struct x86_regs *r)
 
     /* the tick: the running thread back to the queue, the next one runs
      * (the CPU was idle: it runs) */
-    if (tick_switch) {
-        tick_switch = 0;
+    if (curcpu()->arch.tick_switch) {
+        curcpu()->arch.tick_switch = 0;
 
-        if (kidle) {
+        if (curcpu()->idle) {
             schedule();
         } else {
             extern void x86_preempt(void);

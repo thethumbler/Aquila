@@ -9,11 +9,13 @@ struct x86_regs {
     uint32_t
     edi, esi, ebp, ebx, ecx, edx, eax,
     gs, fs, es, ds,
+    vec, err,       /* the stub's: the vector, the error code (or 0) */
     eip, cs, eflags, esp, ss;
 #else
     uint64_t
     r15, r14, r13, r12, r11, r10, r9, r8,
     rdi, rsi, rbp, rbx, rcx, rdx, rax,
+    vec, err,       /* the stub's: the vector, the error code (or 0) */
     rip, cs, rflags, rsp, ss;
 #endif
 };
@@ -62,11 +64,80 @@ static inline void x86_dump_registers(struct x86_regs *regs)
 #endif
 }
 
-struct x86_cpu {
-    int id;
-    union  x86_cpuid_vendor   vendor;
-    //struct x86_cpuid_features features;
+/* a segment descriptor */
+struct x86_gdt_entry {
+    uint32_t limit_lo : 16; /* Segment Limit 15:00 */
+    uint32_t base_lo  : 16; /* Base Address 15:00 */
+
+    uint32_t base_mid : 8;  /* Base Address 23:16 */
+    uint32_t type     : 4;  /* Segment Type */
+    uint32_t s        : 1;  /* Descriptor type (0=system, 1=code) */
+    uint32_t dpl      : 2;  /* Descriptor Privellage Level */
+    uint32_t p        : 1;  /* Segment present */
+
+    uint32_t limit_hi : 4;  /* Segment Limit 19:16 */
+    uint32_t avl      : 1;  /* Avilable for use by system software */
+    uint32_t l        : 1;  /* Long mode segment (64-bit only) */
+    uint32_t db       : 1;  /* Default operation size / upper Bound */
+    uint32_t g        : 1;  /* Granularity */
+    uint32_t base_hi  : 8;  /* Base Address 31:24 */
+} __aligned(8);
+
+/* the task state segment: only the stack interrupts from user mode take */
+#if ARCH_BITS==32
+struct x86_tss {
+    uint32_t link;
+    uint32_t sp;
+    uint32_t ss;
+    uint32_t _[23]; /* To know the actuall fields, consult Intel Manuals */
+} __packed;
+#else
+struct x86_tss {
+    uint32_t _;
+    uint64_t sp;
+    uint32_t __[23]; /* To know the actuall fields, consult Intel Manuals */
+} __packed;
+#endif
+
+/*
+ * The GDT, each CPU's: the same segments, but its own TSS (a TSS is busy
+ * on the CPU that loaded it), and on i386 the segment %gs selects in the
+ * kernel, its struct cpu
+ */
+#define X86_GDT_TSS     5   /* 5 and 6 on x86_64 */
+#define X86_GDT_CPU     7
+#define X86_GDT_NR      8
+
+#define X86_SEL_CPU     (X86_GDT_CPU << 3)
+
+struct pmap;
+struct thread;
+
+/* the CPU's own (struct cpu's arch) */
+struct arch_cpu {
+    struct x86_gdt_entry gdt[X86_GDT_NR];
+    struct x86_tss tss __aligned(8);
+    struct pmap *pmap;          /* CR3's (pmap_switch) */
+    struct thread *fpu_thread;  /* whose state the FPU has */
+    int tick_switch;            /* the tick asked for a switch (irq.c) */
+    uintptr_t idle_stack;       /* the idle loop's, its top */
 };
+
+/* the running CPU's struct cpu: its first member points to it, at %gs:0
+ * (i386: the X86_SEL_CPU segment; x86_64: the GS base, user mode's
+ * swapped in and out with swapgs) */
+struct cpu;
+
+static inline struct cpu *curcpu(void)
+{
+    struct cpu *cpu;
+#if ARCH_BITS==32
+    asm volatile("movl %%gs:0, %0" : "=r"(cpu));
+#else
+    asm volatile("movq %%gs:0, %0" : "=r"(cpu));
+#endif
+    return cpu;
+}
 
 /* CR0 */
 #define CR0_PG  _BV(31)
@@ -183,8 +254,7 @@ static inline void write_cr4(uintptr_t val)
 }
 
 /* cpu/gdt.c */
-void x86_gdt_setup(void);
-void x86_tss_setup(uintptr_t sp);
+void x86_gdt_setup(struct cpu *cpu, uintptr_t sp);
 void x86_kernel_stack_set(uintptr_t sp);
 
 /* cpu/idt.c */

@@ -16,7 +16,9 @@ MALLOC_DEFINE(M_X86_FPU, "x86-fpu", "x86 FPU context");
 /* fxsave/fxrstor require a 16-byte aligned area */
 static char fpu_context[512] __aligned(16);
 static int fpu_fxsr = 0;
-struct thread *last_fpu_thread = NULL;
+
+/* the thread whose state the running CPU's FPU has */
+#define last_fpu_thread (curcpu()->arch.fpu_thread)
 
 /* MXCSR's bits the CPU takes (fxsave's MXCSR_MASK, 0xFFBF if it says 0),
  * a frame's MXCSR is masked with it: fxrstor would fault in the kernel */

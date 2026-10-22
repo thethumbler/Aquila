@@ -20,6 +20,7 @@
 #include <core/system.h>
 #include <boot/boot.h>
 #include <cpu/cpu.h>
+#include <sys/cpu.h>
 
 #include <mm/pmap.h>
 #include <mm/buddy.h>
@@ -47,7 +48,9 @@ extern struct boot *__kboot;
 #define LARGE_SIZE      0x200000ULL
 
 static struct pmap k_pmap;
-static struct pmap *cur_pmap = NULL;
+
+/* the running CPU's (in its CR3) */
+#define cur_pmap (curcpu()->arch.pmap)
 
 static inline uint64_t *table(paddr_t paddr)
 {

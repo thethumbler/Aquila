@@ -167,9 +167,10 @@ void arch_thread_kill(struct thread *thread)
     if (arch->fpu_context)
         kfree(arch->fpu_context);
 
-    extern struct thread *last_fpu_thread;
-    if (last_fpu_thread == thread)
-        last_fpu_thread = NULL;
+    /* the FPU's state, wherever it is, isn't its anymore */
+    for (int i = 0; i < cpus_count; ++i)
+        if (cpus[i].arch.fpu_thread == thread)
+            cpus[i].arch.fpu_thread = NULL;
 
     kfree(arch);
     thread->arch = NULL;
