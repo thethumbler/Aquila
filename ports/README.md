@@ -61,6 +61,7 @@ host's `/usr/lib`.
 
 | port       | version  |                                                     |
 |------------|----------|-----------------------------------------------------|
+| bash       | 5.3.20   | `bash` in `/bin` (5.3 and its official patches to 20): its own readline over ncurses, the C library's malloc; process substitution through named pipes (there is no `/dev/fd`) |
 | ca-certificates | 2026-10-20 | `/etc/ssl/certs/ca-certificates.crt` (also `/etc/ssl/cert.pem`): the CA certificates Mozilla trusts, as curl extracts them |
 | curl       | 8.23.0   | `curl` in `/usr/bin`: HTTP, HTTPS (TLS 1.2 and 1.3 through Mbed TLS, servers verified with ca-certificates), FTP and more; gzip and deflate; names resolved one at a time; no HTTP/2, IDN or LDAP |
 | dmenu      | 5.3      | `dmenu` and `dmenu_run` in `/usr/bin`, the menu of dwm (Alt+p) |
