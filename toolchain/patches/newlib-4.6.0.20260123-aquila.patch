@@ -222,11 +222,15 @@ diff -ruN a/newlib/libc/include/sys/features.h b/newlib/libc/include/sys/feature
  #if !defined(_POSIX_SOURCE) && !defined(_POSIX_C_SOURCE) && \
    ((!defined(__STRICT_ANSI__) && !defined(_ANSI_SOURCE)) || \
    (defined(_XOPEN_SOURCE) && (_XOPEN_SOURCE - 0) >= 500))
-@@ -440,6 +448,17 @@
+@@ -440,6 +448,21 @@
  #endif
  
  
 +#ifdef __aquila__
++/* the POSIX.1-2008 system it's built toward (what of it it has: the
++ * options below), job control included (process groups, sessions) */
++#define _POSIX_VERSION		200809L
++#define _POSIX_JOB_CONTROL	1
 +/* clock_gettime(CLOCK_MONOTONIC) */
 +#define _POSIX_MONOTONIC_CLOCK	200809L
 +/* threads, mutexes (and their types), condition variables, keys
