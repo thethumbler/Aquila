@@ -19,6 +19,10 @@
 #   make initrd       build/rootfs/ and build/initrd.img, ROOTFS_OVERLAY=<dir>
 #                     is copied over rootfs/ (e.g. etc/passwd and etc/shadow)
 #   make iso          build/aquila.iso, boots with Limine (needs xorriso)
+#   make live         build/live.img (i386 only): a tiny disk (LIVE_SIZE=<KiB>,
+#                     default 2048) with the base system (no ports), for v86
+#                     in a browser; its root filesystem is the initrd, in
+#                     memory (needs mtools and sfdisk)
 #   make hdd          build/aquila.img, a hard disk with AquilaOS installed:
 #                     Limine on a FAT32 /boot, the root filesystem on ext2
 #                     (HDD_SIZE=<MiB>, default 512; needs sfdisk, mkfs.fat,
@@ -62,6 +66,8 @@ ROOTFS    := $(BUILDDIR)/rootfs
 INITRD    := $(BUILDDIR)/initrd.img
 ISO       := $(BUILDDIR)/aquila.iso
 HDD       := $(BUILDDIR)/aquila.img
+LIVE      := $(BUILDDIR)/live.img
+LIVE_SIZE ?= 2048
 HDD_SIZE  ?= 512
 KERNEL    := $(BUILDDIR)/kernel/kernel-$(VERSION).$(ARCH)
 CONTRIB_ROOT ?= $(BUILDDIR)/contrib/root
@@ -85,7 +91,7 @@ MAKEFLAGS += --no-print-directory
 
 export
 
-.PHONY: all toolchain kernel userland contrib ports initrd iso hdd hdd-kernel hdd-update run run-iso run-hdd test clean distclean check-toolchain
+.PHONY: all toolchain kernel userland contrib ports initrd iso live hdd hdd-kernel hdd-update run run-iso run-hdd test clean distclean check-toolchain
 
 all: kernel userland contrib initrd
 
@@ -175,6 +181,17 @@ iso: kernel initrd
 	@xorriso -as mkisofs -R -r -J -b boot/limine/limine-bios-cd.bin \
 		-no-emul-boot -boot-load-size 4 -boot-info-table \
 		$(BUILDDIR)/iso -o $(ISO) 2>/dev/null
+
+# the base system's initrd, without the ports (build/live/), on a tiny disk
+live: kernel userland
+	@test "$(ARCH)" = i386 || { echo "error: the live disk is i386's, make live CONFIG=i386-pc" >&2; exit 1; }
+	@test -x $(TOOLCHAIN)/bin/limine || { \
+		echo "error: Limine not found, run 'make toolchain'" >&2; exit 1; }
+	@$(MAKE) initrd ROOTFS=$(BUILDDIR)/live/rootfs INITRD=$(BUILDDIR)/live/initrd.img \
+		PORTS_ROOT=/nonexistent
+	@$(ECHO) "  LIVE    " $(patsubst $(BUILDDIR)/%,build/%,$(LIVE))
+	@$(SRCDIR)/mk/live.sh $(LIVE) $(LIVE_SIZE) $(KERNEL) $(BUILDDIR)/live/initrd.img \
+		$(SRCDIR)/boot/limine-live.conf $(LIMINE) $(TOOLCHAIN)/bin/limine $(STRIP)
 
 hdd: kernel initrd
 	@test -x $(TOOLCHAIN)/bin/limine || { \
