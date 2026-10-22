@@ -85,6 +85,12 @@ static void __attribute__((noreturn)) x86_ap_start(struct cpu *cpu)
     __builtin_unreachable();
 }
 
+/* `cpu' enters the kernel: the wake IPI */
+void arch_cpu_kick(struct cpu *cpu)
+{
+    x86_lapic_ipi(cpu->arch.apic_id, X86_WAKE_VECTOR | ICR_ASSERT);
+}
+
 /* the trampoline's page tables: its page, where it is, and the kernel's
  * half; the top table's address */
 static paddr_t tables_build(void)

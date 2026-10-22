@@ -145,6 +145,23 @@ void x86_fpu_trap(void)
 }
 
 /*
+ * The current thread is switched out: its state, if the FPU has it, saved
+ * now (it may run on another CPU next), the FPU no one's
+ */
+void x86_fpu_switch_out(void)
+{
+    if (!curthread || last_fpu_thread != curthread)
+        return;
+
+    struct x86_thread *arch = curthread->arch;
+
+    x86_fpu_enable();
+    fpu_save();
+    memcpy(arch->fpu_context, fpu_context, 512);
+    last_fpu_thread = NULL;
+}
+
+/*
  * For signal handlers (sys/signal.c): the current thread's FPU state into
  * `buf' (512 bytes, 16-byte aligned), 0 if it never used the FPU
  */

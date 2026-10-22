@@ -164,6 +164,8 @@ static int signal_to(struct proc *proc, int signal)
 
         if (thread->state == ISLEEP && thread->sleep_node)
             thread_wakeup(thread);
+        else
+            sched_thread_kick(thread);  /* running elsewhere: it takes it */
     }
 
     return 0;

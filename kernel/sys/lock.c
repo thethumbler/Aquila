@@ -45,3 +45,18 @@ int kernel_lock_held(void)
 {
     return owner == curcpu()->id;
 }
+
+int kernel_enter(void)
+{
+    if (kernel_lock_held())
+        return 0;
+
+    kernel_lock();
+    return 1;
+}
+
+void kernel_leave(int took)
+{
+    if (took)
+        kernel_unlock();
+}

@@ -88,6 +88,11 @@ struct thread {
     /** Runs before the others once woken, as soon as the interrupt that
      *  woke it returns (sched_thread_wake): the network's thread */
     int urgent;
+
+    /** Killed (proc_kill) while it ran on another CPU: it frees itself
+     *  there, when that CPU next enters the kernel (its process may be
+     *  gone by then) */
+    int killed;
 };
 
 int  thread_queue_sleep(struct queue *queue);

@@ -223,15 +223,15 @@ static void isr_dispatch(struct x86_regs *regs)
  * from user mode (an exception in the kernel has it already) */
 void __x86_isr(struct x86_regs *regs)
 {
-    int took = !kernel_lock_held();
+    int took = kernel_enter();
 
-    if (took)
-        kernel_lock();
+    /* its process was killed while it ran here (on another CPU): it goes,
+     * what it came in for with it */
+    if (took && curthread && curthread->killed)
+        arch_cur_thread_kill();
 
     isr_dispatch(regs);
-
-    if (took)
-        kernel_unlock();
+    kernel_leave(took);
 }
 
 void x86_isr_setup(void)

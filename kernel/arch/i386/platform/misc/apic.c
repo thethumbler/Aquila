@@ -14,8 +14,8 @@
  * - the local APIC (each CPU's): enabled (spurious vector 0xFF), its
  *   LINT0 (the 8259's) masked, LINT1 the NMI as the MADT says; the boot
  *   CPU's timer is the scheduler's tick, periodic, calibrated against the
- *   clock. The MADT's local APICs are the CPUs, an IPI starts the others
- *   (cpu/smp.c)
+ *   clock, the other CPUs' the same. The MADT's local APICs are the CPUs,
+ *   an IPI starts the others (cpu/smp.c)
  * - the I/O APICs: IRQ n goes to the pin the MADT's overrides say (ISA's,
  *   0 is 2 on most machines), edge and active high but as they say; the
  *   PCI lines (from the devices' configuration space) are overridden as
@@ -446,10 +446,21 @@ uint32_t x86_lapic_timer_setup(uint32_t period_ns, x86_irq_handler_t handler)
 
     x86_irq_handler_install(X86_IRQ_TIMER, handler);
 
-    lapic_write(LAPIC_TIMER_DIV, TIMER_DIV_16);
-    lapic_write(LAPIC_LVT_TIMER, X86_TIMER_VECTOR | LVT_PERIODIC);
-    lapic_write(LAPIC_TIMER_INIT, timer_count);
+    x86_lapic_timer_cpu_start();
 
     printk("apic: the timer every %d ns (%d counts, divided by 16)\n", period_ns, timer_count);
     return period_ns;
+}
+
+/* the running CPU's timer, as the boot CPU's (the scheduler's tick on
+ * each, once it was calibrated) */
+void x86_lapic_timer_cpu_start(void)
+{
+    if (!timer_count)
+        return;
+
+    lapic_write(LAPIC_TIMER_DIV, TIMER_DIV_16);
+    lapic_write(LAPIC_LVT_TIMER, X86_TIMER_VECTOR | LVT_PERIODIC);
+    lapic_write(LAPIC_TIMER_INIT, timer_count);
+    curcpu()->arch.ticking = 1;
 }

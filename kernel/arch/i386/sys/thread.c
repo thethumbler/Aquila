@@ -201,6 +201,8 @@ void x86_thread_saved(uintptr_t ip, uintptr_t sp, uintptr_t bp)
 {
     struct x86_thread *arch = curthread->arch;
 
+    x86_fpu_switch_out();
+
 #if ARCH_BITS==32
     arch->eip = ip;
     arch->esp = sp;

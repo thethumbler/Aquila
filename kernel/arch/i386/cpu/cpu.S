@@ -266,9 +266,10 @@ IRQ 45, 77
 IRQ 46, 78
 IRQ 47, 79
 
-/* the local APIC's timer, the TLB's IPI */
+/* the local APIC's timer, the TLB's and the wake IPIs */
 IRQ 240, 240
 IRQ 241, 241
+IRQ 242, 242
 
 /* the local APIC's spurious interrupt: nothing to do, no EOI */
 .global __x86_spurious

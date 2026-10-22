@@ -21,8 +21,15 @@ uint64_t arch_cycles(void)
 
 static uint64_t first_measured_time = 0;
 
-static void x86_sched_handler(struct x86_regs *r) 
+/* the tick, every CPU's: the boot CPU keeps the time */
+static void x86_sched_handler(struct x86_regs *r)
 {
+    if (curcpu()->id) {
+        sched_cpu_tick(timer_period, (r->cs & 3) == 3);
+        x86_irq_tick_switch();
+        return;
+    }
+
     /* we check time every 2^16 ticks */
     if (!(timer_ticks & 0xFFFF)) {
         if (!timer_ticks) {
@@ -64,6 +71,10 @@ void arch_sched_init(void)
     x86_clock_init();
     timer_period = platform_timer_setup(2000000, x86_sched_handler);
     x86_clock_ticks(timer_period);
+
+    /* the other CPUs' ticks: they start them when woken */
+    for (int i = 1; i < cpus_count; ++i)
+        arch_cpu_kick(&cpus[i]);
 }
 
 /* the idle loop, on the CPU's idle stack: the kernel lock goes (an

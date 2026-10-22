@@ -29,6 +29,13 @@ void sched_thread_wake(struct thread *thread);
 extern int sched_urgent;
 
 void sched_timer_tick(uint32_t period, int user);
+void sched_cpu_tick(uint32_t period, int user);
+
+/* another CPU, running a thread: the one that runs `thread', and it
+ * entering the kernel now */
+struct cpu *sched_thread_cpu(struct thread *thread);
+void sched_thread_kick(struct thread *thread);
+
 int  sched_sleep(uint64_t until);
 int  sched_wait(struct queue *queue, uint64_t until);
 void sched_timer_cancel(struct thread *thread);

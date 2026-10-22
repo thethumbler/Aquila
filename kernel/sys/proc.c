@@ -259,6 +259,15 @@ void proc_kill(struct proc *proc)
             continue;
         }
 
+        /* running on another CPU (in user mode, this one has the kernel
+         * lock): it frees itself there, its map gone, when it enters the
+         * kernel, which it does now */
+        if (sched_thread_cpu(thread)) {
+            thread->killed = 1;
+            sched_thread_kick(thread);
+            continue;
+        }
+
         /* zombie threads (thread_exit) already released their resources */
         if (thread->state != ZOMBIE)
             thread_kill(thread);

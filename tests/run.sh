@@ -472,29 +472,30 @@ test_irq()
 }
 
 # the other CPUs started (cpu/smp.c), 4 of them, with the pc and q35
-# machines; smp=off, and apic=off (no local APIC to start them with): the
-# boot CPU only. The cpu test's programs pass each time.
+# machines, running tests/smp/init.c (threads at once, the TLBs flushed
+# on each, processes killed while they run, signals, the FPU); smp=off,
+# and apic=off (no local APIC to start them with): the boot CPU only, the
+# cpu test's programs pass.
 test_smp()
 {
     local fails=0
 
     # name, QEMU's arguments, the kernel's command line, the smp line
-    # (none: no line)
+    # (none: no line), the test
     local modes=(
-        "pc|-smp 4||smp: 4 CPUs"
-        "q35|-machine q35 -smp 4||smp: 4 CPUs"
-        "smp=off|-smp 4|smp=off|smp: off (smp=off), 4 CPUs"
-        "apic=off|-smp 4|apic=off|"
+        "pc|-smp 4||smp: 4 CPUs|smp"
+        "q35|-machine q35 -smp 4||smp: 4 CPUs|smp"
+        "smp=off|-smp 4|smp=off|smp: off (smp=off), 4 CPUs|cpu"
+        "apic=off|-smp 4|apic=off||cpu"
     )
 
     for m in "${modes[@]}"; do
-        local name qargs karg want
-        IFS='|' read -r name qargs karg want <<< "$m"
+        local name qargs karg want test
+        IFS='|' read -r name qargs karg want test <<< "$m"
         local log=$OUT/smp/${name%%=*}.log
 
-        mkdir -p "$OUT/smp"
         rm -f "$log"
-        $QEMU_BIN $ACCEL $qargs -kernel "$KERNEL" -initrd "$OUT/cpu/initrd.img" -m 256 \
+        $QEMU_BIN $ACCEL $qargs -kernel "$KERNEL" -initrd "$OUT/$test/initrd.img" -m 256 \
             -display none -no-reboot -append "$karg" -serial file:"$log" >/dev/null 2>&1 &
         local pid=$!
 
@@ -518,7 +519,7 @@ test_smp()
         fi
     done
 
-    echo "4 CPUs started (pc, q35), the boot CPU only with smp=off and apic=off"
+    echo "4 CPUs (pc, q35): $(grep -a -c '^PASS' "$OUT/smp/pc.log") checks passed, threads at once $(grep -a '^at once:' "$OUT/smp/pc.log" | tr -dc '0-9')%; the boot CPU only with smp=off and apic=off"
     [ $fails = 0 ]
 }
 
@@ -1119,12 +1120,12 @@ for name in $selected; do
     esac
 done
 
-# test programs (the ata and smp tests boot the cpu test's initrd)
+# test programs (the ata and smp tests boot the cpu test's initrd too)
 needed=" $selected "
 case "$needed" in *" ata "*|*" smp "*) needed="$needed cpu " ;; esac
 [ -x "$CROSS_CC" ] || needed=${needed/ libc / }
 
-for name in cpu syscalls memory kvmem clock irq net tcp ext2 libc; do
+for name in cpu syscalls memory kvmem clock irq smp net tcp ext2 libc; do
     case "$needed" in
         *" $name "*)
             mkdir -p "$OUT/$name"

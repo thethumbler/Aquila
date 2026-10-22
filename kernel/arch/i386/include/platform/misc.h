@@ -11,6 +11,7 @@ typedef void (*x86_irq_handler_t)(struct x86_regs *r);
 #define X86_IRQ_TIMER       48
 #define X86_TIMER_VECTOR    0xF0
 #define X86_TLB_VECTOR      0xF1    /* an IPI: flush the TLB (mm/tlb.c) */
+#define X86_WAKE_VECTOR     0xF2    /* an IPI: enter the kernel (arch_cpu_kick) */
 #define X86_SPURIOUS_VECTOR 0xFF
 
 /* an interrupt controller: the 8259, or the APIC */
@@ -44,6 +45,7 @@ void x86_lapic_cpu_setup(void);
 int  x86_apic_cpus(uint32_t *ids, int max);
 void x86_lapic_ipi(uint32_t id, uint32_t icr);
 void x86_lapic_eoi(void);
+void x86_lapic_timer_cpu_start(void);
 
 /* cpu/smp.c: the other CPUs started (with the APIC) */
 void x86_smp_init(void);

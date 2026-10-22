@@ -125,7 +125,8 @@ void x86_irq_tick_switch(void)
     curcpu()->arch.tick_switch = 1;
 }
 
-static void irq_dispatch(struct x86_regs *r)
+/* the IRQ's handlers, and the controller done with it */
+static void irq_handle(struct x86_regs *r)
 {
     uint32_t vec = r->vec;
     unsigned irq = vec == X86_TIMER_VECTOR ? X86_IRQ_TIMER : vec - 32;
@@ -137,11 +138,15 @@ static void irq_dispatch(struct x86_regs *r)
             h->fn(r);
     }
 
-    /* done with it */
     struct x86_irq_chip *c = irq < X86_IRQ_NR ? chip_of(irq) : chip;
 
     if (c)
         c->eoi(irq);
+}
+
+static void irq_dispatch(struct x86_regs *r)
+{
+    irq_handle(r);
 
     /* the tick: the running thread back to the queue, the next one runs
      * (the CPU was idle: it runs) */
@@ -184,19 +189,25 @@ void __x86_irq_handler(struct x86_regs *r)
         return;
     }
 
-    int took = !kernel_lock_held();
+    int took = kernel_enter();
 
-    if (took)
-        kernel_lock();
+    /* woken: its tick runs, now that the scheduler does */
+    if (r->vec == X86_WAKE_VECTOR && !curcpu()->arch.ticking)
+        x86_lapic_timer_cpu_start();
+
+    /* its process was killed while it ran here (on another CPU): the
+     * interrupt handled (a device's, the controller's EOI), it goes */
+    if (took && curthread && curthread->killed) {
+        irq_handle(r);
+        arch_cur_thread_kill();
+    }
 
     irq_dispatch(r);
-
-    if (took)
-        kernel_unlock();
+    kernel_leave(took);
 }
 
-/* the vectors: 32 to 32 + 47, the local APIC's timer and TLB IPI, and its
- * spurious interrupt */
+/* the vectors: 32 to 32 + 47, the local APIC's timer, the TLB's and the
+ * wake IPIs, and its spurious interrupt */
 void x86_irq_gates_setup(void)
 {
     extern void __x86_irq0(void), __x86_irq1(void), __x86_irq2(void), __x86_irq3(void),
@@ -211,7 +222,7 @@ void x86_irq_gates_setup(void)
         __x86_irq36(void), __x86_irq37(void), __x86_irq38(void), __x86_irq39(void),
         __x86_irq40(void), __x86_irq41(void), __x86_irq42(void), __x86_irq43(void),
         __x86_irq44(void), __x86_irq45(void), __x86_irq46(void), __x86_irq47(void),
-        __x86_irq240(void), __x86_irq241(void), __x86_spurious(void);
+        __x86_irq240(void), __x86_irq241(void), __x86_irq242(void), __x86_spurious(void);
 
     static void (*stubs[48])(void) = {
         __x86_irq0, __x86_irq1, __x86_irq2, __x86_irq3, __x86_irq4, __x86_irq5,
@@ -229,6 +240,7 @@ void x86_irq_gates_setup(void)
 
     x86_idt_gate_set(X86_TIMER_VECTOR, (uintptr_t) __x86_irq240);
     x86_idt_gate_set(X86_TLB_VECTOR, (uintptr_t) __x86_irq241);
+    x86_idt_gate_set(X86_WAKE_VECTOR, (uintptr_t) __x86_irq242);
     x86_idt_gate_set(X86_SPURIOUS_VECTOR, (uintptr_t) __x86_spurious);
 }
 

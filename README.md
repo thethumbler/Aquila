@@ -122,7 +122,9 @@ from source, see [tests/](tests/README.md).
 
 - [X] Multitasking
 - [X] Multithreading
-- [ ] SMP
+- [X] SMP     (up to 32 CPUs from ACPI's MADT, a kernel lock: user mode
+              runs on every CPU at once, the kernel on one at a time;
+              `smp=off`)
 
 #### Kernel
 - [X] Monolithic kernel

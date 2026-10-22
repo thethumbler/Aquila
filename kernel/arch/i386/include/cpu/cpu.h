@@ -121,6 +121,7 @@ struct arch_cpu {
     struct pmap *pmap;          /* CR3's (pmap_switch) */
     struct thread *fpu_thread;  /* whose state the FPU has */
     int tick_switch;            /* the tick asked for a switch (irq.c) */
+    int ticking;                /* its local APIC's timer runs */
     uintptr_t idle_stack;       /* the idle loop's, its top */
     uint64_t tlb_flushes;       /* done for another CPU (mm/tlb.c) */
     uint64_t kernel_gen;        /* its TLB has the kernel's mappings as of */
@@ -273,6 +274,7 @@ void x86_fpu_setup(void);
 void x86_fpu_enable(void);
 void x86_fpu_disable(void);
 void x86_fpu_trap(void);
+void x86_fpu_switch_out(void);
 int  x86_fpu_save_to(void *buf);
 void x86_fpu_reset(void);
 void x86_fpu_load_from(const void *buf, int valid);

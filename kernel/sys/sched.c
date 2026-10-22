@@ -27,8 +27,24 @@ static struct queue *naps = QUEUE_NEW();
 static struct queue *alarms = QUEUE_NEW();
 
 /*
- * called on every timer tick, `period' ns after the last one, which
- * interrupted user mode if `user' is set
+ * Each CPU's timer tick, `period' ns after its last one, which interrupted
+ * user mode if `user' is set: charged to the running process (system
+ * calls run with interrupts disabled, so kernel time is mostly missed)
+ */
+void sched_cpu_tick(uint32_t period, int user)
+{
+    /* a killed thread's process may be gone (thread->killed) */
+    if (!curcpu()->idle && curthread && !curthread->killed) {
+        if (user)
+            curproc->utime += period;
+        else
+            curproc->stime += period;
+    }
+}
+
+/*
+ * The boot CPU's tick (its own as the others', sched_cpu_tick): the
+ * callouts, the sleeps that are over, the real time timers
  */
 void sched_timer_tick(uint32_t period, int user)
 {
@@ -39,14 +55,7 @@ void sched_timer_tick(uint32_t period, int user)
 
     callout_run(now);
 
-    /* charge the tick to the running process (system calls run with
-     * interrupts disabled, so kernel time is mostly missed) */
-    if (!curcpu()->idle && curthread) {
-        if (user)
-            curproc->utime += period;
-        else
-            curproc->stime += period;
-    }
+    sched_cpu_tick(period, user);
 
     struct qnode *node = timed->head;
 
@@ -171,11 +180,51 @@ int sched_sleep(uint64_t until)
     return r < 0 ? r : 0;
 }
 
+/* the CPU that runs `thread', if it's another one */
+struct cpu *sched_thread_cpu(struct thread *thread)
+{
+    for (int i = 0; i < cpus_count; ++i)
+        if (cpus[i].thread == thread && &cpus[i] != curcpu())
+            return &cpus[i];
+
+    return NULL;
+}
+
+/* `thread' runs on another CPU: it enters the kernel (a signal for it, it
+ * was killed), not at its next tick but now */
+void sched_thread_kick(struct thread *thread)
+{
+    struct cpu *cpu = sched_thread_cpu(thread);
+
+    if (cpu)
+        arch_cpu_kick(cpu);
+}
+
+/* a thread is ready: a CPU that idles runs it (if this one idles, it's in
+ * an interrupt, it does on the way out: sched_idle_wakeup) */
+static void sched_cpu_wake(void)
+{
+    if (!sched_running || curcpu()->idle)
+        return;
+
+    for (int i = 0; i < cpus_count; ++i) {
+        struct cpu *cpu = &cpus[i];
+
+        /* one already woken runs another thread: the next one */
+        if (cpu != curcpu() && cpu->idle && !cpu->kicked) {
+            cpu->kicked = 1;
+            arch_cpu_kick(cpu);
+            return;
+        }
+    }
+}
+
 void sched_thread_ready(struct thread *thread)
 {
     struct qnode *sched_node = enqueue(ready_queue, thread);
     thread->sched_queue = ready_queue;
     thread->sched_node  = sched_node;
+    sched_cpu_wake();
 }
 
 /* an urgent thread was woken: switch to it when the interrupt returns to
@@ -193,6 +242,7 @@ void sched_thread_wake(struct thread *thread)
     thread->sched_queue = ready_queue;
     thread->sched_node  = enqueue_head(ready_queue, thread);
     sched_urgent = 1;
+    sched_cpu_wake();
 }
 
 /* the current thread is done running (it sleeps, or exited): another
@@ -211,6 +261,9 @@ void kernel_idle(void)
  * than at the next timer tick (a disk request would wait for one each) */
 void sched_idle_wakeup(void)
 {
+    /* another CPU may wake it again */
+    curcpu()->kicked = 0;
+
     if (curcpu()->idle && ready_queue->count)
         schedule();
 }
