@@ -26,6 +26,7 @@
  *   terminal's stops and reads in an orphaned group
  * - open files: shared by dup() and fork() (offset, status flags), kept
  *   open by a call using one
+ * - the FPU of threads that start while another has it: their own
  * - user memory that isn't mapped: EFAULT, the process goes on, a read's
  *   bytes stay, a buffer running into it is used up to it
  * - virtual terminals: KD* and VT_* ioctls, switching, VT_PROCESS
@@ -934,6 +935,46 @@ static void ofile_reader(void *u, void *a)
     SC(SYS_thread_exit, 0, 0, 0);
     for (;;);
     (void) u; (void) a;
+}
+
+/*
+ * Threads started while another uses the FPU: each adds up its series in
+ * floating point, exactly (halves), with its own registers; a new thread
+ * used to start with the FPU's owner's (no trap), and both were wrong
+ */
+static char fpu_stacks[4][8192] __attribute__((aligned(16)));
+static volatile int fpu_next, fpu_right[4];
+
+static void fpu_summer(void *u, void *a)
+{
+    int me = __atomic_fetch_add(&fpu_next, 1, __ATOMIC_SEQ_CST);
+    volatile double sum = 0, step = me + 0.5;
+
+    for (int i = 1; i <= 1000000; ++i)
+        sum += step;
+
+    fpu_right[me] = sum == step * 1000000;
+    SC(SYS_thread_exit, 0, 0, 0);
+    for (;;);
+    (void) u; (void) a;
+}
+
+static void fpu_threads(void)
+{
+    int tids[4], right = 0;
+
+    for (int i = 0; i < 4; ++i) {
+        struct aquila_thread_args ta = {(uptr) &fpu_stacks[i][8192], (uptr) fpu_summer, 0, 0, 0};
+        tids[i] = SC(SYS_thread_create, &ta, 0, 0);
+    }
+
+    for (int i = 0; i < 4; ++i)
+        SC(SYS_thread_join, tids[i], 0, 0);
+
+    for (int i = 0; i < 4; ++i)
+        right += fpu_right[i];
+
+    check("fpu: threads' sums, their own registers", right, 4);
 }
 
 static void open_files(void)
@@ -2463,6 +2504,7 @@ void aq_main(void)
     user_memory();
     orphans();
     open_files();
+    fpu_threads();
     stopped_sleeps();
     vnode_paths();
 

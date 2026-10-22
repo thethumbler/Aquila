@@ -43,6 +43,11 @@ void arch_thread_spawn(struct thread *thread)
     pmap_switch(pmap);
 
     x86_kernel_stack_set(arch->kstack);
+
+    /* its first use of the FPU traps (x86_fpu_trap), as after a switch:
+     * the registers are another thread's */
+    x86_fpu_disable();
+
     x86_goto((uintptr_t) thread_spawn, 0, arch->kstack);
 }
 
