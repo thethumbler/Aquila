@@ -25,7 +25,7 @@ diff -ruN a/newlib/configure.host b/newlib/configure.host
 +	newlib_cflags="${newlib_cflags} -DMISSING_SYSCALL_NAMES"
 +	# provided by libc/sys/aquila
 +	newlib_cflags="${newlib_cflags} -DSIGNAL_PROVIDED -DHAVE_OPENDIR -D_NO_GETCWD -DHAVE_RENAME -DHAVE_NANOSLEEP"
-+	newlib_cflags="${newlib_cflags} -DHAVE_FCNTL -D_NO_GETLOGIN -D_NO_GETUT -D_NO_GETPASS -D_NO_TTYNAME"
++	newlib_cflags="${newlib_cflags} -DHAVE_FCNTL -DHAVE_MKDIR -D_NO_GETLOGIN -D_NO_GETUT -D_NO_GETPASS -D_NO_TTYNAME"
 +	# no scheduling API (sched_setparam, ...)
 +	newlib_cflags="${newlib_cflags} -D_NO_POSIX_SPAWN"
 +	# malloc only has sbrk

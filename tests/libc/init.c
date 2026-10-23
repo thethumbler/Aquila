@@ -863,6 +863,16 @@ int main(void)
     free(line);
     fclose(f);
 
+    /* mkdtemp: a directory of its own (newlib makes it only with
+     * HAVE_MKDIR, ENOSYS without) */
+    char tmpl[] = "/tmp/dir.XXXXXX";
+    char *made = mkdtemp(tmpl);
+    check("mkdtemp", made != NULL && !strncmp(made, "/tmp/dir.", 9) && strcmp(made + 9, "XXXXXX"), 1);
+    check("mkdtemp: a directory", made && !stat(made, &st) && S_ISDIR(st.st_mode) &&
+          (st.st_mode & 0777) == 0700, 1);
+    if (made)
+        rmdir(made);
+
     /* directories */
     DIR *dir = opendir("/tmp");
     int found = 0;
