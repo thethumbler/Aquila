@@ -15,12 +15,13 @@ pseudo-terminals. It ends with the smaller devices and PCI.
 The device layer, the block cache, the line discipline and the
 pseudo-terminals are the kernel's own, the same on any machine. Drivers
 are generic code for a particular device: the ATA driver would work on
-any machine with an IDE controller. But several of the devices AquilaOS
-drives exist only on PCs (the i8042 keyboard controller, VGA text mode,
-the serial port at its legacy address), and drivers still install their
-interrupt handlers through x86's own interface (see "Where the line is
-blurred" in [The kernel and the machine](architecture.md)).
-Sections about those devices say "PC" in their title.
+any machine with an IDE controller. Drivers are told where their device
+is and which interrupt it raises: by the bus (PCI), or by the platform's
+table of the devices no bus finds, and they install their handlers with
+`irq_install()` (see "Devices: drivers and the platform" in
+[The kernel and the machine](architecture.md)). Some of the devices
+AquilaOS drives exist only on PCs (the i8042 keyboard controller, VGA
+text mode): sections about those say "PC" in their title.
 
 ## The kernel's side
 
@@ -330,11 +331,13 @@ text mode and the PS/2 scancodes are the PC's.
 
 ## PC: the keyboard and mouse
 
-The PC's keyboard and mouse hang off the **i8042** PS/2 controller, a
-platform device ([`platform/misc/i8042.c`](../../kernel/arch/i386/platform/misc/i8042.c)):
-its first port is the keyboard, on IRQ 1, its second the mouse, on IRQ
-12. The drivers register a function for a port
-(`x86_i8042_handler_register()`), which gets each byte that comes:
+The PC's keyboard and mouse hang off the **i8042** PS/2 controller
+([`dev/input/i8042.c`](../../kernel/dev/input/i8042.c), `DEV_I8042`),
+a device in the PC's table: ports `0x60` and `0x64`, the keyboard's
+port on IRQ 1, the mouse's on IRQ 12. The driver turns the second port
+on; the keyboard and mouse drivers register a function for a port
+(`i8042_handler_register()`), which gets each byte that comes, and the
+mouse's sends it bytes (`i8042_aux_write()`):
 
 - the keyboard's ([`dev/kbd/ps2kbd.c`](../../kernel/dev/kbd/ps2kbd.c))
   goes to the virtual terminals;
@@ -347,11 +350,21 @@ its first port is the keyboard, on IRQ 1, its second the mouse, on IRQ
 A **UART** is a serial port. The tty side, generic, is in
 [`dev/tty/uart/uart.c`](../../kernel/dev/tty/uart/uart.c): a UART is a
 terminal, `/dev/ttyS0` and up (4, 64 and up), with a 4 KiB ring each way.
-The **8250** driver ([`8250/8250.c`](../../kernel/dev/tty/uart/8250/8250.c))
-is the PC's part: it drives the first serial port, the 16550-compatible UART at port
-`0x3F8` and IRQ 4: 38400 baud, 8 bits, no parity; its FIFO is drained
-at every interrupt. Its address and IRQ are the PC's, hardcoded. Output
-is written a byte at a time, waiting for the transmitter.
+Two drivers:
+
+- the **8250** ([`8250/8250.c`](../../kernel/dev/tty/uart/8250/8250.c)),
+  the 16550-compatible UART: one for each `"8250"` in the platform's
+  table that answers (its scratch register keeps what's written), in
+  the table's order. On the PC, COM1 (port `0x3F8`, IRQ 4) is
+  `/dev/ttyS0` and COM2 (`0x2F8`, IRQ 3), if QEMU has one, `/dev/ttyS1`.
+  38400 baud, 8 bits, no parity; its FIFO is drained at every interrupt;
+  its registers may be ports or memory, spaced 1, 2 or 4 bytes apart
+  (`IOADDR_MMIO8`, `MMIO16`, `MMIO32`).
+- the **PL011** ([`pl011/pl011.c`](../../kernel/dev/tty/uart/pl011/pl011.c)),
+  ARM's UART, the virt machine's `/dev/ttyS0` (and `/dev/console`, which
+  has no virtual terminals there).
+
+Output is written a byte at a time, waiting for the transmitter.
 
 ## The framebuffer
 
@@ -374,22 +387,42 @@ interrupt line, and a list of *capabilities*
 
 - **Finding devices**: a driver asks for its device by vendor and
   device ID (`pci_device_scan()`) or by class (`pci_scan_device()`). Only
-  bus 0 is scanned, which is enough for QEMU's default PC (i440FX), where
-  every device is on it; devices behind a bridge aren't found.
+  bus 0 is scanned, which is enough for QEMU's default PC (i440FX) and
+  its virt machine, where every device is on it; devices behind a bridge
+  aren't found.
 - **BARs** (`pci_bar()`): the address, and the size, found by writing
   all ones and reading back what the device kept; 64-bit memory BARs use
   two. `arch_mmio_map()` maps a memory BAR's registers uncached.
 - **Enabling**: `pci_enable()` turns on its memory and port decoding and
   bus mastering (DMA).
-- **Interrupts**: the line the firmware set (`pci_irq_line()`), or MSI
+- **Interrupts**: the IRQ its pin comes to (`pci_irq()`), or MSI
   (`pci_msi_enable()`, see [Interrupts](interrupts.md)).
 
-**PC: configuration space access.** How configuration space is reached
-is the platform's: on the PC, through ports `0xCF8` (an address: bus,
-device, function, register) and `0xCFC` (the data), "configuration
-mechanism #1". `platform_init()` gives the ports to the PCI code
-(`pci_ioaddr_set()`); PCI Express's memory-mapped configuration (ECAM)
-isn't used.
+**The host bridge** is the platform's, a `struct pci_host` it gives
+`pci_host_set()` in `platform_init()`:
+
+- how configuration space is reached: its `read` and `write`, with
+  either of the kernel's two mechanisms,
+  [`conf1.c`](../../kernel/dev/pci/conf1.c) (`DEV_PCI_CONF1`) or
+  [`ecam.c`](../../kernel/dev/pci/ecam.c) (`DEV_PCI_ECAM`);
+- which IRQs INTA# to INTD# come to, if the platform knows: a device's
+  pin is swizzled by its slot (INTA# of slot 1 is INTB#), as a host
+  bridge's interrupt map does. If it doesn't, the interrupt line
+  register's, which the firmware wrote;
+- where the BARs go if no firmware assigned them: windows of memory and
+  ports, which `pci_host_set()` fills, each BAR aligned to its size.
+
+**PC: configuration mechanism #1.** Ports `0xCF8` (an address: bus,
+device, function, register) and `0xCFC` (the data), the first 256 bytes
+of a function's configuration space. The BIOS assigned the BARs and
+wrote the interrupt lines.
+
+**virt: ECAM.** PCI Express's Enhanced Configuration Access Mechanism:
+every function's 4 KiB in memory, bus 0's 1 MiB of it mapped
+(`0x40_1000_0000` on QEMU's virt machine). Nothing ran before the kernel
+(`-kernel`): it assigns the BARs itself, memory from `0x1000_0000`,
+ports from `0x1000`, and INTA# to INTD# are the GIC's SPIs 3 to 6. QEMU's
+`-device e1000` works there unchanged.
 
 ## Where it is
 
@@ -407,16 +440,22 @@ isn't used.
 | `kernel/dev/tty/vt/fb.c`                   | kernel | VTs on a framebuffer                         |
 | `kernel/dev/mem/`                          | kernel | `null`, `zero`, `random`, `kmsg`             |
 | `kernel/dev/fb/fbdev/fbdev.c`              | kernel | `/dev/fb0`                                   |
-| `kernel/dev/pci/pci.c`                     | kernel | PCI: devices, BARs, MSI                      |
+| `kernel/dev/platform.c`                    | kernel | the platform's devices: `platform_device_get()` |
+| `kernel/dev/pci/pci.c`                     | kernel | PCI: devices, BARs, MSI, the host bridge     |
+| `kernel/dev/pci/conf1.c`, `ecam.c`         | kernel | PCI configuration space: ports, memory       |
 | `kernel/dev/ata/`                          | kernel, PC | ATA disks (ISA ports and IRQs in compatibility mode) |
 | `kernel/dev/net/e1000.c`                   | kernel | the e1000 network card (see [Networking](networking.md)) |
 | `kernel/dev/tty/vt/vga.c`                  | PC     | VTs in VGA text mode                         |
 | `kernel/dev/tty/vt/keyboard.c`             | PC     | PS/2 scancodes to the console's keys         |
 | `kernel/dev/kbd/ps2kbd.c`, `dev/mouse/ps2mouse.c` | PC | the PS/2 keyboard and mouse             |
-| `kernel/dev/tty/uart/8250/8250.c`          | PC     | the first serial port                        |
+| `kernel/dev/tty/uart/8250/8250.c`          | kernel | 8250/16550 serial ports                      |
+| `kernel/dev/tty/uart/pl011/pl011.c`        | kernel | the PL011 serial port                        |
 | `kernel/dev/fb/vesa/vesa.c`                | PC     | the boot loader's framebuffer                |
-| `kernel/arch/i386/platform/misc/i8042.c`   | PC     | the PS/2 controller                          |
-| `kernel/arch/i386/platform/pc/init.c`      | PC     | PCI's configuration ports                    |
+| `kernel/dev/input/i8042.c`                 | PC     | the PS/2 controller                          |
+| `kernel/arch/i386/platform/pc/devices.c`   | PC     | the PC's devices: serial ports, the i8042    |
+| `kernel/arch/i386/platform/pc/init.c`      | PC     | PCI's host bridge: mechanism #1              |
+| `kernel/arch/aarch64/platform/virt/devices.c` | virt | the virt machine's devices: the PL011      |
+| `kernel/arch/aarch64/platform/virt/init.c` | virt   | PCI's host bridge: ECAM, BARs, INTx          |
 | `rootfs/etc/runit/1`                       | —      | the device nodes, made at boot               |
 
 ## References

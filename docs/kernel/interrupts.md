@@ -57,9 +57,14 @@ it go on its way out. Device interrupts all go to the boot CPU. See
 
 ### Device interrupts
 
-Devices raise numbered *IRQs*. A driver installs a handler for its IRQ;
-several handlers can share one (PCI devices share lines), so every
-handler checks its device and does nothing if the interrupt wasn't its.
+Devices raise numbered *IRQs*. A driver installs a handler for its IRQ,
+`irq_install(irq, fn, arg)` ([`dev/irq.h`](../../kernel/include/dev/irq.h),
+each architecture's): `fn(arg)` runs when it comes, `arg` saying which
+device (two ATA channels, two serial ports, one handler). Several
+handlers can share an IRQ (PCI devices share lines), so every handler
+checks its device and does nothing if the interrupt wasn't its. The IRQ's
+number is the platform's; a driver gets it from the platform's table of
+devices, its bus, or an MSI it was given.
 
 A handler does as little as it can: it takes the data off the device (a
 received packet, a key), acknowledges it, and wakes the threads waiting
@@ -207,7 +212,8 @@ for device interrupts and IPIs
 
 1. The IRQ is the vector minus 32 (the local APIC's timer, vector `0xF0`,
    is an IRQ of its own: `X86_IRQ_TIMER`).
-2. Each handler installed for the IRQ runs (`x86_irq_handler_install()`).
+2. Each handler installed for the IRQ runs (`irq_install()`), with its
+   argument.
 3. The interrupt controller is told it's done (*end of interrupt*, EOI).
    For a level-triggered line this must come after the device was
    serviced, or the line, still asserted, would raise the interrupt again

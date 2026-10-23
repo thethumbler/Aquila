@@ -31,7 +31,9 @@ machine it is.
   levels, the IDT, the GDT and TSS, paging, the FPU, `int $0x80`.
 - **The platform** is the PC: what isn't in the CPU but every PC has. The
   8259 and APIC interrupt controllers, the PIT and HPET timers, the CMOS
-  clock, the PS/2 controller, ACPI's tables, the Multiboot boot loader.
+  clock, ACPI's tables, the Multiboot boot loader, and a table of the
+  devices no bus finds (the serial ports, the PS/2 controller: see
+  "Devices: drivers and the platform" below).
   Another x86 machine could differ here and not in the architecture: the
   Intel Quark platform (`platform/quark/`) was one; its build
   configuration has fallen behind.
@@ -40,6 +42,37 @@ Drivers sit in between. A driver in `kernel/dev/` is generic code for a
 particular device (an e1000 network card, an ATA disk, an 8250 serial
 port), which could be on any machine that has the device; it reaches the
 hardware through the platform's I/O functions and interrupts.
+
+### Devices: drivers and the platform
+
+A driver hardcodes neither where its device is nor which interrupt it
+raises; it's told:
+
+- **Interrupts** go through one interface, `irq_install(irq, fn, arg)`
+  and `irq_uninstall()` ([`dev/irq.h`](../../kernel/include/dev/irq.h)),
+  which each architecture implements: `fn(arg)` is called when the
+  interrupt comes, an IRQ may have several handlers (a shared line), and
+  the first unmasks it. An IRQ is the platform's number for it (the ISA's
+  or the I/O APIC's on the PC, the GIC's interrupt ID on the virt
+  machine); a driver gets it from the platform, its bus or
+  `arch_msi_alloc()`, never makes one up.
+- **Devices no bus finds** are in the platform's table
+  ([`dev/platform.h`](../../kernel/include/dev/platform.h), the PC's in
+  `platform/pc/devices.c`): a name (the driver's: `"8250"`, `"i8042"`,
+  `"pl011"`), the registers (ports, or physical memory), the interrupts.
+  A driver attaches to each entry of its name,
+  `platform_device_get(name, i)`, and `platform_device_io()` gives it
+  the registers, mapped, for `io_in8()` and the others. Which drivers
+  there are is the build's (`DEV_*` in `configs/`); which devices the
+  machine has, the platform's.
+- **PCI devices** are found on the bus. How its configuration space is
+  reached, which IRQs its interrupt pins come to and where its BARs go
+  if no firmware put them is the platform's: a `struct pci_host` it gives
+  `pci_host_set()` (see PCI in [Devices](devices.md)).
+
+This is Linux's platform devices and the BSDs' hints, cut down to a name
+lookup: no matching, no probing order, no hotplug. Linux can also read
+the table from the devicetree; AquilaOS's tables are static.
 
 ## Where the line is
 
@@ -134,19 +167,23 @@ with:
 - the `arch_*` and `pmap_*` functions;
 - a linker script and a build configuration (`configs/`).
 
-`kernel/arch/none/` and `kernel/arch/arm/` are placeholders for this: a
-few headers, no code yet.
+`kernel/arch/aarch64/` is the second one: the CPU's part, and QEMU's
+virt machine as its platform (`platform/virt/`: the GIC, the generic
+timer, the PL031 clock, PSCI, the devicetree). `kernel/arch/none/` and
+`kernel/arch/arm/` are placeholders: a few headers, no code.
 
 ## Where the line is blurred
 
 The separation is the design, but it isn't finished; these are the places
 where x86 still shows through in generic code:
 
-- **Device interrupts** have no generic interface. Drivers install their
-  handlers with `x86_irq_handler_install()`, and the handlers take a
-  `struct x86_regs *` (`dev/ata/ata.c`, `dev/net/e1000.c`,
-  `dev/tty/uart/8250/8250.c`). The PS/2 keyboard and mouse drivers call
-  the i8042's functions directly (`x86_i8042_handler_register()`).
+- **ATA's compatibility mode** uses the ISA's ports and IRQs (14, 15)
+  when the IDE controller isn't in native PCI mode: they're the PC's,
+  in the driver.
+- **VGA text mode** (`dev/tty/vt/vga.c`) writes to `0xB8000` through the
+  x86 kernel's mapping of low memory, at the CRT controller's ports.
+  Those addresses are VGA's own, any VGA card decodes them, but the
+  mapping is x86's.
 - **The platform's interface** (`platform_init()`,
   `platform_timer_setup()`) is x86's own, in
   `kernel/arch/i386/include/core/platform.h`: the architecture calls it,
@@ -171,6 +208,9 @@ kernel.
 | `kernel/arch/i386/include/`              | x86's headers                                |
 | `kernel/arch/i386/{boot,cpu,mm,sys}/`    | x86: boot, CPU, paging, threads and traps    |
 | `kernel/arch/i386/platform/`             | the PC (`pc/`, `misc/`)                      |
+| `kernel/arch/aarch64/`                   | aarch64, and QEMU's virt machine (`platform/virt/`) |
+| `kernel/include/dev/irq.h`               | devices' interrupts                          |
+| `kernel/include/dev/platform.h`          | the platform's devices, its table            |
 | `kernel/Makefile`                        | the include path                             |
 | `configs/`                               | the build configurations                     |
 
