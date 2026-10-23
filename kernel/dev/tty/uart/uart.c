@@ -22,8 +22,8 @@ void uart_recieve_handler(struct uart *u, size_t size)
         buf[i] = u->receive(u);
     }
 
-    tty_master_write(u->tty, size, buf);  
-    thread_queue_wakeup(u->vnode->read_queue);
+    tty_master_write(u->tty, size, buf);
+    thread_queue_wakeup(&u->read_queue);
 }
 
 /* Called when data is ready to be transmitted */
@@ -38,7 +38,7 @@ void uart_transmit_handler(struct uart *u, size_t size)
         u->transmit(u, c);
     }
 
-    thread_queue_wakeup(u->vnode->write_queue);
+    thread_queue_wakeup(&u->write_queue);
 }
 
 /* TTY Interface */
@@ -128,28 +128,48 @@ int uart_ioctl(struct devid *dd, int request, void *argp)
     return tty_ioctl(u->tty, request, argp);  
 }
 
+/* the uart's buffers and terminal, the first time it's opened */
+static int uart_setup(struct uart *u, struct vnode *vnode)
+{
+    struct ringbuf *in = ringbuf_new(UART_RING), *out = ringbuf_new(UART_RING);
+    struct tty *tty = NULL;
+    int err = -ENOMEM;
+
+    if (!in || !out || (err = tty_new(curproc, 0, uart_master_write, uart_slave_write, u, &tty))) {
+        ringbuf_free(in);
+        ringbuf_free(out);
+        return err;
+    }
+
+    u->init(u);
+    u->in = in;
+    u->out = out;
+
+    /* the terminal's node (/dev/tty opens it), held: the interrupts and
+     * the terminal outlive the node it was opened through */
+    u->vnode = vnode;
+    vnode->ref++;
+
+    tty->vnode = vnode;
+    tty->input_flush = uart_input_flush;
+    u->tty = tty;
+    return 0;
+}
+
 int uart_file_open(struct file *file)
 {
     struct uart *u = uart_get(DEV_MINOR(file->vnode->rdev));
+    int err;
 
     if (!u) /* no uart registered for this minor */
         return -ENXIO;
 
-    if (u->vnode) { /* already open */
-        /* XXX */
-        file->vnode = u->vnode;
-    } else {
-        u->init(u);
-        u->vnode = file->vnode;
-        /* TODO Error checking */
-        u->in = ringbuf_new(UART_RING);
-        u->out = ringbuf_new(UART_RING);
-        tty_new(curproc, 0, uart_master_write, uart_slave_write, u, &u->tty);
-        u->tty->vnode = u->vnode;
-        u->tty->input_flush = uart_input_flush;
-        file->vnode->read_queue  = queue_new();
-        file->vnode->write_queue = queue_new();
-    }
+    if (!u->tty && (err = uart_setup(u, file->vnode)))
+        return err;
+
+    /* the same queues for every node of it */
+    file->vnode->read_queue  = &u->read_queue;
+    file->vnode->write_queue = &u->write_queue;
 
     tty_open(u->tty, file);
     return 0;

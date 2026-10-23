@@ -63,14 +63,14 @@ void uart_8250_irq()
     /* every byte the FIFO has: one interrupt may come for several, and
      * another may not come for those left (v86's 16550 doesn't) */
     while (serial_received()) {
-        if (uart_8250.vnode) /* If open */
+        if (uart_8250.tty)   /* If open */
             uart_recieve_handler(&uart_8250, 1);
         else
             uart_8250_receive(&uart_8250);
     }
 
     if (serial_empty()) {
-        if (uart_8250.vnode) /* If open */
+        if (uart_8250.tty)   /* If open */
             uart_transmit_handler(&uart_8250, 1);
     }
 }

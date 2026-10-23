@@ -156,6 +156,21 @@ static void tty_output_modes(void)
 
     SC(SYS_close, slave, 0, 0);
     SC(SYS_close, master, 0, 0);
+
+    /* another node of the serial port the results go to: opened and
+     * closed, the first one (aq_out) stays as it was (its vnode used to
+     * be closed in its place) */
+    SC(SYS_mknod, "/dev/ttyS0b", S_IFCHR | 0666, DEV(4, 64));
+
+    for (int i = 0; i < 4; ++i) {
+        int fd = SC(SYS_open, "/dev/ttyS0b", O_RDWR | O_NOCTTY, 0);
+        SC(SYS_close, fd, 0, 0);
+    }
+
+    struct aquila_stat sb;
+    check("tty: another node of the serial port, opened and closed",
+          SC(SYS_fstat, aq_out, &sb, 0) == 0 && SC(SYS_write, aq_out, "", 0) == 0, 1);
+    SC(SYS_unlink, "/dev/ttyS0b", 0, 0);
 }
 
 static void pty_session(void)
