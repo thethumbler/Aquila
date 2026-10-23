@@ -1,0 +1,72 @@
+# AquilaOS on QEMU's virt machine (aarch64): built with clang and ld.lld,
+# no cross toolchain of its own (the kernel needs no C library)
+#
+#   make kernel CONFIG=aarch64-virt
+#
+
+CC := clang
+
+# the large code model: absolute addresses (the linker script's physical
+# ones, kernel_start and kernel_end, are 256 TiB from the kernel, past
+# the small model's reach); no FP/SIMD in the kernel (its registers
+# aren't saved on entry); frame pointers for backtraces
+CFLAGS += --target=aarch64-none-elf \
+		-std=gnu11 -nostdlib -ffreestanding -fno-pic -fno-pie \
+		-mcmodel=large -mgeneral-regs-only -fno-omit-frame-pointer \
+		-fno-stack-protector -fno-asynchronous-unwind-tables \
+		-O2 -Wall -Wextra -Werror \
+		-Wno-unused -Wno-unused-parameter
+
+AS := $(CC)
+ASFLAGS := $(CFLAGS)
+LD := ld.lld
+LDFLAGS := -nostdlib -z max-page-size=0x1000
+
+# the boot loader (QEMU's -kernel) takes Linux's arm64 Image: the kernel's
+# memory image, flat, with its header (boot/head.S)
+KERNEL_BINARY := y
+OBJCOPY := llvm-objcopy
+
+#
+# Configurations
+#
+
+ARCH=aarch64
+ARCH_DIR=aarch64
+# the system's compilers (none yet)
+TARGET=aarch64-aquila
+ARCH_AARCH64=y
+ARCH_BITS=64
+
+#
+# Platform - QEMU's virt machine: GICv2, the generic timer, a PL011
+# UART, a PL031 RTC, PSCI; what's where comes from its devicetree
+#
+
+PLATFORM_AARCH64_VIRT=y
+PLATFORM_DIR=virt
+
+#
+# Devices
+#
+
+DEV_UART=y
+# the ARM PrimeCell UART (PL011)
+DEV_UART_PL011=y
+DEV_PTY=y
+DEV_MEMDEV=y
+
+# Filesystems
+FS_TMPFS=y
+FS_DEVFS=y
+FS_DEVPTS=y
+FS_EXT2=y
+FS_PROCFS=y
+FS_MINIX=y
+
+# Initramfs
+INITRAMFS_CPIO=y
+
+# Network (the loopback interface: no card yet)
+NET_UNIX=y
+NET_INET=y

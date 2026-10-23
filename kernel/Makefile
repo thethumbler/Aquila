@@ -58,11 +58,17 @@ OBJS := $(addprefix $(KBUILD)/,$(objs))
 
 .PHONY: all install clean
 
-all: $(KERNEL)
+all: $(KERNEL) $(if $(filter y,$(KERNEL_BINARY)),$(KERNEL).img)
 
 $(KERNEL): $(OBJS) $(LDSCRIPT)
 	@$(ECHO) "  LD      " $(patsubst $(BUILDDIR)/%,%,$@)
 	@$(LD) $(LDFLAGS) -T $(LDSCRIPT) $(OBJS) -o $@
+
+# the kernel's memory image, flat, for boot loaders that take one
+# (KERNEL_BINARY: aarch64's, Linux's arm64 Image)
+$(KERNEL).img: $(KERNEL)
+	@$(ECHO) "  OBJCOPY " $(patsubst $(BUILDDIR)/%,%,$@)
+	@$(OBJCOPY) -O binary $< $@
 
 # sources may include headers next to them with <...>
 $(KBUILD)/%.o: $(KSRC)/%.c
