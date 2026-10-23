@@ -28,7 +28,8 @@ void __aquila_thread_start(void *(*start_routine)(void *), void *arg)
 
 /* the kernel starts a thread at thread_entry with the start routine and
  * its argument on the stack, as an i386 call does (above a null return
- * address); on x86-64 they go to registers */
+ * address); on x86-64 they go to registers; aarch64's kernel puts them in
+ * x0 and x1 itself, a call's: __aquila_thread_start is the entry */
 #ifdef __x86_64__
 void thread_entry(void);
 

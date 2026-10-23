@@ -4,7 +4,8 @@
  * The kernel starts a new process at _start with argc, argv and envp on
  * the stack (in that order, the stack is 16-byte aligned), the layout
  * main() expects, see kernel/arch/i386/sys/execve.c. On x86-64 they are
- * passed in registers.
+ * passed in registers; on aarch64 the kernel puts them in x0 to x2 itself
+ * (kernel/arch/aarch64/sys/execve.c).
  */
 
 #include <stdlib.h>
@@ -20,7 +21,15 @@ extern void __libc_fini_array(void);
 
 void _start_c(int argc, char **argv, char **envp);
 
-#ifdef __x86_64__
+#if defined(__aarch64__)
+asm(".globl _start\n"
+    ".type _start, %function\n"
+    "_start:\n"
+    "    mov x29, xzr\n"         /* mark the outermost frame */
+    "    mov x30, xzr\n"
+    "    bl _start_c\n"
+    "    brk #0\n");
+#elif defined(__x86_64__)
 asm(".globl _start\n"
     ".type _start, @function\n"
     "_start:\n"

@@ -3,8 +3,9 @@
 
 #include <machine/_default_types.h>
 
-/* the kernel uses 32-bit user and group ids (struct aquila_stat) */
-#ifdef __x86_64__
+/* the kernel uses 32-bit user and group ids (struct aquila_stat): an int
+ * on LP64 (x86-64, aarch64), a long on i386 */
+#if __SIZEOF_LONG__ == 8
 #define __machine_uid_t_defined
 typedef unsigned int __uid_t;
 

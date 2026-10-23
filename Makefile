@@ -89,7 +89,11 @@ LIMINE := $(TOOLCHAIN)/share/limine
 
 # KVM when /dev/kvm can be used, KVM=0 emulates the CPU instead
 KVM  ?= $(if $(shell test -r /dev/kvm -a -w /dev/kvm && echo y),1,0)
-QEMU := qemu-system-$(ARCH) $(if $(filter 1,$(KVM)),-accel kvm)
+QEMU := qemu-system-$(ARCH) $(if $(filter 1,$(KVM)),-accel kvm) $(QEMU_MACHINE)
+
+# what QEMU's -kernel boots: the kernel's flat image if it has one
+# (KERNEL_BINARY: aarch64's), its ELF file else
+RUN_KERNEL := $(if $(filter y,$(KERNEL_BINARY)),$(KERNEL).img,$(KERNEL))
 
 MAKEFLAGS += --no-print-directory
 
@@ -215,7 +219,7 @@ hdd-update: hdd-kernel initrd
 	@$(SRCDIR)/mk/hdd-update.sh $(HDD) $(ROOTFS)
 
 run: kernel initrd
-	$(QEMU) -kernel $(KERNEL) -initrd "$(INITRD)" -append earlycon=ttyS0 \
+	$(QEMU) -kernel $(RUN_KERNEL) -initrd "$(INITRD)" -append earlycon=ttyS0 \
 		-m 256 -serial mon:stdio -display none
 
 run-iso: iso

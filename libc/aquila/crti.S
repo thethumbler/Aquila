@@ -5,9 +5,12 @@
 
     .section .init
     .global _init
-    .type _init, @function
+    .type _init, %function
 _init:
-#ifdef __x86_64__
+#if defined(__aarch64__)
+    stp x29, x30, [sp, #-16]!
+    mov x29, sp
+#elif defined(__x86_64__)
     push %rbp
     movq %rsp, %rbp
 #else
@@ -17,9 +20,12 @@ _init:
 
     .section .fini
     .global _fini
-    .type _fini, @function
+    .type _fini, %function
 _fini:
-#ifdef __x86_64__
+#if defined(__aarch64__)
+    stp x29, x30, [sp, #-16]!
+    mov x29, sp
+#elif defined(__x86_64__)
     push %rbp
     movq %rsp, %rbp
 #else

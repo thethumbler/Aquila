@@ -17,7 +17,7 @@ diff -ruN a/newlib/configure.host b/newlib/configure.host
    z8k-*-coff)
  	sys_dir=z8ksim
  	;;
-+  i[34567]86-*-aquila* | x86_64-*-aquila*)
++  i[34567]86-*-aquila* | x86_64-*-aquila* | aarch64*-*-aquila*)
 +	sys_dir=aquila
 +	posix_dir=posix
 +	unix_dir=unix
@@ -34,6 +34,17 @@ diff -ruN a/newlib/configure.host b/newlib/configure.host
  esac
  
  # Host specific flag settings -- usually for features that are not
+@@ -639,6 +653,10 @@
+ 	newlib_cflags="${newlib_cflags} -DNO_EXEC"
+ 	syscall_dir=syscalls
+ 	;;
++  aarch64*-*-aquila*)
++	# its own system calls (libc/sys/aquila), not newlib's generic ones
++	default_newlib_io_long_long="yes"
++	;;
+   aarch64*-*-*)
+ 	default_newlib_io_long_long="yes"
+ 	syscall_dir=syscalls
 diff -ruN a/newlib/libc/acinclude.m4 b/newlib/libc/acinclude.m4
 --- a/newlib/libc/acinclude.m4
 +++ b/newlib/libc/acinclude.m4

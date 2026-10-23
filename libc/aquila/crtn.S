@@ -1,7 +1,9 @@
 /* Epilogues of the _init and _fini functions, see crti.S */
 
     .section .init
-#ifdef __x86_64__
+#if defined(__aarch64__)
+    ldp x29, x30, [sp], #16
+#elif defined(__x86_64__)
     popq %rbp
 #else
     popl %ebp
@@ -9,7 +11,9 @@
     ret
 
     .section .fini
-#ifdef __x86_64__
+#if defined(__aarch64__)
+    ldp x29, x30, [sp], #16
+#elif defined(__x86_64__)
     popq %rbp
 #else
     popl %ebp

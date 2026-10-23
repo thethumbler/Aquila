@@ -27,6 +27,10 @@ LDFLAGS := -nostdlib -z max-page-size=0x1000
 KERNEL_BINARY := y
 OBJCOPY := llvm-objcopy
 
+# make run: QEMU's machine (no KVM on another CPU)
+QEMU_MACHINE := -M virt -cpu cortex-a72
+KVM := 0
+
 #
 # Configurations
 #

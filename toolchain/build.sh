@@ -1,6 +1,7 @@
 #!/bin/bash
 #
-# Build the i686-aquila (or x86_64-aquila) cross toolchain and C library.
+# Build the i686-aquila (x86_64-aquila, aarch64-aquila) cross toolchain and
+# C library.
 #
 # usage: toolchain/build.sh [stage...]
 #
@@ -13,10 +14,11 @@
 #   headers     install the user/kernel ABI headers (include/uapi)
 #   libc        newlib with the aquila port (libc/) into the sysroot
 #   limine      Limine bootloader (BIOS) and its host tool, for the ISO and
-#               disk images (both toolchains build its 32-bit BIOS stages)
+#               disk images (both x86 toolchains build its 32-bit BIOS
+#               stages; none on aarch64)
 #
 # environment:
-#   ARCH        x86_64 (default) or i386
+#   ARCH        x86_64 (default), i386 or aarch64
 #   BUILDDIR    output directory (default: <repo>/build)
 #   JOBS        parallel jobs (default: nproc)
 #
@@ -24,7 +26,7 @@
 #   $BUILDDIR/toolchain     cross tools, add $BUILDDIR/toolchain/bin to PATH
 #                           (both architectures' tools, named by target)
 #   $BUILDDIR/sysroot       target headers and libraries (/usr/include,
-#                           /usr/lib), $BUILDDIR/sysroot-x86_64 for x86_64
+#                           /usr/lib), $BUILDDIR/sysroot-<arch> for the others
 #
 # Host requirements: a C/C++ compiler, make, bison, flex, texinfo, GMP, MPFR,
 # MPC, wget, and nasm for Limine.
@@ -54,6 +56,10 @@ case $ARCH in
         TARGET=x86_64-aquila
         SYSROOT=$BUILDDIR/sysroot-x86_64
         OBJ=$BUILDDIR/toolchain-obj-x86_64 ;;
+    aarch64)
+        TARGET=aarch64-aquila
+        SYSROOT=$BUILDDIR/sysroot-aarch64
+        OBJ=$BUILDDIR/toolchain-obj-aarch64 ;;
     *)
         echo "unknown ARCH: $ARCH" >&2
         exit 2 ;;
@@ -212,9 +218,11 @@ stage_libc()
     "$SRC/$NEWLIB/configure" --target=$TARGET --prefix=/usr \
         --disable-multilib --enable-newlib-io-long-long \
         --enable-newlib-io-c99-formats
-    make -j"$JOBS" all
+    # newlib only: libgloss (board support: semihosting, linker scripts)
+    # is nothing aquila uses, and aarch64's doesn't build here
+    make -j"$JOBS" all-target-newlib
     # install into /usr of the sysroot, not /usr/$TARGET
-    make DESTDIR="$SYSROOT" tooldir=/usr install
+    make DESTDIR="$SYSROOT" tooldir=/usr install-target-newlib
 
     # crti/crtn delimit the .init/.fini sections around libgcc's crtbegin/crtend
     for f in crti crtn; do
@@ -227,6 +235,12 @@ stage_libc()
 
 stage_limine()
 {
+    # a PC boot loader: aarch64's (QEMU's -kernel) needs none
+    if [ $ARCH = aarch64 ]; then
+        log "no $LIMINE on aarch64"
+        return
+    fi
+
     log "building $LIMINE"
     unpack $LIMINE
 
