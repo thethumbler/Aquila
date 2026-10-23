@@ -210,59 +210,88 @@ int tty_background(struct tty *tty, int sig)
     return 0;
 }
 
+/* `n' bytes to the device, all of them */
+static int tty_out(struct tty *tty, const char *s, size_t n)
+{
+    return tty->master_write(tty, n, (void *) s) == (ssize_t) n;
+}
+
+/*
+ * What the terminal writes out (OPOST, POSIX's output modes): a NL as CR
+ * NL (ONLCR), a CR as NL (OCRNL), no CR in the first column (ONOCR), a NL
+ * that returns the carriage too (ONLRET); the column is followed for them.
+ * How many of `buf' went, the device may take fewer.
+ */
 ssize_t tty_slave_write(struct tty *tty, size_t size, void *_buf)
 {
     const char *buf = (const char *) _buf;
+    tcflag_t oflag = tty->tios.c_oflag;
 
-    if (tty->tios.c_oflag & OPOST) {
-        size_t written = 0;
-
-        for (written = 0; written < size; ++written) {
-            char c = buf[written];
-
-            if (c == '\n' && (tty->tios.c_oflag & ONLCR)) {
-                /* If ONLCR is set, the NL character shall
-                 * be transmitted as the CR-NL character pair. 
-                 */
-                if (tty->master_write(tty, 2, "\r\n") != 2)
-                    /* FIXME should handle special cases */
-                    break;
-            } else if (c == '\r' && (tty->tios.c_oflag & OCRNL)) {
-                /* If OCRNL is set, the CR character shall
-                 * be transmitted as the NL character.
-                 */
-                if (tty->master_write(tty, 1, "\n") != 1)
-                    break;
-            } else if (c == '\r' && (tty->tios.c_oflag & ONOCR)) {
-                /* If ONOCR is set, no CR character shall be
-                 * transmitted when at column 0 (first position)
-                 */
-                /* FIXME should track the output column, not the
-                 * cooking buffer position
-                 */
-                if (tty->ws.ws_row && (tty->pos % tty->ws.ws_row))
-                    if (tty->master_write(tty, 1, &c) != 1)
-                        break;
-            } else if (c == '\n' && (tty->tios.c_oflag & ONLRET)) {
-                /* If ONLRET is set, the NL character is assumed
-                 * to do the carriage-return function; the column
-                 * pointer shall be set to 0 and the delays specified
-                 * for CR shall be used. Otherwise, the NL character is
-                 * assumed to do just the line-feed function; the column
-                 * pointer remains unchanged. The column pointer shall also
-                 * be set to 0 if the CR character is actually transmitted.
-                 */
-
-                /* TODO */
-            } else {
-                if (tty->master_write(tty, 1, &c) != 1)
-                    break;
-            }
-        }
-        return written;
-    } else {
+    if (!(oflag & OPOST))
         return tty->master_write(tty, size, _buf);
+
+    size_t written;
+
+    for (written = 0; written < size; ++written) {
+        char c = buf[written];
+
+        if (c == '\n') {
+            if (oflag & ONLCR) {
+                /* CR NL; the CR alone went last time: the NL now */
+                if (tty->nl_owed) {
+                    if (!tty_out(tty, "\n", 1))
+                        break;
+                } else {
+                    ssize_t r = tty->master_write(tty, 2, "\r\n");
+
+                    if (r != 2) {
+                        tty->nl_owed = r == 1;
+                        if (r == 1)
+                            tty->col = 0;
+                        break;
+                    }
+                }
+
+                tty->nl_owed = 0;
+                tty->col = 0;
+            } else {
+                if (!tty_out(tty, "\n", 1))
+                    break;
+
+                if (oflag & ONLRET)
+                    tty->col = 0;
+            }
+        } else if (c == '\r') {
+            /* nothing to return from in the first column */
+            if ((oflag & ONOCR) && !tty->col)
+                continue;
+
+            if (oflag & OCRNL) {
+                if (!tty_out(tty, "\n", 1))
+                    break;
+
+                if (oflag & ONLRET)
+                    tty->col = 0;
+            } else {
+                if (!tty_out(tty, "\r", 1))
+                    break;
+
+                tty->col = 0;
+            }
+        } else {
+            if (!tty_out(tty, &c, 1))
+                break;
+
+            if (c == '\t')
+                tty->col = (tty->col | 7) + 1;
+            else if (c == '\b')
+                tty->col -= !!tty->col;
+            else if ((unsigned char) c >= ' ' && c != 0x7f)
+                tty->col++;
+        }
     }
+
+    return written;
 }
 
 /*
@@ -428,6 +457,8 @@ int tty_new(struct proc *proc, size_t buf_size, ttyio master,
 
     tty->size = buf_size;
     tty->pos  = 0;
+    tty->col  = 0;
+    tty->nl_owed = 0;
 
     /* Defaults */
     tty->tios.c_iflag = ICRNL | IXON;

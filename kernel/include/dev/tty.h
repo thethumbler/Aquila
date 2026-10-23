@@ -29,6 +29,11 @@ struct tty {
     /** end-of-files (VEOF at the start of a line) reads have to return */
     int eof;
 
+    /** the output's column (OPOST: ONOCR, ONLRET), and an ONLCR newline
+     *  whose CR went but not its NL (the device took no more) */
+    size_t col;
+    int nl_owed;
+
     struct termios tios;
     struct winsize ws;
 

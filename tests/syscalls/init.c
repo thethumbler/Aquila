@@ -34,6 +34,7 @@
  * - user memory that isn't mapped: EFAULT, the process goes on, a read's
  *   bytes stay, a buffer running into it is used up to it
  * - virtual terminals: KD* and VT_* ioctls, switching, VT_PROCESS
+ * - a terminal's output modes (ONLCR, ONLRET, ONOCR, OCRNL)
  */
 
 #include "../lib/aqtest.h"
@@ -102,6 +103,61 @@ static char *pts_path(int n)
 
 /* a new session with a pty as its controlling terminal; exits with the
  * failed step */
+/*
+ * The terminal's output modes (OPOST): what the slave writes, as the
+ * master reads it. ONLRET: a NL is output (it returns the carriage too);
+ * ONOCR: no CR in the first column, the output's (not the line being
+ * typed); OCRNL: a CR as NL.
+ */
+static int pty_out(int master, int slave, unsigned oflag, const char *in, const char *want)
+{
+    struct termios t;
+    char got[32];
+    int n = 0, len = 0;
+
+    SC(SYS_ioctl, slave, TCGETS, &t);
+    t.c_oflag = OPOST | oflag;
+    SC(SYS_ioctl, slave, TCSETS, &t);
+
+    while (in[n])
+        n++;
+
+    SC(SYS_write, slave, in, n);
+    aq_spin(100000);
+
+    int r = SC(SYS_read, master, got, sizeof(got) - 1);
+    got[r > 0 ? r : 0] = 0;
+
+    while (want[len])
+        len++;
+
+    if (r != len)
+        return 0;
+
+    for (int i = 0; i < len; ++i)
+        if (got[i] != want[i])
+            return 0;
+
+    return 1;
+}
+
+static void tty_output_modes(void)
+{
+    int n = -1;
+    int master = SC(SYS_open, "/dev/ptmx", O_RDWR | O_NOCTTY, 0);
+    SC(SYS_ioctl, master, TIOCGPTN, &n);
+    int slave = SC(SYS_open, pts_path(n), O_RDWR | O_NOCTTY, 0);
+
+    check("tty: ONLCR", pty_out(master, slave, ONLCR, "a\nb", "a\r\nb"), 1);
+    check("tty: ONLRET keeps the NL", pty_out(master, slave, ONLRET, "a\nb", "a\nb"), 1);
+    check("tty: ONOCR, a CR in the first column", pty_out(master, slave, ONLCR | ONOCR, "\n\rx\r", "\r\nx\r"), 1);
+    check("tty: ONOCR after ONLRET's NL", pty_out(master, slave, ONLRET | ONOCR, "ab\n\r", "ab\n"), 1);
+    check("tty: OCRNL", pty_out(master, slave, OCRNL, "a\rb", "a\nb"), 1);
+
+    SC(SYS_close, slave, 0, 0);
+    SC(SYS_close, master, 0, 0);
+}
+
 static void pty_session(void)
 {
     int me = SC(SYS_getpid, 0, 0, 0), pgid = 0, n = -1;
@@ -2057,6 +2113,7 @@ void aq_main(void)
     check("TIOCSPGRP not our terminal", SC(SYS_ioctl, ptm, TIOCSPGRP, &c), -ENOTTY);
     SC(SYS_close, ptm, 0, 0);
     check("closed pty removed", SC(SYS_stat, "/dev/pts/0", sb, 0), -ENOENT);
+    tty_output_modes();
 
     /* --- stopping and continuing --- */
     /* the child runs on after being continued, until it is killed (an
