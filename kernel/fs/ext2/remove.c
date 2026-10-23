@@ -59,8 +59,10 @@ void ext2_blocks_free(struct ext2 *desc, struct ext2_inode *inode, size_t from)
 {
     size_t p = desc->bs / 4, base = EXT2_DIRECT_POINTERS;
 
-    /* a fast symbolic link keeps its target in the block pointers */
-    if (S_ISLNK(inode->mode) && !inode->blocks)
+    /* a fast symbolic link keeps its target in the block pointers, a
+     * device node its number: no blocks */
+    if ((S_ISLNK(inode->mode) && !inode->blocks) ||
+        S_ISCHR(inode->mode) || S_ISBLK(inode->mode))
         return;
 
     for (size_t i = from; i < EXT2_DIRECT_POINTERS; ++i)

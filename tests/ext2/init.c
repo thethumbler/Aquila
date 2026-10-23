@@ -132,6 +132,16 @@ void aq_main(void)
     check("small file", SC(SYS_write, fd, "hello aquila\n", 13), 13);
     SC(SYS_close, fd, 0, 0);
 
+    /* device nodes keep their numbers (the host reads devnode's), and
+     * one removed frees no blocks (e2fsck) */
+    check("mknod on ext2", SC(SYS_mknod, "/mnt/devnode", S_IFBLK | 0644, DEV(3, 1)), 0);
+    SC(SYS_stat, "/mnt/devnode", st, 0);
+    check("device node's number", ST->st_rdev, DEV(3, 1));
+    check("mknod another", SC(SYS_mknod, "/mnt/gone", S_IFCHR | 0644, DEV(4, 64)), 0);
+    SC(SYS_stat, "/mnt/gone", st, 0);
+    check("its number", ST->st_rdev, DEV(4, 64));
+    check("unlink a device node", SC(SYS_unlink, "/mnt/gone", 0, 0), 0);
+
     /* a directory that needs more than one block (16-byte entries) */
     SC(SYS_stat, "/mnt", st, 0);
     int root_links = ST->st_nlink;

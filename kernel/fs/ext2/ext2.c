@@ -44,6 +44,16 @@ int ext2_inode_build(struct ext2 *desc, ino_t ino, struct vnode **ref_inode)
     inode->gid   = einode.gid;
     inode->nlink = einode.nlink;
 
+    /* a device node's number is in its first block pointer, as Linux
+     * keeps it (major << 8 | minor, AquilaOS's dev_t); 0 there, in the
+     * second, Linux's newer encoding of larger numbers */
+    if (S_ISCHR(einode.mode) || S_ISBLK(einode.mode)) {
+        uint32_t old = einode.direct_pointer[0], new = einode.direct_pointer[1];
+
+        inode->rdev = old ? (dev_t) old :
+            DEV((new & 0xFFF00) >> 8, (new & 0xFF) | ((new >> 12) & 0xFFF00));
+    }
+
     inode->atime.tv_sec  = einode.atime;
     inode->atime.tv_nsec = 0;
     inode->mtime.tv_sec  = einode.mtime;

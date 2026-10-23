@@ -209,6 +209,10 @@ int minix_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, stru
     m_inode.uid  = uio->uid;
     m_inode.gid  = uio->gid;
 
+    /* a device node's number, where minix_inode_build() reads it */
+    if (S_ISCHR(mode) || S_ISBLK(mode))
+        m_inode.zones[0] = DEV(DEV_MAJOR(dev), DEV_MINOR(dev));
+
     if (S_ISDIR(mode)) {   /* Initalize directory structure */
         m_inode.nlinks = 2;
         m_inode.size   = 2 * desc->dentry_size;

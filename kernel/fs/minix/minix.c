@@ -40,6 +40,11 @@ int minix_inode_build(struct minix *desc, ino_t ino, struct vnode **ref)
     inode->gid   = minix_inode.gid;
     inode->nlink = minix_inode.nlinks;
 
+    /* a device node's number is in its first zone, as Linux keeps it
+     * (major << 8 | minor, AquilaOS's dev_t) */
+    if (S_ISCHR(minix_inode.mode) || S_ISBLK(minix_inode.mode))
+        inode->rdev = (dev_t) minix_inode.zones[0];
+
     //node->atim.tv_sec  = i.last_access_time;
     //node->atim.tv_nsec = 0;
     inode->mtime.tv_sec  = minix_inode.mtime;

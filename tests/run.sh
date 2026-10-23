@@ -693,8 +693,14 @@ EOF
     # what the test left: removed, renamed and unlinked-while-open files gone
     local names
     names=$(debugfs -R "ls /" "$img" 2>/dev/null | tr -s ' ' '\n' | grep -v '^[0-9(]' | sort | xargs)
-    if [ "$names" != ". .. a b big huge lost+found sym trunc" ]; then
+    if [ "$names" != ". .. a b big devnode huge lost+found sym trunc" ]; then
         echo "unexpected files on the image: $names"
+        return 1
+    fi
+
+    # the device node's number, where Linux reads it
+    if ! debugfs -R "stat /devnode" "$img" 2>/dev/null | grep -q 'major/minor number: 03:01'; then
+        echo "the device node's number isn't Linux's 3, 1"
         return 1
     fi
 

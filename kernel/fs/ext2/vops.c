@@ -289,6 +289,10 @@ int ext2_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, struc
     inode.uid  = uio->uid;
     inode.gid  = uio->gid;
 
+    /* a device node's number, where ext2_inode_build() reads it */
+    if (S_ISCHR(mode) || S_ISBLK(mode))
+        inode.direct_pointer[0] = DEV(DEV_MAJOR(dev), DEV_MINOR(dev));
+
     struct timespec ts;
     gettime(&ts);
 

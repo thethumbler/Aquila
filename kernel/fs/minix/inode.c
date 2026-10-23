@@ -255,6 +255,10 @@ void minix_zones_free(struct minix *desc, struct minix_inode *inode, size_t from
 {
     size_t p = desc->bs / sizeof(uint16_t), base = MINIX_DIRECT_ZONES;
 
+    /* a device node keeps its number in its first zone: no zones */
+    if (S_ISCHR(inode->mode) || S_ISBLK(inode->mode))
+        return;
+
     for (size_t i = from; i < MINIX_DIRECT_ZONES; ++i)
         inode->zones[i] = free_tree(desc, inode->zones[i], 0, 0);
 

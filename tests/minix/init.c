@@ -94,6 +94,11 @@ void aq_main(void)
     check("mknod /dev/hda", SC(SYS_mknod, "/dev/hda", S_IFBLK | 0644, DEV(3, 0)), 0);
     check("mount minix", aq_mount("minix", "/mnt", &args), 0);
 
+    /* device nodes keep their numbers */
+    check("mknod on minix", SC(SYS_mknod, "/mnt/devnode", S_IFCHR | 0644, DEV(4, 64)), 0);
+    SC(SYS_stat, "/mnt/devnode", st, 0);
+    check("device node's number", ST->st_rdev, DEV(4, 64));
+
     /* through the singly and doubly indirect zones */
     int fd = SC(SYS_open, "/mnt/big", O_CREAT | O_RDWR, 0644);
     check("create a file", fd >= 0, 1);
