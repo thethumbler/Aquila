@@ -14,15 +14,21 @@
 static struct uart *devices[192] = {0};   /* Registered devices */
 
 /** Called when data is received */
-void uart_recieve_handler(struct uart *u, size_t size)
+void uart_receive_handler(struct uart *u, size_t size)
 {
     char buf[UART_BUF];
 
-    for (size_t i = 0; i < size; ++i) {
-        buf[i] = u->receive(u);
+    /* `size' bytes from the UART, a buffer's worth at a time */
+    while (size) {
+        size_t n = MIN(size, sizeof(buf));
+
+        for (size_t i = 0; i < n; ++i)
+            buf[i] = u->receive(u);
+
+        tty_master_write(u->tty, n, buf);
+        size -= n;
     }
 
-    tty_master_write(u->tty, size, buf);
     thread_queue_wakeup(&u->read_queue);
 }
 

@@ -26,7 +26,7 @@ struct uart {
 };
 
 int  uart_register(int id, struct uart *u);
-void uart_recieve_handler(struct uart *u, size_t size);
+void uart_receive_handler(struct uart *u, size_t size);
 void uart_transmit_handler(struct uart *u, size_t size);
 
 #endif /* ! _DEV_UART_H */

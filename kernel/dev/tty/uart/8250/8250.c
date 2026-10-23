@@ -64,7 +64,7 @@ void uart_8250_irq()
      * another may not come for those left (v86's 16550 doesn't) */
     while (serial_received()) {
         if (uart_8250.tty)   /* If open */
-            uart_recieve_handler(&uart_8250, 1);
+            uart_receive_handler(&uart_8250, 1);
         else
             uart_8250_receive(&uart_8250);
     }
