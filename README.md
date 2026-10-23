@@ -107,6 +107,7 @@ comments in the sources:
 
 ```
 make docs           # build/docs/kernel/api/index.html (needs doxygen)
+make docs-serve     # the same, on http://localhost:8000/
 ```
 
 ## Layout

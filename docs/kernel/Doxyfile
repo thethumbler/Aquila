@@ -1,25 +1,26 @@
-# The AquilaOS kernel's code reference (make docs): only what differs from
-# Doxygen's defaults. Run from docs/kernel/, the output's directory in
-# $DOXYGEN_OUTPUT.
+# The AquilaOS kernel's documents and code reference (make docs): only
+# what differs from Doxygen's defaults. Run from docs/kernel/, the
+# output's directory in $DOXYGEN_OUTPUT.
 
 PROJECT_NAME           = "AquilaOS kernel"
-PROJECT_BRIEF          = "The code reference"
+PROJECT_BRIEF          = "How it works, and its code"
 OUTPUT_DIRECTORY       = $(DOXYGEN_OUTPUT)
 HTML_OUTPUT            = api
 
-# the kernel's sources (not arch/arm and arch/none, which aren't built),
-# and this reference's main page
-INPUT                  = api.md ../../kernel
-FILE_PATTERNS          = *.c *.h
+# the documents (README.md the main page) and the kernel's sources (not
+# arch/arm and arch/none, which aren't built)
+INPUT                  = . ../../kernel
+FILE_PATTERNS          = *.md *.c *.h
 RECURSIVE              = YES
-EXCLUDE                = ../../kernel/arch/arm ../../kernel/arch/none
+EXCLUDE                = doxygen ../../kernel/arch/arm ../../kernel/arch/none ../../kernel/README.md
 EXCLUDE_PATTERNS       = */tags
-USE_MDFILE_AS_MAINPAGE = api.md
+USE_MDFILE_AS_MAINPAGE = README.md
 FULL_PATH_NAMES        = YES
 STRIP_FROM_PATH        = ../..
 
 # the comments quote names `like this', Markdown wants `like this`
-FILTER_PATTERNS        = *.c=doxygen/quotes.sh *.h=doxygen/quotes.sh
+# the documents' links to the sources, which are outside the site
+FILTER_PATTERNS        = *.c=doxygen/quotes.sh *.h=doxygen/quotes.sh *.md=doxygen/mdlinks.sh
 
 # C; a comment's first sentence is its summary (the comments are prose,
 # without tags); everything listed, documented or not, static functions too

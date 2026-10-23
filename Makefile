@@ -41,8 +41,10 @@
 #   QEMU uses KVM when /dev/kvm can be used, KVM=0 turns it off (also for
 #   make test).
 #   make test         kernel test suite (tests/run.sh, uses the host gcc)
-#   make docs         the kernel's code reference, build/docs/kernel/api/
-#                     (needs doxygen); the documents are docs/kernel/*.md
+#   make docs         the kernel's documents (docs/kernel/*.md) and its code
+#                     reference, build/docs/kernel/api/ (needs doxygen)
+#   make docs-serve   the same, served on http://localhost:8000/
+#                     (DOCS_PORT=<port>; needs python3)
 #   make clean        remove build output except the toolchain, downloads
 #                     and the hard disk (it has what was saved on it)
 #   make distclean    remove build/
@@ -93,7 +95,7 @@ MAKEFLAGS += --no-print-directory
 
 export
 
-.PHONY: all toolchain kernel userland contrib ports initrd iso live hdd hdd-kernel hdd-update run run-iso run-hdd test docs clean distclean check-toolchain
+.PHONY: all toolchain kernel userland contrib ports initrd iso live hdd hdd-kernel hdd-update run run-iso run-hdd test docs docs-serve clean distclean check-toolchain
 
 all: kernel userland contrib initrd
 
@@ -226,8 +228,10 @@ run-hdd:
 test:
 	@$(SRCDIR)/tests/run.sh -a $(ARCH)
 
-# the kernel's code reference, from the comments in its sources
+# the kernel's documents and code reference, from the comments in its
+# sources
 DOCS := $(SRCDIR)/build/docs/kernel
+DOCS_PORT ?= 8000
 
 docs:
 	@command -v doxygen >/dev/null || { echo "error: doxygen not found" >&2; exit 1; }
@@ -235,6 +239,10 @@ docs:
 	@$(ECHO) "  DOXYGEN " build/docs/kernel/api
 	@cd $(SRCDIR)/docs/kernel && DOXYGEN_OUTPUT=$(DOCS) doxygen Doxyfile
 	@echo "  $$(grep -c . $(DOCS)/warnings.log || true) warnings, in build/docs/kernel/warnings.log"
+
+docs-serve: docs
+	@echo "  the docs on http://localhost:$(DOCS_PORT)/ (Ctrl-C stops)"
+	@python3 -m http.server --bind 127.0.0.1 --directory $(DOCS)/api $(DOCS_PORT)
 
 clean:
 	@$(RM) -r $(BUILDDIR)/kernel $(BUILDDIR)/userland $(ROOTFS) $(BUILDDIR)/iso \

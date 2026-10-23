@@ -19,8 +19,9 @@ There are two kinds of documentation:
   general, how AquilaOS solves it, where the code is, and where to read
   more.
 - **The code reference**, generated from the comments in the sources: what
-  each function, structure and file is for. `make docs` builds it into
-  `build/docs/kernel/api/` (it needs Doxygen).
+  each function, structure and file is for. `make docs` builds it, with
+  these documents, into `build/docs/kernel/api/` (it needs Doxygen);
+  `make docs-serve` serves them on <http://localhost:8000/>.
 
 ## The kernel at a glance
 
