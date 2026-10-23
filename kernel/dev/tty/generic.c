@@ -427,7 +427,8 @@ int tty_ioctl(struct tty *tty, int request, void *argp)
             break;
         }
         default:
-            return -EINVAL;
+            /* a request terminals don't have, as POSIX and Linux say */
+            return -ENOTTY;
     }
     
     return 0;

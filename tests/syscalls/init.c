@@ -1619,6 +1619,7 @@ void aq_main(void)
     check("fstat sock", SC(SYS_fstat, s, buf, 0), 0);
     check("lseek sock", SC(SYS_lseek, s, 0, 0), -ESPIPE);
     check("close sock", SC(SYS_close, s, 0, 0), 0);
+    check("unix datagram socket", SC(SYS_socket, AF_UNIX, SOCK_DGRAM, 0), -EPROTONOSUPPORT);
 
     /* closing a listener refuses a blocked connect() */
     {
@@ -1667,6 +1668,9 @@ void aq_main(void)
         int ls = SC(SYS_socket, AF_UNIX, SOCK_STREAM, 0);
         SC(SYS_bind, ls, &la, sizeof(la));
         SC(SYS_listen, ls, 1, 0);
+        int taken = SC(SYS_socket, AF_UNIX, SOCK_STREAM, 0);
+        check("bind a path taken", SC(SYS_bind, taken, &la, sizeof(la)), -EADDRINUSE);
+        SC(SYS_close, taken, 0, 0);
         check("shutdown listening", SC(SYS_shutdown, ls, SHUT_RDWR, 0), -ENOTCONN);
         check("shutdown not a socket", SC(SYS_shutdown, aq_out, SHUT_WR, 0), -ENOTSOCK);
         check("shutdown bad fd", SC(SYS_shutdown, 99, SHUT_WR, 0), -EBADF);
@@ -2155,6 +2159,7 @@ void aq_main(void)
     SC(SYS_ioctl, ptm, TIOCGPTN, &ptn);
     check("pty id reused", ptn, 0);
     check("TIOCSPGRP not our terminal", SC(SYS_ioctl, ptm, TIOCSPGRP, &c), -ENOTTY);
+    check("an ioctl terminals don't have", SC(SYS_ioctl, ptm, 0x5401 + 0x1000, &c), -ENOTTY);
     SC(SYS_close, ptm, 0, 0);
     check("closed pty removed", SC(SYS_stat, "/dev/pts/0", sb, 0), -ENOENT);
     tty_output_modes();

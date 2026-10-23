@@ -42,6 +42,14 @@ static void unix_conn_wakeup(struct un_conn *conn)
 int socket_unix_create(struct file *file, int domain, int type, int protocol)
 {
     //printk("socket_unix_create(file=%p, domain=%d, type=%d, protocol=%d)\n", file, domain, type, protocol);
+
+    /* streams only: a datagram socket would be one too, silently */
+    if (type != SOCK_STREAM)
+        return -EPROTONOSUPPORT;
+
+    if (protocol)
+        return -EPROTONOSUPPORT;
+
     struct socket *socket = kmalloc(sizeof(struct socket), &M_SOCKET, M_ZERO);
     if (!socket) return -ENOMEM;
 
@@ -141,7 +149,9 @@ static int socket_unix_bind(struct file *file, const struct sockaddr *addr, sock
     if (!err) {
         if (vnode)
             vfs_close(vnode);
-        return -EEXIST;
+
+        /* the path is taken, as POSIX says for bind() */
+        return -EADDRINUSE;
     }
 
     /* Create socket */
