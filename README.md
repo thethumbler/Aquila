@@ -187,6 +187,7 @@ from source, see [tests/](tests/README.md).
 - [X] TinyX   (Xfbdev, X server on the framebuffer, port) with X.Org's
               fixed and cursor fonts, Xlib and the X Toolkit (ports)
 - [X] twm and xterm (ports), `startx`
+- [X] UnixBench (port): `ubench`, its index without Perl
 
 ## License
 
@@ -206,4 +207,4 @@ binutils and GCC (GPLv3) and newlib (various free licenses); the patched
 tools remain under those licenses. contrib/ and ports/ software is
 fetched from upstream and keeps its own license (dash: BSD, sbase: MIT,
 kilo: BSD 2-Clause, Lua: MIT, ncurses: MIT-style, libtermkey: MIT,
-vis: ISC).
+vis: ISC, UnixBench: GPLv2).

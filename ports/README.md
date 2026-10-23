@@ -99,6 +99,7 @@ host's `/usr/lib`.
 | st         | 0.9.2    | `st` in `/usr/bin`, the terminal of dwm (Xft fonts, TERM=xterm-256color) |
 | tcc        | mob e23dabe | `tcc` (also `cc`) in `/usr/bin`, compiling static programs on AquilaOS; with the C library's headers in `/usr/include` and archives in `/usr/lib`; no `-run` (no `mprotect()`) |
 | tinyx      | 1.2.0 (feab72c) | `Xfbdev` (also `X`) and `startx` (X and twm with an xterm, or `~/.xinitrc`) in `/usr/bin`: X on the framebuffer, the keyboard and mouse of a virtual terminal; clients through a Unix socket (`:0`). Its changes to X.Org's code are GPLv3 |
+| unixbench  | 6.0.1    | UnixBench's index tests in `/usr/lib/unixbench`, and `ubench` in `/usr/bin` (its own `ubench.c`): what UnixBench's `Run` does for the index, without Perl; `ubench -c 4` runs 4 copies of each test at once. No graphics tests. GPLv2 |
 | twm        | 1.0.13.1 | `twm` in `/usr/bin`, the window manager of X        |
 | vis        | 0.9      | `vis` in `/usr/bin`, without Lua (no syntax highlighting) |
 | xcb-proto  | 1.17.0   | for libxcb: the protocol in XML, generated on the build host |
