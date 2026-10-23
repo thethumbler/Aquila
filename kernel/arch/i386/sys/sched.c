@@ -19,8 +19,6 @@ uint64_t arch_cycles(void)
     return ((uint64_t) hi << 32) | lo;
 }
 
-static uint64_t first_measured_time = 0;
-
 /* the tick, every CPU's: the boot CPU keeps the time */
 static void x86_sched_handler(struct x86_regs *r)
 {
@@ -30,30 +28,10 @@ static void x86_sched_handler(struct x86_regs *r)
         return;
     }
 
-    /* we check time every 2^16 ticks */
-    if (!(timer_ticks & 0xFFFF)) {
-        if (!timer_ticks) {
-            struct timespec ts = {0};
-            arch_time_get(&ts);     /* the real time clock itself */
-            first_measured_time = ts.tv_sec;
-        } else {
-            struct timespec ts = {0};
-            arch_time_get(&ts);
-
-            uint64_t measured_time = ts.tv_sec - first_measured_time;
-            uint64_t calculated_time = arch_rtime_ms() / 1000;
-
-            int32_t delta = calculated_time - measured_time;
-
-            if (ABS(delta) > 1) {
-                printk("warning: calculated time differs from measured time by %c%d seconds\n", delta < 0? '-' : '+', ABS(delta));
-                printk("calculated time: %ld seconds\n", calculated_time);
-                printk("measured time: %ld seconds\n", measured_time);
-
-                /* TODO: attempt to correct time */
-            }
-        }
-    }
+    /* the wall clock against the real time clock, every 2^16 ticks
+     * (about 2 minutes) */
+    if (timer_ticks && !(timer_ticks & 0xFFFF))
+        time_resync();
 
     ++timer_ticks;
     x86_clock_tick();
