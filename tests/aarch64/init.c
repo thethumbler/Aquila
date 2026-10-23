@@ -7,7 +7,9 @@
  * page faults (a bad address: SIGSEGV), copies from user memory that
  * fail (EFAULT), a signal handler and sigreturn, the tick (nanosleep, the
  * clock), uname's machine, and the FP/SIMD registers (each thread's own,
- * across switches, forks and a signal handler that uses them).
+ * across switches, forks and a signal handler that uses them). Then a
+ * device on PCI Express (ECAM): the e1000, its BARs and interrupt the
+ * kernel's to give, an echo request through it to QEMU's gateway.
  *
  * Run as /init; run again by exec with an argument ("exec-child"), it
  * exits 0x55 at once.
@@ -16,6 +18,8 @@
 #include "../lib/aqtest.h"
 #include <aquila/mman.h>
 #include <aquila/utsname.h>
+#include <aquila/in.h>
+#include <aquila/socket.h>
 
 static int eq(const char *a, const char *b, int n)
 {
@@ -78,6 +82,49 @@ static void child_fp(void)
 {
     /* meanwhile the parent sums too: both are preempted, both right */
     SC(SYS_exit, fp_sum(2000000, 0.25) == 500000.0 ? 0 : 1, 0, 0);
+}
+
+/* the kernel's struct timeval */
+struct tv {
+    uint64_t sec;
+    long usec;
+};
+
+struct icmp {
+    uint8_t  type, code;
+    uint16_t checksum, id, seq;
+    char data[32];
+};
+
+static uint16_t htons(uint16_t v) { return (uint16_t) (v << 8 | v >> 8); }
+
+/** an echo request through a ping socket to `addr' (a.b.c.d, network
+ * order), its reply: 1 if it came, as sent */
+static int ping(uint32_t addr)
+{
+    int fd = SC(SYS_socket, AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
+    struct icmp req = {8, 0, 0, 0, htons(1), "aquila ping data, 32 bytes long"}, rep;
+    struct sockaddr_in to = {0}, from;
+    struct tv tv = {5, 0};
+    unsigned int len = sizeof(to);
+
+    SC5(SYS_setsockopt, fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+    to.sin_family = AF_INET;
+    to.sin_addr.s_addr = addr;
+
+    struct aquila_socket_io_args out = {fd, &req, sizeof(req), 0, &to, &len};
+
+    if (SC(SYS_send, &out, 0, 0) != sizeof(req))
+        return 0;
+
+    len = sizeof(from);
+    struct aquila_socket_io_args in = {fd, &rep, sizeof(rep), 0, &from, &len};
+    int n = SC(SYS_recv, &in, 0, 0);
+    SC(SYS_close, fd, 0, 0);
+
+    return n == sizeof(rep) && rep.type == 0 && rep.seq == htons(1) &&
+           eq(rep.data, req.data, 32) && from.sin_addr.s_addr == addr;
 }
 
 static uint64_t now_ms(void)
@@ -182,6 +229,9 @@ void aq_main(void)
     SC(SYS_kill, SC(SYS_getpid, 0, 0, 0), SIGUSR2, 0);
     check("FP: a handler that uses them", fp_in_handler == 500.0, 1);
     check("FP: what it interrupted, as it was", before == 6.5 && kept * 2 == 6.5, 1);
+
+    /* the e1000 on PCI Express, 10.0.2.15 (ip=): the gateway answers */
+    check("PCI: the e1000, a ping to the gateway", ping(10 | 0 << 8 | 2 << 16 | 2u << 24), 1);
 
     aq_end();
 }

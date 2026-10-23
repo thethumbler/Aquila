@@ -4,37 +4,23 @@
 
 #include <dev/pci.h>
 #include <cpu/io.h>
+#include <mm/mm.h>
 
-static struct ioaddr pci_ioaddr;
+/* the platform's host bridge: none, no devices */
+static struct pci_host *host;
 
-static inline uint32_t pci_read_dword(uint8_t bus, uint8_t dev, uint8_t func, uint8_t reg)
+static inline uint32_t pci_read_dword(uint8_t bus, uint8_t dev, uint8_t func, uint16_t reg)
 {
-    union pci_address addr;
-    addr.raw = 0;
-
-    addr.structure.enable = 1;
-    addr.structure.bus = bus;
-    addr.structure.device = dev;
-    addr.structure.function = func;
-    addr.structure.reg = reg & 0xfc;
-
-    io_out32(&pci_ioaddr, PCI_CONFIG_ADDRESS, addr.raw);
-    return io_in32(&pci_ioaddr, PCI_CONFIG_DATA);
+    struct pci_dev d = {.bus = bus, .dev = dev, .func = func};
+    return host ? host->read(host, &d, reg) : 0xFFFFFFFF;
 }
 
-static inline void pci_write_dword(uint8_t bus, uint8_t dev, uint8_t func, uint8_t reg, uint32_t val)
+static inline void pci_write_dword(uint8_t bus, uint8_t dev, uint8_t func, uint16_t reg, uint32_t val)
 {
-    union pci_address addr;
-    addr.raw = 0;
+    struct pci_dev d = {.bus = bus, .dev = dev, .func = func};
 
-    addr.structure.enable = 1;
-    addr.structure.bus = bus;
-    addr.structure.device = dev;
-    addr.structure.function = func;
-    addr.structure.reg = reg & 0xfc;
-
-    io_out32(&pci_ioaddr, PCI_CONFIG_ADDRESS, addr.raw);
-    io_out32(&pci_ioaddr, PCI_CONFIG_DATA, val);
+    if (host)
+        host->write(host, &d, reg, val);
 }
 
 static inline uint16_t get_vendor_id(uint8_t bus, uint8_t dev, uint8_t func)
@@ -161,13 +147,6 @@ struct dev pcidev = {
     .probe = pci_prope,
 };
 
-/**
- * Used by chipset driver to initalize PCI bus
- */
-void pci_ioaddr_set(struct ioaddr *io)
-{
-    pci_ioaddr = *io;
-}
 
 
 /*
@@ -264,10 +243,102 @@ void pci_enable(struct pci_dev *dev)
         command | PCI_COMMAND_IO | PCI_COMMAND_MEMORY | PCI_COMMAND_MASTER);
 }
 
-/** the interrupt (of the PIC) its pin is routed to, as the firmware set */
-uint8_t pci_irq_line(struct pci_dev *dev)
+#define PCI_INTERRUPT_PIN   0x3D
+
+/** the IRQ its interrupt pin comes to: the host's for the pin, swizzled
+ * by the device's slot (the bridge's interrupt map: INTA# of slot 1 is
+ * INTB#), else the line the firmware wrote; -1 if it has no pin */
+int pci_irq(struct pci_dev *dev)
 {
-    return pci_reg8_read(dev, PCI_INTERRUPT_LINE);
+    if (!host || !host->nirq)
+        return pci_reg8_read(dev, PCI_INTERRUPT_LINE);
+
+    int pin = pci_reg8_read(dev, PCI_INTERRUPT_PIN);
+
+    if (pin < 1 || pin > 4)
+        return -1;
+
+    return host->irq[(dev->dev + pin - 1) % host->nirq];
+}
+
+#define ALIGN_TO(x, a)      (((x) + (a) - 1) & ~((uint64_t) (a) - 1))
+
+/** the BARs no firmware assigned (bus 0's devices'), each in its window,
+ * aligned to its size (the host's bus addresses) */
+static void pci_assign(void)
+{
+    uint64_t mem = host->mem_base, io = host->io_base;
+
+    for (uint8_t slot = 0; slot < 32; ++slot) {
+        for (uint8_t func = 0; func < 8; ++func) {
+            struct pci_dev dev = {.bus = 0, .dev = slot, .func = func};
+
+            /* none, or a bridge (its BARs are another layout) */
+            if (get_vendor_id(0, slot, func) == 0xFFFF || (get_header_type(0, slot, func) & 0x7F))
+                continue;
+
+            for (int id = 0; id < 6; ++id) {
+                uint8_t off = 0x10 + 4 * id;
+                uint32_t lo = pci_reg32_read(&dev, off);
+                int wide = !(lo & 1) && (lo & 0x6) == 0x4;
+                struct pci_bar bar;
+
+                if (!pci_bar(&dev, id, &bar) && !bar.addr) {
+                    uint64_t *next = bar.io ? &io : &mem;
+                    uint64_t end = bar.io ? host->io_base + host->io_size
+                                          : host->mem_base + host->mem_size;
+                    uint64_t addr = ALIGN_TO(*next, bar.size);
+
+                    if (addr + bar.size <= end) {
+                        pci_reg32_write(&dev, off, (uint32_t) addr | (lo & (bar.io ? 0x3 : 0xF)));
+
+                        if (wide)
+                            pci_reg32_write(&dev, off + 4, (uint32_t) (addr >> 32));
+
+                        *next = addr + bar.size;
+                        printk("pci: %d:%d.%d BAR %d: %s at %p, %ld bytes\n", 0, slot, func, id,
+                               bar.io ? "ports" : "memory", (void *) (uintptr_t) addr, bar.size);
+                    } else {
+                        printk("pci: %d:%d.%d BAR %d: no room for %ld bytes\n", 0, slot, func, id, bar.size);
+                    }
+                }
+
+                if (wide)
+                    ++id;
+            }
+
+            /* one function only */
+            if (!func && !(get_header_type(0, slot, 0) & 0x80))
+                break;
+        }
+    }
+}
+
+/**
+ * The platform's host bridge (platform_init()): its configuration space
+ * mapped (ECAM's memory), the BARs no firmware assigned put in its
+ * windows. -1 if it can't be mapped.
+ */
+int pci_host_set(struct pci_host *h)
+{
+    if (h->config.type != IOADDR_PORT) {
+        void *config = arch_mmio_map(h->config.addr, h->size);
+
+        if (!config)
+            return -1;
+
+        printk("pci: %s at %p\n", h->name, (void *) h->config.addr);
+        h->config.addr = (uintptr_t) config;
+    } else {
+        printk("pci: %s at port %p\n", h->name, (void *) h->config.addr);
+    }
+
+    host = h;
+
+    if (h->mem_size || h->io_size)
+        pci_assign();
+
+    return 0;
 }
 
 #define PCI_STATUS              0x06

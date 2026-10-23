@@ -59,6 +59,11 @@ DEV_UART=y
 DEV_UART_PL011=y
 DEV_PTY=y
 DEV_MEMDEV=y
+# PCI Express (ECAM)
+DEV_PCI=y
+DEV_PCI_ECAM=y
+# Intel 8254x Ethernet (e1000), QEMU's -device e1000
+DEV_E1000=y
 
 # Filesystems
 FS_TMPFS=y
@@ -71,6 +76,6 @@ FS_MINIX=y
 # Initramfs
 INITRAMFS_CPIO=y
 
-# Network (the loopback interface: no card yet)
+# Network
 NET_UNIX=y
 NET_INET=y

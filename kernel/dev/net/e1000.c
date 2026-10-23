@@ -393,10 +393,8 @@ static int e1000_probe(void)
     int irq = pci_msi_enable(&e1000.pci, e1000_irq, NULL);
     int msi = irq >= 0;
 
-    if (!msi) {
-        irq = pci_irq_line(&e1000.pci);
-        irq_install(irq, e1000_irq, NULL);
-    }
+    if (!msi && ((irq = pci_irq(&e1000.pci)) < 0 || irq_install(irq, e1000_irq, NULL)))
+        printk("e1000: no interrupt\n");
 
     e1000.irq = irq;
 

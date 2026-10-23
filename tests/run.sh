@@ -317,10 +317,11 @@ test_cpu()
 }
 
 # the generic kernel on aarch64: user mode, system calls, fork, exec,
-# pipes, memory, faults, signals, the tick
+# pipes, memory, faults, signals, the tick; an e1000 on PCI Express
 test_aarch64()
 {
-    run_qemu "$OUT/aarch64/serial.log" 60 'aqtest: done' -initrd "$OUT/aarch64/initrd.img"
+    run_qemu "$OUT/aarch64/serial.log" 60 'aqtest: done' -initrd "$OUT/aarch64/initrd.img" \
+        -append "ip=10.0.2.15/24:10.0.2.2" -netdev user,id=n0 -device e1000,netdev=n0
     aqtest_result "$OUT/aarch64/serial.log"
 }
 

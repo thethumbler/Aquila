@@ -3,27 +3,11 @@
 
 #include <core/system.h>
 
-union pci_address;
 struct pci_dev;
 
 #include <dev/dev.h>
 #include <cpu/io.h>
 #include <dev/irq.h>
-
-#define PCI_CONFIG_ADDRESS  0x00
-#define PCI_CONFIG_DATA     0x04
-
-union pci_address {
-    struct  {
-        uint8_t reg      : 8;
-        uint8_t function : 3;
-        uint8_t device   : 5;
-        uint8_t bus      : 8;
-        uint8_t reserved : 7;
-        uint8_t enable   : 1;
-    } structure;
-    uint32_t raw;
-} __packed;
 
 struct pci_dev {
     uint8_t bus;
@@ -32,7 +16,42 @@ struct pci_dev {
 };
 
 extern struct dev pcidev;
-void pci_ioaddr_set(struct ioaddr *io);
+
+/**
+ * The host bridge, the platform's (platform_init() sets it): how its
+ * configuration space is reached, which IRQs its devices' interrupt pins
+ * come to, and where their registers go if no firmware put them.
+ */
+struct pci_host {
+    const char *name;
+
+    /* the configuration space: ports (mechanism #1, conf1.c), or memory
+     * (ECAM, ecam.c: `size' of it from `config', mapped by pci_host_set) */
+    struct ioaddr config;
+    size_t size;
+    uint32_t (*read)(struct pci_host *host, struct pci_dev *dev, uint16_t reg);
+    void     (*write)(struct pci_host *host, struct pci_dev *dev, uint16_t reg, uint32_t val);
+
+    /* INTA# to INTD#'s IRQs, a device's swizzled by its slot; none (0):
+     * the interrupt line register's, the firmware's */
+    int      nirq;
+    unsigned irq[4];
+
+    /* the BARs nothing assigned (no firmware: the virt machine) go
+     * there, in bus addresses; none (0 size): the firmware did */
+    uint64_t mem_base, mem_size;
+    uint64_t io_base, io_size;
+};
+
+int pci_host_set(struct pci_host *host);
+
+/* dev/pci/conf1.c: configuration mechanism #1, two ports (0xCF8) */
+uint32_t pci_conf1_read(struct pci_host *host, struct pci_dev *dev, uint16_t reg);
+void     pci_conf1_write(struct pci_host *host, struct pci_dev *dev, uint16_t reg, uint32_t val);
+
+/* dev/pci/ecam.c: the Enhanced Configuration Access Mechanism, memory */
+uint32_t pci_ecam_read(struct pci_host *host, struct pci_dev *dev, uint16_t reg);
+void     pci_ecam_write(struct pci_host *host, struct pci_dev *dev, uint16_t reg, uint32_t val);
 
 /*
  * PCI Interface
@@ -57,7 +76,7 @@ struct pci_bar {
 
 int      pci_bar(struct pci_dev *dev, int id, struct pci_bar *bar);
 void     pci_enable(struct pci_dev *dev);
-uint8_t  pci_irq_line(struct pci_dev *dev);
+int      pci_irq(struct pci_dev *dev);
 
 #define PCI_CAP_MSI     0x05
 #define PCI_CAP_MSIX    0x11

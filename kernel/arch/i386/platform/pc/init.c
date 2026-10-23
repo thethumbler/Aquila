@@ -5,10 +5,6 @@
 #include <platform/misc.h>
 
 
-/* PCI bus */
-#define PCI_ADDR    0xCF8
-#define PCI_TYPE    IOADDR_PORT
-
 /* i8254 PIT controller */
 #define I8254_ADDR  0x40
 #define I8254_TYPE  IOADDR_PORT
@@ -29,16 +25,20 @@ static int x86_pc_pic_init(void)
     return x86_pic_setup(&pic_master, &pic_slave);
 }
 
+/* the PCI bus: configuration mechanism #1, its ports; the firmware set
+ * its devices' registers and interrupt lines */
+static struct pci_host x86_pc_pci = {
+    .name   = "configuration mechanism #1",
+    .config = {.type = IOADDR_PORT, .addr = 0xCF8},
+    .read   = pci_conf1_read,
+    .write  = pci_conf1_write,
+};
+
 static void x86_pc_pci_init(void)
 {
-    printk("x86: Initializing PCI\n");
-
-    struct ioaddr pci;
-
-    pci.addr = PCI_ADDR;
-    pci.type = PCI_TYPE;
-
-    pci_ioaddr_set(&pci);
+#ifdef CONFIG_DEV_PCI
+    pci_host_set(&x86_pc_pci);
+#endif
 }
 
 static int x86_pc_pit_init(void)

@@ -73,6 +73,7 @@ DEV_PTY=y
 DEV_MEMDEV=y
 # the PCI bus (configuration mechanism #1, the PC's ports)
 DEV_PCI=y
+DEV_PCI_CONF1=y
 DEV_ATA=y
 # Intel 8254x Ethernet (e1000)
 DEV_E1000=y

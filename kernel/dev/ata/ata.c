@@ -433,7 +433,7 @@ static int ata_probe()
          * compatibility mode those of the ISA controllers */
         int native = !(base == ATA_PIO_PRI_PORT_BASE);
         channels[0].base = (struct ioaddr) {.addr = base, .type = IOADDR_PORT};
-        channels[0].irq  = native ? pci_reg8_read(&ide, 0x3C) : 14;
+        channels[0].irq  = native ? pci_irq(&ide) : 14;
 
         /* master device */
         drives[0].id        = 0;

@@ -13,9 +13,14 @@
 #define VIRT_GICC       0x08010000  /* GICv2 CPU interface */
 #define VIRT_UART       0x09000000  /* PL011 */
 #define VIRT_RTC        0x09010000  /* PL031 */
+#define VIRT_PCIE_MMIO  0x10000000  /* PCIe: BARs' memory (bus addresses too) */
+#define VIRT_PCIE_MMIO_SIZE 0x2EFF0000
+#define VIRT_PCIE_PIO   0x3EFF0000  /* PCIe: its I/O ports, 64 KiB */
+#define VIRT_PCIE_ECAM  0x4010000000ULL /* PCIe: configuration space */
 
 /* interrupt IDs: SPIs from 32, PPIs (a CPU's own) 16 to 31 */
 #define VIRT_UART_IRQ   (32 + 1)
+#define VIRT_PCIE_IRQ   (32 + 3)    /* INTA# to INTD#: 4 from it, level */
 #define VIRT_TIMER_IRQ  27          /* the virtual timer (EL1) */
 
 /* a device's registers, from the direct map (the boot tables map the
