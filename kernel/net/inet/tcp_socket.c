@@ -748,6 +748,13 @@ static int socket_tcp_can_read(struct file *file, size_t len)
            (pcb->state == TCP_CLOSED && pcb->connected);
 }
 
+/* accept, connect, recv and send all wait on the connection's queue */
+static struct queue *socket_tcp_wait_queue(struct file *file, int write)
+{
+    struct tcp_pcb *pcb = file->socket->p;
+    return &pcb->wait;
+}
+
 static int socket_tcp_can_write(struct file *file, size_t len)
 {
     struct tcp_pcb *pcb = file->socket->p;
@@ -1001,6 +1008,7 @@ static struct sock_ops socket_tcp_ops = {
     .send       = socket_tcp_send,
     .can_read   = socket_tcp_can_read,
     .can_write  = socket_tcp_can_write,
+    .wait_queue = socket_tcp_wait_queue,
     .getname    = socket_tcp_getname,
     .getsockopt = socket_tcp_getsockopt,
     .setsockopt = socket_tcp_setsockopt,

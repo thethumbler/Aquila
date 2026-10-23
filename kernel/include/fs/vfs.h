@@ -266,6 +266,7 @@ int     vfs_file_trunc(struct file *file, off_t len);
 
 /* helpers */
 int     vfs_file_can_read(struct file * file, size_t size);
+struct queue *vfs_file_wait_queue(struct file *file, int write);
 int     vfs_file_can_write(struct file * file, size_t size);
 int     vfs_file_eof(struct file *);
 

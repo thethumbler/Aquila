@@ -89,6 +89,11 @@ struct thread {
      *  woke it returns (sched_thread_wake): the network's thread */
     int urgent;
 
+    /** In select() or poll(): what it waits on (poll_register), and where
+     *  it sleeps meanwhile */
+    struct poll_reg *poll_regs;
+    struct queue poll_wait;
+
     /** Killed (proc_threads_end) while it ran on another CPU: it frees
      *  itself there, when that CPU next enters the kernel (its process,
      *  owner, NULL if it goes too: sched_thread_killed) */
@@ -100,8 +105,10 @@ void thread_queue_sleep_unint(struct queue *queue);
 int thread_queue_wakeup(struct queue *queue);
 int thread_queue_wakeup_nopoll(struct queue *queue);
 
-/* threads in select() and poll(), woken by every thread_queue_wakeup() */
-extern struct queue poll_queue;
+/* select() and poll(): the queues of the files the current thread waits
+ * for, its sleep ended by a wakeup of one (NULL: of any) */
+int  poll_register(struct queue *queue);
+void poll_unregister(struct thread *thread);
 void thread_wakeup(struct thread *thread);
 int thread_new(struct proc *proc, struct thread **rthread);
 int thread_create(struct thread *thread, uintptr_t stack, uintptr_t entry, uintptr_t uentry, uintptr_t arg, uintptr_t attr, struct thread **new_thread);

@@ -462,6 +462,13 @@ static int socket_inet_can_write(struct file *file, size_t len)
     return 1;
 }
 
+/* a datagram's reader waits on recv_wait (a writer never waits) */
+static struct queue *socket_inet_wait_queue(struct file *file, int write)
+{
+    struct inet_sock *sock = file->socket->p;
+    return write ? NULL : &sock->recv_wait;
+}
+
 static int socket_inet_getname(struct file *file, struct sockaddr *addr, socklen_t *len, int peer)
 {
     struct inet_sock *sock = file->socket->p;
@@ -637,6 +644,7 @@ static struct sock_ops socket_inet_ops = {
     .send       = socket_inet_send,
     .can_read   = socket_inet_can_read,
     .can_write  = socket_inet_can_write,
+    .wait_queue = socket_inet_wait_queue,
     .getname    = socket_inet_getname,
     .getsockopt = socket_inet_getsockopt,
     .setsockopt = socket_inet_setsockopt,

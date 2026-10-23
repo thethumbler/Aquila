@@ -2141,6 +2141,13 @@ static int fd_ready(struct file *file, int write)
     return ret != 0;
 }
 
+/* select() and poll() wait for `file' (to be read, or written): on the
+ * queue its reader (writer) sleeps on, NULL if it can't tell */
+static int fd_watch(struct file *file, int write)
+{
+    return poll_register(vfs_file_wait_queue(file, write));
+}
+
 /* deadline of a select()/poll() timeout of `ns' nanoseconds, -1 for
  * none; 0 means don't wait. Restarted after a stop: the deadline it had */
 static uint64_t poll_deadline(int64_t ns)
@@ -2218,29 +2225,38 @@ static void sys_select(struct aquila_select_args *args)
                 continue;
 
             struct file *file = fd_peek(i);
+            int err = 0;
 
-            if (!file) {
-                arch_syscall_return(curthread, -EBADF);
-                return;
-            }
+            if (!file)
+                err = -EBADF;
 
-            if (FD_BIT(want_read, i) && fd_ready(file, 0)) {
+            if (!err && FD_BIT(want_read, i) && !(err = fd_watch(file, 0)) && fd_ready(file, 0)) {
                 FD_ADD(out_read, i);
                 ++count;
             }
 
-            if (FD_BIT(want_write, i) && fd_ready(file, 1)) {
+            if (!err && FD_BIT(want_write, i) && !(err = fd_watch(file, 1)) && fd_ready(file, 1)) {
                 FD_ADD(out_write, i);
                 ++count;
             }
+
+            if (err) {
+                poll_unregister(curthread);
+                arch_syscall_return(curthread, err);
+                return;
+            }
         }
 
-        if (count || ns == 0 || timed_out)
+        if (count || ns == 0 || timed_out) {
+            poll_unregister(curthread);
             break;
+        }
 
-        /* any wakeup in the system makes us look again; a signal ends
-         * the wait: EINTR (POSIX: not restarted, but after a stop) */
-        timed_out = sched_wait(&poll_queue, until);
+        /* a wakeup of what one of them waits on makes us look again; a
+         * signal ends the wait: EINTR (POSIX: not restarted, but after a
+         * stop) */
+        timed_out = sched_wait(&curthread->poll_wait, until);
+        poll_unregister(curthread);
 
         if (timed_out < 0) {
             arch_syscall_return(curthread, -ERESTARTNOHAND);
@@ -2297,6 +2313,7 @@ static void sys_poll(struct pollfd *fds, nfds_t nfds, int timeout_ms)
     int count, timed_out = 0;
 
     for (;;) {
+        int err = 0;
         count = 0;
 
         for (nfds_t i = 0; i < nfds; ++i) {
@@ -2312,21 +2329,33 @@ static void sys_poll(struct pollfd *fds, nfds_t nfds, int timeout_ms)
             if (!(file = fd_peek(p->fd))) {
                 p->revents = POLLNVAL;
             } else {
-                if ((p->events & POLLIN) && fd_ready(file, 0))
+                if ((p->events & POLLIN) && !err && !(err = fd_watch(file, 0)) && fd_ready(file, 0))
                     p->revents |= POLLIN;
 
-                if ((p->events & POLLOUT) && fd_ready(file, 1))
+                if ((p->events & POLLOUT) && !err && !(err = fd_watch(file, 1)) && fd_ready(file, 1))
                     p->revents |= POLLOUT;
             }
 
             count += !!p->revents;
         }
 
-        if (count || ns == 0 || timed_out)
+        if (err) {
+            poll_unregister(curthread);
+            count = err;
             break;
+        }
 
-        /* a signal ends the wait: EINTR (but after a stop) */
-        if ((timed_out = sched_wait(&poll_queue, until)) < 0) {
+        if (count || ns == 0 || timed_out) {
+            poll_unregister(curthread);
+            break;
+        }
+
+        /* a wakeup of what one of them waits on makes us look again; a
+         * signal ends the wait: EINTR (but after a stop) */
+        timed_out = sched_wait(&curthread->poll_wait, until);
+        poll_unregister(curthread);
+
+        if (timed_out < 0) {
             count = -ERESTARTNOHAND;
             break;
         }

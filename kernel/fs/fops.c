@@ -196,6 +196,23 @@ int vfs_file_trunc(struct file *file, off_t len)
     return file->vnode->fs->fops.trunc(file, len);
 }
 
+/*
+ * The queue a reader (a writer, if `write') of `file' sleeps on until it
+ * can, which poll() and select() wait on too: a socket's says, a device's
+ * and a pipe's are their vnode's (fs/posix/read.c, write.c); NULL if it
+ * can't tell
+ */
+struct queue *vfs_file_wait_queue(struct file *file, int write)
+{
+    if (file->flags & FILE_SOCKET)
+        return socket_wait_queue(file, write);
+
+    if (!file->vnode)
+        return NULL;
+
+    return write ? file->vnode->write_queue : file->vnode->read_queue;
+}
+
 int vfs_file_can_read(struct file *file, size_t size)
 {
     if (file && file->flags & FILE_SOCKET)

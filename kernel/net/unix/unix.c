@@ -494,6 +494,26 @@ static int socket_unix_can_read(struct file *file, size_t len)
     return available ? (int) available : end;
 }
 
+/* a listener's accept waits on accept; a connection's recv and send on
+ * the queues of its side (socket_unix_recv, socket_unix_send) */
+static struct queue *socket_unix_wait_queue(struct file *file, int write)
+{
+    if (file->socket->domain == AF_UNIX) {
+        struct un_socket *socket = file->socket->p;
+        return socket && !write ? &socket->accept : NULL;
+    }
+
+    if (file->socket->domain != AF_UNIX_CONN)
+        return NULL;
+
+    struct un_conn *conn = file->socket->p;
+
+    if (file->offset == 0)  /* Server */
+        return write ? &conn->server_send : &conn->server_recv;
+    else                    /* Client */
+        return write ? &conn->client_send : &conn->client_recv;
+}
+
 static int socket_unix_can_write(struct file *file, size_t len)
 {
     //printk("socket_unix_can_write(file=%p, len=%d)\n", file, len);
@@ -636,6 +656,7 @@ static struct sock_ops socket_unix_ops = {
     .send      = socket_unix_send,
     .can_read  = socket_unix_can_read,
     .can_write = socket_unix_can_write,
+    .wait_queue = socket_unix_wait_queue,
     .shutdown  = socket_unix_shutdown,
     .shut      = socket_unix_shut,
     .getname   = socket_unix_getname,
