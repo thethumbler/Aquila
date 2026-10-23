@@ -1,0 +1,168 @@
+/*
+ * aquilaos.com's look on doxygen-awesome-css: its paper and ink, its
+ * burnt sienna, IBM Plex Sans and Martian Mono (the site's sass/style.scss),
+ * light and dark as the system prefers
+ */
+
+@font-face {
+    font-family: "IBM Plex Sans";
+    src: url("ibm-plex-sans.woff2") format("woff2");
+    font-weight: 100 700;
+    font-stretch: 85% 100%;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "IBM Plex Sans";
+    src: url("ibm-plex-sans-italic.woff2") format("woff2");
+    font-weight: 100 700;
+    font-stretch: 85% 100%;
+    font-style: italic;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "Martian Mono";
+    src: url("martian-mono.woff2") format("woff2");
+    font-weight: 100 800;
+    font-stretch: 75% 112.5%;
+    font-display: swap;
+}
+
+html {
+    /* the site's: paper, ink, text, muted, rule, accent, fill */
+    --aq-paper: #fcfcfa;
+    --aq-ink: #2a2824;
+    --aq-text: #3d3b35;
+    --aq-muted: #6f6d66;
+    --aq-rule: #dddbd3;
+    --aq-accent: #a2643a;
+    --aq-fill: #f4f1ec;
+    --aq-fill-strong: #ebe3d8;
+
+    --primary-color: var(--aq-accent);
+    --primary-dark-color: #7a4826;
+    --primary-light-color: #c9926a;
+    --on-primary-color: var(--aq-paper);
+
+    --page-background-color: var(--aq-paper);
+    --page-foreground-color: var(--aq-text);
+    --page-secondary-foreground-color: var(--aq-muted);
+    --separator-color: var(--aq-rule);
+
+    --font-family: "IBM Plex Sans", system-ui, sans-serif;
+    --font-family-monospace: "Martian Mono", ui-monospace, monospace;
+    --page-font-size: 16.5px;
+    --code-font-size: 13px;
+    --content-line-height: 1.6;
+
+    /* the site is flat: small radii, no shadows */
+    --border-radius-large: 4px;
+    --border-radius-medium: 4px;
+    --border-radius-small: 3px;
+    --box-shadow: none;
+
+    --side-nav-background: var(--aq-fill);
+    --side-nav-foreground: var(--aq-text);
+    --header-background: var(--aq-paper);
+    --header-foreground: var(--aq-ink);
+    --tablehead-background: var(--aq-fill);
+    --tablehead-foreground: var(--aq-ink);
+    --blockquote-background: var(--aq-fill);
+    --blockquote-foreground: var(--aq-muted);
+    --menu-selected-background: var(--aq-fill-strong);
+
+    --code-background: var(--aq-fill);
+    --code-foreground: var(--aq-ink);
+    --section-code-background: var(--aq-fill);
+    --section-code-border: var(--aq-rule);
+
+    /* code: warm, quiet */
+    --fragment-background: var(--aq-fill);
+    --fragment-foreground: var(--aq-ink);
+    --fragment-keyword: #a2643a;
+    --fragment-keywordtype: #7b5a8c;
+    --fragment-keywordflow: #a2643a;
+    --fragment-token: #5d7a3c;
+    --fragment-comment: #8a877f;
+    --fragment-link: #a2643a;
+    --fragment-preprocessor: #6f6d66;
+    --fragment-linenumber-color: #9a978f;
+    --fragment-linenumber-background: var(--aq-fill-strong);
+    --fragment-linenumber-border: var(--aq-rule);
+}
+
+@media (prefers-color-scheme: dark) {
+    html:not(.light-mode) {
+        --aq-paper: #191917;
+        --aq-ink: #e8e5de;
+        --aq-text: #cfccc4;
+        --aq-muted: #9a978f;
+        --aq-rule: #383631;
+        --aq-accent: #d19a6c;
+        --aq-fill: #232120;
+        --aq-fill-strong: #302b26;
+
+        --primary-color: var(--aq-accent);
+        --primary-dark-color: #e0b48f;
+        --primary-light-color: #8f5f3c;
+        --on-primary-color: var(--aq-paper);
+
+        --page-background-color: var(--aq-paper);
+        --page-foreground-color: var(--aq-text);
+        --page-secondary-foreground-color: var(--aq-muted);
+        --separator-color: var(--aq-rule);
+        --side-nav-background: var(--aq-fill);
+        --code-background: var(--aq-fill);
+        --tablehead-background: var(--aq-fill-strong);
+        --blockquote-background: var(--aq-fill);
+        --blockquote-foreground: var(--aq-muted);
+        --section-code-background: var(--aq-fill);
+        --section-code-border: var(--aq-rule);
+
+        --fragment-background: var(--aq-fill);
+        --fragment-foreground: var(--aq-ink);
+        --fragment-keyword: #d19a6c;
+        --fragment-keywordtype: #b79bc7;
+        --fragment-keywordflow: #d19a6c;
+        --fragment-token: #9fbf7c;
+        --fragment-comment: #8a877f;
+        --fragment-link: #d19a6c;
+        --fragment-preprocessor: #9a978f;
+        --fragment-linenumber-color: #8a877f;
+        --fragment-linenumber-background: var(--aq-fill-strong);
+        --fragment-linenumber-border: var(--aq-rule);
+    }
+}
+
+/* as the site: the title and headings in ink, sections in the accent */
+#projectname, div.headertitle .title, h1 {
+    color: var(--aq-ink);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
+
+div.contents h2, div.textblock h2 {
+    color: var(--aq-accent);
+    font-weight: 600;
+}
+
+div.contents h3 {
+    color: var(--aq-ink);
+    font-weight: 600;
+}
+
+strong, b {
+    color: var(--aq-ink);
+    font-weight: 600;
+}
+
+a, a:visited {
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.18em;
+}
+
+div.contents a:hover {
+    text-decoration-thickness: 2px;
+}

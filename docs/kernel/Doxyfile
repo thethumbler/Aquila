@@ -49,14 +49,20 @@ PREDEFINED             = ARCH_BITS=64 \
                          "__unused=" \
                          "__attribute__(x)="
 
-# HTML only, with doxygen-awesome-css's theme (doxygen/, MIT)
+# HTML only, with doxygen-awesome-css's theme (doxygen/, MIT), in
+# aquilaos.com's colors and fonts (aquila.css; the fonts are the SIL Open
+# Font License's, doxygen/fonts/)
 GENERATE_LATEX         = NO
 GENERATE_TREEVIEW      = YES
 DISABLE_INDEX          = NO
 FULL_SIDEBAR           = NO
 HTML_COLORSTYLE        = LIGHT
 HTML_EXTRA_STYLESHEET  = doxygen/doxygen-awesome.css \
-                         doxygen/doxygen-awesome-sidebar-only.css
+                         doxygen/doxygen-awesome-sidebar-only.css \
+                         doxygen/aquila.css
+HTML_EXTRA_FILES       = doxygen/fonts/ibm-plex-sans.woff2 \
+                         doxygen/fonts/ibm-plex-sans-italic.woff2 \
+                         doxygen/fonts/martian-mono.woff2
 HAVE_DOT               = NO
 
 # what's undocumented isn't a warning (yet): most of it is

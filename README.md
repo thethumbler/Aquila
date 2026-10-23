@@ -215,6 +215,8 @@ Third-party code keeps its own license:
 |-----------|----------|---------|
 | unscii-16 font | [kernel/arch/i386/earlycon/font.h](kernel/arch/i386/earlycon/font.h) | public domain, Viznut |
 | multiboot.h | [kernel/arch/i386/include/boot/multiboot.h](kernel/arch/i386/include/boot/multiboot.h) | permissive, Free Software Foundation |
+| doxygen-awesome-css | [docs/kernel/doxygen/](docs/kernel/doxygen/) | MIT, jothepro |
+| IBM Plex Sans, Martian Mono (fonts) | [docs/kernel/doxygen/fonts/](docs/kernel/doxygen/fonts/) | SIL Open Font License 1.1 |
 
 The toolchain patches in [toolchain/patches/](toolchain/patches/) modify
 binutils and GCC (GPLv3) and newlib (various free licenses); the patched
