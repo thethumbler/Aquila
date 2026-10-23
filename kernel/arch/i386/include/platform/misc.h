@@ -50,11 +50,6 @@ void x86_smp_init(void);
 /* sys/clock.c: it counts finer than the ticks (the TSC or the HPET) */
 int x86_clock_precise(void);
 
-int x86_i8042_setup(struct ioaddr *io);
-void x86_i8042_handler_register(int channel, void (*fun)(int));
-void x86_i8042_reboot(void);
-int  x86_i8042_aux_write(uint8_t byte);
-
 void x86_acpi_poweroff(void) __attribute__((weak));
 void *x86_acpi_table(const char *signature) __attribute__((weak));
 

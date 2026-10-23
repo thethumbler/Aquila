@@ -42,8 +42,6 @@ PLATFORM_DIR=pc
 PLATFORM_X86_MISC_PIC=y
 # Support 8253/8254 PIT
 PLATFORM_X86_MISC_PIT=y
-# Support i8042 PS/2 Controller
-PLATFORM_X86_MISC_I8042=y
 # Support the APIC (the 8259s without it, or with apic=off)
 PLATFORM_X86_MISC_APIC=y
 # Support HPET
@@ -63,6 +61,8 @@ DEV_FRAMEBUFFER=y
 DEV_CONSOLE=y
 # VGA text mode, when there's no framebuffer
 DEV_CONSOLE_VGA=y
+# the PC's keyboard controller (i8042): PS/2 keyboard and mouse
+DEV_I8042=y
 DEV_KEYBOARD=y
 DEV_MOUSE=y
 DEV_KEYBOARD_PS2=y

@@ -1,10 +1,14 @@
 #include <core/system.h>
 #include <core/arch.h>
 #include <platform/misc.h>
+#include <dev/i8042.h>
 
+/** the keyboard controller resets the CPU */
 void platform_reboot(void)
 {
-    x86_i8042_reboot();
+#ifdef CONFIG_DEV_I8042
+    i8042_reboot();
+#endif
 }
 
 void arch_reboot(void)

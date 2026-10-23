@@ -18,5 +18,11 @@ const struct platform_device platform_devices[] = {
         .io   = {.type = IOADDR_PORT, .addr = 0x2F8}, .size = 8,
         .nirq = 1, .irq = {3},
     },
+    /* the keyboard controller: the keyboard's interrupt, the mouse's */
+    {
+        .name = "i8042",
+        .io   = {.type = IOADDR_PORT, .addr = 0x60}, .size = 5,
+        .nirq = 2, .irq = {1, 12},
+    },
     {0},
 };

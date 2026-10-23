@@ -8,13 +8,13 @@
 #include <core/module.h>
 #include <cpu/cpu.h>
 
-#include <platform/misc.h>
+#include <dev/i8042.h>
 
 #include <dev/vt.h>
 
 static int ps2kbd_probe(void)
 {
-    x86_i8042_handler_register(1, vt_scancode);
+    i8042_handler_register(1, vt_scancode);
     return 0;
 }
 

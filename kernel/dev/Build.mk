@@ -1,4 +1,5 @@
 dirs-$(DEV_PCI) += pci/
+dirs-$(DEV_I8042) += input/
 dirs-$(DEV_KEYBOARD) += kbd/
 dirs-$(DEV_FRAMEBUFFER) += fb/
 dirs-y += tty/

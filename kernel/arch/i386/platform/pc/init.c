@@ -9,10 +9,6 @@
 #define PCI_ADDR    0xCF8
 #define PCI_TYPE    IOADDR_PORT
 
-/* i8042 PS/2 controller */
-#define I8042_ADDR  0x60
-#define I8042_TYPE  IOADDR_PORT
-
 /* i8254 PIT controller */
 #define I8254_ADDR  0x40
 #define I8254_TYPE  IOADDR_PORT
@@ -43,16 +39,6 @@ static void x86_pc_pci_init(void)
     pci.type = PCI_TYPE;
 
     pci_ioaddr_set(&pci);
-}
-
-static int x86_pc_i8042_init(void)
-{
-    struct ioaddr i8042;
-
-    i8042.addr = I8042_ADDR;
-    i8042.type = I8042_TYPE;
-
-    return x86_i8042_setup(&i8042);
 }
 
 static int x86_pc_pit_init(void)
@@ -113,7 +99,6 @@ int platform_init(void)
 {
     x86_pc_pci_init();
     x86_pc_irq_init();
-    x86_pc_i8042_init();
     x86_pc_pit_init();
     x86_pc_cmos_init();
 

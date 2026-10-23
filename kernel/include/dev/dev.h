@@ -76,7 +76,6 @@ int     kdev_file_eof(struct devid *dd, struct file *file);
 #define VNODE_DEV(vnode)  ((struct devid){.type = (vnode)->mode & S_IFMT, .major = DEV_MAJOR((vnode)->rdev), .minor = DEV_MINOR((vnode)->rdev)})
 
 /* Devices -- XXX */
-extern struct dev i8042dev;
 extern struct dev ttydev;
 extern struct dev pcidev;
 extern struct dev atadev;

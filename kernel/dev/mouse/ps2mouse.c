@@ -15,7 +15,7 @@
 
 #include <cpu/cpu.h>
 
-#include <platform/misc.h>
+#include <dev/i8042.h>
 
 #include <sys/proc.h>
 #include <sys/sched.h>
@@ -31,18 +31,6 @@
 
 struct dev ps2mousedev;
 
-struct ioaddr mouse = {
-    .addr = 0x60,
-    .type = IOADDR_PORT,
-};
-
-#define MOUSE_CMD  0x04
-#define MOUSE_DATA 0x00
-
-#define SEND_CMD            0xD4
-#define ENABLE_AUX_PS2      0xA8
-#define GET_COMPAQ_STATUS   0x20
-#define SET_COMPAQ_STATUS   0x60
 #define USE_DEFAULTS        0xF6
 #define ENABLE_MOUSE        0xF4
 #define RESET               0xFF
@@ -74,7 +62,7 @@ void ps2mouse_handler(int byte)
 
 void ps2mouse_register(void)
 {
-    x86_i8042_handler_register(2, ps2mouse_handler);
+    i8042_handler_register(2, ps2mouse_handler);
 }
 
 static ssize_t ps2mouse_read(struct devid *dd __unused, off_t offset __unused, struct iobuf *io)
@@ -94,59 +82,20 @@ static ssize_t ps2mouse_write(struct devid *dd __unused, off_t offset __unused, 
         if (r < 0)
             return i ? (ssize_t) i : r;
 
-        if (x86_i8042_aux_write(c))
+        if (i8042_aux_write(c))
             return i ? (ssize_t) i : -EIO;
     }
 
     return size;
 }
 
-static void __mouse_wait(uint32_t i)
-{
-    return;
-#if 0
-    //printk("__mouse_wait(%d)\n", i);
-    if (!i)
-        while (!(io_in8(&mouse, MOUSE_CMD) & 1));
-    else
-        while (io_in8(&mouse, MOUSE_CMD) & 2);
-#endif
-}
-
-static uint8_t __mouse_read(void)
-{
-    __mouse_wait(0);
-    return io_in8(&mouse, MOUSE_DATA);
-}
-
-static void __mouse_write(uint8_t chr)
-{
-    __mouse_wait(1);
-    io_out8(&mouse, MOUSE_CMD, SEND_CMD);
-    __mouse_wait(1);
-    io_out8(&mouse, MOUSE_DATA, chr);
-}
-
+/** its defaults, reporting (the controller's second port is on: the
+ * i8042's driver); its replies (ACKs) come before anyone reads, and
+ * opening it does the same again */
 int ps2mouse_probe()
 {
-    __mouse_wait(1);
-    io_out8(&mouse, MOUSE_CMD, ENABLE_AUX_PS2);
-
-    __mouse_wait(1);
-    io_out8(&mouse, MOUSE_CMD, GET_COMPAQ_STATUS);
-    uint8_t status = __mouse_read() | 2;
-
-    __mouse_wait(1);
-    io_out8(&mouse, MOUSE_CMD, SET_COMPAQ_STATUS);
-
-    __mouse_wait(0);
-    io_out8(&mouse, MOUSE_DATA, status);
-
-    __mouse_write(USE_DEFAULTS);
-    __mouse_read();
-
-    __mouse_write(ENABLE_MOUSE);
-    __mouse_read();
+    i8042_aux_write(USE_DEFAULTS);
+    i8042_aux_write(ENABLE_MOUSE);
 
     ps2mouse_register();
     kdev_chrdev_register(10, &ps2mousedev);
@@ -170,8 +119,8 @@ static int ps2mouse_file_open(struct file *file)
     while (ringbuf_read(mouse_ring, 1, &c))
         ;
     skip = 4;
-    x86_i8042_aux_write(RESET);
-    x86_i8042_aux_write(ENABLE_MOUSE);
+    i8042_aux_write(RESET);
+    i8042_aux_write(ENABLE_MOUSE);
 
     return posix_file_open(file);
 }
