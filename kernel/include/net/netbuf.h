@@ -28,6 +28,10 @@ struct netbuf {
      * a FIN follows it */
     uint32_t seq;
     int fin;
+
+    /* its page of memory; the one before it on the free list (net/netbuf.c) */
+    paddr_t page;
+    struct netbuf *free_prev;
 };
 
 #define NETBUF_SIZE     2048

@@ -5,7 +5,7 @@
  * A socket bound to a port (for a ping socket, the identifier of its
  * echoes) is on the list of the bound ones, which the protocols look
  * datagrams' sockets up in. Received datagrams wait in the socket's queue
- * (RECV_MAX bytes of them at most, the others are dropped), with where
+ * (RECV_MAX bytes of buffers at most, the others are dropped), with where
  * they came from.
  */
 
@@ -29,7 +29,10 @@
 MALLOC_DECLARE(M_SOCKET);
 MALLOC_DEFINE(M_INET_SOCK, "inet socket", "AF_INET socket");
 
-#define RECV_MAX        65536
+/* what a socket's queue may hold, in buffers: a datagram costs its
+ * netbuf, whatever its size (counted by its bytes, empty ones would cost
+ * nothing, and a process could queue all of memory) */
+#define RECV_MAX        (128 * NETBUF_SIZE)
 
 #define PORT_FIRST      49152   /* the ephemeral ports */
 #define PORT_LAST       65535
@@ -147,7 +150,7 @@ struct inet_sock *inet_sock_find(struct netif *netif, uint8_t proto, uint32_t lo
 /** a datagram for it (src_ip, src_port set), the netbuf is the socket's */
 void inet_sock_deliver(struct inet_sock *sock, struct netbuf *nb)
 {
-    if (sock->shut_rd || sock->recv_bytes + nb->len > RECV_MAX) {
+    if (sock->shut_rd || sock->recv_bytes + NETBUF_SIZE > RECV_MAX) {
         netbuf_free(nb);
         return;
     }
@@ -160,7 +163,7 @@ void inet_sock_deliver(struct inet_sock *sock, struct netbuf *nb)
         sock->recv_head = nb;
 
     sock->recv_tail = nb;
-    sock->recv_bytes += nb->len;
+    sock->recv_bytes += NETBUF_SIZE;
 
     thread_queue_wakeup(&sock->recv_wait);
 }
@@ -442,7 +445,7 @@ static ssize_t socket_inet_recv(struct file *file, struct iobuf *io, int flags,
         if (!sock->recv_head)
             sock->recv_tail = NULL;
 
-        sock->recv_bytes -= nb->len;
+        sock->recv_bytes -= NETBUF_SIZE;
         netbuf_free(nb);
     }
 

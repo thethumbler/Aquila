@@ -76,6 +76,27 @@ static int udp(void)
     return SC(SYS_socket, AF_INET, SOCK_DGRAM, 0);
 }
 
+/* /proc/meminfo's MemFree, in KiB (procfs is on /mnt: kernel_thread()) */
+static int memfree(void)
+{
+    static char text[512];
+    int fd = SC(SYS_open, "/mnt/meminfo", O_RDONLY, 0);
+    int n = fd < 0 ? 0 : SC(SYS_read, fd, text, sizeof(text) - 1);
+    SC(SYS_close, fd, 0, 0);
+
+    for (int i = 0; i + 8 < n; ++i) {
+        if (text[i] == 'M' && text[i + 3] == 'F' && text[i + 7] == ':') {
+            int kb = 0;
+            for (int j = i + 8; j < n && (text[j] == ' ' || (text[j] >= '0' && text[j] <= '9')); ++j)
+                if (text[j] != ' ')
+                    kb = kb * 10 + text[j] - '0';
+            return kb;
+        }
+    }
+
+    return -1;
+}
+
 static int bind_to(int fd, uint32_t addr, int port)
 {
     struct sockaddr_in s = sin(addr, port);
@@ -196,6 +217,33 @@ static void loopback(void)
     check("recvfrom: from", from.sin_addr.s_addr == lo && htons(from.sin_port) == port_of(c), 1);
 
     check("recvfrom: nothing", recvfrom(s, buf, sizeof(buf), MSG_DONTWAIT, &from), -EAGAIN);
+
+    /* a burst nobody reads: the queue keeps what its buffers allow (128
+     * datagrams), not as many as its bytes would (empty ones have none);
+     * read, their pages go back but for a few (64 netbufs, 128 KiB) */
+    int before = memfree();
+    for (int i = 0; i < 1000; ++i)
+        sendto(c, "", 0, lo, 7000);
+    int queued = 0;
+    while (recvfrom(s, buf, sizeof(buf), MSG_DONTWAIT, &from) >= 0)
+        ++queued;
+    check("a burst of empty datagrams: the queue holds 128", queued, 128);
+
+    /* four queues full (1 MiB of netbufs, more than any were free), all
+     * read: what's kept is the 64 free netbufs, 128 KiB */
+    int q[4];
+    for (int k = 0; k < 4; ++k) {
+        q[k] = udp();
+        bind_to(q[k], lo, 7100 + k);
+        for (int i = 0; i < 128; ++i)
+            sendto(c, "", 0, lo, 7100 + k);
+    }
+    for (int k = 0; k < 4; ++k) {
+        while (recvfrom(q[k], buf, sizeof(buf), MSG_DONTWAIT, &from) >= 0)
+            ;
+        SC(SYS_close, q[k], 0, 0);
+    }
+    check("their pages back", before > 0 && memfree() >= before - 136, 1);
 
     timeout(s, 100);
     check("SO_RCVTIMEO", recvfrom(s, buf, sizeof(buf), 0, &from), -EAGAIN);
