@@ -100,6 +100,23 @@ ssize_t tty_master_write(struct tty *tty, size_t size, void *buf)
             c = '\r';
         }
 
+        /* flow control: VSTOP stops the output, VSTART (with IXANY, any
+         * character) starts it again; neither is input */
+        if (tios->c_iflag & IXON) {
+            if (tty->stopped && (IS_CC(tty, c, VSTART) || (tios->c_iflag & IXANY))) {
+                tty->stopped = 0;
+                thread_queue_wakeup(&tty->start_wait);
+
+                if (IS_CC(tty, c, VSTART))
+                    continue;
+            } else if (IS_CC(tty, c, VSTART)) {
+                continue;
+            } else if (IS_CC(tty, c, VSTOP)) {
+                tty->stopped = 1;
+                continue;
+            }
+        }
+
         if ((tios->c_lflag & ISIG) && tty_signal(tty, c))
             continue;
 
@@ -299,10 +316,45 @@ ssize_t tty_slave_write(struct tty *tty, size_t size, void *_buf)
  * tty_master_write or tty_slave_write): a piece at a time through the
  * kernel, the buffer passed over only as far as was taken
  */
+static void tty_release(struct tty *tty);
+
+/**
+ * A program's output waits while the terminal is stopped (IXON): 0 once
+ * it's started, -ERESTARTSYS for a signal, -EIO if the terminal went
+ * meanwhile (its last waiter frees it)
+ */
+static int tty_wait_start(struct tty *tty)
+{
+    int err = 0;
+
+    while (tty->stopped && !tty->gone && !err) {
+        tty->start_waiters++;
+        err = thread_queue_sleep(&tty->start_wait);
+        tty->start_waiters--;
+    }
+
+    if (tty->gone) {
+        if (!tty->start_waiters)
+            tty_release(tty);
+
+        return err ? err : -EIO;
+    }
+
+    return err;
+}
+
 ssize_t tty_write_iobuf(struct tty *tty, struct iobuf *io, ttyio write)
 {
     char buf[256];
     size_t size = io->resid, done = 0;
+
+    /* a program's output, to a stopped terminal: it waits */
+    if (write == tty_slave_write && tty->stopped) {
+        int err = tty_wait_start(tty);
+
+        if (err)
+            return err;
+    }
 
     while (done < size) {
         ssize_t len = iobuf_peek(io, buf, MIN(size - done, sizeof(buf)));
@@ -350,6 +402,12 @@ int tty_ioctl(struct tty *tty, int request, void *argp)
                 tty_flush(tty, TCIFLUSH);
 
             tty->tios = tios;
+
+            /* no flow control anymore: what was stopped goes */
+            if (!(tios.c_iflag & IXON) && tty->stopped) {
+                tty->stopped = 0;
+                thread_queue_wakeup(&tty->start_wait);
+            }
             break;
         }
         case TCFLSH:
@@ -472,6 +530,7 @@ int tty_new(struct proc *proc, size_t buf_size, ttyio master,
     tty->tios.c_cc[VKILL]  = 0x15;  /* ^U */
     tty->tios.c_cc[VQUIT]  = 0x1C;  /* ^\ */
     tty->tios.c_cc[VSTART] = 0x11;  /* ^Q */
+    tty->tios.c_cc[VSTOP]  = 0x13;  /* ^S */
     tty->tios.c_cc[VSUSP]  = 0x1A;  /* ^Z */
 
     tty->ws.ws_row = 24;
@@ -539,12 +598,24 @@ void tty_flush(struct tty *tty, int which)
         tty->input_flush(tty);
 }
 
+static void tty_release(struct tty *tty)
+{
+    kfree(tty->cook);
+    kfree(tty);
+}
+
 int tty_free(struct tty *tty)
 {
     tty_hangup(tty);
 
-    kfree(tty->cook);
-    kfree(tty);
+    /* writers wait for VSTART: they go, the last frees it */
+    if (tty->start_waiters) {
+        tty->gone = 1;
+        tty->stopped = 0;
+        thread_queue_wakeup(&tty->start_wait);
+        return 0;
+    }
 
+    tty_release(tty);
     return 0;
 }

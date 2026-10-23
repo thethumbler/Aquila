@@ -154,6 +154,21 @@ static void tty_output_modes(void)
     check("tty: ONOCR after ONLRET's NL", pty_out(master, slave, ONLRET | ONOCR, "ab\n\r", "ab\n"), 1);
     check("tty: OCRNL", pty_out(master, slave, OCRNL, "a\rb", "a\nb"), 1);
 
+    /* flow control (IXON, on by default): ^S stops the output, a write
+     * waits; ^Q starts it, the write goes */
+    char fc[4];
+    SC(SYS_write, master, "\x13", 1);
+    int w = SC(SYS_fork, 0, 0, 0);
+    if (!w) SC(SYS_exit, SC(SYS_write, slave, "go", 2) == 2 ? 0 : 1, 0, 0);
+    aq_spin(30000000);
+    SC(SYS_fcntl, master, F_SETFL, O_NONBLOCK);
+    check("tty: ^S stops the output", SC(SYS_read, master, fc, 4), -EAGAIN);
+    SC(SYS_write, master, "\x11", 1);
+    int ws = -1;
+    SC(SYS_waitpid, w, &ws, 0);
+    check("tty: ^Q starts it", SC(SYS_read, master, fc, 4) == 2 && fc[0] == 'g' && ws == 0, 1);
+    SC(SYS_fcntl, master, F_SETFL, 0);
+
     SC(SYS_close, slave, 0, 0);
     SC(SYS_close, master, 0, 0);
 

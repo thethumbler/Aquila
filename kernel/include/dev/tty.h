@@ -36,6 +36,14 @@ struct tty {
     struct termios tios;
     struct winsize ws;
 
+    /** output stopped (IXON: VSTOP came), programs' writes wait for
+     *  VSTART on start_wait; how many wait (tty_free() leaves the tty to
+     *  the last of them, gone) */
+    int stopped;
+    struct queue start_wait;
+    int start_waiters;
+    int gone;
+
     /** associated device */
     struct dev *dev;
 
