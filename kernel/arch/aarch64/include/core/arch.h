@@ -31,7 +31,21 @@ struct aarch64_thread {
 
     /* user mode's, for a thread that never ran (spawned at them) */
     uint64_t pc, sp, x0, x1, x2;
+
+    /* its FP/SIMD registers, once it used them (cpu/fpsimd.c) */
+    void *fpsimd;
 };
+
+/* v0 to v31, FPSR, FPCR */
+#define FPSIMD_STATE_SIZE   528
+
+struct thread;
+void  aarch64_fpsimd_switch(struct thread *thread);
+int   aarch64_fpsimd_trap(void);
+void *aarch64_fpsimd_current(struct thread *thread);
+void  aarch64_fpsimd_drop(struct thread *thread);
+int   aarch64_fpsimd_fork(struct thread *parent, struct aarch64_thread *child);
+void  aarch64_fpsimd_restore(struct thread *thread, const void *state);
 
 MALLOC_DECLARE(M_AARCH64_THREAD);
 MALLOC_DECLARE(M_KERN_STACK);

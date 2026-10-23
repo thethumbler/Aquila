@@ -52,6 +52,9 @@ void arch_sys_execve(struct proc *proc, int argc, char * const _argp[], int envc
 
     u_envp[envc - 1] = NULL;
 
+    /* the new program's FP/SIMD registers: zeros, at their first use */
+    aarch64_fpsimd_drop(thread);
+
     arch->pc = proc->entry;
     arch->sp = stack & ~(uintptr_t) 15;     /* the AAPCS64's alignment */
     arch->x0 = argc - 1;

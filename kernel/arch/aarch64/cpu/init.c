@@ -20,9 +20,9 @@ struct boot *__kboot;
 /* the boot CPU's idle loop's */
 static char bsp_idle_stack[8192] __aligned(16);
 
-/* the FP/SIMD registers trapped (CPACR_EL1.FPEN 0): the kernel uses none,
- * user mode none yet (cpu/trap.c) */
-#define CPACR_FPEN_TRAP     0
+/* user mode's use of the FP/SIMD registers traps (CPACR_EL1.FPEN 0b01),
+ * cpu/fpsimd.c switches them; the kernel uses none */
+#define CPACR_FPEN_TRAP     (1UL << 20)
 
 void aarch64_init(uintptr_t dtb)
 {

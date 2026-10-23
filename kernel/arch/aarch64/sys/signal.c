@@ -35,7 +35,9 @@
 struct sigframe {
     struct aquila_siginfo info;
     sigset_t mask;              /* sigreturn restores it */
+    uint64_t fpsimd_valid;      /* fpsimd is the thread's state */
     struct aarch64_regs regs;   /* the interrupted context */
+    uint8_t fpsimd[FPSIMD_STATE_SIZE] __aligned(16);
 } __aligned(16);
 
 /*
@@ -143,6 +145,14 @@ static void deliver(struct aarch64_regs *r, int sig)
     frame.mask = mask;
     frame.regs = *r;
 
+    /* the FP/SIMD registers as they are: the handler may use them */
+    void *fp = aarch64_fpsimd_current(thread);
+
+    if (fp) {
+        memcpy(frame.fpsimd, fp, FPSIMD_STATE_SIZE);
+        frame.fpsimd_valid = 1;
+    }
+
     /* nowhere to put it: as a fault would, it can't go on */
     if (r->sp < 4096 || copyout(uframe, &frame, sizeof(frame)))
         signal_exit(SIGSEGV);
@@ -227,4 +237,5 @@ void arch_sigreturn(void)
     r->pstate = pstate;
 
     curproc->sigmask = frame.mask & ~SIG_UNMASKABLE;
+    aarch64_fpsimd_restore(curthread, frame.fpsimd_valid ? frame.fpsimd : NULL);
 }

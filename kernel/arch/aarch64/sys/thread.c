@@ -55,6 +55,7 @@ void arch_thread_spawn(struct thread *thread)
     struct aarch64_thread *arch = thread->arch;
 
     pmap_switch(thread->owner->vm_space.pmap);
+    aarch64_fpsimd_switch(thread);
     aarch64_goto((uintptr_t) thread_spawn, arch->kstack);
 }
 
@@ -63,6 +64,7 @@ void arch_thread_switch(struct thread *thread)
     struct aarch64_thread *arch = thread->arch;
 
     pmap_switch(thread->owner->vm_space.pmap);
+    aarch64_fpsimd_switch(thread);
 
     /* signals are taken on the way back to user mode, not here
      * (aarch64_return_to_user): the thread goes on where it was */
@@ -113,6 +115,7 @@ void arch_thread_kill(struct thread *thread)
     if (!arch)
         return;
 
+    aarch64_fpsimd_drop(thread);
     kfree((void *) arch->kstack_base);
     kfree(arch);
     thread->arch = NULL;

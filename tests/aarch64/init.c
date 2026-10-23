@@ -6,7 +6,8 @@
  * fork and copy on write, exec with arguments, pipes, anonymous memory,
  * page faults (a bad address: SIGSEGV), copies from user memory that
  * fail (EFAULT), a signal handler and sigreturn, the tick (nanosleep, the
- * clock), and uname's machine.
+ * clock), uname's machine, and the FP/SIMD registers (each thread's own,
+ * across switches, forks and a signal handler that uses them).
  *
  * Run as /init; run again by exec with an argument ("exec-child"), it
  * exits 0x55 at once.
@@ -53,6 +54,30 @@ static void child_execs(void)
     char *argv[] = {"/init", "exec-child", 0};
     char *envp[] = {0};
     SC(SYS_execve, "/init", argv, envp);
+}
+
+/* FP: a sum the other threads' registers would spoil */
+static double fp_sum(int n, double step)
+{
+    volatile double s = 0;
+
+    for (int i = 0; i < n; ++i)
+        s += step;
+
+    return s;
+}
+
+static volatile double fp_in_handler;
+
+static void fp_handler(int sig)
+{
+    fp_in_handler = fp_sum(1000, 0.5);     /* the handler's own FP use */
+}
+
+static void child_fp(void)
+{
+    /* meanwhile the parent sums too: both are preempted, both right */
+    SC(SYS_exit, fp_sum(2000000, 0.25) == 500000.0 ? 0 : 1, 0, 0);
 }
 
 static uint64_t now_ms(void)
@@ -136,6 +161,27 @@ void aq_main(void)
     check("nanosleep 100 ms", SC(SYS_nanosleep, &d, 0, 0), 0);
     uint64_t slept = now_ms() - t0;
     check("the clock: 100 ms passed", slept >= 100 && slept < 1000, 1);
+
+    /* the FP/SIMD registers: switched lazily, each thread its own */
+    volatile double a = 1.5;
+    check("FP: arithmetic", a * a + 0.25 == 2.5, 1);
+
+    int fc = SC(SYS_fork, 0, 0, 0);
+    if (!fc)
+        child_fp();
+    double mine = fp_sum(2000000, 0.125);
+    int fst = -1;
+    SC(SYS_waitpid, fc, &fst, 0);
+    check("FP: a child's, while preempted", fst, 0);
+    check("FP: the parent's, while preempted", mine == 250000.0, 1);
+
+    struct aquila_sigaction fsa = {(uptr) fp_handler, 0, 0};
+    SC(SYS_sigaction, SIGUSR2, &fsa, 0);
+    volatile double kept = 3.25;
+    double before = kept * 2;
+    SC(SYS_kill, SC(SYS_getpid, 0, 0, 0), SIGUSR2, 0);
+    check("FP: a handler that uses them", fp_in_handler == 500.0, 1);
+    check("FP: what it interrupted, as it was", before == 6.5 && kept * 2 == 6.5, 1);
 
     aq_end();
 }

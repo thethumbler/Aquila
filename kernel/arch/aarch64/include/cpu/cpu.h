@@ -46,6 +46,7 @@ struct pmap;
 struct arch_cpu {
     struct pmap *pmap;          /* TTBR0_EL1's (pmap_switch) */
     int tick_switch;            /* the tick asked for a switch */
+    struct thread *fp_thread;   /* whose FP/SIMD registers it has */
     uintptr_t idle_stack;       /* the idle loop's, its top */
 };
 

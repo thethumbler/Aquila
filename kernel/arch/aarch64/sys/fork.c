@@ -34,6 +34,13 @@ int arch_proc_fork(struct thread *thread, struct proc *fork)
     farch->ctx.sp = (uintptr_t) regs;
     farch->ctx.fp = 0;
 
+    /* the FP/SIMD registers as its parent has them */
+    if (aarch64_fpsimd_fork(thread, farch)) {
+        kfree((void *) farch->kstack_base);
+        kfree(farch);
+        return -ENOMEM;
+    }
+
     struct thread *fthread = (struct thread *) fork->threads.head->value;
     fthread->arch = farch;
 

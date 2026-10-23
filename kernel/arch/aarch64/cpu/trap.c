@@ -117,11 +117,23 @@ static void sync_dispatch(struct aarch64_regs *r)
         case EC_IABT_CUR:
             abort(r, ec);
             return;
+
+        case EC_FP:
+            /* user mode's first use since a switch: the registers
+             * made its own (no room for them: it can't go on) */
+            if (REGS_USER(r)) {
+                if (aarch64_fpsimd_trap())
+                    signal_force(curproc, SIGKILL);
+
+                aarch64_return_to_user(r, 0);
+                return;
+            }
+            break;
     }
 
     if (REGS_USER(r)) {
-        /* what it can't do: an undefined instruction (FP/SIMD too, for
-         * now), a misaligned PC or stack, a breakpoint */
+        /* what it can't do: an undefined instruction, a misaligned PC
+         * or stack, a breakpoint */
         int sig = ec == EC_PC_ALIGN || ec == EC_SP_ALIGN ? SIGBUS :
                   ec == EC_BRK ? SIGTRAP : SIGILL;
 

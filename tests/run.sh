@@ -82,7 +82,7 @@ case $ARCH in
         OUT=$TESTS/out/aarch64
         QEMU=qemu-system-aarch64
         MACHINE="-M virt -cpu cortex-a72"
-        TEST_CC="clang --target=aarch64-none-elf -fuse-ld=lld -mgeneral-regs-only"
+        TEST_CC="clang --target=aarch64-none-elf -fuse-ld=lld"
         TEST_CFLAGS=
         TOOLS="clang ld.lld llvm-objcopy cpio"
         ALL_TESTS="aarch64"
