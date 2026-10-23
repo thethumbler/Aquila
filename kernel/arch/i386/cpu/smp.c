@@ -152,7 +152,16 @@ static int ap_boot(struct cpu *cpu, uint32_t id)
     for (int ms = 0; ms < 100 && !ap_started; ++ms)
         x86_pit_delay(1000);
 
-    return ap_started ? 0 : -1;
+    if (ap_started)
+        return 0;
+
+    /* too late: INIT again, it waits for a startup IPI that won't come.
+     * Coming now, it would run on the stack and the struct cpu that are
+     * about to be freed and reused */
+    x86_lapic_ipi(id, ICR_INIT | ICR_ASSERT);
+    x86_pit_delay(10000);
+
+    return -1;
 }
 
 void x86_smp_init(void)
