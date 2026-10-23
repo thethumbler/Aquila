@@ -77,7 +77,10 @@ void uart_8250_irq()
 
 void uart_8250_comm_init(struct uart *u __unused)
 {
-    while (!serial_empty());    /* Flush all output before reseting */
+    /* the output still there is sent before the reset; bounded, as in
+     * uart_8250_transmit(), for a UART that never empties */
+    for (size_t i = 0; i < 100000 && !serial_empty(); ++i)
+        ;
 
     io_out8(&io8250, UART_IER, 0x00);  /* Disable all interrupts */
 
