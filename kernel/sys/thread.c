@@ -19,7 +19,7 @@ int thread_new(struct proc *proc, struct thread **ref)
     if (!thread) return -ENOMEM;
 
     thread->owner = proc;
-    thread->tid = proc->threads.count + 1;
+    thread->tid = ++proc->tid_last;
 
     enqueue(&proc->threads, thread);
 

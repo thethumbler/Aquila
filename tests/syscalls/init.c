@@ -1597,6 +1597,18 @@ void aq_main(void)
     check("thread ran", thread_ran, 1);
     check("thread_self in the thread", thread_self, tid);
     check("thread_self", SC(SYS_thread_self, 0, 0, 0) != tid && SC(SYS_thread_self, 0, 0, 0) > 0, 1);
+    check("thread join again", SC(SYS_thread_join, tid, 0, 0), -ESRCH);
+    check("thread join itself", SC(SYS_thread_join, SC(SYS_thread_self, 0, 0, 0), 0, 0), -EDEADLK);
+
+    /* threads made and joined, over and over: each joined one is freed,
+     * and none gets an id another one has had */
+    int tids_ok = 1, last = tid;
+    for (int i = 0; i < 50; ++i) {
+        int t = SC(SYS_thread_create, &ut, 0, 0);
+        tids_ok = tids_ok && t > last && SC(SYS_thread_join, t, 0, 0) == t;
+        last = t;
+    }
+    check("threads made and joined, new ids", tids_ok, 1);
 
     /* sockets */
     int s = SC(SYS_socket, AF_UNIX, SOCK_STREAM, 0);

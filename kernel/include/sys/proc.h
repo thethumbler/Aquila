@@ -137,6 +137,10 @@ struct proc {
     /** Process threads */
     struct queue threads;
 
+    /** the last thread id given out (threads leave in any order: their
+     * count can't be the next one's) */
+    int tid_last;
+
     /** Threads join wait queue */
     struct queue thread_join;
 

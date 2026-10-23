@@ -1230,9 +1230,10 @@ static void sys_thread_exit(void *value_ptr)
     /* Wakeup owner if it is waiting for joining */
     thread_queue_wakeup(&owner->thread_join);
 
-    /* The thread stays in owner->threads as a zombie (for thread_join)
-     * and is freed when the process exits. Its kernel stack (which we are
-     * running on) is released from the idle stack by arch_cur_thread_kill */
+    /* The thread stays in owner->threads as a zombie, freed by
+     * thread_join, or when the process exits. Its kernel stack (which we
+     * are running on) is released from the idle stack by
+     * arch_cur_thread_kill */
     curthread->state = ZOMBIE;
     arch_cur_thread_kill();
 
@@ -1252,9 +1253,15 @@ static void sys_thread_join(int tid, void **value_ptr)
             thread = _thread;
     }
 
-    /* No such thread */
+    /* No such thread (or joined already) */
     if (!thread) {
-        arch_syscall_return(curthread, -ECHILD);
+        arch_syscall_return(curthread, -ESRCH);
+        return;
+    }
+
+    /* it would wait for itself forever */
+    if (thread == curthread) {
+        arch_syscall_return(curthread, -EDEADLK);
         return;
     }
 
@@ -1270,7 +1277,13 @@ static void sys_thread_join(int tid, void **value_ptr)
         return;
     }
 
-    arch_syscall_return(curthread, thread->tid);
+    /* joined: what's left of it goes (thread_exit freed the rest; its
+     * CPU is done with it, it let go of the kernel lock since) */
+    int joined = thread->tid;
+    queue_remove(&owner->threads, thread);
+    kfree(thread);
+
+    arch_syscall_return(curthread, joined);
 }
 
 static void sys_setpgid(pid_t pid, pid_t pgid)
