@@ -102,8 +102,9 @@ static int tmpfs_trunc(struct vnode *vnode, off_t len)
     size_t sz = MIN((size_t) len, vnode->size);
     char *buf = kmalloc(len, &M_BUFFER, 0);
 
+    /* the file stays as it was */
     if (!buf)
-        panic("failed to allocate buffer");
+        return -ENOMEM;
 
     memcpy(buf, vnode->p, sz);
 

@@ -49,17 +49,26 @@ int vfs_mount(const char *type, const char *dir, int flags, void *data, struct u
     else
         err = fs->mount(covered, flags, data);
 
-    if (err == 0) {
-        struct mountpoint *mp = kmalloc(sizeof(struct mountpoint), &M_MOUNTPOINT, 0);
+    /* mounted: what /proc/mounts lists (with no memory for it, the
+     * mount stays, unlisted; a name that couldn't be copied is "?") */
+    struct mountpoint *mp;
+
+    if (err == 0 && (mp = kmalloc(sizeof(struct mountpoint), &M_MOUNTPOINT, 0))) {
         struct {
             char *dev;
             char *opt;
         } *args = data;
-        mp->dev = (args && args->dev)? strdup(args->dev) : "none";
-        mp->type = strdup(type);
-        mp->path = strdup(path);
+
+        const char *dev = (args && args->dev) ? strdup(args->dev) : "none";
+        const char *t = strdup(type), *p = strdup(path);
+
+        mp->dev  = dev ? dev : "?";
+        mp->type = t ? t : "?";
+        mp->path = p ? p : "?";
         mp->options = "";
-        enqueue(mounts, mp);
+
+        if (!enqueue(mounts, mp))
+            kfree(mp);
     }
 
     kfree(path);

@@ -304,22 +304,28 @@ int ext2_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, struc
         inode.nlink = 2;
         inode.size = desc->bs;
         
-        /* zeroed: the names are padded with NULs */
+        /* zeroed: the names are padded with NULs (no memory: the inode
+         * goes again, below) */
         char *buf = kmalloc(desc->bs, &M_BUFFER, M_ZERO);
-        struct ext2_dentry *d = (struct ext2_dentry *) buf;
-        d->ino = ino;
-        d->size = 12;
-        d->length = 1;
-        d->type = desc->filetype ? EXT2_DENTRY_TYPE_DIR : 0;
-        memcpy(d->name, ".", 1);
-        d = (struct ext2_dentry *) ((char *) d + 12);
-        d->ino = dir->ino;
-        d->size = desc->bs - 12;
-        d->length = 2;
-        d->type = desc->filetype ? EXT2_DENTRY_TYPE_DIR : 0;
-        memcpy(d->name, "..", 2);
-        err = ext2_inode_block_write(desc, &inode, ino, 0, buf);
-        kfree(buf);
+
+        if (!buf) {
+            err = -ENOMEM;
+        } else {
+            struct ext2_dentry *d = (struct ext2_dentry *) buf;
+            d->ino = ino;
+            d->size = 12;
+            d->length = 1;
+            d->type = desc->filetype ? EXT2_DENTRY_TYPE_DIR : 0;
+            memcpy(d->name, ".", 1);
+            d = (struct ext2_dentry *) ((char *) d + 12);
+            d->ino = dir->ino;
+            d->size = desc->bs - 12;
+            d->length = 2;
+            d->type = desc->filetype ? EXT2_DENTRY_TYPE_DIR : 0;
+            memcpy(d->name, "..", 2);
+            err = ext2_inode_block_write(desc, &inode, ino, 0, buf);
+            kfree(buf);
+        }
     } else {
         inode.nlink = 1;
         err = ext2_inode_write(desc, ino, &inode);

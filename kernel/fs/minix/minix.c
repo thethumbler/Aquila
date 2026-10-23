@@ -132,7 +132,7 @@ static int minix_load(struct vnode *dev, struct vnode **super)
     }
 
     /* Build descriptor structure */
-    desc = kmalloc(sizeof(struct minix), &M_MINIX, 0);
+    desc = kmalloc(sizeof(struct minix), &M_MINIX, M_ZERO);
     if (!desc) goto e_nomem;
 
     desc->supernode   = dev;
@@ -150,40 +150,60 @@ static int minix_load(struct vnode *dev, struct vnode **super)
         desc->name_len    = name_len;
         desc->dentry_size = name_len + 2;
     } else {
-        kfree(desc);
-        return -ENOTSUP;
+        err = -ENOTSUP;
+        goto error;
     }
 
-    /* load inodes bitmap */
-    desc->imap.map = kmalloc(sb->imap_blocks * desc->bs, &M_BUFFER, 0);
+    /* the bitmaps, kept in memory: all of them read, or no filesystem */
+    size_t imap_size = sb->imap_blocks * desc->bs, zmap_size = sb->zmap_blocks * desc->bs;
+
+    desc->imap.map = kmalloc(imap_size, &M_BUFFER, 0);
+    desc->zmap.map = kmalloc(zmap_size, &M_BUFFER, 0);
+    if (!desc->imap.map || !desc->zmap.map) goto e_nomem;
+
     desc->imap.max_idx = sb->ninodes;
-    vfs_read(desc->supernode, desc->imap_off, sb->imap_blocks * desc->bs, desc->imap.map);
-
-    /* load blocks bitmap */
-    desc->zmap.map = kmalloc(sb->zmap_blocks * desc->bs, &M_BUFFER, 0);
     desc->zmap.max_idx = sb->nzones;
-    vfs_read(desc->supernode, desc->zmap_off, sb->zmap_blocks * desc->bs, desc->zmap.map);
 
-    desc->vcache = kmalloc(sizeof(struct vcache), &M_VCACHE, 0);
-    if (!desc->vcache) goto e_nomem;
+    ssize_t r;
+
+    if ((r = vfs_read(desc->supernode, desc->imap_off, imap_size, desc->imap.map)) != (ssize_t) imap_size ||
+        (r = vfs_read(desc->supernode, desc->zmap_off, zmap_size, desc->zmap.map)) != (ssize_t) zmap_size) {
+        err = r < 0 ? (int) r : -EIO;
+        goto error;
+    }
+
+    desc->vcache = kmalloc(sizeof(struct vcache), &M_VCACHE, M_ZERO);
+    desc->bcache = kmalloc(sizeof(struct bcache), &M_BCACHE, M_ZERO);
+    if (!desc->vcache || !desc->bcache) goto e_nomem;
 
     vcache_init(desc->vcache);
-
-    desc->bcache = kmalloc(sizeof(struct bcache), &M_BCACHE, 0);
-    if (!desc->bcache) goto e_nomem;
     bcache_init(desc->bcache);
+    if (!desc->vcache->hashmap || !desc->bcache->hashmap) goto e_nomem;
 
-    if (super)
-        minix_inode_build(desc, 1, super);
-    
+    /* the root (an inode that can't be read: no filesystem) */
+    if (super && (err = minix_inode_build(desc, 1, super)))
+        goto error;
+
     return 0;
 
 e_nomem:
     err = -ENOMEM;
 error:
-    if (sb)
-        kfree(sb);
+    /* nothing of it is used: nothing was built (the root comes last) */
+    if (desc) {
+        if (desc->vcache && desc->vcache->hashmap)
+            hashmap_free(desc->vcache->hashmap);
+        if (desc->bcache && desc->bcache->hashmap)
+            hashmap_free(desc->bcache->hashmap);
 
+        kfree(desc->vcache);
+        kfree(desc->bcache);
+        kfree(desc->imap.map);
+        kfree(desc->zmap.map);
+        kfree(desc);
+    }
+
+    kfree(sb);
     return err;
 }
 
