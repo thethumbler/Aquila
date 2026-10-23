@@ -102,6 +102,7 @@ arguments read at boot:
 |--------------------------|-------------------------------------------------------------|
 | `root=`                  | the root filesystem is this disk partition (`/dev/hda2`), not the initramfs |
 | `rootfstype=`            | the root filesystem's type: `ext2` (the default) or `minix` |
+| `ip=`                    | eth0's address, prefix length and gateway (`10.0.2.15/24:10.0.2.2`); see [Networking](networking.md) |
 | `earlycon=`              | PC: where the kernel's messages go: `ttyS0`, `vga` or `fb` (default: the framebuffer if there is one, else the serial port) |
 | `apic=off`               | PC: the 8259s, not the APIC (and one CPU)                   |
 | `smp=off`                | x86: the boot CPU only                                      |

@@ -106,5 +106,6 @@ A few conventions help:
   (`arch_thread_switch`, `arch_syscall_return`) and lives in
   `kernel/arch/i386/`; x86-specific functions are called `x86_*`.
 - **One kernel lock**: the kernel runs with interrupts off, on one CPU at
-  a time (see [Interrupts](interrupts.md)); a structure shared by several
-  CPUs needs no lock of its own.
+  a time (see [Interrupts](interrupts.md) and
+  [SMP and the kernel lock](smp.md)); a structure shared by several CPUs
+  needs no lock of its own.

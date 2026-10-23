@@ -1,4 +1,5 @@
 #!/bin/sh
-# Doxygen's input filter for the documents: their links to the sources
-# (../../kernel/..., right on GitHub) are just the code's name here
-exec sed 's/\[\(`[^]]*`\)\](\(\.\.\/\)*kernel\/[^)]*)/\1/g' "$1"
+# Doxygen's input filter for the documents: their links into the
+# repository (../../kernel/..., ../../Makefile, right on GitHub) are just
+# their text here
+exec sed 's/\[\([^]]*\)\](\(\.\.\/\)\{2,\}[^)]*)/\1/g' "$1"
