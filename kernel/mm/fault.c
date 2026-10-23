@@ -90,6 +90,10 @@ static inline int pf_anon(struct pf *pf)
 
         if (vm_anon->ref > 1) {
             struct vm_anon *new_anon = vm_anon_copy(vm_anon);
+
+            if (!new_anon)
+                return -ENOMEM;
+
             vm_anon_decref(vm_anon);
             vm_entry->vm_anon = new_anon;
             vm_anon = new_anon;
@@ -138,9 +142,8 @@ static inline int pf_anon(struct pf *pf)
 
     struct vm_aref *new_aref = kmalloc(sizeof(struct vm_aref), &M_VM_AREF, M_ZERO);
 
-    if (!new_aref) {
-        /* TODO */
-    }
+    if (!new_aref)
+        return -ENOMEM;
 
     new_aref->ref = 1;
     new_aref->flags = aref->flags;
@@ -176,12 +179,10 @@ static inline struct vm_page *vm_object_page(struct vm_object *vm_object, hash_t
         vm_page = (struct vm_page *) hash_node->entry;
     } else {
         /* page was not found, page in */
-        if (vm_object->pager && vm_object->pager->in) {
+        if (vm_object->pager && vm_object->pager->in)
             vm_page = vm_object->pager->in(vm_object, off);
-        } else {
-            /* what should we do now? */
-            panic("Shit");
-        }
+        else
+            printk("vm: an object with no pager, page %p missing\n", (void *) off);
     }
 
     return vm_page;
@@ -195,8 +196,12 @@ static inline int pf_object(struct pf *pf)
     struct vm_page *vm_page = NULL;
     struct pmap *pmap = pf->vm_space->pmap;
 
-    /* look for page in the object pages hashmap */
+    /* look for page in the object pages hashmap; NULL: it couldn't be
+     * read in (no memory, a read error) */
     vm_page = vm_object_page(vm_object, pf->hash, pf->off);
+
+    if (!vm_page)
+        return -EIO;
 
     if (!(vm_entry->flags & VM_UW)) {
         /* read only page -- just map */
@@ -209,15 +214,16 @@ static inline int pf_object(struct pf *pf)
 
     /* allocate a new anon if we don't have one */
     if (!vm_entry->vm_anon) {
-        vm_entry->vm_anon = vm_anon_new();
+        if (!(vm_entry->vm_anon = vm_anon_new()))
+            return -ENOMEM;
+
         vm_entry->vm_anon->ref = 1;
     }
 
     struct vm_aref *vm_aref = kmalloc(sizeof(struct vm_aref), &M_VM_AREF, M_ZERO);
 
-    if (!vm_aref) {
-        /* TODO */
-    }
+    if (!vm_aref)
+        return -ENOMEM;
 
     vm_aref->vm_page = vm_page;
     vm_aref->ref = 1;
@@ -254,14 +260,16 @@ static inline int pf_zero(struct pf *pf)
     struct pmap *pmap = pf->vm_space->pmap;
 
     if (!vm_entry->vm_anon) {
-        vm_entry->vm_anon = vm_anon_new();
+        if (!(vm_entry->vm_anon = vm_anon_new()))
+            return -ENOMEM;
+
         vm_entry->vm_anon->ref = 1;
     }
 
     struct vm_aref *vm_aref = kmalloc(sizeof(struct vm_aref), &M_VM_AREF, M_ZERO);
-    if (!vm_aref) {
-        /* TODO */
-    }
+
+    if (!vm_aref)
+        return -ENOMEM;
 
     struct vm_page *new_page = mm_page_alloc();
     new_page->off = pf->off;
@@ -322,21 +330,33 @@ int mm_page_fault(vaddr_t vaddr, int flags)
         .hash = hash,
     };
 
+    /* each step: 1, the page is there now; 0, not this step's to handle;
+     * < 0, it can't be (no memory, the file's page couldn't be read): the
+     * same as an address that isn't the process's */
+    int ret = 0;
+
     /* try to handle page present case */
-    if (flags & PF_PRESENT && pf_present(&pf))
-        return 0;
+    if (flags & PF_PRESENT && (ret = pf_present(&pf)))
+        goto done;
 
     /* check the anon layer for the page and handle if present */
-    if (vm_entry->vm_anon && pf_anon(&pf))
-        return 0;
+    if (vm_entry->vm_anon && (ret = pf_anon(&pf)))
+        goto done;
 
     /* check the backening object for the page and handle if present */
-    if (vm_entry->vm_object && pf_object(&pf))
-        return 0;
+    if (vm_entry->vm_object && (ret = pf_object(&pf)))
+        goto done;
 
     /* just zero out the page */
-    if (pf_zero(&pf))
+    ret = pf_zero(&pf);
+
+done:
+    if (ret > 0)
         return 0;
+
+    if (ret < 0)
+        printk("[%d:%d] %s: page fault at %p not resolved: error %d\n",
+               curproc->pid, curthread->tid, curproc->name, (void *) vaddr, -ret);
 
 sigsegv:
     curthread->fault_addr = vaddr;

@@ -56,7 +56,11 @@ struct vm_page *vnode_page_in(struct vm_object *vm_object, size_t off)
     char *buf = kmalloc(PAGE_SIZE, &M_BUFFER, M_ZERO);
     if (!buf) return NULL;
 
-    vfs_read(vnode, off, PAGE_SIZE, buf);
+    /* a page that can't be read isn't mapped as zeros */
+    if (vfs_read(vnode, off, PAGE_SIZE, buf) < 0) {
+        kfree(buf);
+        return NULL;
+    }
 
     /* another thread may have paged it in meanwhile */
     hash_t hash = hashmap_digest(&off, sizeof(off));
@@ -119,7 +123,10 @@ void vnode_pages_update(struct vnode *vnode, off_t start, off_t end)
         }
 
         memset(buf, 0, PAGE_SIZE);
-        vfs_read(vnode, off, PAGE_SIZE, buf);
+
+        if (vfs_read(vnode, off, PAGE_SIZE, buf) < 0)
+            continue;
+
         pmap_page_write(vm_page->paddr, 0, PAGE_SIZE, buf);
     }
 
