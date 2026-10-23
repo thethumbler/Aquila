@@ -1,4 +1,4 @@
-/*
+/** \file
  * Block cache: what disks read and write, kept in 4 KiB blocks. Writes
  * stay in it (write back) until blkcache_flush(): sync(), restarting or
  * powering off, too much written (DIRTY_MAX), or written a while ago
@@ -115,7 +115,7 @@ static void touch(struct blk *b)
     }
 }
 
-/* a clean block leaves the cache */
+/** a clean block leaves the cache */
 static void evict(struct blk *b)
 {
     struct blk **p = bucket(b->owner, b->nr);
@@ -144,7 +144,7 @@ static void make_clean(struct blk *b, uint8_t mask)
         --dirty;
 }
 
-/* a block for (owner, nr), nothing valid in it; NULL if every block is
+/** a block for (owner, nr), nothing valid in it; NULL if every block is
  * dirty, or there is no memory */
 static struct blk *block_new(void *owner, uint64_t nr)
 {
@@ -180,7 +180,7 @@ static struct blk *block_new(void *owner, uint64_t nr)
     return b;
 }
 
-/* maps the pages of a buffer, a process's isn't until it is used: before
+/** maps the pages of a buffer, a process's isn't until it is used: before
  * the cache is looked at, mapping one may read the disk and change it */
 static void prefault(void *buf, size_t size, int write)
 {
@@ -215,7 +215,7 @@ static inline int full_dirty(struct blk *b)
     return b && b->dirty == BLK_ALL;
 }
 
-/* writes the dirty sectors of `b' (with the adjacent wholly dirty blocks
+/** writes the dirty sectors of `b' (with the adjacent wholly dirty blocks
  * after it), and they are clean */
 static int flush_block(struct blk *b)
 {
@@ -313,7 +313,7 @@ int blkcache_flush(void)
     return err;
 }
 
-/* dirty blocks written a while ago go to the disk */
+/** dirty blocks written a while ago go to the disk */
 static void flush_old(void)
 {
     static int flushing;

@@ -1,4 +1,4 @@
-/*
+/** \file
  * ACPI: its tables (from the RSDT, or the XSDT of ACPI 2.0), mapped once
  * and found by their signature (x86_acpi_table: HPET, ...); and powering
  * off: the S5 sleep state, with the PM1 control registers of the FADT
@@ -52,7 +52,7 @@ static int checksum(const void *p, size_t size)
     return sum;
 }
 
-/* maps physical memory, NULL if the window is full */
+/** maps physical memory, NULL if the window is full */
 static void *acpi_map(uintptr_t paddr, size_t size)
 {
     uintptr_t page = PAGE_ALIGN(paddr);
@@ -78,7 +78,7 @@ static void *acpi_map(uintptr_t paddr, size_t size)
     return (void *) (entry->base + (paddr - page));
 }
 
-/* a table, mapped as long as its header says it is, if it checks out */
+/** a table, mapped as long as its header says it is, if it checks out */
 static struct acpi_sdt_header *acpi_table(uintptr_t paddr)
 {
     struct acpi_sdt_header *hdr = acpi_map(paddr, sizeof(*hdr));
@@ -91,7 +91,7 @@ static struct acpi_sdt_header *acpi_table(uintptr_t paddr)
     return hdr && !checksum(hdr, hdr->length) ? hdr : NULL;
 }
 
-/* the RSDP is in the first KiB of the EBDA or in the BIOS ROM */
+/** the RSDP is in the first KiB of the EBDA or in the BIOS ROM */
 static struct acpi_rsdp *acpi_rsdp(void)
 {
     uintptr_t ebda = (uintptr_t) *(uint16_t *) VMA(0x40E) << 4;
@@ -114,7 +114,7 @@ static struct acpi_rsdp *acpi_rsdp(void)
 static struct acpi_sdt_header *tables[ACPI_TABLES_MAX];
 static int tables_nr = -1;
 
-/* every table the RSDT (or XSDT) lists, mapped */
+/** every table the RSDT (or XSDT) lists, mapped */
 static void acpi_tables(void)
 {
     struct acpi_rsdp *rsdp = acpi_rsdp();
@@ -161,7 +161,7 @@ static void acpi_tables(void)
     }
 }
 
-/* the table of that signature, NULL if there's none */
+/** the table of that signature, NULL if there's none */
 void *x86_acpi_table(const char *signature)
 {
     if (tables_nr < 0)
@@ -174,7 +174,7 @@ void *x86_acpi_table(const char *signature)
     return NULL;
 }
 
-/* an integer element of a package: BytePrefix n, or ZeroOp and OneOp */
+/** an integer element of a package: BytePrefix n, or ZeroOp and OneOp */
 static int aml_int(const uint8_t **p, const uint8_t *end)
 {
     if (*p >= end)
@@ -191,7 +191,7 @@ static int aml_int(const uint8_t **p, const uint8_t *end)
     return -1;
 }
 
-/*
+/**
  * The sleep types of S5: Name (_S5, Package () {a, b, ...}) in the DSDT,
  * -1 if there isn't one.
  */
@@ -235,7 +235,7 @@ static uint16_t pm1_read(uint32_t port)
     return io_in16(&io, 0);
 }
 
-/* powers off, returns if it can't */
+/** powers off, returns if it can't */
 void x86_acpi_poweroff(void)
 {
     uint8_t *fadt = x86_acpi_table("FACP");

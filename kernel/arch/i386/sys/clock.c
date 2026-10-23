@@ -1,4 +1,4 @@
-/*
+/** \file
  * The clock (arch_rtime_ns): nanoseconds since it started, from a
  * counter chosen once (x86_clock_init), the first of
  *
@@ -50,7 +50,7 @@ static inline void cpuid(uint32_t leaf, uint32_t *a, uint32_t *b, uint32_t *c, u
     asm volatile("cpuid" : "=a"(*a), "=b"(*b), "=c"(*c), "=d"(*d) : "a"(leaf), "c"(0));
 }
 
-/* the TSC counts at a constant rate (CPUID 0x80000007, EDX bit 8) */
+/** the TSC counts at a constant rate (CPUID 0x80000007, EDX bit 8) */
 static int tsc_invariant(void)
 {
     uint32_t a, b, c, d;
@@ -64,7 +64,7 @@ static int tsc_invariant(void)
     return !!(d & (1 << 8));
 }
 
-/* (a * b) >> 32 without its 128 bits: in 32-bit halves */
+/** (a * b) >> 32 without its 128 bits: in 32-bit halves */
 static inline uint64_t mul_shift32(uint64_t a, uint64_t b)
 {
     uint64_t ah = a >> 32, al = a & 0xffffffff;
@@ -78,7 +78,7 @@ static uint64_t counter(void)
     return source == SOURCE_TSC ? rdtsc() : x86_hpet_read32();
 }
 
-/* counts since the base */
+/** counts since the base */
 static uint64_t since(uint64_t c)
 {
     return source == SOURCE_TSC ? c - base_count : (uint32_t) (c - base_count);
@@ -108,7 +108,7 @@ uint64_t arch_rtime_ms(void)
     return arch_rtime_ns() / 1000000ULL;
 }
 
-/* the timer's tick: the base moves on */
+/** the timer's tick: the base moves on */
 void x86_clock_tick(void)
 {
     ticks++;
@@ -122,7 +122,7 @@ void x86_clock_tick(void)
     base_count = c;
 }
 
-/* the TSC's mult: its counts over CALIBRATE_US, by the HPET or the PIT */
+/** the TSC's mult: its counts over CALIBRATE_US, by the HPET or the PIT */
 static uint64_t tsc_calibrate(int hpet, const char **by)
 {
     uint64_t t0, t1, ns;
@@ -151,7 +151,7 @@ static uint64_t tsc_calibrate(int hpet, const char **by)
     return t1 > t0 ? (ns << 32) / (t1 - t0) : 0;
 }
 
-/* the timer ticks every `period_ns' from now on */
+/** the timer ticks every `period_ns' from now on */
 void x86_clock_ticks(uint32_t period_ns)
 {
     tick_period = period_ns;
@@ -165,7 +165,7 @@ int x86_clock_precise(void)
     return source != SOURCE_PIT;
 }
 
-/* the clock's source (before the timer ticks) */
+/** the clock's source (before the timer ticks) */
 void x86_clock_init(void)
 {
     const char *want = NULL;

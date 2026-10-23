@@ -1,4 +1,4 @@
-/*
+/** \file
  * The kernel lock
  *
  * The kernel was written for one CPU, running with interrupts off: what

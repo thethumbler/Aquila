@@ -1,4 +1,4 @@
-/*
+/** \file
  * TCP's connections (struct tcp_pcb) and their sockets (SOCK_STREAM)
  *
  * Every connection is on a list (the ports in use, the listeners), and
@@ -88,7 +88,7 @@ struct tcp_pcb *tcp_lookup(uint32_t laddr, uint16_t lport, uint32_t raddr, uint1
     return node ? node->entry : NULL;
 }
 
-/* by its addresses and ports, which it has now */
+/** by its addresses and ports, which it has now */
 int tcp_insert(struct tcp_pcb *pcb)
 {
     struct tcp_key key = {pcb->laddr, pcb->raddr, pcb->lport, pcb->rport};
@@ -180,7 +180,7 @@ void tcp_pcb_free(struct tcp_pcb *pcb)
     kfree(pcb);
 }
 
-/* RFC 6528: a clock (4 us), and a hash of the connection with a secret */
+/** RFC 6528: a clock (4 us), and a hash of the connection with a secret */
 uint32_t tcp_iss(struct tcp_pcb *pcb)
 {
     static int keyed;
@@ -206,7 +206,7 @@ void tcp_wakeup(struct tcp_pcb *pcb)
     thread_queue_wakeup(&pcb->wait);
 }
 
-/* taken off its listener's queues (it is done, or accept() took it) */
+/** taken off its listener's queues (it is done, or accept() took it) */
 static void unlink_parent(struct tcp_pcb *pcb)
 {
     struct tcp_pcb *l = pcb->parent;
@@ -231,7 +231,7 @@ static void unlink_parent(struct tcp_pcb *pcb)
     l->qlen--;
 }
 
-/* CLOSED: freed if nothing has it anymore (its socket keeps it, out of
+/** CLOSED: freed if nothing has it anymore (its socket keeps it, out of
  * the lookups) */
 void tcp_closed(struct tcp_pcb *pcb)
 {
@@ -255,7 +255,7 @@ void tcp_closed(struct tcp_pcb *pcb)
     }
 }
 
-/* the connection is lost: `err' for its socket (0: none) */
+/** the connection is lost: `err' for its socket (0: none) */
 void tcp_drop(struct tcp_pcb *pcb, int err)
 {
     pcb->error = err;
@@ -302,7 +302,7 @@ void tcp_time_wait(struct tcp_pcb *pcb)
     tcp_wakeup(pcb);
 }
 
-/* our FIN acked: a closed socket's waits for the peer's a while */
+/** our FIN acked: a closed socket's waits for the peer's a while */
 void tcp_fin_wait_2(struct tcp_pcb *pcb)
 {
     if (pcb->detached)
@@ -326,7 +326,7 @@ static void keepalive_timeout(void *arg)
     net_callout_set(&pcb->timer2, KEEP_INTERVAL, keepalive_timeout, pcb);
 }
 
-/* the peer was heard from */
+/** the peer was heard from */
 void tcp_keepalive_reset(struct tcp_pcb *pcb)
 {
     pcb->keep_probes = 0;
@@ -339,7 +339,7 @@ void tcp_keepalive_reset(struct tcp_pcb *pcb)
  * Ports
  */
 
-/* (addr, port) is taken: by a listener, or by anyone unless reuseaddr */
+/** (addr, port) is taken: by a listener, or by anyone unless reuseaddr */
 static int port_used(uint32_t addr, uint16_t port, int reuseaddr)
 {
     for (struct tcp_pcb *pcb = tcp_pcbs; pcb; pcb = pcb->next) {
@@ -571,7 +571,7 @@ wait:
     return -err;
 }
 
-/* the states data goes out in */
+/** the states data goes out in */
 static int can_send(struct tcp_pcb *pcb)
 {
     return (pcb->state == TCP_ESTABLISHED || pcb->state == TCP_CLOSE_WAIT) && !pcb->fin_queued;
@@ -642,7 +642,7 @@ static ssize_t socket_tcp_send(struct file *file, struct iobuf *io, int flags,
     return sent;
 }
 
-/* the window opened by what was read: the peer is told, if it moved
+/** the window opened by what was read: the peer is told, if it moved
  * enough (tcp_rcv_window) */
 static void window_update(struct tcp_pcb *pcb)
 {
@@ -748,7 +748,7 @@ static int socket_tcp_can_read(struct file *file, size_t len)
            (pcb->state == TCP_CLOSED && pcb->connected);
 }
 
-/* accept, connect, recv and send all wait on the connection's queue */
+/** accept, connect, recv and send all wait on the connection's queue */
 static struct queue *socket_tcp_wait_queue(struct file *file, int write)
 {
     struct tcp_pcb *pcb = file->socket->p;
@@ -911,7 +911,7 @@ static int socket_tcp_ioctl(struct file *file, int request, void *argp)
     return inet_ifioctl(request, argp);
 }
 
-/* our FIN, after what is in sndbuf */
+/** our FIN, after what is in sndbuf */
 static void send_fin(struct tcp_pcb *pcb)
 {
     if (pcb->fin_queued)
@@ -946,7 +946,7 @@ static int socket_tcp_shut(struct file *file, int how)
     return 0;
 }
 
-/* the last descriptor is closed: the connection ends, and goes when done */
+/** the last descriptor is closed: the connection ends, and goes when done */
 static int socket_tcp_shutdown(struct file *file, int how)
 {
     struct tcp_pcb *pcb = file->socket->p;

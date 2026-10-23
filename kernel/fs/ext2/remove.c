@@ -1,4 +1,4 @@
-/*
+/** \file
  * Removing, linking and renaming entries, and freeing what a file used.
  *
  * Unlinking drops the link count, the inode and its blocks are freed when
@@ -11,7 +11,7 @@
 #include <ds/bitmap.h>
 #include <fs/vcache.h>
 
-/* free the blocks of the tree at `block' (a data block at depth 0, else
+/** free the blocks of the tree at `block' (a data block at depth 0, else
  * an indirect block `depth' levels above the data), from data block
  * `from' of the tree on; returns the block, 0 if it was freed */
 static uint32_t free_tree(struct ext2 *desc, struct ext2_inode *inode, uint32_t block, int depth, size_t from)
@@ -54,7 +54,7 @@ static uint32_t free_tree(struct ext2 *desc, struct ext2_inode *inode, uint32_t 
     return 0;
 }
 
-/* free the blocks of `inode' from data block `from' on */
+/** free the blocks of `inode' from data block `from' on */
 void ext2_blocks_free(struct ext2 *desc, struct ext2_inode *inode, size_t from)
 {
     size_t p = desc->bs / 4, base = EXT2_DIRECT_POINTERS;
@@ -76,7 +76,7 @@ void ext2_blocks_free(struct ext2 *desc, struct ext2_inode *inode, size_t from)
         free_tree(desc, inode, inode->triply_indirect_pointer, 3, from > base ? from - base : 0);
 }
 
-/* mark inode `ino' free (a bitmap that can't be read isn't written back:
+/** mark inode `ino' free (a bitmap that can't be read isn't written back:
  * it stays used) */
 static void ext2_inode_free(struct ext2 *desc, ino_t ino, int dir)
 {
@@ -109,7 +109,7 @@ static void ext2_inode_free(struct ext2 *desc, ino_t ino, int dir)
     ext2_superblock_rewrite(desc);
 }
 
-/* free inode `ino' and everything it uses, it has no links left */
+/** free inode `ino' and everything it uses, it has no links left */
 void ext2_inode_discard(struct ext2 *desc, ino_t ino)
 {
     struct ext2_inode inode;
@@ -130,7 +130,7 @@ void ext2_inode_discard(struct ext2 *desc, ino_t ino)
         ext2_inode_free(desc, ino, S_ISDIR(inode.mode));
 }
 
-/* the last reference to a vnode is gone */
+/** the last reference to a vnode is gone */
 int ext2_close(struct vnode *vnode)
 {
     struct ext2 *desc = vnode->p;

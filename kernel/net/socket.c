@@ -1,6 +1,5 @@
-/**
- * \defgroup net kernel/net
- * \brief networking subsystem
+/** \file
+ * networking subsystem
  */
 
 #include <core/system.h>
@@ -121,7 +120,7 @@ int socket_can_read(struct file *file, size_t len)
     return file->socket->ops->can_read(file, len);
 }
 
-/* NULL if the protocol can't tell: any wakeup is */
+/** NULL if the protocol can't tell: any wakeup is */
 struct queue *socket_wait_queue(struct file *file, int write)
 {
     if (!file->socket->ops || !file->socket->ops->wait_queue)
@@ -141,7 +140,7 @@ int socket_can_write(struct file *file, size_t len)
     return file->socket->ops->can_write(file, len);
 }
 
-/* shutdown(): no more reading or writing, the socket stays open */
+/** shutdown(): no more reading or writing, the socket stays open */
 int socket_shutdown_dir(struct file *file, int how)
 {
     if (!(file->flags & FILE_SOCKET))
@@ -179,7 +178,7 @@ int socket_getname(struct file *file, struct sockaddr *addr, socklen_t *len, int
     return file->socket->ops->getname(file, addr, len, peer);
 }
 
-/* an int option's value */
+/** an int option's value */
 static int sockopt_int(void *val, socklen_t *len, int v)
 {
     if (*len < sizeof(int))

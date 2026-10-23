@@ -2,7 +2,6 @@
 #include <fs/vfs.h>
 
 /** read entries from a directory vnode
- * \ingroup vfs
  */
 ssize_t vfs_readdir(struct vnode *dir, off_t off, struct dirent *dirent)
 {
@@ -38,7 +37,7 @@ int vfs_finddir(struct vnode *dir, const char *name, struct dirent *dirent)
     return dir->fs->vops.finddir(dir, name, dirent);
 }
 
-/* whether directory `dir' has no entries besides . and .. */
+/** whether directory `dir' has no entries besides . and .. */
 int vfs_dir_empty(struct vnode *dir)
 {
     struct dirent dirent;

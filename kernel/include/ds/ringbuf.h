@@ -8,8 +8,7 @@
 #define RING_INDEX(ring, i) ((i) % ((ring)->size))
 
 /**
- * \ingroup ds
- * \brief ring buffer
+ * ring buffer
  */
 struct ringbuf {
     char *buf;
@@ -19,14 +18,12 @@ struct ringbuf {
 };
 
 /**
- * \ingroup ds
- * \brief create a new statically allocated ring buffer
+ * create a new statically allocated ring buffer
  */
 #define RINGBUF_NEW(sz) (&(struct ringbuf){.buf = (char[sz]){0}, .size = sz, .head = 0, .tail = 0})
 
 /**
- * \ingroup ds
- * \brief create a new dynamically allocated ring buffer
+ * create a new dynamically allocated ring buffer
  */
 static inline struct ringbuf *ringbuf_new(size_t size)
 {
@@ -50,8 +47,7 @@ static inline struct ringbuf *ringbuf_new(size_t size)
 }
 
 /**
- * \ingroup ds
- * \brief free a dynamically allocated ring buffer
+ * free a dynamically allocated ring buffer
  */
 static inline void ringbuf_free(struct ringbuf *r)
 {
@@ -74,8 +70,7 @@ static inline size_t ringbuf_available(struct ringbuf *ring)
 }
 
 /** 
- * \ingroup ds
- * \brief read from a ring buffer
+ * read from a ring buffer
  */
 static inline size_t ringbuf_read(struct ringbuf *ring, size_t n, char *buf)
 {
@@ -93,8 +88,7 @@ static inline size_t ringbuf_read(struct ringbuf *ring, size_t n, char *buf)
 }
 
 /** 
- * \ingroup ds
- * \brief peek (non-destructive read) from a ring buffer
+ * peek (non-destructive read) from a ring buffer
  */
 static inline size_t ringbuf_read_noconsume(struct ringbuf *ring, off_t off, size_t n, char *buf)
 {
@@ -115,7 +109,7 @@ static inline size_t ringbuf_read_noconsume(struct ringbuf *ring, off_t off, siz
     return n;
 }
 
-/* the first `n' bytes go, unread (at most what there is) */
+/** the first `n' bytes go, unread (at most what there is) */
 static inline void ringbuf_discard(struct ringbuf *ring, size_t n)
 {
     n = MIN(n, ringbuf_available(ring));

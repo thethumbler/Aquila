@@ -78,7 +78,7 @@ static int x86_pc_cmos_init(void)
 
 static int apic;
 
-/* the tick: the local APIC's timer, or the PIT */
+/** the tick: the local APIC's timer, or the PIT */
 uint32_t platform_timer_setup(size_t period_ns, void (*handler)())
 {
     if (apic)
@@ -89,7 +89,7 @@ uint32_t platform_timer_setup(size_t period_ns, void (*handler)())
     return period;
 }
 
-/* the interrupts: the APIC's if there's one (and not apic=off), else the
+/** the interrupts: the APIC's if there's one (and not apic=off), else the
  * 8259s'; the 8259s are remapped either way */
 static void x86_pc_irq_init(void)
 {

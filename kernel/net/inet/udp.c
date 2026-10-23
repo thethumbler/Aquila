@@ -1,4 +1,4 @@
-/*
+/** \file
  * UDP: datagrams to the sockets bound to their port, and "port
  * unreachable" if there is none
  */

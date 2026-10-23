@@ -1,4 +1,4 @@
-/*
+/** \file
  * vmem: an allocator of ranges (mm/vmem.h)
  */
 
@@ -9,7 +9,7 @@
 
 MALLOC_DEFINE(M_VMEM_SEG, "vmem-seg", "vmem segment");
 
-/* floor and ceiling of log2(n), n > 0 */
+/** floor and ceiling of log2(n), n > 0 */
 static int log2_floor(size_t n)
 {
     return (int) (sizeof(size_t) * 8 - 1) - __builtin_clzl(n);
@@ -31,7 +31,7 @@ static struct vmem_seg **hash_chain(struct vmem *vm, uintptr_t base)
     return &vm->hash[(base / vm->quantum) % VMEM_HASH];
 }
 
-/* on and off a list (free list, or hash chain): lprev, lnext */
+/** on and off a list (free list, or hash chain): lprev, lnext */
 static void list_insert(struct vmem_seg **list, struct vmem_seg *seg)
 {
     seg->lprev = NULL;
@@ -56,7 +56,7 @@ static void list_remove(struct vmem_seg **list, struct vmem_seg *seg)
     seg->lprev = seg->lnext = NULL;
 }
 
-/* in the arena's address order: `seg' after `prev' (NULL: first) */
+/** in the arena's address order: `seg' after `prev' (NULL: first) */
 static void seg_link(struct vmem *vm, struct vmem_seg *prev, struct vmem_seg *seg)
 {
     seg->prev = prev;
@@ -164,7 +164,7 @@ struct vmem_seg *vmem_find(struct vmem *vm, uintptr_t base)
     return NULL;
 }
 
-/* `b' (right after `a', both free) becomes part of `a' */
+/** `b' (right after `a', both free) becomes part of `a' */
 static void seg_merge(struct vmem *vm, struct vmem_seg *a, struct vmem_seg *b)
 {
     list_remove(free_list(vm, a), a);

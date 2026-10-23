@@ -9,8 +9,7 @@
 #include <aquila/vt.h>
 
 /**
- * \ingroup dev-tty
- * \brief virtual terminals: the screen and keyboard as terminals
+ * virtual terminals: the screen and keyboard as terminals
  *
  * The kernel emulates a terminal (the Linux console's escape sequences,
  * TERM=linux) on the framebuffer, or VGA text mode without one, and turns

@@ -1,6 +1,5 @@
-/**
- * \defgroup dev-tty kernel/dev/tty
- * \brief tty device
+/** \file
+ * tty device
  */
 
 #include <core/system.h>
@@ -12,7 +11,7 @@
 #include <dev/vt.h>
 #include <fs/vfs.h>
 
-/* /dev/tty1 to /dev/tty6 are virtual terminals (/dev/tty0 the foreground
+/** /dev/tty1 to /dev/tty6 are virtual terminals (/dev/tty0 the foreground
  * one), /dev/ttyS0 and up uarts */
 struct dev *sttydev_mux(struct devid *dd)
 {
@@ -25,7 +24,7 @@ struct dev *sttydev_mux(struct devid *dd)
     return NULL;
 }
 
-/* /dev/tty: opens the controlling terminal's device instead */
+/** /dev/tty: opens the controlling terminal's device instead */
 static int ctty_open(struct file *file)
 {
     struct tty *tty = curproc->pgrp->session->ctty;

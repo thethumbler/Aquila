@@ -6,8 +6,7 @@
 #include <sys/proc.h>
 
 /**
- * \ingroup sys
- * \brief binary format
+ * binary format
  */
 struct binfmt {
     int (*check)(struct vnode *vnode);

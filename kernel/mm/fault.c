@@ -8,8 +8,7 @@
 #include <sys/sched.h>
 
 /**
- * \ingroup mm
- * \brief a structure holding parameters relevant to a page fault
+ * a structure holding parameters relevant to a page fault
  */
 struct pf {
     int flags;
@@ -32,8 +31,7 @@ static inline int check_violation(int flags, int vm_flags)
 }
 
 /**
- * \ingroup mm
- * \brief handle the page fault if the page is already present
+ * handle the page fault if the page is already present
  * in virtual memory mapping
  */
 static inline int pf_present(struct pf *pf)
@@ -283,8 +281,7 @@ static inline int pf_zero(struct pf *pf)
 }
 
 /**
- * \ingroup mm
- * \brief handle a page fault
+ * handle a page fault
  *
  * This function is called from the arch subsystem to handle
  * a page fault

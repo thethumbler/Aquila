@@ -1,6 +1,5 @@
-/**
- * \defgroup fs-tmpfs kernel/fs/tmpfs
- * \brief temporary filesystem (tmpfs) handler
+/** \file
+ * temporary filesystem (tmpfs) handler
  */
 
 #include <core/system.h>

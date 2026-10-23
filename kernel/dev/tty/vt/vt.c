@@ -1,4 +1,4 @@
-/*
+/** \file
  * Virtual terminals: /dev/tty1 to /dev/tty6 (major 4), /dev/console is
  * the first one. What programs write goes through the terminal emulator
  * (term.c) to the screen, key presses (keyboard.c) through the line
@@ -73,7 +73,7 @@ uint32_t vt_palette(uint8_t color)
     return levels[color / 36] << 16 | levels[color / 6 % 6] << 8 | levels[color % 6];
 }
 
-/* the closest of the 16 colors */
+/** the closest of the 16 colors */
 static uint8_t color16(uint8_t color)
 {
     if (color < 16)
@@ -98,7 +98,7 @@ static uint8_t color16(uint8_t color)
     return best;
 }
 
-/* the VGA text mode attribute of a cell, for the VGA display and vcsa */
+/** the VGA text mode attribute of a cell, for the VGA display and vcsa */
 uint8_t vt_vga_attr(struct vt_cell cell)
 {
     /* VGA colors are BGR, ANSI colors RGB */
@@ -123,7 +123,7 @@ uint8_t vt_vga_attr(struct vt_cell cell)
     return bg << 4 | fg;
 }
 
-/* draws the cells of the foreground terminal that changed */
+/** draws the cells of the foreground terminal that changed */
 static void refresh(struct vt *vt, int all)
 {
     if (vt != fg || !display || vt->kd_mode == KD_GRAPHICS)
@@ -153,14 +153,14 @@ static void refresh(struct vt *vt, int all)
         display->cursor(vt->row, vt->col, vt->cursor_visible);
 }
 
-/* tty interface: output to the screen */
+/** tty interface: output to the screen */
 static ssize_t vt_tty_output(struct tty *tty, size_t size, void *buf)
 {
     vt_term_write(tty->p, buf, size);
     return size;
 }
 
-/* tty interface: input for readers */
+/** tty interface: input for readers */
 static ssize_t vt_tty_input(struct tty *tty, size_t size, void *buf)
 {
     struct vt *vt = tty->p;
@@ -176,14 +176,14 @@ static void vt_input_flush(struct tty *tty)
         ;
 }
 
-/* input to a terminal, from the keyboard or replies to requests */
+/** input to a terminal, from the keyboard or replies to requests */
 static void vt_input_to(struct vt *vt, const char *buf, size_t size)
 {
     tty_master_write(vt->tty, size, (void *) buf);
     thread_queue_wakeup(&vt->read_queue);
 }
 
-/* replies to requests in what was written (DSR, DA) are input */
+/** replies to requests in what was written (DSR, DA) are input */
 static void vt_reply(struct vt *vt)
 {
     char buf[sizeof(vt->reply)];
@@ -198,7 +198,7 @@ static void vt_reply(struct vt *vt)
     vt_input_to(vt, buf, len);
 }
 
-/* a terminal is used for the first time */
+/** a terminal is used for the first time */
 static int vt_setup(struct vt *vt)
 {
     if (vt->tty)
@@ -238,7 +238,7 @@ static int proc_alive(pid_t pid)
     return proc && proc->running;
 }
 
-/* the modes of a process that is gone are undone */
+/** the modes of a process that is gone are undone */
 static void vt_check(struct vt *vt)
 {
     if (vt->kd_pid && !proc_alive(vt->kd_pid)) {
@@ -258,7 +258,7 @@ static void vt_check(struct vt *vt)
     }
 }
 
-/* the process of a terminal in VT_PROCESS mode gets a signal */
+/** the process of a terminal in VT_PROCESS mode gets a signal */
 static void vt_signal(struct vt *vt, int signal)
 {
     struct proc *proc = proc_pid_find(vt->mode_pid);
@@ -318,7 +318,7 @@ void vt_keypress(void)
         vt_check(fg);
 }
 
-/* key presses, to the foreground terminal */
+/** key presses, to the foreground terminal */
 void vt_input(const char *buf, size_t size)
 {
     if (!fg)
@@ -331,7 +331,7 @@ void vt_input(const char *buf, size_t size)
     busy--;
 }
 
-/* kernel messages */
+/** kernel messages */
 static void vt_kmsg(const char *s, size_t len)
 {
     struct vt *vt = fg;
@@ -360,7 +360,7 @@ static void vt_kmsg(const char *s, size_t len)
     busy--;
 }
 
-/* /dev/console is the first terminal, /dev/tty0 the foreground one */
+/** /dev/console is the first terminal, /dev/tty0 the foreground one */
 static struct vt *vt_get(struct devid *dd)
 {
     if (dd->major == 5)
@@ -416,13 +416,13 @@ static ssize_t vt_write(struct devid *dd, off_t offset __unused, struct iobuf *i
     return ret;
 }
 
-/* a terminal is in use, VT_OPENQRY doesn't give it */
+/** a terminal is in use, VT_OPENQRY doesn't give it */
 static int vt_in_use(struct vt *vt)
 {
     return vt->tty && (vt->opens || vt->tty->session);
 }
 
-/* the size of the user buffer an ioctl request reads or writes (0: the
+/** the size of the user buffer an ioctl request reads or writes (0: the
  * argument is a value) */
 static size_t vt_ioctl_argsize(int request)
 {
@@ -445,7 +445,7 @@ static size_t vt_ioctl_argsize(int request)
     return 0;
 }
 
-/* KD* and VT_*, as on Linux: the argument is a value, or a pointer to the
+/** KD* and VT_*, as on Linux: the argument is a value, or a pointer to the
  * kernel's copy of it (vt_ioctl) */
 static int vt_kd_ioctl(struct vt *vt, int request, void *argp)
 {
@@ -720,7 +720,7 @@ struct dev vtdev = {
     },
 };
 
-/*
+/**
  * /dev/vcsN: the characters of the screen, row after row. /dev/vcsaN:
  * rows, columns, and the cursor's column and row (a byte each), then the
  * characters with their VGA attributes.
@@ -789,7 +789,7 @@ static struct dev vcsdev = {
     },
 };
 
-/* the kernel messages so far, the screen showed them already */
+/** the kernel messages so far, the screen showed them already */
 static void vt_kmsg_replay(void)
 {
     extern struct ringbuf *kmsg;

@@ -1,6 +1,5 @@
-/**
- * \defgroup dev-ata kernel/dev/ata
- * \brief ata device
+/** \file
+ * ata device
  */
 
 #include <core/system.h>
@@ -27,7 +26,7 @@
 static struct ata_drive drives[4];
 static struct ata_channel channels[2];
 
-/* one command at a time on a channel, a request may sleep (DMA); before
+/** one command at a time on a channel, a request may sleep (DMA); before
  * there are processes nothing else runs. A signal doesn't end the wait:
  * a transfer is never left halfway */
 static void channel_acquire(struct ata_channel *ch)
@@ -44,7 +43,7 @@ static void channel_release(struct ata_channel *ch)
     thread_queue_wakeup_nopoll(&ch->wait);
 }
 
-/* the driver's transfers, for the block cache: the channel is held for
+/** the driver's transfers, for the block cache: the channel is held for
  * the command only, the buffers are the cache's */
 static ssize_t drive_read(void *_drive, uint64_t lba, size_t count, void *buf)
 {
@@ -132,7 +131,7 @@ void ata_select_drive(struct ata_drive *drive, uint32_t mode)
     }
 }
 
-/* the registers of a command on `count' sectors from `lba' */
+/** the registers of a command on `count' sectors from `lba' */
 void ata_setup(struct ata_drive *drive, uint64_t lba, size_t count)
 {
     ata_select_drive(drive, drive->mode);
@@ -159,7 +158,7 @@ void ata_setup(struct ata_drive *drive, uint64_t lba, size_t count)
 }
 
 static char read_buf[BLOCK_SIZE] __aligned(16);
-/*
+/**
  * Partition `part' of `drive' (1 to 4; 0 is the whole disk): its first
  * sector and how many, from the MBR (read once). -ENXIO if the MBR has no
  * partition there (no signature, an empty entry, one past the disk's
@@ -221,7 +220,7 @@ static int ata_locate(struct devid *dd, int write, struct ata_drive **ref,
     return err;
 }
 
-/* sectors of the partition, from `offset' on: none past its end */
+/** sectors of the partition, from `offset' on: none past its end */
 static ssize_t ata_read(struct devid *dd, off_t offset, size_t size, void *buf)
 {
     struct ata_drive *drive;
@@ -376,7 +375,7 @@ done:
     return drive->type;
 }
 
-/* the drives' write caches to the disks */
+/** the drives' write caches to the disks */
 static int ata_sync(void)
 {
     int err = 0;

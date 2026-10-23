@@ -1,6 +1,5 @@
-/**
- * \defgroup kdev kernel/kdev
- * \brief devices management
+/** \file
+ * devices management
  */
 
 #include <core/system.h>
@@ -34,7 +33,7 @@ static inline struct dev *kdev_get(struct devid *dd)
     return dev;
 }
 
-/* the file operations of a device, NULL if there is none */
+/** the file operations of a device, NULL if there is none */
 struct fops *kdev_fops(struct devid *dd)
 {
     struct dev *dev = kdev_get(dd);
@@ -206,7 +205,7 @@ error:
     return err;
 }
 
-/*
+/**
  * A block device's bytes through an iobuf: a page at a time through a
  * kernel buffer, kdev_bread() and kdev_bwrite() make blocks of them
  */
@@ -417,8 +416,7 @@ int kdev_file_eof(struct devid *dd, struct file *file)
 }
 
 /**
- * \ingroup kdev
- * \brief register a new character device
+ * register a new character device
  */
 void kdev_chrdev_register(devid_t major, struct dev *dev)
 {
@@ -427,10 +425,9 @@ void kdev_chrdev_register(devid_t major, struct dev *dev)
 }
 
 /**
- * \ingroup kdev
- * \brief register a new block device
+ * register a new block device
  */
-/* what was written to the block cache, and what block devices have in
+/** what was written to the block cache, and what block devices have in
  * their write caches, to the media */
 int kdev_sync(void)
 {
@@ -450,8 +447,7 @@ void kdev_blkdev_register(devid_t major, struct dev *dev)
 }
 
 /**
- * \ingroup kdev
- * \brief initialize kdev subsystem
+ * initialize kdev subsystem
  */
 void kdev_init()
 {

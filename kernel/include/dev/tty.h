@@ -13,8 +13,7 @@ struct tty;
 typedef ssize_t (*ttyio)(struct tty *tty, size_t size, void *buf);
 
 /**
- * \ingroup dev-tty
- * \brief generic tty interface
+ * generic tty interface
  */
 struct tty {
     /** cooking buffer */

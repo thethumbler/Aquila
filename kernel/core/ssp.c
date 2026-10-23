@@ -1,4 +1,4 @@
-/*
+/** \file
  * The stack protector's (-fstack-protector): the canary, and what a
  * smashed one ends in
  */

@@ -1,4 +1,4 @@
-/*
+/** \file
  * ICMP: echo requests (ping) are answered, echo replies go to the ping
  * socket whose identifier they have (its port), and "unreachable" to the
  * UDP socket whose datagram couldn't get there
@@ -11,7 +11,7 @@
 
 #include <aquila/errno.h>
 
-/* an "unreachable" for a datagram we sent: the socket that sent it */
+/** an "unreachable" for a datagram we sent: the socket that sent it */
 static void icmp_unreachable_input(struct netif *netif, struct icmp_hdr *icmp, size_t len)
 {
     /* the header of the datagram, and 8 bytes of it (UDP's header) */
@@ -80,7 +80,7 @@ void icmp_input(struct netif *netif, struct netbuf *nb, uint32_t src, uint32_t d
     netbuf_free(nb);
 }
 
-/* the datagram of header `ih' (its payload follows it) can't get where it
+/** the datagram of header `ih' (its payload follows it) can't get where it
  * was sent: its sender is told */
 void icmp_unreachable(struct netif *netif, const struct ipv4_hdr *ih, int code)
 {

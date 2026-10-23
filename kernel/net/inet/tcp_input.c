@@ -1,4 +1,4 @@
-/*
+/** \file
  * TCP's input (RFC 9293 3.10.7, "SEGMENT ARRIVES"): a segment goes to
  * its connection's state machine, or to a listener, which makes a
  * connection for a SYN; one for no connection is answered with RST.
@@ -19,7 +19,7 @@
 
 #include <aquila/errno.h>
 
-/* a segment, its header in our byte order */
+/** a segment, its header in our byte order */
 struct seg {
     uint32_t seq, ack;
     uint16_t win;
@@ -53,7 +53,7 @@ static void options(const struct tcp_hdr *th, size_t hlen, struct seg *s)
     }
 }
 
-/* the segments' size: the peer's MSS (536 if it didn't say), not more
+/** the segments' size: the peer's MSS (536 if it didn't say), not more
  * than ours */
 static void set_mss(struct tcp_pcb *pcb, uint16_t peer)
 {
@@ -172,7 +172,7 @@ static void syn_sent_input(struct tcp_pcb *pcb, const struct ipv4_hdr *ih, const
     tcp_send_ack(pcb);
 }
 
-/* RFC 9293 3.10.7.4: within what we said we'd take */
+/** RFC 9293 3.10.7.4: within what we said we'd take */
 static int acceptable(struct tcp_pcb *pcb, struct seg *s, uint32_t wnd)
 {
     uint32_t seglen = s->len + !!(s->flags & TH_SYN) + !!(s->flags & TH_FIN);
@@ -188,7 +188,7 @@ static int acceptable(struct tcp_pcb *pcb, struct seg *s, uint32_t wnd)
 #undef IN_WINDOW
 }
 
-/* the first segment not acked again (fast retransmit, a partial ACK) */
+/** the first segment not acked again (fast retransmit, a partial ACK) */
 static void retransmit_first(struct tcp_pcb *pcb)
 {
     uint32_t nxt = pcb->snd_nxt;
@@ -210,7 +210,7 @@ static void retransmit_first(struct tcp_pcb *pcb)
         pcb->snd_nxt = nxt;
 }
 
-/* an ACK for what we sent; 0 if the segment goes on */
+/** an ACK for what we sent; 0 if the segment goes on */
 static int ack_input(struct tcp_pcb *pcb, struct seg *s)
 {
     if (SEQ_GT(s->ack, pcb->snd_max)) {
@@ -312,7 +312,7 @@ static int ack_input(struct tcp_pcb *pcb, struct seg *s)
     return 0;
 }
 
-/* a segment ahead of rcv_nxt waits, sorted (it is its netbuf, its data) */
+/** a segment ahead of rcv_nxt waits, sorted (it is its netbuf, its data) */
 static void ooo_insert(struct tcp_pcb *pcb, struct netbuf *nb, struct seg *s, int fin)
 {
     nb->data = s->data;
@@ -335,7 +335,7 @@ static void ooo_insert(struct tcp_pcb *pcb, struct netbuf *nb, struct seg *s, in
     *p = nb;
 }
 
-/* nothing follows the FIN: what still waits goes (it's what came before
+/** nothing follows the FIN: what still waits goes (it's what came before
  * it, again: the peer resent it cut otherwise), it isn't data no one read
  * (socket_tcp_shutdown) */
 static void ooo_purge(struct tcp_pcb *pcb)
@@ -347,7 +347,7 @@ static void ooo_purge(struct tcp_pcb *pcb)
     }
 }
 
-/* what waited and now follows rcv_nxt; 1 if the FIN came with it */
+/** what waited and now follows rcv_nxt; 1 if the FIN came with it */
 static int ooo_drain(struct tcp_pcb *pcb)
 {
     int fin = 0;
@@ -381,7 +381,7 @@ static int ooo_drain(struct tcp_pcb *pcb)
     return fin;
 }
 
-/* the peer's FIN, in its place: the end of the data */
+/** the peer's FIN, in its place: the end of the data */
 static void fin_input(struct tcp_pcb *pcb)
 {
     pcb->rcv_nxt++;

@@ -17,8 +17,7 @@ MALLOC_DECLARE(M_VM_AREF);
 #include <ds/queue.h>
 
 /** 
- * \ingroup mm
- * \brief virtual memory space
+ * virtual memory space
  *
  * This structure holds the entire mapping of a virtual memory 
  * space/view
@@ -61,8 +60,7 @@ struct vm_space {
 #define VMOBJ_FILE    0x0001         /**< file backed */
 
 /** 
- * \ingroup mm
- * \brief virtual memory region
+ * virtual memory region
  *
  * This structure represents a region in virtual memory
  * space with access permissions and backening objects
@@ -94,8 +92,7 @@ struct vm_entry {
 };
 
 /**
- * \ingroup mm
- * \brief pager
+ * pager
  */
 struct vm_pager {
     /** page in */
@@ -106,8 +103,7 @@ struct vm_pager {
 };
 
 /**
- * \ingroup mm
- * \brief anonymous memory object reference
+ * anonymous memory object reference
  *
  * The `vm_aref` acts as a container of a `vm_page` with reference count
  * of anonymous memory regions (`vm_anon`) referencing/using that page.
@@ -124,8 +120,7 @@ struct vm_aref {
 };
 
 /**
- * \ingroup mm
- * \brief anonymous memory object
+ * anonymous memory object
  */
 struct vm_anon {
     /** hashmap of `vm_aref` structures loaded/contained in this anon */
@@ -139,8 +134,7 @@ struct vm_anon {
 };
 
 /**
- * \ingroup mm
- * \brief cached object
+ * cached object
  */
 struct vm_object {
     /** `vm_page`s loaded/contained in the vm object */
@@ -160,8 +154,7 @@ struct vm_object {
 };
 
 /** 
- * \ingroup mm
- * \brief physical page
+ * physical page
  */
 struct vm_page {
     paddr_t  paddr; /**< physical address of the page */

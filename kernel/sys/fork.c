@@ -11,7 +11,7 @@
 
 MALLOC_DECLARE(M_FDS);
 
-/* the child's descriptors refer to the parent's open files: the same
+/** the child's descriptors refer to the parent's open files: the same
  * files, their offsets shared */
 static int copy_fds(struct proc *parent, struct proc *fork)
 {

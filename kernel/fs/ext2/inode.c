@@ -67,7 +67,7 @@ static int block_tree(struct ext2 *desc, size_t idx, int *slot, size_t *rel)
     return -EFBIG;
 }
 
-/* the pointer in slot `slot' of the inode (it's packed: no pointers to
+/** the pointer in slot `slot' of the inode (it's packed: no pointers to
  * its fields) */
 static uint32_t slot_get(struct ext2_inode *inode, int slot)
 {
@@ -89,7 +89,7 @@ static void slot_set(struct ext2_inode *inode, int slot, uint32_t block)
     }
 }
 
-/* the data blocks under an indirect block `depth' levels above them */
+/** the data blocks under an indirect block `depth' levels above them */
 static size_t tree_span(struct ext2 *desc, int depth)
 {
     size_t span = 1;
@@ -100,7 +100,7 @@ static size_t tree_span(struct ext2 *desc, int depth)
     return span;
 }
 
-/* block `idx' of a file into `buf' (zeros where it's sparse) */
+/** block `idx' of a file into `buf' (zeros where it's sparse) */
 int ext2_inode_block_read(struct ext2 *desc, struct ext2_inode *inode, size_t idx, void *buf)
 {
     int slot;
@@ -142,7 +142,7 @@ int ext2_inode_block_read(struct ext2 *desc, struct ext2_inode *inode, size_t id
     return ext2_block_read(desc, block, buf);
 }
 
-/* allocate a block owned by the inode, i_blocks counts 512-byte sectors */
+/** allocate a block owned by the inode, i_blocks counts 512-byte sectors */
 static int ext2_inode_block_alloc(struct ext2 *desc, struct ext2_inode *inode, uint32_t *block)
 {
     int err;
@@ -154,7 +154,7 @@ static int ext2_inode_block_alloc(struct ext2 *desc, struct ext2_inode *inode, u
     return 0;
 }
 
-/* get the block at idx of an indirect block, allocating it if needed */
+/** get the block at idx of an indirect block, allocating it if needed */
 static int ext2_indirect_block_get(struct ext2 *desc, struct ext2_inode *inode, uint32_t table, size_t idx, uint32_t *block)
 {
     int err = 0;
@@ -178,7 +178,7 @@ done:
     return err;
 }
 
-/* `buf' as block `idx' of a file, the blocks it needs allocated */
+/** `buf' as block `idx' of a file, the blocks it needs allocated */
 int ext2_inode_block_write(struct ext2 *desc, struct ext2_inode *inode, uint32_t inode_nr, size_t idx, void *buf)
 {
     uint32_t nblocks = inode->blocks;
@@ -215,7 +215,7 @@ int ext2_inode_block_write(struct ext2 *desc, struct ext2_inode *inode, uint32_t
     return ext2_block_write(desc, block, buf);
 }
 
-/* a free inode, marked used, into `*ino': 0, -ENOSPC, or an error (a
+/** a free inode, marked used, into `*ino': 0, -ENOSPC, or an error (a
  * bitmap that couldn't be read isn't written back) */
 int ext2_inode_alloc(struct ext2 *desc, ino_t *ino)
 {

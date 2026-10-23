@@ -9,8 +9,7 @@ struct queue;
 #include <core/string.h>
 
 /**
- * \ingroup ds
- * \brief queue node
+ * queue node
  */
 struct qnode {
     void *value;
@@ -21,8 +20,7 @@ struct qnode {
 #define QUEUE_TRACE 1
 
 /**
- * \ingroup ds
- * \brief queue
+ * queue
  */
 struct queue {
     size_t count;
@@ -32,20 +30,17 @@ struct queue {
 };
 
 /**
- * \ingroup ds
- * \brief iterate over queue elements
+ * iterate over queue elements
  */
 #define queue_for(n, q) for (struct qnode *(n) = (q)->head; (n); (n) = (n)->next)
 
 /**
- * \ingroup ds
- * \brief create a new statically allocated queue
+ * create a new statically allocated queue
  */
 #define QUEUE_NEW() &(struct queue){0}
 
 /**
- * \ingroup ds
- * \brief create a new dynamically allocated queue
+ * create a new dynamically allocated queue
  */
 static inline struct queue *queue_new(void)
 {
@@ -59,8 +54,7 @@ static inline struct queue *queue_new(void)
 }
 
 /**
- * \ingroup ds
- * \brief insert a new element in a queue
+ * insert a new element in a queue
  */
 static inline struct qnode *enqueue(struct queue *queue, void *value) 
 {
@@ -96,8 +90,7 @@ static inline struct qnode *enqueue(struct queue *queue, void *value)
 }
 
 /**
- * \ingroup ds
- * \brief insert a new element at the head of a queue, the next dequeued
+ * insert a new element at the head of a queue, the next dequeued
  */
 static inline struct qnode *enqueue_head(struct queue *queue, void *value)
 {
@@ -123,8 +116,7 @@ static inline struct qnode *enqueue_head(struct queue *queue, void *value)
 }
 
 /**
- * \ingroup ds
- * \brief get an element from a queue and remove it
+ * get an element from a queue and remove it
  */
 static inline void *dequeue(struct queue *queue)
 {
@@ -149,8 +141,7 @@ static inline void *dequeue(struct queue *queue)
 }
 
 /**
- * \ingroup ds
- * \brief remove an element matching a specific value from a queue
+ * remove an element matching a specific value from a queue
  */
 static inline void queue_remove(struct queue *queue, void *value)
 {
@@ -179,8 +170,7 @@ static inline void queue_remove(struct queue *queue, void *value)
 }
 
 /**
- * \ingroup ds
- * \brief remove an element from a queue given the queue node
+ * remove an element from a queue given the queue node
  */
 static inline void queue_node_remove(struct queue *queue, struct qnode *node)
 {

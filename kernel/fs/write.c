@@ -4,8 +4,7 @@
 #include <dev/dev.h>
 
 /**
- * \ingroup vfs
- * \brief write data to a vnode, through an iobuf
+ * write data to a vnode, through an iobuf
  */
 ssize_t vfs_write_io(struct vnode *vnode, off_t off, struct iobuf *io)
 {
@@ -31,8 +30,7 @@ ssize_t vfs_write_io(struct vnode *vnode, off_t off, struct iobuf *io)
 }
 
 /**
- * \ingroup vfs
- * \brief write data to a vnode from a kernel buffer
+ * write data to a vnode from a kernel buffer
  */
 ssize_t vfs_write(struct vnode *vnode, off_t off, size_t size, void *buf)
 {

@@ -1,4 +1,4 @@
-/*
+/** \file
  * IRQs: devices' interrupts, whichever controller brings them (the 8259,
  * or the APIC: an x86_irq_chip)
  *
@@ -60,13 +60,13 @@ const char *x86_irq_chip_name(void)
     return chip ? chip->name : "none";
 }
 
-/* IRQs from `first' on may be allocated (the I/O APIC's pins end there) */
+/** IRQs from `first' on may be allocated (the I/O APIC's pins end there) */
 void x86_irq_alloc_from(unsigned first)
 {
     alloc_first = first;
 }
 
-/* a free IRQ with a controller of its own (MSI), -1 if there's none */
+/** a free IRQ with a controller of its own (MSI), -1 if there's none */
 int x86_irq_alloc(struct x86_irq_chip *c)
 {
     for (unsigned irq = alloc_first; irq < X86_IRQ_TIMER; ++irq) {
@@ -119,13 +119,13 @@ void x86_irq_handler_uninstall(unsigned irq)
     }
 }
 
-/* the tick: switch to the next thread once the interrupt is done */
+/** the tick: switch to the next thread once the interrupt is done */
 void x86_irq_tick_switch(void)
 {
     curcpu()->arch.tick_switch = 1;
 }
 
-/* the IRQ's handlers, and the controller done with it */
+/** the IRQ's handlers, and the controller done with it */
 static void irq_handle(struct x86_regs *r)
 {
     uint32_t vec = r->vec;
@@ -175,7 +175,7 @@ static void irq_dispatch(struct x86_regs *r)
     x86_return_to_user(r, 0);
 }
 
-/*
+/**
  * An interrupt: with the kernel lock, which it takes if it came from user
  * mode or the idle loop (an exception in the kernel has it already), and
  * lets go of before going back there. The TLB's IPI is done without it:
@@ -206,7 +206,7 @@ void __x86_irq_handler(struct x86_regs *r)
     kernel_leave(took);
 }
 
-/* the vectors: 32 to 32 + 47, the local APIC's timer, the TLB's and the
+/** the vectors: 32 to 32 + 47, the local APIC's timer, the TLB's and the
  * wake IPIs, and its spurious interrupt */
 void x86_irq_gates_setup(void)
 {
@@ -244,7 +244,7 @@ void x86_irq_gates_setup(void)
     x86_idt_gate_set(X86_SPURIOUS_VECTOR, (uintptr_t) __x86_spurious);
 }
 
-/* /proc/interrupts: the controller, then each IRQ with handlers */
+/** /proc/interrupts: the controller, then each IRQ with handlers */
 int arch_interrupts_info(char *buf, size_t size)
 {
     int n = snprintf(buf, size, "controller: %s\n", x86_irq_chip_name());

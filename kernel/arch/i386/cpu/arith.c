@@ -1,12 +1,12 @@
-/*
+/** \file
  * https://www.ida.liu.se/~TDIU25/pintos/src/lib/arithmetic.c
  */
 
 #include <stdint.h>
 
-/* Uses x86 DIVL instruction to divide 64-bit N by 32-bit D to
+/** Uses x86 DIVL instruction to divide 64-bit N by 32-bit D to
      yield a 32-bit quotient.  Returns the quotient.
-     Traps with a divide error (#DE) if the quotient does not fit
+     Traps with a divide error (`#DE') if the quotient does not fit
      in 32 bits. */
 static inline uint32_t divl(uint64_t n, uint32_t d)
 {
@@ -21,7 +21,7 @@ static inline uint32_t divl(uint64_t n, uint32_t d)
     return q;
 }
 
-/* Returns the number of leading zero bits in X,
+/** Returns the number of leading zero bits in X,
      which must be nonzero. */
 static int nlz(uint32_t x) 
 {
@@ -52,7 +52,7 @@ static int nlz(uint32_t x)
     return n;
 }
 
-/* Divides unsigned 64-bit N by unsigned 64-bit D and returns the
+/** Divides unsigned 64-bit N by unsigned 64-bit D and returns the
      quotient. */
 static uint64_t udiv64(uint64_t n, uint64_t d)
 {
@@ -103,14 +103,14 @@ static uint64_t udiv64(uint64_t n, uint64_t d)
     }
 }
 
-/* Divides unsigned 64-bit N by unsigned 64-bit D and returns the
+/** Divides unsigned 64-bit N by unsigned 64-bit D and returns the
      remainder. */
 static uint64_t umod64(uint64_t n, uint64_t d)
 {
     return n - d * udiv64(n, d);
 }
 
-/* Divides signed 64-bit N by signed 64-bit D and returns the
+/** Divides signed 64-bit N by signed 64-bit D and returns the
      quotient. */
 static int64_t sdiv64(int64_t n, int64_t d)
 {
@@ -120,7 +120,7 @@ static int64_t sdiv64(int64_t n, int64_t d)
     return (n < 0) == (d < 0) ? (int64_t) q_abs : -(int64_t) q_abs;
 }
 
-/* Divides signed 64-bit N by signed 64-bit D and returns the
+/** Divides signed 64-bit N by signed 64-bit D and returns the
      remainder. */
 static int64_t smod64(int64_t n, int64_t d)
 {
@@ -135,31 +135,31 @@ unsigned long long __udivdi3(unsigned long long n, unsigned long long d);
 unsigned long long __umoddi3(unsigned long long n, unsigned long long d);
 unsigned long long __udivmoddi4(unsigned long long n, unsigned long long d, unsigned long long *rem);
 
-/* Signed 64-bit division. */
+/** Signed 64-bit division. */
 long long __divdi3(long long n, long long d) 
 {
     return sdiv64(n, d);
 }
 
-/* Signed 64-bit remainder. */
+/** Signed 64-bit remainder. */
 long long __moddi3(long long n, long long d) 
 {
     return smod64 (n, d);
 }
 
-/* Unsigned 64-bit division. */
+/** Unsigned 64-bit division. */
 unsigned long long __udivdi3(unsigned long long n, unsigned long long d) 
 {
     return udiv64 (n, d);
 }
 
-/* Unsigned 64-bit remainder. */
+/** Unsigned 64-bit remainder. */
 unsigned long long __umoddi3(unsigned long long n, unsigned long long d) 
 {
     return umod64 (n, d);
 }
 
-/* Unsigned 64-bit division and remainder (x / y and x % y together). */
+/** Unsigned 64-bit division and remainder (x / y and x % y together). */
 unsigned long long __udivmoddi4(unsigned long long n, unsigned long long d, unsigned long long *rem)
 {
     uint64_t q = udiv64(n, d);

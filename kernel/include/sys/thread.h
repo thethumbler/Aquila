@@ -15,8 +15,7 @@ typedef enum {
 } state_t;
 
 /**
- * \ingroup sys
- * \brief thread
+ * thread
  */
 struct thread {
     /** Thread ID */

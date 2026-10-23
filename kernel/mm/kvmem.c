@@ -1,4 +1,4 @@
-/*
+/** \file
  * kmalloc() and kfree(): the kernel's memory
  *
  * Objects of up to SLAB_MAX bytes come from slabs (mm/slab.c). Bigger
@@ -58,7 +58,7 @@ void kvmem_setup(void)
         panic("kvmem: no memory for its arena");
 }
 
-/* the object's pages, from `base': unmapped, back to the buddy allocator */
+/** the object's pages, from `base': unmapped, back to the buddy allocator */
 static void kvmem_unmap(vaddr_t base, size_t size)
 {
     for (vaddr_t va = base; va < base + size; va += PAGE_SIZE) {
@@ -71,7 +71,7 @@ static void kvmem_unmap(vaddr_t base, size_t size)
     }
 }
 
-/* an object of whole pages, its guard after it */
+/** an object of whole pages, its guard after it */
 static void *kvmem_alloc(size_t size, struct malloc_type *type)
 {
     size = PAGE_ROUND(size);
@@ -171,7 +171,7 @@ static size_t kvmem_segs(void)
 
 #define TEST_OBJS   48
 
-/* objects of many sizes: each its own pages, its guard unmapped, none
+/** objects of many sizes: each its own pages, its guard unmapped, none
  * overwriting another; freed out of order, the arena as it was */
 static const char *kvmem_selftest_run(void)
 {
@@ -241,7 +241,7 @@ void kvmem_selftest(void)
         printk("kvmem: self-test passed\n");
 }
 
-/* a write one byte past an object's end: its guard page faults (a panic) */
+/** a write one byte past an object's end: its guard page faults (a panic) */
 void kvmem_guardtest(void)
 {
     volatile char *buf = kmalloc(3000, &M_KVMEM_TEST, 0);

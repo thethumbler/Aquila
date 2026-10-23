@@ -1,6 +1,6 @@
 #include <ext2.h>
 
-/* the inode of `name' in directory `inode', into `*ino': 0, -ENOENT, or an
+/** the inode of `name' in directory `inode', into `*ino': 0, -ENOENT, or an
  * error */
 int ext2_dentry_find(struct ext2 *desc, struct ext2_inode *inode, const char *name, ino_t *ino)
 {

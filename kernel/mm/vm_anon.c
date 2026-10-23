@@ -5,8 +5,7 @@
 MALLOC_DEFINE(M_VM_ANON, "vm-anon", "anonymous virtual memory object");
 
 /**
- * \ingroup mm
- * \brief check if two arefs are equal in a hashmap
+ * check if two arefs are equal in a hashmap
  */
 static int vm_aref_eq(void *_a, void *_b)
 {
@@ -21,8 +20,7 @@ static int vm_aref_eq(void *_a, void *_b)
 }
 
 /**
- * \ingroup mm
- * \brief create new anon structure
+ * create new anon structure
  */
 struct vm_anon *vm_anon_new(void)
 {
@@ -49,8 +47,7 @@ error:
 }
 
 /**
- * \ingroup mm
- * \brief destroy all resources associated with an aref
+ * destroy all resources associated with an aref
  */
 void vm_aref_destroy(struct vm_aref *vm_aref)
 {
@@ -58,8 +55,7 @@ void vm_aref_destroy(struct vm_aref *vm_aref)
 }
 
 /**
- * \ingroup mm
- * \brief decrement references to an aref
+ * decrement references to an aref
  */
 void vm_aref_decref(struct vm_aref *vm_aref)
 {
@@ -67,8 +63,7 @@ void vm_aref_decref(struct vm_aref *vm_aref)
 }
 
 /**
- * \ingroup mm
- * \brief destroy all resources associated with an anon
+ * destroy all resources associated with an anon
  */
 void vm_anon_destroy(struct vm_anon *vm_anon)
 {
@@ -98,8 +93,7 @@ void vm_anon_destroy(struct vm_anon *vm_anon)
 }
 
 /**
- * \ingroup mm
- * \brief increment number of references to a vm anon
+ * increment number of references to a vm anon
  */
 void vm_anon_incref(struct vm_anon *vm_anon)
 {
@@ -110,8 +104,7 @@ void vm_anon_incref(struct vm_anon *vm_anon)
 }
 
 /**
- * \ingroup mm
- * \brief decrement number of references to a vm anon
+ * decrement number of references to a vm anon
  * and destroy it when it reaches zero
  */
 void vm_anon_decref(struct vm_anon *vm_anon)
@@ -128,8 +121,7 @@ void vm_anon_decref(struct vm_anon *vm_anon)
 }
 
 /**
- * \ingroup mm
- * \brief copy all aref structures from `src` to `dst`
+ * copy all aref structures from `src` to `dst`
  */
 static int vm_anon_copy_arefs(struct vm_anon *src, struct vm_anon *dst)
 {
@@ -149,8 +141,7 @@ static int vm_anon_copy_arefs(struct vm_anon *src, struct vm_anon *dst)
 }
 
 /**
- * \ingroup mm
- * \brief clone an existing anon into a new anon
+ * clone an existing anon into a new anon
  */
 struct vm_anon *vm_anon_copy(struct vm_anon *vm_anon)
 {

@@ -30,7 +30,7 @@ void earlycon_fb_register(uintptr_t paddr, uint32_t scanline, uint32_t yres, uin
     fb_size     = yres * scanline; /* scanline is already in bytes */
 }
 
-/* Whether a framebuffer usable by earlycon was registered by the bootloader */
+/** Whether a framebuffer usable by earlycon was registered by the bootloader */
 int earlycon_fb_available(void)
 {
     /* fb_putc only knows how to draw 32 bpp pixels */

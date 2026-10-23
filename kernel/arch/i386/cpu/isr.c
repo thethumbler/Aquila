@@ -112,7 +112,7 @@ static const int int_sig[32] = {
     /* 0x13 */ SIGFPE,  /* #XM */
 };
 
-/* a copy routine's instruction faulted (uaccess.S): it resumes at its
+/** a copy routine's instruction faulted (uaccess.S): it resumes at its
  * fixup, which returns -EFAULT; 0 if `regs' wasn't in one */
 static int uaccess_fixup(struct x86_regs *regs)
 {
@@ -219,7 +219,7 @@ static void isr_dispatch(struct x86_regs *regs)
     }
 }
 
-/* an exception, or a system call: with the kernel lock, taken if it came
+/** an exception, or a system call: with the kernel lock, taken if it came
  * from user mode (an exception in the kernel has it already) */
 void __x86_isr(struct x86_regs *regs)
 {

@@ -1,4 +1,4 @@
-/*
+/** \file
  *          VFS => File System binding for CPIO archives
  */
 

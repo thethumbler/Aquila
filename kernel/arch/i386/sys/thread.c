@@ -19,7 +19,7 @@ do {\
     *((type *) (stack)) = (type) (value);\
 } while (0)
 
-/* the current thread to user mode, the first time, from its own kernel
+/** the current thread to user mode, the first time, from its own kernel
  * stack: the kernel lock goes, another CPU may run the thread that was
  * running here (its stack) once it does */
 static void __attribute__((noreturn)) thread_spawn(void)
@@ -72,7 +72,7 @@ void arch_thread_switch(struct thread *thread)
 #endif
 }
 
-/* the thread starts at `entry' on the user stack `stack', below which its
+/** the thread starts at `entry' on the user stack `stack', below which its
  * frame is pushed (its argument, the user entry point, a dummy return
  * address): 0, -ENOMEM, -EFAULT if the stack isn't there */
 int arch_thread_create(struct thread *thread, uintptr_t stack, uintptr_t entry, uintptr_t uentry, uintptr_t arg)
@@ -125,7 +125,7 @@ int arch_thread_create(struct thread *thread, uintptr_t stack, uintptr_t entry, 
     return 0;
 }
 
-/* a kernel thread, which starts at `entry' (a function without arguments
+/** a kernel thread, which starts at `entry' (a function without arguments
  * that never returns) on its kernel stack once it is switched to */
 void arch_kthread_create(struct thread *thread, uintptr_t entry)
 {
@@ -193,7 +193,7 @@ void arch_thread_kill(struct thread *thread)
     thread->arch = NULL;
 }
 
-/*
+/**
  * Where the current thread resumes when it is switched back to (x86_goto):
  * x86_sleep and x86_preempt record it, its registers on its kernel stack
  */

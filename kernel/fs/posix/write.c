@@ -1,4 +1,4 @@
-/*
+/** \file
  *          VFS => Generic file write function
  */
 
@@ -11,15 +11,9 @@
 #include <aquila/errno.h>
 
 /**
- * posix_file_write
- *
- * Writes up to io->resid bytes from the iobuf into a file.
- *
- * @file    File Descriptor for the function to operate on.
- * @io      The buffer to empty.
- * @returns written bytes on success, or error-code on failure.
+ * Up to io->resid bytes of the iobuf into `file', at its offset (moved
+ * past them): how many went, or an error
  */
-
 ssize_t posix_file_write(struct file *file, struct iobuf *io)
 {
     if (!(file->flags & (O_WRONLY | O_RDWR)))   /* File is not opened for writing */

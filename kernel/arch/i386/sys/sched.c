@@ -19,7 +19,7 @@ uint64_t arch_cycles(void)
     return ((uint64_t) hi << 32) | lo;
 }
 
-/* the tick, every CPU's: the boot CPU keeps the time */
+/** the tick, every CPU's: the boot CPU keeps the time */
 static void x86_sched_handler(struct x86_regs *r)
 {
     if (curcpu()->id) {
@@ -55,7 +55,7 @@ void arch_sched_init(void)
         arch_cpu_kick(&cpus[i]);
 }
 
-/* the idle loop, on the CPU's idle stack: the kernel lock goes (an
+/** the idle loop, on the CPU's idle stack: the kernel lock goes (an
  * interrupt takes it, and lets it go if it comes back here) */
 static void __arch_idle(void)
 {

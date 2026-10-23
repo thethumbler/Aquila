@@ -1,4 +1,4 @@
-/*
+/** \file
  * Terminal emulator of the virtual terminals: what the Linux console does
  * with what programs write (TERM=linux), and the parts of xterm programs
  * commonly use (alternate screen, 256 colors). Characters are shown with
@@ -93,7 +93,7 @@ static uint8_t unicode_glyph(uint32_t u)
     return '?';
 }
 
-/* the closest color of the 6x6x6 cube or the gray ramp of the palette */
+/** the closest color of the 6x6x6 cube or the gray ramp of the palette */
 static uint8_t rgb_color(int r, int g, int b)
 {
     int ri = r < 48 ? 0 : r < 115 ? 1 : (r - 35) / 40;
@@ -115,7 +115,7 @@ static inline struct vt_cell *cell(struct vt *vt, int row, int col)
     return &vt->screen[row * vt->cols + col];
 }
 
-/* erased cells take the current colors (bce) */
+/** erased cells take the current colors (bce) */
 static inline struct vt_cell blank(struct vt *vt)
 {
     return (struct vt_cell) {.ch = ' ', .fg = vt->pen.fg, .bg = vt->pen.bg};
@@ -129,7 +129,7 @@ static void erase(struct vt *vt, int row, int from, int to)
         *cell(vt, row, col) = b;
 }
 
-/* moves rows top+n..bottom up n rows, n blank rows at the bottom */
+/** moves rows top+n..bottom up n rows, n blank rows at the bottom */
 static void scroll_up(struct vt *vt, int top, int bottom, int n)
 {
     if (n > bottom - top + 1)
@@ -154,7 +154,7 @@ static void scroll_down(struct vt *vt, int top, int bottom, int n)
         erase(vt, row, 0, vt->cols);
 }
 
-/* cursor movement, within the scrolling region in origin mode */
+/** cursor movement, within the scrolling region in origin mode */
 static void move_to(struct vt *vt, int row, int col)
 {
     int min = vt->origin ? vt->top : 0;
@@ -165,7 +165,7 @@ static void move_to(struct vt *vt, int row, int col)
     vt->wrap_pending = 0;
 }
 
-/* vertical movement stops at the margins, if it starts within them */
+/** vertical movement stops at the margins, if it starts within them */
 static void move_rows(struct vt *vt, int n)
 {
     int row = vt->row + n;
@@ -256,7 +256,7 @@ static void put_glyph(struct vt *vt, uint8_t ch)
         vt->wrap_pending = vt->autowrap;
 }
 
-/* a character, through the character set in use */
+/** a character, through the character set in use */
 static void put_char(struct vt *vt, uint32_t u)
 {
     if (vt->charset[vt->gl] == '0') {
@@ -321,7 +321,7 @@ static void clear_screen(struct vt *vt)
         erase(vt, row, 0, vt->cols);
 }
 
-/* the alternate screen (xterm), cleared when it is shown */
+/** the alternate screen (xterm), cleared when it is shown */
 static void alt_screen(struct vt *vt, int on)
 {
     if (on && vt->screen != vt->alt) {
@@ -332,7 +332,7 @@ static void alt_screen(struct vt *vt, int on)
     }
 }
 
-/* modes and pen to the defaults, not the screen (DECSTR) */
+/** modes and pen to the defaults, not the screen (DECSTR) */
 static void soft_reset(struct vt *vt)
 {
     vt->pen = (struct vt_cell) {.ch = ' ', .fg = DEFAULT_FG, .bg = DEFAULT_BG};
@@ -398,7 +398,7 @@ int vt_term_init(struct vt *vt, int rows, int cols)
     return 0;
 }
 
-/* a parameter, 0 or a missing one is the default */
+/** a parameter, 0 or a missing one is the default */
 static int param(struct vt *vt, int i, int def)
 {
     return i < vt->nparams && vt->params[i] ? vt->params[i] : def;
@@ -469,7 +469,7 @@ static void sgr(struct vt *vt)
     }
 }
 
-/* DEC private modes, CSI ? n h and CSI ? n l */
+/** DEC private modes, CSI ? n h and CSI ? n l */
 static void decset(struct vt *vt, int set)
 {
     for (int i = 0; i < vt->nparams; ++i) {

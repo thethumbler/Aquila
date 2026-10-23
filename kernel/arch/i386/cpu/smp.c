@@ -1,4 +1,4 @@
-/*
+/** \file
  *          SMP: the other CPUs, the application processors (APs)
  *
  * References:
@@ -46,7 +46,7 @@ MALLOC_DEFINE(M_IDLE_STACK, "idle-stack", "a CPU's idle stack");
 /* trampoline.S */
 extern char x86_trampoline[], x86_trampoline_data[], x86_trampoline_end[];
 
-/* at x86_trampoline_data: what an AP takes (trampoline.S's TR_ offsets) */
+/** at x86_trampoline_data: what an AP takes (trampoline.S's TR_ offsets) */
 struct trampoline_data {
     uint64_t cr0, cr3, cr4, efer;
     uint64_t entry;     /* x86_ap_start */
@@ -85,13 +85,13 @@ static void __attribute__((noreturn)) x86_ap_start(struct cpu *cpu)
     __builtin_unreachable();
 }
 
-/* `cpu' enters the kernel: the wake IPI */
+/** `cpu' enters the kernel: the wake IPI */
 void arch_cpu_kick(struct cpu *cpu)
 {
     x86_lapic_ipi(cpu->arch.apic_id, X86_WAKE_VECTOR | ICR_ASSERT);
 }
 
-/* the trampoline's page tables: its page, where it is, and the kernel's
+/** the trampoline's page tables: its page, where it is, and the kernel's
  * half; the top table's address */
 static paddr_t tables_build(void)
 {
@@ -126,7 +126,7 @@ static paddr_t tables_build(void)
     return TABLES;
 }
 
-/* the CPU with the local APIC `id' started, as `cpu': 0, -1 if it didn't
+/** the CPU with the local APIC `id' started, as `cpu': 0, -1 if it didn't
  * come */
 static int ap_boot(struct cpu *cpu, uint32_t id)
 {

@@ -141,8 +141,7 @@ typedef uint16_t elf64_half;
 #define STT_HIPROC  15
 
 /**
- * \ingroup binfmt
- * \brief elf32 file header
+ * elf32 file header
  */
 struct elf32_hdr {
     uint8_t     e_ident[EI_NIDENT];
@@ -162,8 +161,7 @@ struct elf32_hdr {
 };
 
 /**
- * \ingroup binfmt
- * \brief elf32 section header
+ * elf32 section header
  */
 struct elf32_shdr {
     elf32_word  sh_name;
@@ -179,8 +177,7 @@ struct elf32_shdr {
 };
 
 /**
- * \ingroup binfmt
- * \brief elf32 symbol
+ * elf32 symbol
  */
 struct elf32_sym {
     elf32_word  st_name;
@@ -192,8 +189,7 @@ struct elf32_sym {
 };
 
 /**
- * \ingroup binfmt
- * \brief elf32 program header
+ * elf32 program header
  */
 struct elf32_phdr {
     elf32_word  p_type;
@@ -207,8 +203,7 @@ struct elf32_phdr {
 };
 
 /**
- * \ingroup binfmt
- * \brief elf32 dynamic entry
+ * elf32 dynamic entry
  */
 struct elf32_dyn {
     elf32_sword     d_tag;
@@ -219,8 +214,7 @@ struct elf32_dyn {
 };
 
 /**
- * \ingroup binfmt
- * \brief elf64 file header
+ * elf64 file header
  */
 struct elf64_hdr {
     uint8_t     e_ident[EI_NIDENT];
@@ -240,8 +234,7 @@ struct elf64_hdr {
 };
 
 /**
- * \ingroup binfmt
- * \brief elf64 program header
+ * elf64 program header
  */
 struct elf64_phdr {
     elf64_word  p_type;

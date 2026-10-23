@@ -1,4 +1,4 @@
-/*
+/** \file
  * Advisory locks on whole files (flock): shared or exclusive, held by an
  * open file (which the descriptors dup() and fork() copied share). They
  * go away with LOCK_UN, or when the open file is closed.
@@ -24,7 +24,7 @@ struct file_lock {
 static struct queue locks = {0};
 static struct queue waiters = {0};
 
-/* whether a lock of the type conflicts with one another file holds */
+/** whether a lock of the type conflicts with one another file holds */
 static int lock_conflicts(struct file_lock *lock, int type)
 {
     queue_for (node, &locks) {
@@ -95,7 +95,7 @@ int vfs_file_flock(struct file *file, int op)
     return 0;
 }
 
-/* the open file is closed: its lock goes */
+/** the open file is closed: its lock goes */
 void vfs_file_lock_release(struct file *file)
 {
     struct file_lock *lock = file->lock;

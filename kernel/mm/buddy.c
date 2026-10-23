@@ -1,4 +1,4 @@
-/*
+/** \file
  *                  Buddy Memory Allocator 
  */
 
@@ -12,7 +12,7 @@
 size_t k_total_mem, k_used_mem;
 static uintptr_t kstart = 0, kend = 0;
 
-/* the bitmaps are sized by the memory, from what mm_setup() set aside */
+/** the bitmaps are sized by the memory, from what mm_setup() set aside */
 static inline void *alloc(size_t size, size_t align)
 {
     extern void *mm_boot_alloc(size_t size, size_t align);

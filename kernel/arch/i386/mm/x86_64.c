@@ -1,4 +1,4 @@
-/*
+/** \file
  *                 x86-64 4-Level Paging
  *
  *  References:
@@ -73,7 +73,7 @@ static void table_free(paddr_t paddr)
     buddy_free(BUDDY_ZONE_NORMAL, paddr, PAGE_SIZE);
 }
 
-/* the entry of the page table that maps `va' in `pmap', the tables on the
+/** the entry of the page table that maps `va' in `pmap', the tables on the
  * way made if `make', else NULL if one is missing */
 static uint64_t *pte_get(struct pmap *pmap, vaddr_t va, int make)
 {
@@ -116,7 +116,7 @@ struct pmap *pmap_switch(struct pmap *pmap)
     return ret;
 }
 
-/* the end of the RAM the boot loader found */
+/** the end of the RAM the boot loader found */
 static paddr_t ram_end(void)
 {
     paddr_t end = 0;
@@ -278,7 +278,7 @@ void pmap_remove(struct pmap *pmap, vaddr_t sva, vaddr_t eva)
         tlb_shootdown(pmap, first, last, 0);
 }
 
-/* the tables of the user half, from `level' down; the pages they map
+/** the tables of the user half, from `level' down; the pages they map
  * lose the reference the page fault handler gave them (mm_page_incref) */
 static void tables_free(paddr_t paddr, int level)
 {
@@ -419,7 +419,7 @@ int pmap_page_write(paddr_t paddr, off_t off, size_t size, void *buf)
     return 0;
 }
 
-/* all of the RAM is in the direct map (and what the boot loader left is
+/** all of the RAM is in the direct map (and what the boot loader left is
  * in RAM) */
 void *arch_phys_map(uintptr_t paddr, size_t size)
 {
@@ -429,7 +429,7 @@ void *arch_phys_map(uintptr_t paddr, size_t size)
 /* where the window has room for devices' registers */
 static vaddr_t mmio_next = ARCH_MMIO_BASE;
 
-/* a device's registers, uncached */
+/** a device's registers, uncached */
 void *arch_mmio_map(uintptr_t paddr, size_t size)
 {
     paddr_t start = PAGE_ALIGN(paddr);

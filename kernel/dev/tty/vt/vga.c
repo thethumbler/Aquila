@@ -1,4 +1,4 @@
-/*
+/** \file
  * Virtual terminals in VGA text mode, without a framebuffer.
  */
 

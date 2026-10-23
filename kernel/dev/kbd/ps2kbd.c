@@ -1,4 +1,4 @@
-/*
+/** \file
  *          PS/2 Keyboard driver
  *
  * Key presses go to the virtual terminals.

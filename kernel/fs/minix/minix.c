@@ -1,6 +1,5 @@
-/**
- * \defgroup fs-minix kernel/fs/minix
- * \brief minix filesystem
+/** \file
+ * minix filesystem
  */
 #include <core/system.h>
 #include <core/module.h>

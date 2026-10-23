@@ -1,7 +1,7 @@
 #include <core/system.h>
 #include <fs/vfs.h>
 
-/* remove the entry at path, a directory if `rmdir' is set */
+/** remove the entry at path, a directory if `rmdir' is set */
 static int vfs_remove(const char *path, struct uio *uio, int rmdir)
 {
     int ret = 0;

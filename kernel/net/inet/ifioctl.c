@@ -1,4 +1,4 @@
-/*
+/** \file
  * The interfaces' requests (ioctl() on an AF_INET socket): their list,
  * flags, addresses and hardware address, and the default route. Setting
  * is root's.
@@ -48,7 +48,7 @@ static int ifaddr_get(const struct sockaddr *a, uint32_t *ip)
     return 0;
 }
 
-/* SIOCGIFCONF: as many interfaces as there is room for (how much is
+/** SIOCGIFCONF: as many interfaces as there is room for (how much is
  * needed, without a buffer) */
 static int ifconf(struct ifconf *uifc)
 {
@@ -92,7 +92,7 @@ static int ifconf(struct ifconf *uifc)
     return copyout(uifc, &ifc, sizeof(ifc));
 }
 
-/* SIOCADDRT, SIOCDELRT: the default route (0.0.0.0/0 through a gateway),
+/** SIOCADDRT, SIOCDELRT: the default route (0.0.0.0/0 through a gateway),
  * to the interface on whose link the gateway is */
 static int route(int request, struct rtentry *urt)
 {

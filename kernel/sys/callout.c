@@ -1,4 +1,4 @@
-/*
+/** \file
  * Callouts (sys/callout.h): functions called at a time to come. Each list
  * is run from one context: the timer's from its interrupt
  * (sched_timer_tick), which checks it on each tick; others by the thread

@@ -1,4 +1,4 @@
-/*
+/** \file
  *          High Precision Event Timer (HPET)
  *
  * References:
@@ -38,7 +38,7 @@ static inline void reg32_write(unsigned off, uint32_t val)
     regs[off / 4] = val;
 }
 
-/* the counter: its halves, read again until they agree */
+/** the counter: its halves, read again until they agree */
 uint64_t x86_hpet_read(void)
 {
     uint32_t hi, lo;
@@ -51,7 +51,7 @@ uint64_t x86_hpet_read(void)
     return (uint64_t) hi << 32 | lo;
 }
 
-/* its low half only: one read (each is slow, under a hypervisor) */
+/** its low half only: one read (each is slow, under a hypervisor) */
 uint32_t x86_hpet_read32(void)
 {
     return reg32(HPET_CNT);
@@ -62,7 +62,7 @@ uint64_t x86_hpet_period_fs(void)
     return period_fs;
 }
 
-/* 0 once it counts, -1 if there's no HPET */
+/** 0 once it counts, -1 if there's no HPET */
 int x86_hpet_init(void)
 {
     struct acpi_hpet *t = x86_acpi_table ? x86_acpi_table("HPET") : NULL;

@@ -1,4 +1,4 @@
-/*
+/** \file
  * Restarting, halting and powering off (reboot), and Ctrl+Alt+Del: it
  * restarts, unless init asked for SIGINT instead (RB_DISABLE_CAD).
  */
@@ -43,7 +43,7 @@ int kernel_reboot(unsigned cmd)
     return -EINVAL;
 }
 
-/* from the keyboard, maybe in an interrupt */
+/** from the keyboard, maybe in an interrupt */
 void kernel_ctrlaltdel(void)
 {
     /* right away, as a reset: writing what the caches have would wait for

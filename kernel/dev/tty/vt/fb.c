@@ -1,4 +1,4 @@
-/*
+/** \file
  * Virtual terminals on the framebuffer, with the 8x16 font of the early
  * console.
  */

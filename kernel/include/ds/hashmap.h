@@ -18,8 +18,7 @@ typedef uintptr_t hash_t;
 #define HASHMAP_LOAD    2
 
 /**
- * \ingroup ds
- * \brief hashmap
+ * hashmap
  */
 struct hashmap {
     size_t count;
@@ -31,8 +30,7 @@ struct hashmap {
 };
 
 /**
- * \ingroup ds
- * \brief hashmap node
+ * hashmap node
  */
 struct hashmap_node {
     hash_t hash;
@@ -41,16 +39,14 @@ struct hashmap_node {
 };
 
 /**
- * \ingroup ds
- * \brief iterate over hashmap elements
+ * iterate over hashmap elements
  */
 #define hashmap_for(n, h) \
     for (size_t __i__ = 0; __i__ < (h)->buckets_nr; ++__i__) \
         queue_for ((n), &(h)->buckets[__i__])
 
 /**
- * \ingroup ds
- * \brief create a new dynamically allocated hashmap
+ * create a new dynamically allocated hashmap
  */
 static inline struct hashmap *hashmap_new(size_t n, int (*eq)(void *, void *))
 {
@@ -81,8 +77,7 @@ static inline struct hashmap *hashmap_new(size_t n, int (*eq)(void *, void *))
 }
 
 /**
- * \ingroup ds
- * \brief get the digest of the hash function
+ * get the digest of the hash function
  */
 static inline hash_t hashmap_digest(const void *_id, size_t size)
 {
@@ -106,7 +101,7 @@ static inline hash_t hashmap_digest(const void *_id, size_t size)
     return hash;
 }
 
-/* twice the buckets, the entries move to theirs (the queue nodes are
+/** twice the buckets, the entries move to theirs (the queue nodes are
  * relinked, not made anew); stays as it is if there is no memory */
 static inline void hashmap_grow(struct hashmap *hashmap)
 {
@@ -145,8 +140,7 @@ static inline void hashmap_grow(struct hashmap *hashmap)
 }
 
 /**
- * \ingroup ds
- * \brief insert a new element into a hashmap
+ * insert a new element into a hashmap
  */
 static inline int hashmap_insert(struct hashmap *hashmap, hash_t hash, void *entry) 
 {
@@ -180,8 +174,7 @@ static inline int hashmap_insert(struct hashmap *hashmap, hash_t hash, void *ent
 }
 
 /**
- * \ingroup ds
- * \brief lookup for an element in the hashmap using the hash and the key
+ * lookup for an element in the hashmap using the hash and the key
  */
 static inline struct hashmap_node *hashmap_lookup(struct hashmap *hashmap, hash_t hash, void *key)
 {
@@ -201,8 +194,7 @@ static inline struct hashmap_node *hashmap_lookup(struct hashmap *hashmap, hash_
 }
 
 /**
- * \ingroup ds
- * \brief replace an element in the hashmap using the hash and the key
+ * replace an element in the hashmap using the hash and the key
  */
 static inline int hashmap_replace(struct hashmap *hashmap, hash_t hash, void *key, void *entry)
 {
@@ -224,8 +216,7 @@ static inline int hashmap_replace(struct hashmap *hashmap, hash_t hash, void *ke
 }
 
 /**
- * \ingroup ds
- * \brief remove an element from the hashmap given the hashmap node
+ * remove an element from the hashmap given the hashmap node
  */
 static inline void hashmap_node_remove(struct hashmap *hashmap, struct hashmap_node *node)
 {
@@ -252,8 +243,7 @@ static inline void hashmap_remove(struct hashmap *hashmap, hash_t id)
 #endif
 
 /**
- * \ingroup ds
- * \brief free all resources associated with a hashmap
+ * free all resources associated with a hashmap
  */
 static inline void hashmap_free(struct hashmap *hashmap)
 {

@@ -7,8 +7,7 @@
 struct netif;
 
 /**
- * \ingroup net
- * \brief a packet: one buffer of NETBUF_SIZE bytes, the header at its
+ * a packet: one buffer of NETBUF_SIZE bytes, the header at its
  * start, the packet a window in the rest (data, len); each layer takes
  * its header off the front going up, and puts it in the room before the
  * data going down, without copying
@@ -40,7 +39,7 @@ struct netbuf {
 struct netbuf *netbuf_alloc(void);
 void netbuf_free(struct netbuf *nb);
 
-/* room for a header of `size' bytes before the data */
+/** room for a header of `size' bytes before the data */
 static inline void *netbuf_push(struct netbuf *nb, size_t size)
 {
     if (nb->data - size < (uint8_t *) (nb + 1))
@@ -51,7 +50,7 @@ static inline void *netbuf_push(struct netbuf *nb, size_t size)
     return nb->data;
 }
 
-/* the header of `size' bytes at the front off, NULL if it isn't there */
+/** the header of `size' bytes at the front off, NULL if it isn't there */
 static inline void *netbuf_pull(struct netbuf *nb, size_t size)
 {
     if (nb->len < size)
@@ -63,7 +62,7 @@ static inline void *netbuf_pull(struct netbuf *nb, size_t size)
     return header;
 }
 
-/* `size' more bytes at the end, NULL if there is no room */
+/** `size' more bytes at the end, NULL if there is no room */
 static inline void *netbuf_put(struct netbuf *nb, size_t size)
 {
     if (nb->data + nb->len + size > NETBUF_END(nb))

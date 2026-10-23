@@ -88,7 +88,7 @@ uint32_t x86_pit_period_set(uint32_t period_ns)
     return period_ns;
 }
 
-/*
+/**
  * `us' microseconds, busy (at most 54 ms): channel 2 counts down once,
  * its output goes high at 0 (channel 0 keeps the tick). To calibrate
  * the TSC without an HPET.

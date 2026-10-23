@@ -63,7 +63,7 @@ static inline void x86_dump_registers(struct x86_regs *regs)
 #endif
 }
 
-/* a segment descriptor */
+/** a segment descriptor */
 struct x86_gdt_entry {
     uint32_t limit_lo : 16; /* Segment Limit 15:00 */
     uint32_t base_lo  : 16; /* Base Address 15:00 */
@@ -112,7 +112,7 @@ struct x86_tss {
 struct pmap;
 struct thread;
 
-/* the CPU's own (struct cpu's arch) */
+/** the CPU's own (struct cpu's arch) */
 struct arch_cpu {
     uint32_t apic_id;           /* its local APIC's */
     struct x86_gdt_entry gdt[X86_GDT_NR];
@@ -155,7 +155,7 @@ static inline struct cpu *curcpu(void)
 #define CR4_OSFXSR      _BV(9)
 #define CR4_OSXMMEXCPT  _BV(10)
 
-/* CPU function */
+/** CPU function */
 static inline uintptr_t read_cr0(void)
 {
     uint32_t retval = 0;

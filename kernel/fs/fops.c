@@ -7,8 +7,7 @@
 #include <aquila/fcntl.h>
 
 /**
- * \ingroup vfs
- * \brief open a new file
+ * open a new file
  */
 int vfs_file_open(struct file *file)
 {
@@ -33,8 +32,7 @@ int vfs_file_open(struct file *file)
 }
 
 /**
- * \ingroup vfs
- * \brief read from an open file
+ * read from an open file
  */
 ssize_t vfs_file_read(struct file *file, struct iobuf *io)
 {
@@ -61,8 +59,7 @@ ssize_t vfs_file_read(struct file *file, struct iobuf *io)
 }
 
 /**
- * \ingroup vfs
- * \brief write to an open file
+ * write to an open file
  */
 ssize_t vfs_file_write(struct file *file, struct iobuf *io)
 {
@@ -85,8 +82,7 @@ ssize_t vfs_file_write(struct file *file, struct iobuf *io)
 }
 
 /**
- * \ingroup vfs
- * \brief perform ioctl on an open file
+ * perform ioctl on an open file
  */
 int vfs_file_ioctl(struct file *file, int request, void *argp)
 {
@@ -106,8 +102,7 @@ int vfs_file_ioctl(struct file *file, int request, void *argp)
 }
 
 /**
- * \ingroup vfs
- * \brief perform a seek in an open file
+ * perform a seek in an open file
  */
 off_t vfs_file_lseek(struct file *file, off_t offset, int whence)
 {
@@ -128,8 +123,7 @@ off_t vfs_file_lseek(struct file *file, off_t offset, int whence)
 }
 
 /**
- * \ingroup vfs
- * \brief read entries from an open directory
+ * read entries from an open directory
  */
 ssize_t vfs_file_readdir(struct file *file, struct dirent *dirent)
 {
@@ -146,8 +140,7 @@ ssize_t vfs_file_readdir(struct file *file, struct dirent *dirent)
 }
 
 /**
- * \ingroup vfs
- * \brief close an open file
+ * close an open file
  */
 ssize_t vfs_file_close(struct file *file)
 {
@@ -173,8 +166,7 @@ ssize_t vfs_file_close(struct file *file)
 }
 
 /**
- * \ingroup vfs
- * \brief truncate an open file
+ * truncate an open file
  */
 int vfs_file_trunc(struct file *file, off_t len)
 {
@@ -196,7 +188,7 @@ int vfs_file_trunc(struct file *file, off_t len)
     return file->vnode->fs->fops.trunc(file, len);
 }
 
-/*
+/**
  * The queue a reader (a writer, if `write') of `file' sleeps on until it
  * can, which poll() and select() wait on too: a socket's says, a device's
  * and a pipe's are their vnode's (fs/posix/read.c, write.c); NULL if it

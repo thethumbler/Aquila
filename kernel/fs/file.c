@@ -1,4 +1,4 @@
-/*
+/** \file
  * Open files: what open(), pipe(), socket() and accept() make, and the
  * descriptors refer to (struct file, fs/vfs.h)
  *

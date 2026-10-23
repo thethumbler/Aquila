@@ -8,8 +8,7 @@
 typedef uint32_t bitmap_t;
 
 /**
- * \ingroup ds
- * \brief bitmap
+ * bitmap
  */
 struct bitmap {
     bitmap_t *map;

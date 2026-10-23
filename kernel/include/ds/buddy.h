@@ -5,8 +5,7 @@
 #include <ds/bitmap.h>
 
 /**
- * \ingroup ds
- * \brief buddy structure
+ * buddy structure
  */
 struct buddy {
     size_t first_free_idx;

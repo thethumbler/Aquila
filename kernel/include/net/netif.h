@@ -9,8 +9,7 @@
 #define NETIF_LOOPBACK  0x0004  /* lo: 127/8, what it sends comes back */
 
 /**
- * \ingroup net
- * \brief a network interface: a device that sends and receives Ethernet
+ * a network interface: a device that sends and receives Ethernet
  * frames, and its IPv4 configuration
  */
 struct netif {

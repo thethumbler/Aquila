@@ -21,7 +21,7 @@ static void exec_strings_free(char **strs, int count)
     kfree(strs);
 }
 
-/*
+/**
  * A NULL-terminated user array of user strings into a NULL-terminated
  * kernel array of kernel copies (*count of them), their size (strings and
  * pointers) added to `total', no more than EXEC_ARG_MAX in all; each
@@ -96,7 +96,7 @@ error:
 /* how many interpreters may be scripts themselves */
 #define EXEC_SCRIPT_DEPTH   4
 
-/*
+/**
  * The interpreter of a script, "#!interpreter [argument]" on its first
  * line, and the argument (the rest of the line), NULL if it isn't one.
  */
@@ -172,7 +172,7 @@ static int exec_script(struct proc *proc, const char *path, char **interp, char 
     return 0;
 }
 
-/*
+/**
  * A script runs as its interpreter, with the arguments: the interpreter,
  * its argument from the script if any, the script's path, and those of
  * the script but the first (argv[0]).

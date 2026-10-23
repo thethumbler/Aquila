@@ -15,8 +15,7 @@ struct iobuf;
 #include <aquila/dirent.h>
 
 /**
- * \ingroup vfs
- * \brief file operations
+ * file operations
  *
  * read and write move the bytes through an iobuf (fs/iobuf.h): its
  * resid is how many are asked for
@@ -49,8 +48,7 @@ struct fops {
 MALLOC_DECLARE(M_VNODE);
 
 /**
- * \ingroup vfs
- * \brief user I/O operation
+ * user I/O operation
  */
 struct uio {
     struct vnode *root; /* where absolute paths start, NULL: vfs_root */
@@ -62,8 +60,7 @@ struct uio {
 };
 
 /**
- * \ingroup vfs
- * \brief vnode operations
+ * vnode operations
  */
 struct vops {
     /* io->resid bytes at offset, through the iobuf */
@@ -93,8 +90,7 @@ struct vops {
 };
 
 /**
- * \ingroup vfs
- * \brief filesystem structure
+ * filesystem structure
  */
 struct fs {
     char *name;
@@ -110,8 +106,7 @@ struct fs {
 };
 
 /**
- * \ingroup vfs
- * \brief in-core inode structure (vnode)
+ * in-core inode structure (vnode)
  */
 struct vnode {
     ino_t       ino;
@@ -150,7 +145,7 @@ struct vnode {
     struct vnode *covered;
 };
 
-/*
+/**
  * An open file (POSIX's open file description, fs/file.c): one per open(),
  * pipe(), socket() or accept(), shared by the descriptors dup() and fork()
  * copy, with its offset and status flags
@@ -185,8 +180,7 @@ int file_put(struct file *file);
 struct file *file_hold(struct file *file);
 
 /**
- * \ingroup vfs
- * \brief list of registered filesystems
+ * list of registered filesystems
  */
 struct fs_list {
     /** filesystem name */

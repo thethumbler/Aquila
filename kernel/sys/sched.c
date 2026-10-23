@@ -26,7 +26,7 @@ static struct queue *naps = QUEUE_NEW();
 /* processes with a real time timer armed (proc->alarm_at) */
 static struct queue *alarms = QUEUE_NEW();
 
-/*
+/**
  * Each CPU's timer tick, `period' ns after its last one, which interrupted
  * user mode if `user' is set: charged to the running process (system
  * calls run with interrupts disabled, so kernel time is mostly missed)
@@ -42,7 +42,7 @@ void sched_cpu_tick(uint32_t period, int user)
     }
 }
 
-/*
+/**
  * The boot CPU's tick (its own as the others', sched_cpu_tick): the
  * callouts, the sleeps that are over, the real time timers
  */
@@ -93,7 +93,7 @@ void sched_timer_tick(uint32_t period, int user)
     }
 }
 
-/* what is left of the real time timer of `proc', 0 if it isn't armed */
+/** what is left of the real time timer of `proc', 0 if it isn't armed */
 void sched_alarm_get(struct proc *proc, uint64_t *value, uint64_t *interval)
 {
     uint64_t now = arch_rtime_ns();
@@ -133,7 +133,7 @@ void sched_alarm(struct proc *proc, uint64_t value, uint64_t interval,
     proc->alarm_node = enqueue(alarms, proc);
 }
 
-/* the thread no longer waits with a deadline (woken, or killed) */
+/** the thread no longer waits with a deadline (woken, or killed) */
 void sched_timer_cancel(struct thread *thread)
 {
     if (thread->timer_node) {
@@ -142,7 +142,7 @@ void sched_timer_cancel(struct thread *thread)
     }
 }
 
-/*
+/**
  * Sleep on `queue' until woken up, or until arch_rtime_ns() reaches
  * `until' (0: no limit). Returns 1 if the time is up, -ERESTARTSYS if a
  * signal ended the sleep (thread_queue_sleep), 0 if woken up.
@@ -166,7 +166,7 @@ int sched_wait(struct queue *queue, uint64_t until)
     return until && arch_rtime_ns() >= until;
 }
 
-/*
+/**
  * Sleep until arch_rtime_ns() reaches `until': 0, or -ERESTARTSYS if a
  * signal ended the sleep before
  */
@@ -180,7 +180,7 @@ int sched_sleep(uint64_t until)
     return r < 0 ? r : 0;
 }
 
-/* the CPU that runs `thread', if it's another one */
+/** the CPU that runs `thread', if it's another one */
 struct cpu *sched_thread_cpu(struct thread *thread)
 {
     for (int i = 0; i < cpus_count; ++i)
@@ -190,7 +190,7 @@ struct cpu *sched_thread_cpu(struct thread *thread)
     return NULL;
 }
 
-/* `thread' runs on another CPU: it enters the kernel (a signal for it, it
+/** `thread' runs on another CPU: it enters the kernel (a signal for it, it
  * was killed), not at its next tick but now */
 void sched_thread_kick(struct thread *thread)
 {
@@ -200,7 +200,7 @@ void sched_thread_kick(struct thread *thread)
         arch_cpu_kick(cpu);
 }
 
-/*
+/**
  * The running thread was killed while it ran here (thread->killed): it
  * goes; if its process lives on (exec ended it), it leaves it, and wakes
  * the exec waiting for it (proc_threads_exec)
@@ -218,7 +218,7 @@ void sched_thread_killed(void)
     arch_cur_thread_kill();
 }
 
-/* a thread is ready: a CPU that idles runs it (if this one idles, it's in
+/** a thread is ready: a CPU that idles runs it (if this one idles, it's in
  * an interrupt, it does on the way out: sched_idle_wakeup) */
 static void sched_cpu_wake(void)
 {
@@ -249,7 +249,7 @@ void sched_thread_ready(struct thread *thread)
  * user mode (an idle CPU switches anyway) */
 int sched_urgent = 0;
 
-/* a sleeping thread woken up: ready, ahead of the others if urgent */
+/** a sleeping thread woken up: ready, ahead of the others if urgent */
 void sched_thread_wake(struct thread *thread)
 {
     if (!thread->urgent) {
@@ -263,7 +263,7 @@ void sched_thread_wake(struct thread *thread)
     sched_cpu_wake();
 }
 
-/* the current thread is done running (it sleeps, or exited): another
+/** the current thread is done running (it sleeps, or exited): another
  * ready one runs now, or the CPU idles until an interrupt */
 void kernel_idle(void)
 {
@@ -275,7 +275,7 @@ void kernel_idle(void)
     arch_idle();
 }
 
-/* an interrupt woke a thread up while the CPU was idle: it runs now rather
+/** an interrupt woke a thread up while the CPU was idle: it runs now rather
  * than at the next timer tick (a disk request would wait for one each) */
 void sched_idle_wakeup(void)
 {

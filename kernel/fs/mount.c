@@ -68,7 +68,7 @@ int vfs_mount(const char *type, const char *dir, int flags, void *data, struct u
     return err;
 }
 
-/* the block device of a disk partition, /dev/hda1 to /dev/hdd4 (ATA) */
+/** the block device of a disk partition, /dev/hda1 to /dev/hdd4 (ATA) */
 static int root_dev(const char *name, dev_t *dev)
 {
     if (strncmp(name, "/dev/hd", 7) || name[7] < 'a' || name[7] > 'd' ||
@@ -79,7 +79,7 @@ static int root_dev(const char *name, dev_t *dev)
     return 0;
 }
 
-/*
+/**
  * The root filesystem from a disk partition (root=/dev/hda2), of the type
  * given (rootfstype=, ext2 if NULL). Devices have no nodes yet, the
  * partition's vnode is made here as the ramdisk's is.

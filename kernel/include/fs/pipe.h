@@ -11,8 +11,7 @@ struct pipe;
 #define PIPE_BUFLEN 1024
 
 /**
- * \ingroup vfs
- * \brief unix pipe
+ * unix pipe
  */
 struct pipe {
     /** the ends, NULL once closed (rw_node: a FIFO opened read-write) */

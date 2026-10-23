@@ -21,7 +21,7 @@ static struct sock_ops socket_unix_ops;
 
 static struct queue *sockets = QUEUE_NEW();  /* Open sockets */
 
-/* an AF_UNIX address (the kernel's copy, as big as a sockaddr_un): its
+/** an AF_UNIX address (the kernel's copy, as big as a sockaddr_un): its
  * path ends in it */
 static int unix_addr_check(const struct sockaddr *addr)
 {
@@ -30,7 +30,7 @@ static int unix_addr_check(const struct sockaddr *addr)
     return strnlen(addr_un->sun_path, sizeof(addr_un->sun_path)) < sizeof(addr_un->sun_path) ? 0 : -EINVAL;
 }
 
-/* wake up everyone sleeping on a connection, so they notice state changes */
+/** wake up everyone sleeping on a connection, so they notice state changes */
 static void unix_conn_wakeup(struct un_conn *conn)
 {
     thread_queue_wakeup(&conn->server_recv);
@@ -253,7 +253,7 @@ static int socket_unix_listen(struct file *file, int backlog)
     return 0;
 }
 
-/*
+/**
  * Between a connection's ring and an iobuf, a chunk at a time through the
  * kernel: copying to or from user memory may sleep (a page brought in
  * from the disk), and the peer may free the ring meanwhile (*ring_p NULL
@@ -494,7 +494,7 @@ static int socket_unix_can_read(struct file *file, size_t len)
     return available ? (int) available : end;
 }
 
-/* a listener's accept waits on accept; a connection's recv and send on
+/** a listener's accept waits on accept; a connection's recv and send on
  * the queues of its side (socket_unix_recv, socket_unix_send) */
 static struct queue *socket_unix_wait_queue(struct file *file, int write)
 {
@@ -540,7 +540,7 @@ static int socket_unix_can_write(struct file *file, size_t len)
 }
 
 
-/* a connection is shut for reading or writing (or both): the ring read
+/** a connection is shut for reading or writing (or both): the ring read
  * goes (the peer can't write), the ring written ends (the peer reads what
  * is left, then the end) */
 static void unix_conn_shut(struct file *file, int how)
@@ -563,7 +563,7 @@ static void unix_conn_shut(struct file *file, int how)
     unix_conn_wakeup(conn);
 }
 
-/* shutdown(), of a connection only */
+/** shutdown(), of a connection only */
 static int socket_unix_shut(struct file *file, int how)
 {
     if (!file || !file->socket)
@@ -624,7 +624,7 @@ static int socket_unix_shutdown(struct file *file, int how)
     return 0;
 }
 
-/* its name or its peer's: unnamed (names aren't kept) */
+/** its name or its peer's: unnamed (names aren't kept) */
 static int socket_unix_getname(struct file *file, struct sockaddr *addr, socklen_t *len, int peer)
 {
     if (*len >= sizeof(sa_family_t))

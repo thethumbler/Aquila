@@ -5,8 +5,7 @@
 #include <ds/hashmap.h>
 
 /**
- * \ingroup vfs
- * \brief vnode cache
+ * vnode cache
  */
 struct vcache {
     struct hashmap *hashmap;

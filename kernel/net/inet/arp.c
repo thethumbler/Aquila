@@ -1,4 +1,4 @@
-/*
+/** \file
  * ARP: answers who has our address, keeps the hardware addresses of the
  * others (from their requests and replies, and the IPv4 packets they send
  * us), and asks for those packets are sent to: they wait for the answer
@@ -29,7 +29,7 @@ static uint32_t clock;
 #define ARP_HOLD    3
 #define ARP_TRIES   3
 
-/* addresses asked for, with the packets waiting for them */
+/** addresses asked for, with the packets waiting for them */
 static struct arp_pending {
     struct netif *netif;
     uint32_t ip;
@@ -41,7 +41,7 @@ static struct arp_pending {
 
 static const uint8_t ether_broadcast[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 
-/* who has `ip' */
+/** who has `ip' */
 static void arp_request(struct netif *netif, uint32_t ip)
 {
     struct netbuf *nb = netbuf_alloc();
@@ -76,7 +76,7 @@ static void pending_drop(struct arp_pending *p)
     p->nheld = 0;
 }
 
-/* no answer yet: again, or the packets go */
+/** no answer yet: again, or the packets go */
 static void arp_retry(void *arg)
 {
     struct arp_pending *p = arg;
@@ -90,7 +90,7 @@ static void arp_retry(void *arg)
     net_callout_set(&p->retry, 1000000000ULL, arp_retry, p);
 }
 
-/* the packet waits for the hardware address of `ip' (asked for), the
+/** the packet waits for the hardware address of `ip' (asked for), the
  * netbuf is ARP's */
 int arp_resolve(struct netif *netif, uint32_t ip, struct netbuf *nb)
 {
@@ -132,7 +132,7 @@ int arp_resolve(struct netif *netif, uint32_t ip, struct netbuf *nb)
     return 0;
 }
 
-/* the address is known: what waited for it goes */
+/** the address is known: what waited for it goes */
 static void pending_flush(struct netif *netif, uint32_t ip, const uint8_t mac[6])
 {
     for (int i = 0; i < ARP_PENDING; ++i) {

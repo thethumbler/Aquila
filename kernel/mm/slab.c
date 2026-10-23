@@ -1,4 +1,4 @@
-/*
+/** \file
  *                  Slabs: the kernel's small objects
  *
  * kmalloc() takes objects of up to SLAB_MAX bytes from here, the rest
@@ -51,7 +51,7 @@ static int slab_class(size_t size)
     return class;
 }
 
-/* a page of the region, mapped to a page of memory */
+/** a page of the region, mapped to a page of memory */
 static struct slab *slab_page_alloc(void)
 {
     size_t i = slab_first_free;

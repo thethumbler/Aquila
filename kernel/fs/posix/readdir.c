@@ -1,4 +1,4 @@
-/*
+/** \file
  *          VFS => Generic file readdir function
  */
 
@@ -11,14 +11,9 @@
 #include <aquila/dirent.h>
 
 /**
- * posix_file_readdir
- *
- * Conforming to `IEEE Std 1003.1, 2013 Edition'
- * 
- * @file    File Descriptor for the function to operate on.
- * @dirent  Buffer to write to.
+ * The entry of `file' (a directory) at its offset into `dirent', the
+ * offset moved past it: 1, 0 at the end, or an error
  */
-
 ssize_t posix_file_readdir(struct file *file, struct dirent *dirent)
 {
     if (file->flags & O_WRONLY) /* File is not opened for reading */

@@ -1,4 +1,4 @@
-/*
+/** \file
  *          Intel 8254x (e1000) and 82574L Ethernet controllers
  *
  * References:
@@ -149,7 +149,7 @@ static inline void reg_write(uint32_t reg, uint32_t val)
     io_out32(&e1000.regs, reg, val);
 }
 
-/* a page of memory: its physical address, its kernel address in *virt */
+/** a page of memory: its physical address, its kernel address in *virt */
 static paddr_t page_get(void **virt)
 {
     struct vm_page *vm_page = mm_page_alloc();
@@ -158,7 +158,7 @@ static paddr_t page_get(void **virt)
     return vm_page->paddr;
 }
 
-/* a word of the EEPROM */
+/** a word of the EEPROM */
 static uint16_t eeprom_read(uint8_t addr)
 {
     reg_write(E1000_EERD, EERD_START | (uint32_t) addr << 8);
@@ -284,7 +284,7 @@ static int e1000_transmit(struct netif *netif, struct netbuf *nb)
     return 0;
 }
 
-/* the frames the controller received, to the stack */
+/** the frames the controller received, to the stack */
 static void rx_poll(void)
 {
     for (;;) {

@@ -1,4 +1,4 @@
-/*
+/** \file
  * Ethernet: frames to the protocols by their type, and the header of
  * what is sent
  */
@@ -31,7 +31,7 @@ void ether_input(struct netif *netif, struct netbuf *nb)
     netbuf_free(nb);
 }
 
-/* the frame goes, the netbuf is freed */
+/** the frame goes, the netbuf is freed */
 int ether_output(struct netif *netif, const uint8_t dst[6], uint16_t type, struct netbuf *nb)
 {
     struct ether_hdr *eh = netbuf_push(nb, sizeof(*eh));
@@ -45,7 +45,7 @@ int ether_output(struct netif *netif, const uint8_t dst[6], uint16_t type, struc
     return err;
 }
 
-/* the Internet checksum (RFC 1071): the ones' complement of the ones'
+/** the Internet checksum (RFC 1071): the ones' complement of the ones'
  * complement sum of the 16-bit words */
 uint16_t inet_checksum(const void *data, size_t len)
 {
@@ -64,7 +64,7 @@ uint16_t inet_checksum(const void *data, size_t len)
     return htons(~sum & 0xffff);
 }
 
-/* over the pseudo-header too: the addresses, the protocol and the length
+/** over the pseudo-header too: the addresses, the protocol and the length
  * (UDP's and TCP's checksums) */
 uint16_t inet_checksum_pseudo(uint32_t src, uint32_t dst, uint8_t proto, const void *data, size_t len)
 {

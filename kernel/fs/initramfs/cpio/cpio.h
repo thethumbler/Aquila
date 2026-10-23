@@ -7,8 +7,7 @@
 #define CPIO_BIN_MAGIC    0070707
 
 /**
- * \ingroup fs
- * \brief cpio archive header
+ * cpio archive header
  */
 struct cpio_hdr {
     uint16_t magic;
@@ -25,8 +24,7 @@ struct cpio_hdr {
 } __packed;
 
 /**
- * \ingroup fs
- * \brief cpio archive
+ * cpio archive
  */
 struct cpio {
     struct vnode *super;

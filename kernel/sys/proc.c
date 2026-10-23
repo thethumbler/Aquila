@@ -1,12 +1,7 @@
-/*
+/** \file
  *          Process managment helpers
  */
 
-
-/** 
- * \defgroup sys kernel/sys
- * \brief system managment
- */
 
 #include <core/system.h>
 #include <core/panic.h>
@@ -152,7 +147,7 @@ error:
     return err;
 }
 
-/*
+/**
  * A process group is orphaned (POSIX) when none of its members has a
  * parent in another group of its session: no one there would continue it
  * once it stops. `gone', on its way out, doesn't count, as a member or a
@@ -173,7 +168,7 @@ int pgrp_orphaned(struct pgroup *pgrp, struct proc *gone)
     return 1;
 }
 
-/* `gone' leaving makes `pgrp' orphaned: if one of its members is stopped,
+/** `gone' leaving makes `pgrp' orphaned: if one of its members is stopped,
  * SIGHUP and SIGCONT to all of them, nothing else would continue them */
 static void pgrp_orphaned_hangup(struct pgroup *pgrp, struct proc *gone)
 {
@@ -192,13 +187,13 @@ static void pgrp_orphaned_hangup(struct pgroup *pgrp, struct proc *gone)
     }
 }
 
-/* the group of `p' is in the session of the group of `q', and another */
+/** the group of `p' is in the session of the group of `q', and another */
 static int pgrp_other_same_session(struct proc *p, struct proc *q)
 {
     return p->pgrp != q->pgrp && p->pgrp->session == q->pgrp->session;
 }
 
-/* `proc' is a zombie: its parent is told, and may wait for it; a parent
+/** `proc' is a zombie: its parent is told, and may wait for it; a parent
  * that doesn't wait for its children (SIGCHLD ignored, SA_NOCLDWAIT)
  * leaves no zombie */
 static void proc_zombie_notify(struct proc *proc)
@@ -220,7 +215,7 @@ static void proc_zombie_notify(struct proc *proc)
         proc_reap(proc);
 }
 
-/*
+/**
  * The threads of `proc' but `keep' end: freed, or, running on another CPU
  * (in user mode: this one has the kernel lock), killed there, freeing
  * themselves when they enter the kernel, which they do now. `exiting':
@@ -274,7 +269,7 @@ int proc_threads_end(struct proc *proc, struct thread *keep, int exiting)
     return elsewhere;
 }
 
-/*
+/**
  * exec: the threads of the process but the running one end (they run in
  * the image that is replaced, POSIX), those on other CPUs waited for
  */
@@ -411,7 +406,7 @@ int proc_reap(struct proc *proc)
     return 0;
 }
 
-/* the lowest free descriptor, reserved while the call sets it up (no one
+/** the lowest free descriptor, reserved while the call sets it up (no one
  * else takes it, it isn't open yet): -1 if there's none */
 int proc_fd_get(struct proc *proc)
 {
@@ -425,21 +420,21 @@ int proc_fd_get(struct proc *proc)
     return -1;
 }
 
-/* a reserved descriptor wasn't set up after all: free again */
+/** a reserved descriptor wasn't set up after all: free again */
 void proc_fd_release(struct proc *proc, int fd)
 {
     if (fd >= 0 && fd < FDS_COUNT)
         proc->fds[fd] = (struct fd) {0};
 }
 
-/* a reserved descriptor refers to `file' (the reference is the
+/** a reserved descriptor refers to `file' (the reference is the
  * descriptor's now) */
 void proc_fd_install(struct proc *proc, int fd, struct file *file, int flags)
 {
     proc->fds[fd] = (struct fd) {.file = file, .flags = flags};
 }
 
-/* the open file `fd' refers to, NULL if it's free or being set up */
+/** the open file `fd' refers to, NULL if it's free or being set up */
 struct file *proc_fd_file(struct proc *proc, int fd)
 {
     if (fd < 0 || fd >= FDS_COUNT)
@@ -449,7 +444,7 @@ struct file *proc_fd_file(struct proc *proc, int fd)
     return file == FD_RESERVED ? NULL : file;
 }
 
-/* the descriptor is free, its reference to the open file dropped (the
+/** the descriptor is free, its reference to the open file dropped (the
  * last one closes the file: what the close says) */
 int proc_fd_close(struct proc *proc, int fd)
 {
@@ -516,8 +511,7 @@ error:
 }
 
 /**
- * \ingroup sys
- * \brief move `proc' into the process group `pgid' of its session
+ * move `proc' into the process group `pgid' of its session
  *
  * Joining a group requires it to exist (and have members), only a process
  * can start a group with its own pid as the id.
@@ -579,8 +573,7 @@ int proc_setpgid(struct proc *proc, pid_t pgid)
 }
 
 /**
- * \ingroup sys
- * \brief free `pgrp' if it has no processes left, and its session if that
+ * free `pgrp' if it has no processes left, and its session if that
  * was its last group (a terminal loses it as its foreground group)
  */
 void pgrp_release(struct pgroup *pgrp)

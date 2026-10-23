@@ -12,8 +12,7 @@ struct dev;
 #include <fs/iobuf.h>
 
 /**
- * \ingroup kdev
- * \brief device identifier
+ * device identifier
  */
 struct devid {
     mode_t  type;
@@ -22,8 +21,7 @@ struct devid {
 };
 
 /**
- * \ingroup kdev
- * \brief device
+ * device
  */
 struct dev {
     char    *name;

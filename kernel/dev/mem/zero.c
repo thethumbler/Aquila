@@ -12,7 +12,7 @@ static ssize_t zerodev_read(struct devid *dd __unused, off_t offset __unused, st
     return iobuf_zero(io, io->resid);
 }
 
-/* taken, unread */
+/** taken, unread */
 static ssize_t zerodev_write(struct devid *dd __unused, off_t offset __unused, struct iobuf *io)
 {
     return iobuf_skip(io, io->resid);

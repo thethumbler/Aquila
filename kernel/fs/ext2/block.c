@@ -1,7 +1,7 @@
 #include <ext2.h>
 #include <ds/bitmap.h>
 
-/* `size' bytes at `off' of the device, all of them (`write': to it): 0,
+/** `size' bytes at `off' of the device, all of them (`write': to it): 0,
  * or the error, -EIO if fewer went */
 int ext2_io(struct ext2 *desc, int write, off_t off, size_t size, void *buf)
 {
@@ -28,7 +28,7 @@ int ext2_block_write(struct ext2 *desc, uint32_t number, void *buf)
     return ext2_io(desc, 1, (off_t) number * desc->bs, desc->bs, buf);
 }
 
-/* a free block, marked used and zeroed, into `*block': 0, -ENOSPC, or
+/** a free block, marked used and zeroed, into `*block': 0, -ENOSPC, or
  * an error (a bitmap that couldn't be read isn't written back) */
 int ext2_block_alloc(struct ext2 *desc, uint32_t *block)
 {
@@ -90,7 +90,7 @@ done:
     return err;
 }
 
-/* `block' marked free: 0, or an error (the bitmap that couldn't be read
+/** `block' marked free: 0, or an error (the bitmap that couldn't be read
  * isn't written back: the block stays used) */
 int ext2_block_free(struct ext2 *desc, uint32_t block)
 {

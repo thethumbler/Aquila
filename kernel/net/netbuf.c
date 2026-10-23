@@ -1,4 +1,4 @@
-/*
+/** \file
  * Packet buffers (net/netbuf.h): NETBUF_SIZE bytes each, two to a page
  * of memory, kept on a free list once used
  */

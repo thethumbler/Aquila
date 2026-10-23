@@ -1,4 +1,4 @@
-/*
+/** \file
  * Signals on x86: the way back to user mode, and the handler's frame
  *
  * Every return to user mode (a system call's, an interrupt's, an
@@ -82,7 +82,7 @@ static int vm_page_eq(void *a, void *b)
     return ((struct vm_page *) a)->off == *(size_t *) b;
 }
 
-/* the page, made once: the object keeps it, every process maps it */
+/** the page, made once: the object keeps it, every process maps it */
 static struct vm_page *sigcode_in(struct vm_object *vm_object, size_t off)
 {
     char *buf = kmalloc(PAGE_SIZE, &M_BUFFER, M_ZERO);
@@ -114,7 +114,7 @@ static struct vm_object sigcode_object = {
     .ref   = 1,
 };
 
-/* the sigcode page in proc's (new) address space */
+/** the sigcode page in proc's (new) address space */
 int arch_sigcode_map(struct proc *proc)
 {
     if (!sigcode_object.pages && !(sigcode_object.pages = hashmap_new(0, vm_page_eq)))
@@ -141,7 +141,7 @@ int arch_sigcode_map(struct proc *proc)
     return 0;
 }
 
-/* the handler of `sig' runs when `r' is returned to */
+/** the handler of `sig' runs when `r' is returned to */
 static void deliver(struct x86_regs *r, int sig)
 {
     struct thread *thread = curthread;
@@ -260,7 +260,7 @@ void x86_return_to_user(struct x86_regs *r, int syscall)
     }
 }
 
-/* sigreturn(): the frame of the handler that returns, back */
+/** sigreturn(): the frame of the handler that returns, back */
 void arch_sigreturn(void)
 {
     struct x86_thread *arch = curthread->arch;

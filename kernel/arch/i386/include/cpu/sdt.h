@@ -11,7 +11,7 @@ struct acpi_rsdp {
     uint32_t rsdt;
 } __packed;
 
-/* ACPI 2.0 (rev >= 2): the XSDT, 64-bit addresses */
+/** ACPI 2.0 (rev >= 2): the XSDT, 64-bit addresses */
 struct acpi_rsdp2 {
     struct acpi_rsdp v1;
     uint32_t length;
@@ -42,7 +42,7 @@ struct acpi_xsdt {
     uint64_t sdt[0];
 } __packed;
 
-/* an address of a register (Generic Address Structure) */
+/** an address of a register (Generic Address Structure) */
 struct acpi_gas {
     uint8_t  space;         /* 0: memory, 1: I/O ports */
     uint8_t  bit_width;

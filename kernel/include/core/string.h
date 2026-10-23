@@ -53,7 +53,7 @@ static inline int memcmp(const void *s1, const void *s2, size_t n)
     return 0;
 }
 
-/* as the C library's: a NULL is a caller's bug (it faults), not "equal" */
+/** as the C library's: a NULL is a caller's bug (it faults), not "equal" */
 static inline int strcmp(const char *s1, const char *s2)
 {
     while (*s1 != '\0' && *s2 != '\0' && *s1 == *s2) {s1++; s2++;}
@@ -81,7 +81,7 @@ static inline int strlen(const char *s)
     return _s - s;
 }
 
-/* the length of s, at most max (no NUL in max bytes) */
+/** the length of s, at most max (no NUL in max bytes) */
 static inline size_t strnlen(const char *s, size_t max)
 {
     size_t n = 0;
@@ -109,7 +109,7 @@ static inline char *strcpy(char *dst, const char *src)
     return retval;
 }
 
-/* strcpy() returning the end of dst (its NUL terminator) */
+/** strcpy() returning the end of dst (its NUL terminator) */
 static inline char *stpcpy(char *dst, const char *src)
 {
     while ((*dst = *src++))

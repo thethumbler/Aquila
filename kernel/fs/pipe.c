@@ -142,7 +142,7 @@ static int pipefs_mkpipe(struct pipe **ref)
     return 0;
 }
 
-/* a new reference to an end of pipe (END_*), created if needed */
+/** a new reference to an end of pipe (END_*), created if needed */
 static struct vnode *pipefs_end(struct pipe *pipe, int which)
 {
     struct vnode **end = which == END_READ  ? &pipe->r_node :
@@ -199,7 +199,7 @@ int pipefs_pipe(struct file *read, struct file *write)
     return 0;
 }
 
-/*
+/**
  * Open the FIFO file->vnode refers to: file->vnode becomes an end of its
  * pipe. Opening for reading waits for a writer and opening for writing
  * for a reader, unless O_NONBLOCK (then a writer without readers fails

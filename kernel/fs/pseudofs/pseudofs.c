@@ -14,7 +14,7 @@ MALLOC_DEFINE(M_PSEUDOFS_DENT, "pseudofs-dirent", "pseudofs directory entry");
  */
 static const char dotdot[] = "..";
 
-/* bounded copy of an entry name into a struct dirent */
+/** bounded copy of an entry name into a struct dirent */
 static void pseudofs_dirent_name(struct dirent *dirent, const char *name)
 {
     size_t len = strlen(name);
@@ -109,7 +109,7 @@ error:
     return err;
 }
 
-/* the entry `fn' of directory `dir', and the entry before it (NULL if first) */
+/** the entry `fn' of directory `dir', and the entry before it (NULL if first) */
 static struct pseudofs_dirent *entry_find(struct vnode *dir, const char *fn, struct pseudofs_dirent **prev)
 {
     *prev = NULL;
@@ -124,7 +124,7 @@ static struct pseudofs_dirent *entry_find(struct vnode *dir, const char *fn, str
     return NULL;
 }
 
-/* remove `entry' (after `prev') from directory `dir' and drop a link to its vnode */
+/** remove `entry' (after `prev') from directory `dir' and drop a link to its vnode */
 static void entry_remove(struct vnode *dir, struct pseudofs_dirent *entry, struct pseudofs_dirent *prev)
 {
     struct vnode *vnode = entry->d_ino;
@@ -195,7 +195,7 @@ int pseudofs_vlink(struct vnode *dir, const char *fn, struct vnode *vnode, struc
     return 0;
 }
 
-/* the checks of the new entry (type, empty directory) are done by the vfs */
+/** the checks of the new entry (type, empty directory) are done by the vfs */
 int pseudofs_vrename(struct vnode *odir, const char *ofn, struct vnode *ndir, const char *nfn, struct uio *uio)
 {
     struct pseudofs_dirent *oprev, *nprev;
@@ -244,7 +244,7 @@ int pseudofs_vrename(struct vnode *odir, const char *ofn, struct vnode *ndir, co
     return 0;
 }
 
-/* attributes only live in the vnode */
+/** attributes only live in the vnode */
 int pseudofs_setattr(struct vnode *vnode)
 {
     return 0;
@@ -311,7 +311,7 @@ int pseudofs_finddir(struct vnode *dir, const char *name, struct dirent *dirent)
     return -ENOENT;
 }
 
-/* the names are the entries', freed when they go (pseudofs_vunlink) */
+/** the names are the entries', freed when they go (pseudofs_vunlink) */
 int pseudofs_close(struct vnode *vnode)
 {
     kfree(vnode);

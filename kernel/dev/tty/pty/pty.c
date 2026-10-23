@@ -13,8 +13,7 @@
 MALLOC_DEFINE(M_PTY, "pseudo-terminal", "pseudo-terminal structure");
 
 /**
- * \ingroup dev-tty
- * \brief psuedo-terminal
+ * psuedo-terminal
  */
 struct pty {
     size_t id;
@@ -57,7 +56,7 @@ static struct pty *pty_get(struct devid *dd)
     return ptys[dd->minor];
 }
 
-/* TTY Interface */
+/** TTY Interface */
 ssize_t pty_master_write(struct tty *tty, size_t size, void *buf)
 {
     struct pty *pty = (struct pty *) tty->p;
@@ -98,7 +97,7 @@ ssize_t pty_slave_write(struct tty *tty, size_t size, void *buf)
     return written;
 }
 
-/* discard what the slave hasn't read */
+/** discard what the slave hasn't read */
 static void pty_input_flush(struct tty *tty)
 {
     struct pty *pty = (struct pty *) tty->p;
@@ -230,7 +229,7 @@ ssize_t pts_write(struct devid *dd, off_t offset __unused, struct iobuf *io)
     return tty_write_iobuf(pty->tty, io, tty_slave_write);
 }
 
-/* a read found no data */
+/** a read found no data */
 static int pts_eof(struct file *file)
 {
     struct pty *pty = pty_get(&VNODE_DEV(file->vnode));
@@ -246,7 +245,7 @@ int pts_can_read(struct file *file, size_t size)
     return tty_can_read(pty->tty, ringbuf_available(pty->in));
 }
 
-/* the master can be read when the terminal wrote something */
+/** the master can be read when the terminal wrote something */
 static int ptm_can_read(struct file *file, size_t size)
 {
     struct pty *pty = pty_get(&VNODE_DEV(file->vnode));
@@ -342,7 +341,7 @@ error:
     return err;
 }
 
-/* the master was closed: the pty, its /dev/pts entry and its id go */
+/** the master was closed: the pty, its /dev/pts entry and its id go */
 static void pty_free(struct pty *pty)
 {
     char name[12] = {0};
@@ -381,7 +380,7 @@ int ptmx_open(struct file *file)
     return err;
 }
 
-/* the master has no filesystem, its references are counted here */
+/** the master has no filesystem, its references are counted here */
 static int ptm_close(struct file *file)
 {
     struct vnode *ptm = file->vnode;

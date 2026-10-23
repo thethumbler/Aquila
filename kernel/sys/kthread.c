@@ -1,4 +1,4 @@
-/*
+/** \file
  * Kernel threads: the threads of process 0, "[kernel]", as the BSDs have
  * it. They run kernel functions on their kernel stacks, on the kernel's
  * address space, and are scheduled as the others are. Process 0 has no
@@ -43,7 +43,7 @@ static int kproc_init(void)
     return 0;
 }
 
-/* where a kernel thread starts, on its stack (arch_kthread_create) */
+/** where a kernel thread starts, on its stack (arch_kthread_create) */
 static void kthread_start(void)
 {
     curthread->kentry(curthread->karg);

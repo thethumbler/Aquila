@@ -91,9 +91,8 @@ struct ext2_superblock {
     uint32_t    head_of_orphan_inode_list;  // What the hell is this !?
 } __packed;
 
-/*
- * \ingroup fs-ext2
- * \brief block group descriptor
+/**
+ * block group descriptor
  */
 struct ext2_group {
     /** blocks bitmap */
@@ -111,8 +110,7 @@ struct ext2_group {
 } __packed;
 
 /**
- * \ingroup fs-ext2
- * \brief ext2 on disk inode
+ * ext2 on disk inode
  */
 struct ext2_inode {
     uint16_t    mode;
@@ -141,8 +139,7 @@ struct ext2_inode {
 } __packed;
 
 /**
- * \ingroup fs-ext2
- * \brief ext2 directory entry
+ * ext2 directory entry
  */
 struct ext2_dentry {
     /** inode number */
@@ -169,8 +166,7 @@ struct ext2_dentry {
 #define EXT2_DIRECT_POINTERS 12
 
 /**
- * \ingroup fs-ext2
- * \brief ext2 filesystem
+ * ext2 filesystem
  */
 struct ext2 {
     struct vnode *supernode;

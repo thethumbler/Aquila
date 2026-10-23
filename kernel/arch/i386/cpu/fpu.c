@@ -28,10 +28,10 @@ static uint32_t mxcsr_mask = 0xFFBF;
  * last owner's XMM registers */
 static char fpu_clean[512] __aligned(16);
 
-/*
+/**
  * Lazy FPU switching is done using CR0.TS, the first FPU/SSE instruction
- * executed while TS is set raises #NM (x86_fpu_trap). CR0.EM must stay
- * clear, otherwise SSE instructions raise #UD instead.
+ * executed while TS is set raises `#NM' (x86_fpu_trap). CR0.EM must stay
+ * clear, otherwise SSE instructions raise `#UD' instead.
  */
 void x86_fpu_setup(void)
 {
@@ -144,7 +144,7 @@ void x86_fpu_trap(void)
     last_fpu_thread = curthread;
 }
 
-/*
+/**
  * The current thread is switched out: its state, if the FPU has it, saved
  * now (it may run on another CPU next), the FPU no one's
  */
@@ -161,7 +161,7 @@ void x86_fpu_switch_out(void)
     last_fpu_thread = NULL;
 }
 
-/*
+/**
  * For signal handlers (sys/signal.c): the current thread's FPU state into
  * `buf' (512 bytes, 16-byte aligned), 0 if it never used the FPU
  */
@@ -183,7 +183,7 @@ int x86_fpu_save_to(void *buf)
     return 1;
 }
 
-/* the current thread starts the FPU afresh at its next use (a handler) */
+/** the current thread starts the FPU afresh at its next use (a handler) */
 void x86_fpu_reset(void)
 {
     struct x86_thread *arch = curthread->arch;
@@ -196,7 +196,7 @@ void x86_fpu_reset(void)
     x86_fpu_disable();
 }
 
-/* sigreturn: the state saved in a frame back (`valid'), loaded at the
+/** sigreturn: the state saved in a frame back (`valid'), loaded at the
  * thread's next use of the FPU; MXCSR as the CPU takes it */
 void x86_fpu_load_from(const void *buf, int valid)
 {

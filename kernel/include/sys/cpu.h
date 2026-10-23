@@ -6,7 +6,7 @@
 
 struct thread;
 
-/*
+/**
  * A processor, and what runs on it: each one finds its own with curcpu()
  */
 struct cpu {

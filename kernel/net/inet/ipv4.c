@@ -1,4 +1,4 @@
-/*
+/** \file
  * IPv4: packets for us to their protocols, and the header of what is
  * sent (no fragments either way); what isn't on an interface's link goes
  * through its gateway
@@ -31,7 +31,7 @@ static int is_loopback(uint32_t ip)
     return (ntohl(ip) >> 24) == 127;
 }
 
-/* ours: loopback, or an interface's */
+/** ours: loopback, or an interface's */
 int ipv4_is_local(uint32_t ip)
 {
     if (is_loopback(ip))
@@ -44,7 +44,7 @@ int ipv4_is_local(uint32_t ip)
     return 0;
 }
 
-/* the address a packet to `dst' through `netif' is from: to one of ours
+/** the address a packet to `dst' through `netif' is from: to one of ours
  * (127/8 too), that one */
 uint32_t ipv4_source(struct netif *netif, uint32_t dst)
 {
@@ -101,7 +101,7 @@ drop:
     netbuf_free(nb);
 }
 
-/* the interface to `dst': the one whose link it is on, else the first
+/** the interface to `dst': the one whose link it is on, else the first
  * with a gateway; NULL if none */
 struct netif *ipv4_route(uint32_t dst)
 {
@@ -137,7 +137,7 @@ struct netif *ipv4_route(uint32_t dst)
     return gw;
 }
 
-/* the packet goes from `src' (0: ipv4_source()) to `dst' through `netif'
+/** the packet goes from `src' (0: ipv4_source()) to `dst' through `netif'
  * (through its gateway if it isn't on the link), once its hardware
  * address is known; the netbuf is freed */
 int ipv4_output(struct netif *netif, uint32_t src, uint32_t dst, uint8_t proto, struct netbuf *nb)
@@ -184,7 +184,7 @@ int ipv4_output(struct netif *netif, uint32_t src, uint32_t dst, uint8_t proto, 
     return ether_output(netif, mac, ETHER_TYPE_IPV4, nb);
 }
 
-/* the packet goes to `dst', on its route; the netbuf is freed */
+/** the packet goes to `dst', on its route; the netbuf is freed */
 int ipv4_send(uint32_t dst, uint8_t proto, struct netbuf *nb)
 {
     struct netif *netif = ipv4_route(dst);

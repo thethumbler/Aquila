@@ -20,7 +20,7 @@ int earlycon_putc(char c)
     return earlycon->putc(c);
 }
 
-/* whether it shows messages on the screen, not the serial port */
+/** whether it shows messages on the screen, not the serial port */
 int earlycon_on_screen(void)
 {
     return earlycon != &earlycon_uart;

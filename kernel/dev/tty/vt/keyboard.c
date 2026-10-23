@@ -1,4 +1,4 @@
-/*
+/** \file
  * The keyboard of the virtual terminals: PS/2 scancodes (set 1, what the
  * i8042 translates to) to what the Linux console sends for the keys, with
  * the US layout. Alt sends ESC before the key, Alt+F1 to Alt+F6 switch
@@ -108,7 +108,7 @@ static void send_byte(int c)
     vt_input(&b, 1);
 }
 
-/*
+/**
  * KDGKBENT: what a key (its Linux key code) is, in the table of Shift and
  * AltGr (the same as without: the US layout has no AltGr), for programs
  * that read key codes (K_MEDIUMRAW)
@@ -178,13 +178,13 @@ int vt_keymap(int table, int keycode)
     return K(KT_LATIN, (unsigned char) c);
 }
 
-/* a sequence was cut by a change of mode */
+/** a sequence was cut by a change of mode */
 void vt_keyboard_reset(void)
 {
     extended = skip = 0;
 }
 
-/* with Alt, ESC before what the key sends */
+/** with Alt, ESC before what the key sends */
 static void send_key(const char *s)
 {
     if (alt)
@@ -207,7 +207,7 @@ static void send_char(char c)
     send_key(buf);
 }
 
-/* the cursor keys, ESC O x in the application mode (DECCKM) */
+/** the cursor keys, ESC O x in the application mode (DECCKM) */
 static void cursor_key(char dir)
 {
     struct vt *vt = vt_foreground();
@@ -224,7 +224,7 @@ static void editing_key(const char *s)
         cursor_key(s[0]);
 }
 
-/* control characters for Ctrl with a key */
+/** control characters for Ctrl with a key */
 static int control(char c)
 {
     if (c >= 'a' && c <= 'z')
@@ -253,7 +253,7 @@ static int control(char c)
     return c;
 }
 
-/* Shift, Ctrl and Alt, in every mode: they may be held while it changes */
+/** Shift, Ctrl and Alt, in every mode: they may be held while it changes */
 static int modifier(int code, int release, int ext)
 {
     switch (code) {

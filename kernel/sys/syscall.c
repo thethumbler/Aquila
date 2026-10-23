@@ -42,7 +42,7 @@
 static int syscall_log_level = LOG_NONE;
 LOGGER_DEFINE(syscall, syscall_log, syscall_log_level)
 
-/* the open file `fd' refers to, held until the call returns (a close
+/** the open file `fd' refers to, held until the call returns (a close
  * meanwhile doesn't take it away); NULL if `fd' is not open */
 static struct file *fd_file(int fd)
 {
@@ -50,7 +50,7 @@ static struct file *fd_file(int fd)
     return file ? file_hold(file) : NULL;
 }
 
-/* the same, not held: only until the call sleeps (select, poll) */
+/** the same, not held: only until the call sleeps (select, poll) */
 static struct file *fd_peek(int fd)
 {
     return proc_fd_file(curproc, fd);
@@ -66,7 +66,7 @@ static struct file *fd_peek(int fd)
 /* the longest path (with its NUL) a call takes, as newlib's PATH_MAX */
 #define UPATH_MAX   1024
 
-/* user space's path into a kernel copy, *path (the caller kfree()s it) */
+/** user space's path into a kernel copy, *path (the caller kfree()s it) */
 static int upath_get(const char *upath, char **path)
 {
     char *buf = kmalloc(UPATH_MAX, &M_BUFFER, 0);
@@ -87,7 +87,7 @@ static int upath_get(const char *upath, char **path)
     return 0;
 }
 
-/*
+/**
  * uio to resolve `path' from the directory `dirfd' refers to, AT_FDCWD
  * for the working directory (absolute paths ignore dirfd)
  */
@@ -111,7 +111,7 @@ static int at_uio(int dirfd, const char *path, struct uio *uio)
     return 0;
 }
 
-/* user space's `upath' (a kernel copy, *path) and the uio to resolve it
+/** user space's `upath' (a kernel copy, *path) and the uio to resolve it
  * from directory `dirfd', for calls taking two paths */
 static int at_path(int dirfd, const char *upath, char **path, struct uio *uio)
 {
@@ -128,7 +128,7 @@ static int at_path(int dirfd, const char *upath, char **path, struct uio *uio)
     return ret;
 }
 
-/* look up user space's `upath' from `dirfd', AT_SYMLINK_NOFOLLOW in
+/** look up user space's `upath' from `dirfd', AT_SYMLINK_NOFOLLOW in
  * flags: don't follow a final link */
 static int at_lookup(int dirfd, const char *upath, int flags, struct uio *uio, struct vnode **vnode)
 {
@@ -341,7 +341,7 @@ static void sys_lseek(int fildes, off_t offset, int whence)
     arch_syscall_return(curthread, ret);
 }
 
-/*
+/**
  * What O_CREAT creates for `path': the file a dangling symbolic link
  * points to, through links to links. *ref is NULL for `path' itself.
  */
@@ -1104,7 +1104,7 @@ static void sys_fcntl(int fd, int cmd, uintptr_t arg)
     arch_syscall_return(curthread, -EINVAL);
 }
 
-/* the current directory is `vnode' (a searchable directory; the
+/** the current directory is `vnode' (a searchable directory; the
  * reference is the process's now) */
 static int cwd_set(struct vnode *vnode)
 {
@@ -1320,7 +1320,7 @@ static void sys_lstat(const char *path, struct aquila_stat *buf)
     arch_syscall_return(curthread, do_fstatat(AT_FDCWD, path, buf, AT_SYMLINK_NOFOLLOW));
 }
 
-/*
+/**
  * There are no separate effective or saved ids, setuid() and setgid()
  * set the process ids: root may set any id, other users only their own.
  */
@@ -1540,7 +1540,7 @@ static void sys_socket(int domain, int type, int protocol)
     return;
 }
 
-/*
+/**
  * Socket addresses: the kernel's copy, as big as the biggest (AF_UNIX's).
  * One coming in is len bytes of user space's; one going out is the
  * protocol's (*klen its size), as much of it as fits in user space's
@@ -1559,7 +1559,7 @@ static int sockaddr_copyin(union ksockaddr *k, const struct sockaddr *uaddr, soc
     return copyin(k, uaddr, len);
 }
 
-/* user space's room for one going out: its size, at most ours */
+/** user space's room for one going out: its size, at most ours */
 static int sockaddr_room(socklen_t *ulen, socklen_t *klen)
 {
     if (copyin(klen, ulen, sizeof(*klen)))
@@ -1824,7 +1824,7 @@ static void sys_recv(struct aquila_socket_io_args *us)
     arch_syscall_return(curthread, ret);
 }
 
-/* getsockname(), getpeername() */
+/** getsockname(), getpeername() */
 static void socket_name(int fd, struct sockaddr *addr, socklen_t *len, int peer)
 {
     struct file *file = fd_file(fd);
@@ -1964,7 +1964,7 @@ static void sys_fchmodat(int dirfd, const char *path, mode_t mode, int flags)
     arch_syscall_return(curthread, do_fchmodat(dirfd, path, mode, flags));
 }
 
-/* the vnode of an open file, NULL for sockets */
+/** the vnode of an open file, NULL for sockets */
 static struct vnode *fd_vnode(int fd, int *err)
 {
     struct file *file = fd_file(fd);
@@ -2108,7 +2108,7 @@ static void sys_sigsuspend(const sigset_t *set)
     arch_syscall_return(thread, -ERESTARTNOHAND);
 }
 
-/* a handler returns (the kernel's sigcode calls this): its frame back */
+/** a handler returns (the kernel's sigcode calls this): its frame back */
 static void sys_sigreturn(void)
 {
     syscall_log(LOG_DEBUG, "sigreturn()\n");
@@ -2133,7 +2133,7 @@ typedef struct {
     fd_mask fds_bits[_howmany(FD_SETSIZE, NFDBITS)];
 } fd_set;
 
-/* whether `file' can be read (or written) without waiting; a file
+/** whether `file' can be read (or written) without waiting; a file
  * that can't tell is ready, the read or write reports the error */
 static int fd_ready(struct file *file, int write)
 {
@@ -2141,14 +2141,14 @@ static int fd_ready(struct file *file, int write)
     return ret != 0;
 }
 
-/* select() and poll() wait for `file' (to be read, or written): on the
+/** select() and poll() wait for `file' (to be read, or written): on the
  * queue its reader (writer) sleeps on, NULL if it can't tell */
 static int fd_watch(struct file *file, int write)
 {
     return poll_register(vfs_file_wait_queue(file, write));
 }
 
-/* deadline of a select()/poll() timeout of `ns' nanoseconds, -1 for
+/** deadline of a select()/poll() timeout of `ns' nanoseconds, -1 for
  * none; 0 means don't wait. Restarted after a stop: the deadline it had */
 static uint64_t poll_deadline(int64_t ns)
 {
@@ -2423,7 +2423,7 @@ static void sys_lchown(const char *path, uid_t owner, gid_t group)
     arch_syscall_return(curthread, do_fchownat(AT_FDCWD, path, owner, group, AT_SYMLINK_NOFOLLOW));
 }
 
-/* `path' NULL: the file `dirfd' refers to (futimens) */
+/** `path' NULL: the file `dirfd' refers to (futimens) */
 static void sys_utimensat(int dirfd, const char *path, const struct aquila_timespec times[2], int flags)
 {
     syscall_log(LOG_DEBUG, "utimensat(dirfd=%d, path=%p, times=%p, flags=%x)\n", dirfd, path, times, flags);
@@ -2600,7 +2600,7 @@ static void sys_setitimer(int which, const struct aquila_itimer *new, struct aqu
     arch_syscall_return(curthread, old ? copyout(old, &prev, sizeof(prev)) : 0);
 }
 
-/* random bytes, as many as asked (getentropy) */
+/** random bytes, as many as asked (getentropy) */
 static void sys_getrandom(void *buf, size_t len, unsigned flags __unused)
 {
     if (uaccess_check(buf, len)) {
@@ -2626,7 +2626,7 @@ static void sys_getrandom(void *buf, size_t len, unsigned flags __unused)
     arch_syscall_return(curthread, done || !len ? (ssize_t) done : -EFAULT);
 }
 
-/* the calling thread's id (pthread_self) */
+/** the calling thread's id (pthread_self) */
 static void sys_thread_self(void)
 {
     arch_syscall_return(curthread, curthread->tid);

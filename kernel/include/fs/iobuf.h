@@ -28,7 +28,7 @@ struct iobuf_seg {
     size_t  len;
 };
 
-/* passed by its address, never copied: seg may point at its own `one' */
+/** passed by its address, never copied: seg may point at its own `one' */
 struct iobuf {
     struct iobuf_seg *seg;      /* the segments left (the first partly done) */
     int     nseg;
@@ -60,7 +60,7 @@ ssize_t iobuf_zero(struct iobuf *io, size_t n);
  * dropped): how many (at most resid) */
 size_t  iobuf_skip(struct iobuf *io, size_t n);
 
-/* the buffer cut to n bytes for a while (what's passed on may move no
+/** the buffer cut to n bytes for a while (what's passed on may move no
  * more): what was cut, given back with iobuf_unlimit() */
 static inline size_t iobuf_limit(struct iobuf *io, size_t n)
 {

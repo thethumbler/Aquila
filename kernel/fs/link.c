@@ -2,7 +2,7 @@
 #include <fs/vfs.h>
 #include <aquila/fcntl.h>
 
-/* a new hard link `newpath' (from nuio's directory) to `oldpath' (from
+/** a new hard link `newpath' (from nuio's directory) to `oldpath' (from
  * ouio's), which is followed unless ouio has O_NOFOLLOW */
 int vfs_link(const char *oldpath, struct uio *ouio, const char *newpath, struct uio *nuio)
 {
@@ -44,7 +44,7 @@ done:
     return ret;
 }
 
-/* a symbolic link at `path' containing `target' */
+/** a symbolic link at `path' containing `target' */
 int vfs_symlink(const char *target, const char *path, struct uio *uio)
 {
     int ret = 0;
@@ -68,7 +68,7 @@ int vfs_symlink(const char *target, const char *path, struct uio *uio)
     return 0;
 }
 
-/* the contents of symbolic link `path', not NUL terminated */
+/** the contents of symbolic link `path', not NUL terminated */
 ssize_t vfs_readlink(const char *path, struct uio *uio, char *buf, size_t size)
 {
     struct vnode *vnode = NULL;
@@ -89,7 +89,7 @@ ssize_t vfs_readlink(const char *path, struct uio *uio, char *buf, size_t size)
     return ret;
 }
 
-/* look up the entry `name' of `dir', NULL if there is none */
+/** look up the entry `name' of `dir', NULL if there is none */
 static int entry_get(struct vnode *dir, const char *name, struct vnode **ref)
 {
     struct dirent dirent;
@@ -103,7 +103,7 @@ static int entry_get(struct vnode *dir, const char *name, struct vnode **ref)
     return ret ? ret : vfs_vget(dir, dirent.d_ino, ref);
 }
 
-/* `oldpath' (from ouio's directory) renamed `newpath' (from nuio's) */
+/** `oldpath' (from ouio's directory) renamed `newpath' (from nuio's) */
 int vfs_rename(const char *oldpath, struct uio *ouio, const char *newpath, struct uio *nuio)
 {
     int ret = 0;

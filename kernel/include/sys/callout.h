@@ -4,8 +4,7 @@
 #include <core/system.h>
 
 /**
- * \ingroup sys
- * \brief a function called later, the caller's structure: arming it
+ * a function called later, the caller's structure: arming it
  * doesn't allocate
  */
 struct callout {
@@ -18,8 +17,7 @@ struct callout {
 };
 
 /**
- * \ingroup sys
- * \brief callouts called from one context: the timer's interrupt
+ * callouts called from one context: the timer's interrupt
  * (callout_set), or a thread that runs its own (the network's)
  */
 struct callout_list {

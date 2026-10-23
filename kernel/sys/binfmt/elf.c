@@ -1,4 +1,4 @@
-/*
+/** \file
  *          ELF format loader
  */
 

@@ -12,7 +12,7 @@ MALLOC_DEFINE(M_TTY_COOK, "tty-cook", "tty cooking buffer");
 /* a special character, not disabled (_POSIX_VDISABLE is 0) */
 #define IS_CC(tty, c, cc) ((tty)->tios.c_cc[cc] && (c) == (tty)->tios.c_cc[cc])
 
-/* echo a character, control characters as ^X */
+/** echo a character, control characters as ^X */
 static void tty_echo(struct tty *tty, char c)
 {
     if ((unsigned char) c < ' ' && c != '\n' && c != '\t') {
@@ -25,7 +25,7 @@ static void tty_echo(struct tty *tty, char c)
     }
 }
 
-/* erase the last character of the line being edited */
+/** erase the last character of the line being edited */
 static void tty_erase(struct tty *tty)
 {
     if (!tty->pos)
@@ -42,7 +42,7 @@ static void tty_erase(struct tty *tty)
     }
 }
 
-/* the line is ready to be read */
+/** the line is ready to be read */
 static void tty_deliver(struct tty *tty)
 {
     if (tty->pos)
@@ -51,7 +51,7 @@ static void tty_deliver(struct tty *tty)
     tty->pos = 0;
 }
 
-/* signal characters (ISIG): the foreground group gets the signal */
+/** signal characters (ISIG): the foreground group gets the signal */
 static int tty_signal(struct tty *tty, char c)
 {
     int sig = IS_CC(tty, c, VINTR) ? SIGINT :
@@ -76,7 +76,7 @@ static int tty_signal(struct tty *tty, char c)
     return 1;
 }
 
-/*
+/**
  * Input from the terminal (the keyboard, or the master side of a pty),
  * through the line discipline to what programs read. Canonical mode
  * collects lines with erase (VERASE), kill (VKILL) and end-of-file
@@ -146,7 +146,7 @@ ssize_t tty_master_write(struct tty *tty, size_t size, void *buf)
     return size;
 }
 
-/*
+/**
  * A read that found nothing to return: 1 if it returns 0, at an
  * end-of-file (VEOF at the start of a line) or with VMIN 0 in
  * non-canonical mode.
@@ -165,7 +165,7 @@ int tty_eof(struct tty *tty)
     return 0;
 }
 
-/* how long a read waits for input: VTIME tenths of a second with VMIN 0
+/** how long a read waits for input: VTIME tenths of a second with VMIN 0
  * in non-canonical mode, otherwise until there is some */
 uint64_t tty_read_timeout(struct tty *tty)
 {
@@ -175,14 +175,14 @@ uint64_t tty_read_timeout(struct tty *tty)
     return tty->tios.c_cc[VTIME] * 100000000ULL;
 }
 
-/* whether a read wouldn't wait, given what is buffered */
+/** whether a read wouldn't wait, given what is buffered */
 int tty_can_read(struct tty *tty, size_t buffered)
 {
     return buffered || tty->eof ||
            (!(tty->tios.c_lflag & ICANON) && !tty->tios.c_cc[VMIN] && !tty->tios.c_cc[VTIME]);
 }
 
-/*
+/**
  * A process of the terminal's session that is not in its foreground
  * group reads it (SIGTTIN) or writes or changes it (SIGTTOU, writes only
  * with TOSTOP): its group is stopped until it is in the foreground.
@@ -210,13 +210,13 @@ int tty_background(struct tty *tty, int sig)
     return 0;
 }
 
-/* `n' bytes to the device, all of them */
+/** `n' bytes to the device, all of them */
 static int tty_out(struct tty *tty, const char *s, size_t n)
 {
     return tty->master_write(tty, n, (void *) s) == (ssize_t) n;
 }
 
-/*
+/**
  * What the terminal writes out (OPOST, POSIX's output modes): a NL as CR
  * NL (ONLCR), a CR as NL (OCRNL), no CR in the first column (ONOCR), a NL
  * that returns the carriage too (ONLRET); the column is followed for them.
@@ -294,7 +294,7 @@ ssize_t tty_slave_write(struct tty *tty, size_t size, void *_buf)
     return written;
 }
 
-/*
+/**
  * A write to the terminal from an iobuf, to either side (`write':
  * tty_master_write or tty_slave_write): a piece at a time through the
  * kernel, the buffer passed over only as far as was taken
@@ -326,7 +326,7 @@ ssize_t tty_write_iobuf(struct tty *tty, struct iobuf *io, ttyio write)
     return done;
 }
 
-/* argp is user space's: what a request reads comes in with copyin(),
+/** argp is user space's: what a request reads comes in with copyin(),
  * what it gives goes out with copyout() */
 int tty_ioctl(struct tty *tty, int request, void *argp)
 {
@@ -434,8 +434,7 @@ int tty_ioctl(struct tty *tty, int request, void *argp)
 }
 
 /**
- * \ingroup dev-tty
- * \brief create a new generic tty interface
+ * create a new generic tty interface
  */
 int tty_new(struct proc *proc, size_t buf_size, ttyio master,
         ttyio slave, void *p, struct tty **ref)
@@ -488,7 +487,7 @@ int tty_new(struct proc *proc, size_t buf_size, ttyio master,
     return 0;
 }
 
-/*
+/**
  * A terminal device was opened: it becomes the controlling terminal of a
  * session leader that has none (unless O_NOCTTY), if no session has it.
  */
@@ -505,7 +504,7 @@ void tty_open(struct tty *tty, struct file *file)
     tty->fg       = curproc->pgrp;
 }
 
-/*
+/**
  * The session of a controlling terminal ends (its leader exited) or the
  * terminal goes away: its foreground group gets SIGHUP, and the terminal
  * belongs to no session.
@@ -525,7 +524,7 @@ void tty_hangup(struct tty *tty)
     tty->fg = NULL;
 }
 
-/* discard input (TCIFLUSH, TCIOFLUSH): the line being edited, what the
+/** discard input (TCIFLUSH, TCIOFLUSH): the line being edited, what the
  * driver holds for readers, pending end-of-files; output isn't kept */
 void tty_flush(struct tty *tty, int which)
 {

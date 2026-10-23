@@ -1,6 +1,5 @@
-/**
- * \defgroup core kernel/core
- * \brief core system components
+/** \file
+ * core system components
  */
 
 #include <core/printk.h>
@@ -24,8 +23,7 @@
 #include <ds/hashmap.h>
 
 /** 
- * \ingroup core
- * \brief entry point of the kernel
+ * entry point of the kernel
  *
  * This is the function that gets executed after the bootstrapping and
  * platform initialization is completed.

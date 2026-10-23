@@ -47,7 +47,7 @@ void     pci_reg16_write(struct pci_dev *dev, uint8_t off, uint16_t val);
 void     pci_reg32_write(struct pci_dev *dev, uint8_t off, uint32_t val);
 uint32_t pci_read_bar(struct pci_dev *dev, uint8_t id);
 
-/* a base address register: what it decodes, where, how much */
+/** a base address register: what it decodes, where, how much */
 struct pci_bar {
     uint64_t addr;
     uint64_t size;

@@ -5,8 +5,7 @@
 #include <sys/proc.h>
 
 /**
- * \ingroup sys
- * \brief process 0, the kernel's: its threads run in the kernel only (on
+ * process 0, the kernel's: its threads run in the kernel only (on
  * the kernel's address space), and it takes no signals
  */
 extern struct proc *kproc;

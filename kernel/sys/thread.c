@@ -53,7 +53,7 @@ static void queue_sleep(struct queue *queue, state_t state)
     curthread->state = RUNNABLE;
 }
 
-/*
+/**
  * Sleep on `queue' until woken up; a signal the process doesn't block
  * ends the sleep (signal_to wakes it): -ERESTARTSYS, for the system call
  * to return (its caller loops on what it waits for, a wakeup may be for
@@ -69,7 +69,7 @@ int thread_queue_sleep(struct queue *queue)
     return signal_interrupts(curthread) ? -ERESTARTSYS : 0;
 }
 
-/* sleep on `queue' until woken up, whatever signal comes (a disk
+/** sleep on `queue' until woken up, whatever signal comes (a disk
  * transfer, a page being read in: nothing may be left halfway) */
 void thread_queue_sleep_unint(struct queue *queue)
 {
@@ -128,7 +128,7 @@ int poll_register(struct queue *queue)
     return 0;
 }
 
-/* `thread' waits no more (it's woken, or it goes) */
+/** `thread' waits no more (it's woken, or it goes) */
 void poll_unregister(struct thread *thread)
 {
     while (thread->poll_regs) {
@@ -145,7 +145,7 @@ void poll_unregister(struct thread *thread)
     }
 }
 
-/* the pollers of `queue', and those of anything */
+/** the pollers of `queue', and those of anything */
 static void poll_wake(struct queue *queue)
 {
     for (struct poll_reg *r = *poll_chain(queue); r; r = r->next)
@@ -168,7 +168,7 @@ int thread_queue_wakeup(struct queue *queue)
     return thread_queue_wakeup_nopoll(queue);
 }
 
-/* for queues no descriptor is waited on through (a disk request), and
+/** for queues no descriptor is waited on through (a disk request), and
  * the pollers' own: no poller looks at them */
 int thread_queue_wakeup_nopoll(struct queue *queue)
 {
@@ -187,7 +187,7 @@ int thread_queue_wakeup_nopoll(struct queue *queue)
     return 0;
 }
 
-/* wake up `thread' only, if it is sleeping on a queue */
+/** wake up `thread' only, if it is sleeping on a queue */
 void thread_wakeup(struct thread *thread)
 {
     if (!thread->sleep_node)

@@ -14,7 +14,7 @@ typedef void (*x86_irq_handler_t)(struct x86_regs *r);
 #define X86_WAKE_VECTOR     0xF2    /* an IPI: enter the kernel (arch_cpu_kick) */
 #define X86_SPURIOUS_VECTOR 0xFF
 
-/* an interrupt controller: the 8259, or the APIC */
+/** an interrupt controller: the 8259, or the APIC */
 struct x86_irq_chip {
     const char *name;
     void (*mask)(unsigned irq);

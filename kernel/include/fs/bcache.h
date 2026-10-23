@@ -5,8 +5,7 @@
 #include <ds/hashmap.h>
 
 /**
- * \ingroup vfs
- * \brief block cache
+ * block cache
  */
 struct bcache {
     struct hashmap *hashmap;

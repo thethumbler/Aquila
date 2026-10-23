@@ -20,8 +20,7 @@
 #define MINIX_DIRECT_ZONES  7
 
 /**
- * \ingroup fs-minix
- * \brief minix v1/v2 superblock
+ * minix v1/v2 superblock
  */
 struct minix_superblock {
     uint16_t    ninodes;
@@ -38,8 +37,7 @@ struct minix_superblock {
 };
 
 /**
- * \ingroup fs-minix
- * \brief minix v3 superblock
+ * minix v3 superblock
  */
 struct minix3_superblock {
 	uint32_t    ninodes;
@@ -58,8 +56,7 @@ struct minix3_superblock {
 };
 
 /**
- * \ingroup fs-minix
- * \brief minix on-disk inode
+ * minix on-disk inode
  */
 struct minix_inode {
     uint16_t    mode;
@@ -72,8 +69,7 @@ struct minix_inode {
 };
 
 /**
- * \ingroup fs-minix
- * \brief minix directory entry
+ * minix directory entry
  */
 struct minix_dentry {
     uint16_t    ino;
@@ -81,8 +77,7 @@ struct minix_dentry {
 };
 
 /**
- * \ingroup fs-minix
- * \brief minix filesystem
+ * minix filesystem
  */
 struct minix {
     struct vnode *supernode;

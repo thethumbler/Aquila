@@ -5,8 +5,7 @@ MALLOC_DEFINE(M_BCACHE, "bcache", "block cache structure");
 MALLOC_DEFINE(M_CACHE_BLOCK, "cache block", "cached block structure");
 
 /**
- * \ingroup vfs
- * \brief cacehed block
+ * cacehed block
  */
 struct cache_block {
     off_t off;

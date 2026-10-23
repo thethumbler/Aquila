@@ -1,6 +1,5 @@
-/**
- * \defgroup mm kernel/mm
- * \brief Memory Management
+/** \file
+ * Memory Management
  *
  * The memory management subsystem is responsible for the allocation
  * of physical memory pages, management of virtual memory of processes
@@ -31,8 +30,7 @@ static size_t pages_nr;
 #define TRACKED(addr) ((addr)/PAGE_SIZE < pages_nr)
 
 /** 
- * \ingroup mm
- * \brief increment references count of a physical page
+ * increment references count of a physical page
  */
 void mm_page_incref(paddr_t paddr)
 {
@@ -41,8 +39,7 @@ void mm_page_incref(paddr_t paddr)
 }
 
 /**
- * \ingroup mm
- * \brief decrement references count of a physical page
+ * decrement references count of a physical page
  */
 void mm_page_decref(paddr_t paddr)
 {
@@ -51,8 +48,7 @@ void mm_page_decref(paddr_t paddr)
 }
 
 /**
- * \ingroup mm
- * \brief get reference counts of a physical page
+ * get reference counts of a physical page
  */
 size_t mm_page_ref(paddr_t paddr)
 {
@@ -60,8 +56,7 @@ size_t mm_page_ref(paddr_t paddr)
 }
 
 /**
- * \ingroup mm
- * \brief allocate an unused page from physical memory
+ * allocate an unused page from physical memory
  */
 struct vm_page *mm_page_alloc(void)
 {
@@ -76,8 +71,7 @@ struct vm_page *mm_page_alloc(void)
 }
 
 /**
- * \ingroup mm
- * \brief deallocate a page
+ * deallocate a page
  */
 void mm_page_dealloc(paddr_t paddr)
 {
@@ -85,7 +79,7 @@ void mm_page_dealloc(paddr_t paddr)
     buddy_free(BUDDY_ZONE_NORMAL, paddr, PAGE_SIZE);
 }
 
-/* (the pages' references are the vm objects', not the mappings') */
+/** (the pages' references are the vm objects', not the mappings') */
 int mm_page_map(struct pmap *pmap, vaddr_t vaddr, paddr_t paddr, int flags)
 {
     return pmap_add(pmap, vaddr, paddr, flags);
@@ -168,7 +162,7 @@ void *mm_boot_alloc(size_t size, size_t align)
     return ptr;
 }
 
-/* the end of what [start, start + size) overlaps that the boot loader
+/** the end of what [start, start + size) overlaps that the boot loader
  * left in memory (modules, the kernel's symbols, the command line), 0 if
  * nothing */
 static paddr_t boot_left(struct boot *boot, paddr_t start, size_t size)
@@ -218,7 +212,7 @@ static int boot_usable(struct boot *boot, paddr_t start, size_t size)
     return 0;
 }
 
-/* where the boot memory goes: the first place after the kernel that is
+/** where the boot memory goes: the first place after the kernel that is
  * RAM, free, and in the boot mapping */
 static void boot_mem_place(struct boot *boot, size_t size)
 {
@@ -235,7 +229,7 @@ static void boot_mem_place(struct boot *boot, size_t size)
     boot_mem_end = start + size;
 }
 
-/* RAM is [0, the end of the last usable region of the memory map), what
+/** RAM is [0, the end of the last usable region of the memory map), what
  * isn't usable in it (the regions the map reserves, and its gaps) is
  * marked used */
 static void mm_mark_unusable(struct boot *boot, paddr_t ram_end)

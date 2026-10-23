@@ -30,7 +30,7 @@ struct procfs_entry {
 struct vnode *procfs_root = NULL;
 struct vcache procfs_vcache = {0};
 
-/* proc/meminfo */
+/** proc/meminfo */
 static ssize_t procfs_meminfo(off_t off, size_t size, char *buf)
 {
     char meminfo_buf[512];
@@ -58,7 +58,7 @@ static ssize_t procfs_meminfo(off_t off, size_t size, char *buf)
     return 0;
 }
 
-/* proc/kvmem */
+/** proc/kvmem */
 static ssize_t procfs_kvmem(off_t off, size_t size, char *buf)
 {
     //printk("procfs_kvmem(off=%d, size=%d, buf=%p)\n", off, size, buf);
@@ -86,7 +86,7 @@ static ssize_t procfs_kvmem(off_t off, size_t size, char *buf)
     return 0;
 }
 
-/* proc/version */
+/** proc/version */
 static ssize_t procfs_version(off_t off, size_t size, char *buf)
 {
     char version_buf[512];
@@ -108,7 +108,7 @@ static ssize_t procfs_version(off_t off, size_t size, char *buf)
     return 0;
 }
 
-/* proc/uptime */
+/** proc/uptime */
 static ssize_t procfs_uptime(off_t off, size_t size, char *buf)
 {
     char uptime_buf[64];
@@ -143,7 +143,7 @@ static ssize_t procfs_interrupts(off_t off, size_t size, char *buf)
     return 0;
 }
 
-/* proc/filesystems */
+/** proc/filesystems */
 static ssize_t procfs_filesystems(off_t off, size_t size, char *buf)
 {
     char fs_buf[512];
@@ -167,7 +167,7 @@ static ssize_t procfs_filesystems(off_t off, size_t size, char *buf)
     return 0;
 }
 
-/* proc/cmdline */
+/** proc/cmdline */
 static ssize_t procfs_cmdline(off_t off, size_t size, char *buf)
 {
     char cmdline_buf[512];
@@ -185,7 +185,7 @@ static ssize_t procfs_cmdline(off_t off, size_t size, char *buf)
     return 0;
 }
 
-/* proc/rdcmdline */
+/** proc/rdcmdline */
 static ssize_t procfs_rdcmdline(off_t off, size_t size, char *buf)
 {
     char rdcmdline_buf[512];
@@ -204,7 +204,7 @@ static ssize_t procfs_rdcmdline(off_t off, size_t size, char *buf)
     return 0;
 }
 
-/* proc/mounts */
+/** proc/mounts */
 static ssize_t procfs_mounts(off_t off, size_t size, char *buf)
 {
     char mounts_buf[4096];
@@ -230,7 +230,7 @@ static ssize_t procfs_mounts(off_t off, size_t size, char *buf)
     return 0;
 }
 
-/* proc/buddyinfo */
+/** proc/buddyinfo */
 static ssize_t procfs_buddyinfo(off_t off, size_t size, char *buf)
 {
     char buddyinfo_buf[4096];
@@ -265,7 +265,7 @@ static ssize_t procfs_buddyinfo(off_t off, size_t size, char *buf)
     return 0;
 }
 
-/* proc/devices */
+/** proc/devices */
 static ssize_t procfs_devices(off_t off, size_t size, char *buf)
 {
     char dev_buf[512];
@@ -514,7 +514,7 @@ static struct procfs_proc_entry proc_entries[] = {
 #define PROC_INO(pid)   (((pid) + 1) * (PROCFS_PROC_ENTRIES + 1))
 #define INO_PID(ino)    ((ino) / (PROCFS_PROC_ENTRIES + 1) - 1)
 
-/* an entry's text from offset, into the kernel's buf */
+/** an entry's text from offset, into the kernel's buf */
 static ssize_t procfs_entry_read(struct vnode *node, off_t offset, size_t size, char *buf)
 {
     size_t id = (size_t) node->p;
@@ -532,7 +532,7 @@ static ssize_t procfs_entry_read(struct vnode *node, off_t offset, size_t size, 
     return -ENOSYS;
 }
 
-/* the text made a page at a time, out through the iobuf */
+/** the text made a page at a time, out through the iobuf */
 static ssize_t procfs_read(struct vnode *node, off_t offset, struct iobuf *io)
 {
     char *buf = kmalloc(PAGE_SIZE, &M_BUFFER, 0);

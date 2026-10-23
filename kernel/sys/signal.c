@@ -56,14 +56,14 @@ int sig_default_action[SIG_MAX+1] = {
     [SIGLOST] = SIGACT_TERMINATE,
 };
 
-/* whether delivering `sig' to proc stops it (its default action, not caught) */
+/** whether delivering `sig' to proc stops it (its default action, not caught) */
 int signal_stops(struct proc *proc, int sig)
 {
     return proc->sigaction[sig].sa_handler == SIG_DFL &&
            sig_default_action[sig] == SIGACT_STOP;
 }
 
-/* tell the parent a child stopped or continued */
+/** tell the parent a child stopped or continued */
 static void signal_notify_parent(struct proc *proc)
 {
     struct proc *parent = proc->parent;
@@ -77,7 +77,7 @@ static void signal_notify_parent(struct proc *proc)
         signal_proc_send(parent, SIGCHLD);
 }
 
-/*
+/**
  * Stop the current process by `sig', until SIGCONT or SIGKILL. Called by
  * its own thread on its way back to user mode (signal_take), which sleeps
  * here; signals don't end the sleep, continuing (or killing) does.
@@ -101,7 +101,7 @@ static int is_stop_signal(int sig)
     return !!(STOP_SIGNALS & (1UL << sig));
 }
 
-/* nothing would be done when it's delivered: its handler ignores it, or
+/** nothing would be done when it's delivered: its handler ignores it, or
  * its default action does (SIGCONT's is done when it's sent) */
 static int signal_ignored(struct proc *proc, int sig)
 {
@@ -114,7 +114,7 @@ static int signal_ignored(struct proc *proc, int sig)
                                   sig_default_action[sig] == SIGACT_CONTINUE);
 }
 
-/* make `signal' pending for proc, its sleeping threads woken if it isn't
+/** make `signal' pending for proc, its sleeping threads woken if it isn't
  * blocked: it's delivered on the way back to user mode */
 static int signal_to(struct proc *proc, int signal)
 {
@@ -171,7 +171,7 @@ static int signal_to(struct proc *proc, int signal)
     return 0;
 }
 
-/* sigaction() set its action: ignored now, it's no longer pending */
+/** sigaction() set its action: ignored now, it's no longer pending */
 void signal_action_set(struct proc *proc, int sig)
 {
     if (signal_ignored(proc, sig))
@@ -258,8 +258,7 @@ int signal_pgrp_send(struct pgroup *pg, int signal)
 }
 
 /**
- * \ingroup sys
- * \brief kill(2): pid > 0 a process, 0 the caller's process group, -1 every
+ * kill(2): pid > 0 a process, 0 the caller's process group, -1 every
  * process except init and the caller, < -1 the process group -pid
  */
 int signal_send(pid_t pid, int signal)

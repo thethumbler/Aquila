@@ -3,7 +3,7 @@
 
 #include <core/system.h>
 
-/* VBE Information Block */
+/** VBE Information Block */
 struct vbe_info_block {
     union {
         uint8_t      sig_chr[4];

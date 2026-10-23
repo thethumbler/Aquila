@@ -1,4 +1,4 @@
-/*
+/** \file
  * Network interfaces (net/netif.h): drivers register theirs, give them
  * the frames they receive (netif_input) and send the frames given to
  * them (transmit)
@@ -43,7 +43,7 @@ static size_t rx_count;
 
 static struct callout_list net_callouts;
 
-/* "a.b.c.d" at *s, in the network's byte order; *s past it, -1 if it
+/** "a.b.c.d" at *s, in the network's byte order; *s past it, -1 if it
  * isn't an address */
 static int parse_ipv4(const char **s, uint32_t *ip)
 {
@@ -67,7 +67,7 @@ static int parse_ipv4(const char **s, uint32_t *ip)
     return 0;
 }
 
-/* ip=<address>/<prefix length>[:<gateway>] for the first interface */
+/** `ip=<address>/<prefix length>[:<gateway>]' for the first interface */
 static void netif_config(struct netif *netif)
 {
     const char *s = NULL;
@@ -108,7 +108,7 @@ bad:
     printk("net: ip=: not <address>/<prefix length>[:<gateway>]\n");
 }
 
-/* "xx:xx:xx:xx:xx:xx" (printk has no field widths) */
+/** "xx:xx:xx:xx:xx:xx" (printk has no field widths) */
 static char *mac_string(const uint8_t mac[6], char buf[18])
 {
     static const char digits[] = "0123456789abcdef";
@@ -162,7 +162,7 @@ static void net_main(void *arg __unused)
     }
 }
 
-/* the interface named `name' (at most 16 characters, IFNAMSIZ) */
+/** the interface named `name' (at most 16 characters, IFNAMSIZ) */
 struct netif *netif_find(const char *name)
 {
     for (struct netif *netif = netifs; netif; netif = netif->next)
@@ -220,7 +220,7 @@ int netif_register(struct netif *netif)
     return 0;
 }
 
-/* lo's frames (a broadcast through it, SO_BINDTODEVICE) come back in;
+/** lo's frames (a broadcast through it, SO_BINDTODEVICE) come back in;
  * packets to 127/8 don't get here, ipv4_output() turns them around */
 static int loopback_transmit(struct netif *netif, struct netbuf *nb)
 {
@@ -249,7 +249,7 @@ static void loopback_init(void)
     netif_register(&loopback);
 }
 
-/* lo is there without a network card too */
+/** lo is there without a network card too */
 static int loopback_module_init(void)
 {
     loopback_init();
@@ -280,7 +280,7 @@ static void rx_queue(struct netif *netif, struct netbuf *nb)
     thread_wakeup(net_thread);
 }
 
-/* a frame the device received, the netbuf is the stack's from now on */
+/** a frame the device received, the netbuf is the stack's from now on */
 void netif_input(struct netif *netif, struct netbuf *nb)
 {
     netif->stats.rx_packets++;
@@ -291,7 +291,7 @@ void netif_input(struct netif *netif, struct netbuf *nb)
     rx_queue(netif, nb);
 }
 
-/* an IPv4 packet to ourselves, received as if it came through `netif' */
+/** an IPv4 packet to ourselves, received as if it came through `netif' */
 void netif_loopback(struct netif *netif, struct netbuf *nb)
 {
     netif->stats.rx_packets++;
@@ -302,7 +302,7 @@ void netif_loopback(struct netif *netif, struct netbuf *nb)
     rx_queue(netif, nb);
 }
 
-/* send a frame, the netbuf stays the caller's */
+/** send a frame, the netbuf stays the caller's */
 int netif_output(struct netif *netif, struct netbuf *nb)
 {
     int err = netif->transmit(netif, nb);

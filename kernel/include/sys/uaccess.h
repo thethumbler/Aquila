@@ -20,8 +20,7 @@
 #define UACCESS_LIMIT   ((uintptr_t) USER_STACK)
 
 /**
- * \ingroup sys
- * \brief check that [ptr, ptr+len) is a valid user range
+ * check that [ptr, ptr+len) is a valid user range
  *
  * \return 0 if the range is valid, -EFAULT otherwise. A NULL pointer is
  * always rejected unless len is 0, callers that accept NULL must test
@@ -45,7 +44,7 @@ static inline int uaccess_check(const void *ptr, size_t len)
 size_t arch_copy_user(void *dst, const void *src, size_t n);
 long arch_copy_user_str(char *dst, const char *src, size_t max);
 
-/* n bytes from user space's usrc into kdst: 0, -EFAULT */
+/** n bytes from user space's usrc into kdst: 0, -EFAULT */
 static inline int copyin(void *kdst, const void *usrc, size_t n)
 {
     if (uaccess_check(usrc, n))
@@ -54,7 +53,7 @@ static inline int copyin(void *kdst, const void *usrc, size_t n)
     return n && arch_copy_user(kdst, usrc, n) ? -EFAULT : 0;
 }
 
-/* n bytes from ksrc to user space's udst: 0, -EFAULT */
+/** n bytes from ksrc to user space's udst: 0, -EFAULT */
 static inline int copyout(void *udst, const void *ksrc, size_t n)
 {
     if (uaccess_check(udst, n))
@@ -63,7 +62,7 @@ static inline int copyout(void *udst, const void *ksrc, size_t n)
     return n && arch_copy_user(udst, ksrc, n) ? -EFAULT : 0;
 }
 
-/* as copyin() and copyout(), but how many bytes went before a fault (or
+/** as copyin() and copyout(), but how many bytes went before a fault (or
  * a range that isn't user space's): n if all of them */
 static inline size_t copyin_upto(void *kdst, const void *usrc, size_t n)
 {
@@ -75,7 +74,7 @@ static inline size_t copyout_upto(void *udst, const void *ksrc, size_t n)
     return uaccess_check(udst, n) ? 0 : n - arch_copy_user(udst, ksrc, n);
 }
 
-/* user space's string at usrc into kdst (max bytes, its NUL included):
+/** user space's string at usrc into kdst (max bytes, its NUL included):
  * its length, -EFAULT, -ENAMETOOLONG if it doesn't fit */
 static inline long copyinstr(char *kdst, const char *usrc, size_t max)
 {

@@ -1,4 +1,4 @@
-/*
+/** \file
  *          VFS => Generic file read function
  */
 
@@ -15,14 +15,8 @@
 #include <aquila/dirent.h>
 
 /**
- *
- * Reads up to io->resid bytes from a file into the iobuf.
- *
- * Conforming to `IEEE Std 1003.1, 2013 Edition'
- * 
- * @param file    File Descriptor for the function to operate on.
- * @param io      The buffer to fill.
- * @param returns read bytes on success, or error-code on failure.
+ * Up to io->resid bytes of `file', from its offset (moved past them), into
+ * the iobuf: how many came, 0 at the end, or an error
  */
 
 ssize_t posix_file_read(struct file *file, struct iobuf *io)

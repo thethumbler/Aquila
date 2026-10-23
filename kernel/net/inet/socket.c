@@ -1,4 +1,4 @@
-/*
+/** \file
  * AF_INET sockets: UDP (SOCK_DGRAM), and ping (SOCK_DGRAM, IPPROTO_ICMP:
  * echo requests sent, the replies to them received, by anyone)
  *
@@ -144,7 +144,7 @@ struct inet_sock *inet_sock_find(struct netif *netif, uint8_t proto, uint32_t lo
     return any;
 }
 
-/* a datagram for it (src_ip, src_port set), the netbuf is the socket's */
+/** a datagram for it (src_ip, src_port set), the netbuf is the socket's */
 void inet_sock_deliver(struct inet_sock *sock, struct netbuf *nb)
 {
     if (sock->shut_rd || sock->recv_bytes + nb->len > RECV_MAX) {
@@ -165,7 +165,7 @@ void inet_sock_deliver(struct inet_sock *sock, struct netbuf *nb)
     thread_queue_wakeup(&sock->recv_wait);
 }
 
-/* an error for it (ICMP's), the next call reports it */
+/** an error for it (ICMP's), the next call reports it */
 void inet_sock_error(struct inet_sock *sock, int err)
 {
     sock->error = err;
@@ -220,7 +220,7 @@ int socket_inet_create(struct file *file, int domain, int type, int protocol)
     return 0;
 }
 
-/* an AF_INET address of `len' bytes at `addr' */
+/** an AF_INET address of `len' bytes at `addr' */
 int inet_sockaddr_get(const struct sockaddr *addr, socklen_t len, uint32_t *ip, uint16_t *port)
 {
     const struct sockaddr_in *sin = (const struct sockaddr_in *) addr;
@@ -248,7 +248,7 @@ void inet_sockaddr_put(struct sockaddr *addr, socklen_t *len, uint32_t ip, uint1
     *len = sizeof(sin);
 }
 
-/* one of ours (or any) */
+/** one of ours (or any) */
 static int socket_inet_bind(struct file *file, const struct sockaddr *addr, socklen_t len)
 {
     struct inet_sock *sock = file->socket->p;
@@ -462,7 +462,7 @@ static int socket_inet_can_write(struct file *file, size_t len)
     return 1;
 }
 
-/* a datagram's reader waits on recv_wait (a writer never waits) */
+/** a datagram's reader waits on recv_wait (a writer never waits) */
 static struct queue *socket_inet_wait_queue(struct file *file, int write)
 {
     struct inet_sock *sock = file->socket->p;
@@ -617,7 +617,7 @@ static int socket_inet_shut(struct file *file, int how)
     return 0;
 }
 
-/* the last descriptor is closed */
+/** the last descriptor is closed */
 static int socket_inet_shutdown(struct file *file, int how)
 {
     struct inet_sock *sock = file->socket->p;

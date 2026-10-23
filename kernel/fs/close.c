@@ -3,8 +3,7 @@
 #include <fs/vfs.h>
 
 /** close a vnode
- * \ingroup vfs
- * \brief closes a vnode (i.e. decrements reference counts)
+ * closes a vnode (i.e. decrements reference counts)
  */
 int vfs_close(struct vnode *vnode)
 {

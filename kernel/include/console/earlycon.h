@@ -2,7 +2,7 @@
 #define _EARLY_CONSOLE_H
 
 /**
- * \brief early console
+ * early console
  */
 struct earlycon {
     void (*init)(void);

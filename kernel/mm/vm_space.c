@@ -7,8 +7,7 @@
 #include <ds/queue.h>
 
 /**
- * \ingroup mm
- * \brief insert a new vm entry into a vm space
+ * insert a new vm entry into a vm space
  */
 int vm_space_insert(struct vm_space *vm_space, struct vm_entry *vm_entry)
 {
@@ -76,8 +75,7 @@ int vm_space_insert(struct vm_space *vm_space, struct vm_entry *vm_entry)
 }
 
 /**
- * \ingroup mm
- * \brief lookup the vm entry containing `vaddr` inside a vm space
+ * lookup the vm entry containing `vaddr` inside a vm space
  */
 struct vm_entry *vm_space_find(struct vm_space *vm_space, vaddr_t vaddr)
 {
@@ -99,8 +97,7 @@ struct vm_entry *vm_space_find(struct vm_space *vm_space, vaddr_t vaddr)
 }
 
 /**
- * \ingroup mm
- * \brief destroy all resources associated with a vm space
+ * destroy all resources associated with a vm space
  */
 void vm_space_destroy(struct vm_space *vm_space)
 {
@@ -118,8 +115,7 @@ void vm_space_destroy(struct vm_space *vm_space)
 }
 
 /**
- * \ingroup mm
- * \brief fork a vm space into another vm space
+ * fork a vm space into another vm space
  */
 int vm_space_fork(struct vm_space *src, struct vm_space *dst)
 {

@@ -1,4 +1,4 @@
-/*
+/** \file
  *          PS/2 Mouse driver
  *
  * /dev/mouse (c 10 1) is the mouse's bytes as they come, as Linux's
@@ -82,7 +82,7 @@ static ssize_t ps2mouse_read(struct devid *dd __unused, off_t offset __unused, s
     return ringbuf_read_iobuf(mouse_ring, io->resid, io);
 }
 
-/* commands to the mouse, it replies (an ACK to each byte, more to some) */
+/** commands to the mouse, it replies (an ACK to each byte, more to some) */
 static ssize_t ps2mouse_write(struct devid *dd __unused, off_t offset __unused, struct iobuf *io)
 {
     size_t size = io->resid;

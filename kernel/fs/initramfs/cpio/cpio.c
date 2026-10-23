@@ -13,7 +13,7 @@
 
 MALLOC_DEFINE(M_CPIO, "cpio", "CPIO structure");
 
-/* bounded copy of an entry name into a struct dirent */
+/** bounded copy of an entry name into a struct dirent */
 static void cpio_dirent_name(struct dirent *dirent, const char *name)
 {
     size_t len = strlen(name);

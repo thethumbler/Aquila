@@ -1,4 +1,4 @@
-/*
+/** \file
  *                 Intel 32-Bit Paging Mode Handler
  *
  *  References:
@@ -69,7 +69,7 @@ static void table_free(paddr_t paddr)
     buddy_free(BUDDY_ZONE_NORMAL, paddr, PAGE_SIZE);
 }
 
-/* the entry of the page table that maps `va' in `pmap', its table made
+/** the entry of the page table that maps `va' in `pmap', its table made
  * if `make', else NULL if there is none */
 static uint32_t *pte_get(struct pmap *pmap, vaddr_t va, int make)
 {
@@ -228,7 +228,7 @@ void pmap_remove(struct pmap *pmap, vaddr_t sva, vaddr_t eva)
         tlb_shootdown(pmap, first, last, 0);
 }
 
-/* the user half's tables go; the pages they map lose the reference the
+/** the user half's tables go; the pages they map lose the reference the
  * page fault handler gave them (mm_page_incref) */
 void pmap_remove_all(struct pmap *pmap)
 {
@@ -387,7 +387,7 @@ void *arch_phys_map(uintptr_t paddr, size_t size)
     return phys_window_map(paddr, size, VM_KRW);
 }
 
-/* a device's registers, uncached */
+/** a device's registers, uncached */
 void *arch_mmio_map(uintptr_t paddr, size_t size)
 {
     return phys_window_map(paddr, size, VM_KRW | VM_NOCACHE);

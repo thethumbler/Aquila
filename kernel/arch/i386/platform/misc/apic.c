@@ -1,4 +1,4 @@
-/*
+/** \file
  *          The APIC: the local APIC and the I/O APICs
  *
  * References:
@@ -140,7 +140,7 @@ static void ioapic_write(struct ioapic *io, uint32_t reg, uint32_t val)
     io->regs[IOAPIC_WIN / 4] = val;
 }
 
-/* IRQ n's pin, and how it's triggered */
+/** IRQ n's pin, and how it's triggered */
 static uint32_t irq_gsi(unsigned irq, int *level, int *low)
 {
     uint16_t flags = irq < 16 ? isa[irq].flags : 0;
@@ -192,7 +192,7 @@ static void apic_eoi(unsigned irq)
     lapic_write(LAPIC_EOI, 0);
 }
 
-/* the running CPU's local APIC is done with its interrupt (an IPI) */
+/** the running CPU's local APIC is done with its interrupt (an IPI) */
 void x86_lapic_eoi(void)
 {
     lapic_write(LAPIC_EOI, 0);
@@ -216,7 +216,7 @@ static struct x86_irq_chip apic_chip = {
     .timer    = "lapic",
 };
 
-/* MSI: the device's message is the interrupt, its masking the device's
+/** MSI: the device's message is the interrupt, its masking the device's
  * (pci.c), the local APIC's EOI */
 static void msi_nothing(unsigned irq)
 {
@@ -235,7 +235,7 @@ static struct x86_irq_chip msi_chip = {
     .describe = msi_describe,
 };
 
-/* an IRQ for a device's MSI, to `handler': the message's address and data
+/** an IRQ for a device's MSI, to `handler': the message's address and data
  * (to the boot CPU's local APIC, the IRQ's vector, edge); -1 without the
  * APIC (the 8259 gets no MSI) or a free IRQ */
 int arch_msi_alloc(void (*handler)(), uint64_t *addr, uint32_t *data)
@@ -255,7 +255,7 @@ int arch_msi_alloc(void (*handler)(), uint64_t *addr, uint32_t *data)
     return irq;
 }
 
-/* the CPU has a local APIC (CPUID 1, EDX bit 9) */
+/** the CPU has a local APIC (CPUID 1, EDX bit 9) */
 static int cpu_has_apic(void)
 {
     uint32_t a, b, c, d;
@@ -264,7 +264,7 @@ static int cpu_has_apic(void)
     return !!(d & (1 << 9));
 }
 
-/* the running CPU's local APIC: enabled (spurious vector 0xFF), its timer
+/** the running CPU's local APIC: enabled (spurious vector 0xFF), its timer
  * off, the NMI's LINT as the MADT says, the other masked (the 8259's) */
 void x86_lapic_cpu_setup(void)
 {
@@ -278,7 +278,7 @@ void x86_lapic_cpu_setup(void)
     lapic_write(LAPIC_SVR, SVR_ENABLE | X86_SPURIOUS_VECTOR);
 }
 
-/* the CPUs' local APIC IDs (the boot CPU's among them), into `ids': how
+/** the CPUs' local APIC IDs (the boot CPU's among them), into `ids': how
  * many, 0 without the APIC */
 int x86_apic_cpus(uint32_t *ids, int max)
 {
@@ -293,7 +293,7 @@ int x86_apic_cpus(uint32_t *ids, int max)
     return n;
 }
 
-/* an IPI, `icr' (its delivery mode, vector, ...) to the local APIC `id',
+/** an IPI, `icr' (its delivery mode, vector, ...) to the local APIC `id',
  * once it is sent */
 void x86_lapic_ipi(uint32_t id, uint32_t icr)
 {
@@ -304,7 +304,7 @@ void x86_lapic_ipi(uint32_t id, uint32_t icr)
         ;
 }
 
-/* 0 if the APIC brings the interrupts from now on */
+/** 0 if the APIC brings the interrupts from now on */
 int x86_apic_setup(void)
 {
     const char *arg = NULL;
@@ -411,7 +411,7 @@ int x86_apic_setup(void)
     return 0;
 }
 
-/* the timer's counts in `ns' (divided by 16): from the clock if it's
+/** the timer's counts in `ns' (divided by 16): from the clock if it's
  * precise, else from the PIT's channel 2 */
 static uint32_t timer_calibrate(uint32_t ns)
 {
@@ -436,7 +436,7 @@ static uint32_t timer_calibrate(uint32_t ns)
     return (uint32_t) ((uint64_t) counted * ns / (window_us * 1000ULL));
 }
 
-/* the tick, every `period_ns', to `handler'; the period it is */
+/** the tick, every `period_ns', to `handler'; the period it is */
 uint32_t x86_lapic_timer_setup(uint32_t period_ns, x86_irq_handler_t handler)
 {
     timer_count = timer_calibrate(period_ns);
@@ -452,7 +452,7 @@ uint32_t x86_lapic_timer_setup(uint32_t period_ns, x86_irq_handler_t handler)
     return period_ns;
 }
 
-/* the running CPU's timer, as the boot CPU's (the scheduler's tick on
+/** the running CPU's timer, as the boot CPU's (the scheduler's tick on
  * each, once it was calibrated) */
 void x86_lapic_timer_cpu_start(void)
 {

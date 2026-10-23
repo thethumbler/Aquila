@@ -4,8 +4,7 @@
 #include <dev/dev.h>
 
 /**
- * \ingroup vfs
- * \brief read data from a vnode, through an iobuf
+ * read data from a vnode, through an iobuf
  */
 ssize_t vfs_read_io(struct vnode *vnode, off_t off, struct iobuf *io)
 {
@@ -31,8 +30,7 @@ ssize_t vfs_read_io(struct vnode *vnode, off_t off, struct iobuf *io)
 }
 
 /**
- * \ingroup vfs
- * \brief read data from a vnode into a kernel buffer
+ * read data from a vnode into a kernel buffer
  */
 ssize_t vfs_read(struct vnode *vnode, off_t off, size_t size, void *buf)
 {

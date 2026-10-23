@@ -33,7 +33,7 @@ struct idt_ptr {
 #define DPL0 0
 #define DPL3 3
 
-/* Sets Interrupt gates in Kernel Code Segment */
+/** Sets Interrupt gates in Kernel Code Segment */
 void x86_idt_gate_set(uint32_t id, uintptr_t offset)
 {
     idt[id].offset_lo  = (offset >> 0x00) & 0xFFFF;
@@ -48,7 +48,7 @@ void x86_idt_gate_set(uint32_t id, uintptr_t offset)
     idt[id].flags      = 0x0E;
 }
 
-/* Sets Interrupt gates in User Code Segment */
+/** Sets Interrupt gates in User Code Segment */
 void x86_idt_gate_user_set(uint32_t id, uintptr_t offset)
 {
     idt[id].offset_lo  = (offset >> 0x00) & 0xFFFF;

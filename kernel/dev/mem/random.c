@@ -1,4 +1,4 @@
-/*
+/** \file
  *          Random numbers
  *
  * ChaCha20 as a generator: its key is made from a pool that the cycle
@@ -60,7 +60,7 @@ void random_add(uint32_t value)
     pool[pool_i++ % 8] ^= value;
 }
 
-/* the pool and the time into the key */
+/** the pool and the time into the key */
 static void random_stir(void)
 {
     random_add((uint32_t) arch_cycles());
@@ -131,7 +131,7 @@ static ssize_t randomdev_read(struct devid *dd __unused, off_t offset __unused, 
     return done;
 }
 
-/* what is written is stirred in */
+/** what is written is stirred in */
 static ssize_t randomdev_write(struct devid *dd __unused, off_t offset __unused, struct iobuf *io)
 {
     uint8_t buf[256];

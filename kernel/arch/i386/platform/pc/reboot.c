@@ -20,7 +20,7 @@ void arch_halt(void)
     }
 }
 
-/* the machine stays halted without ACPI */
+/** the machine stays halted without ACPI */
 void arch_poweroff(void)
 {
     if (x86_acpi_poweroff)

@@ -1,4 +1,4 @@
-/*
+/** \file
  * iobuf: moving bytes into and out of a read's or a write's buffer
  * (fs/iobuf.h)
  */
@@ -18,7 +18,7 @@ void iobuf_init(struct iobuf *io, void *buf, size_t len, int user)
     io->fault = 0;
 }
 
-/*
+/**
  * Up to n bytes between the buffer and the kernel's kbuf (out: into the
  * buffer), from where the buffer is, segment by segment: how many (fewer:
  * a fault stopped it), -EFAULT if a fault came first. The buffer isn't

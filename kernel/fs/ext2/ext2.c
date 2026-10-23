@@ -1,6 +1,5 @@
-/**
- * \defgroup fs-ext2 kernel/fs/ext2
- * \brief ext2 filesystem
+/** \file
+ * ext2 filesystem
  */
 #include <core/panic.h>
 #include <core/module.h>

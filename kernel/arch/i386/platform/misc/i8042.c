@@ -29,7 +29,7 @@ static uint8_t read_status(void)
     return io_in8(&i8042_ioaddr, STATUS_PORT);
 }
 
-/* the controller has a byte for us (its output buffer is full): the
+/** the controller has a byte for us (its output buffer is full): the
  * interrupt comes when it has, there is nothing to wait for; one with
  * nothing to read is spurious */
 static int has_byte(void)
@@ -88,7 +88,7 @@ void x86_i8042_handler_register(int channel, void (*fun)(int))
     }
 }
 
-/* the controller takes a byte, -1 if it doesn't in time */
+/** the controller takes a byte, -1 if it doesn't in time */
 static int write_wait(void)
 {
     for (int i = 0; i < 100000; ++i)
@@ -98,7 +98,7 @@ static int write_wait(void)
     return -1;
 }
 
-/* a byte to the second port's device (the mouse), its replies come as
+/** a byte to the second port's device (the mouse), its replies come as
  * its interrupts */
 int x86_i8042_aux_write(uint8_t byte)
 {

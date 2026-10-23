@@ -161,7 +161,7 @@ struct dev pcidev = {
     .probe = pci_prope,
 };
 
-/*
+/**
  * Used by chipset driver to initalize PCI bus
  */
 void pci_ioaddr_set(struct ioaddr *io)
@@ -215,7 +215,7 @@ uint32_t pci_read_bar(struct pci_dev *dev, uint8_t id)
 #define PCI_COMMAND_MASTER  0x0004
 #define PCI_INTERRUPT_LINE  0x3C
 
-/*
+/**
  * BAR `id' of `dev': its address and size (the size is what the device
  * keeps of all ones written to it, decoding off meanwhile), a 64-bit
  * memory BAR takes the next one too. -1 if it decodes nothing.
@@ -256,7 +256,7 @@ int pci_bar(struct pci_dev *dev, int id, struct pci_bar *bar)
     return size_lo ? 0 : -1;
 }
 
-/* decoding its memory and ports, and mastering the bus (DMA) */
+/** decoding its memory and ports, and mastering the bus (DMA) */
 void pci_enable(struct pci_dev *dev)
 {
     uint16_t command = pci_reg16_read(dev, PCI_COMMAND);
@@ -264,7 +264,7 @@ void pci_enable(struct pci_dev *dev)
         command | PCI_COMMAND_IO | PCI_COMMAND_MEMORY | PCI_COMMAND_MASTER);
 }
 
-/* the interrupt (of the PIC) its pin is routed to, as the firmware set */
+/** the interrupt (of the PIC) its pin is routed to, as the firmware set */
 uint8_t pci_irq_line(struct pci_dev *dev)
 {
     return pci_reg8_read(dev, PCI_INTERRUPT_LINE);
@@ -275,7 +275,7 @@ uint8_t pci_irq_line(struct pci_dev *dev)
 #define PCI_CAPABILITIES        0x34
 #define PCI_COMMAND_INTX_OFF    0x400
 
-/* the offset of its capability `id' (PCI_CAP_*), 0 if it has none */
+/** the offset of its capability `id' (PCI_CAP_*), 0 if it has none */
 uint8_t pci_cap_find(struct pci_dev *dev, uint8_t id)
 {
     if (!(pci_reg16_read(dev, PCI_STATUS) & PCI_STATUS_CAP_LIST))
@@ -302,7 +302,7 @@ uint8_t pci_cap_find(struct pci_dev *dev, uint8_t id)
 #define MSI_CTRL_MME            0x0070      /* the messages enabled: 1 */
 #define MSI_CTRL_64BIT          0x0080
 
-/*
+/**
  * The device's interrupts as messages (MSI): one, its IRQ to `handler';
  * its legacy line (INTx) off. The IRQ, -1 if it can't (no capability, or
  * the architecture takes no MSI: the line it is, then).

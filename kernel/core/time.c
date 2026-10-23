@@ -10,7 +10,7 @@ static time_t clock_base_sec;
 static uint64_t clock_base_ns;
 static int clock_set;
 
-/* the wall clock (CLOCK_REALTIME) */
+/** the wall clock (CLOCK_REALTIME) */
 int gettime(struct timespec *ts)
 {
     if (!clock_set) {
@@ -31,7 +31,7 @@ int gettime(struct timespec *ts)
     return 0;
 }
 
-/*
+/**
  * The real time clock again (now and then): the monotonic clock, which
  * the wall clock follows, may count a little fast or slow; 2 s or more
  * from the RTC (which counts seconds), the wall clock is the RTC's again

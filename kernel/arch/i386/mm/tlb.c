@@ -1,4 +1,4 @@
-/*
+/** \file
  *          The TLBs: each CPU's, flushed when a mapping changes
  *
  * A CPU caches the mappings it uses in its TLB. When the tables change
@@ -61,7 +61,7 @@ static void flush(vaddr_t sva, vaddr_t eva)
         asm volatile("invlpg (%0)" :: "r"(va) : "memory");
 }
 
-/* what the request asks of the running CPU */
+/** what the request asks of the running CPU */
 static void request_do(struct pmap *pmap, vaddr_t sva, vaddr_t eva, int leave)
 {
     struct pmap *loaded = curcpu()->arch.pmap;
@@ -74,7 +74,7 @@ static void request_do(struct pmap *pmap, vaddr_t sva, vaddr_t eva, int leave)
     }
 }
 
-/* the IPI's handler, and the lock's wait: the request, if it's for us */
+/** the IPI's handler, and the lock's wait: the request, if it's for us */
 void x86_tlb_ipi(void)
 {
     uint32_t me = 1U << curcpu()->id;
@@ -93,7 +93,7 @@ void arch_lock_spin(void)
     asm volatile("pause");
 }
 
-/* the lock taken: the kernel's mappings as they are now */
+/** the lock taken: the kernel's mappings as they are now */
 void arch_lock_taken(void)
 {
     struct cpu *cpu = curcpu();
@@ -135,7 +135,7 @@ void tlb_shootdown(struct pmap *pmap, vaddr_t sva, vaddr_t eva, int leave)
         asm volatile("pause");
 }
 
-/* the running CPU switched from the tables `from' (NULL: none) to `to' */
+/** the running CPU switched from the tables `from' (NULL: none) to `to' */
 void pmap_loaded(struct pmap *from, struct pmap *to)
 {
     uint32_t me = 1U << curcpu()->id;

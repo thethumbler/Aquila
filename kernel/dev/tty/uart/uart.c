@@ -13,7 +13,7 @@
 #define UART_RING 4096
 static struct uart *devices[192] = {0};   /* Registered devices */
 
-/* Called when data is received */
+/** Called when data is received */
 void uart_recieve_handler(struct uart *u, size_t size)
 {
     char buf[UART_BUF];
@@ -26,7 +26,7 @@ void uart_recieve_handler(struct uart *u, size_t size)
     thread_queue_wakeup(&u->read_queue);
 }
 
-/* Called when data is ready to be transmitted */
+/** Called when data is ready to be transmitted */
 void uart_transmit_handler(struct uart *u, size_t size)
 {
     size_t len = ringbuf_available(u->out);
@@ -41,7 +41,7 @@ void uart_transmit_handler(struct uart *u, size_t size)
     thread_queue_wakeup(&u->write_queue);
 }
 
-/* TTY Interface */
+/** TTY Interface */
 ssize_t uart_master_write(struct tty *tty, size_t size, void *buf)
 {
     struct uart *u = (struct uart *) tty->p;
@@ -67,7 +67,7 @@ ssize_t uart_slave_write(struct tty *tty, size_t size, void *buf)
 
 #define UART_MAX 192
 
-/* uart minors start at 64 */
+/** uart minors start at 64 */
 static struct uart *uart_get(devid_t minor)
 {
     if (minor < 64 || minor - 64 >= UART_MAX)
@@ -102,7 +102,7 @@ ssize_t uart_write(struct devid *dd, off_t offset __unused, struct iobuf *io)
     return tty_write_iobuf(u->tty, io, tty_slave_write);
 }
 
-/* a read found no data */
+/** a read found no data */
 static int uart_file_eof(struct file *file)
 {
     struct uart *u = uart_get(DEV_MINOR(file->vnode->rdev));
@@ -128,7 +128,7 @@ int uart_ioctl(struct devid *dd, int request, void *argp)
     return tty_ioctl(u->tty, request, argp);  
 }
 
-/* the uart's buffers and terminal, the first time it's opened */
+/** the uart's buffers and terminal, the first time it's opened */
 static int uart_setup(struct uart *u, struct vnode *vnode)
 {
     struct ringbuf *in = ringbuf_new(UART_RING), *out = ringbuf_new(UART_RING);

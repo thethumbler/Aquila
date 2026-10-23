@@ -1,6 +1,5 @@
-/**
- * \defgroup vfs kernel/vfs
- * \brief virtual filesystem
+/** \file
+ * virtual filesystem
  */
 
 #include <core/system.h>
@@ -34,8 +33,7 @@ int vfs_mount_root(struct vnode *vnode)
 }
 
 /**
- * \ingroup vfs
- * \brief the filesystem whose root is `root' is mounted on directory
+ * the filesystem whose root is `root' is mounted on directory
  * `dir' (which the mount keeps: a reference); on the root, it is the root
  */
 int vfs_bind(struct vnode *dir, struct vnode *root)
@@ -62,8 +60,7 @@ void vfs_init(void)
 }
 
 /**
- * \ingroup vfs
- * \brief register a new filesystem handler
+ * register a new filesystem handler
  */
 int vfs_install(struct fs *fs)
 {
@@ -83,7 +80,7 @@ int vfs_install(struct fs *fs)
 
 /* ================== VFS high level mappings ================== */
 
-/* check `mode' (VFS_R, VFS_W, VFS_X) access to vnode by the user of uio */
+/** check `mode' (VFS_R, VFS_W, VFS_X) access to vnode by the user of uio */
 int vfs_access(struct vnode *vnode, struct uio *uio, int mode)
 {
     /* root may do anything, but only execute files that have an execute bit */

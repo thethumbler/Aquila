@@ -56,7 +56,7 @@ int minix_inode_write(struct minix *desc, ino_t ino, struct minix_inode *ref)
     return 0;
 }
 
-/*
+/**
  * The tree zone `idx' of a file is in: its root's slot in zones[] (0 to 6
  * the direct zones, 7 the singly indirect one, 8 the doubly), its depth
  * (0: the slot is the zone's, 1 or 2: the levels of indirect zones above
@@ -91,13 +91,13 @@ static int zone_tree(struct minix *desc, size_t idx, int *slot, size_t *rel)
     return -EFBIG;
 }
 
-/* the data zones under an indirect zone `depth' levels above them */
+/** the data zones under an indirect zone `depth' levels above them */
 static size_t zone_span(struct minix *desc, int depth)
 {
     return depth == 2 ? desc->bs / sizeof(uint16_t) : 1;
 }
 
-/* zone `idx' of a file into `buf' (zeros where it's sparse) */
+/** zone `idx' of a file into `buf' (zeros where it's sparse) */
 ssize_t minix_inode_block_read(struct minix *desc, struct minix_inode *m_inode, size_t idx, void *buf)
 {
     size_t bs = desc->bs;
@@ -135,7 +135,7 @@ ssize_t minix_inode_block_read(struct minix *desc, struct minix_inode *m_inode, 
     return r == (ssize_t) bs ? 0 : r < 0 ? r : -EIO;
 }
 
-/* a new zone for an indirect table: zeroed, on the disk and in the cache
+/** a new zone for an indirect table: zeroed, on the disk and in the cache
  * (it may have been one before) */
 static int table_alloc(struct minix *desc, blk_t *zone)
 {
@@ -154,7 +154,7 @@ static int table_alloc(struct minix *desc, blk_t *zone)
     return r == (ssize_t) desc->bs ? 0 : r < 0 ? r : -EIO;
 }
 
-/* `buf' as zone `idx' of a file, the zones it needs allocated */
+/** `buf' as zone `idx' of a file, the zones it needs allocated */
 ssize_t minix_inode_block_write(struct minix *desc, struct minix_inode *inode, ino_t ino, size_t idx, void *buf)
 {
     int slot, err = 0, changed = 0;
@@ -220,7 +220,7 @@ ssize_t minix_inode_block_write(struct minix *desc, struct minix_inode *inode, i
     return r == (ssize_t) desc->bs ? 0 : r < 0 ? r : -EIO;
 }
 
-/* free the zones of the tree at `zone' (a data zone at depth 0, else an
+/** free the zones of the tree at `zone' (a data zone at depth 0, else an
  * indirect zone `depth' levels above the data), from data zone `from' of
  * the tree on; returns the zone, 0 if it was freed (a table that can't be
  * read stays, with what's under it) */
@@ -250,7 +250,7 @@ static blk_t free_tree(struct minix *desc, blk_t zone, int depth, size_t from)
     return 0;
 }
 
-/* free the zones of `inode' from data zone `from' on */
+/** free the zones of `inode' from data zone `from' on */
 void minix_zones_free(struct minix *desc, struct minix_inode *inode, size_t from)
 {
     size_t p = desc->bs / sizeof(uint16_t), base = MINIX_DIRECT_ZONES;

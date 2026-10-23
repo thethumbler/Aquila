@@ -1,4 +1,4 @@
-/*
+/** \file
  * TCP's output: segments from the send buffer, as the window (the
  * peer's, and the congestion window) lets them go; retransmission (RFC
  * 6298) and the zero window's probes, from the same timer; ACKs, delayed
@@ -25,7 +25,7 @@
 
 static void rexmt_timeout(void *arg);
 
-/* the most data a segment of ours has: the interface's MTU, less the
+/** the most data a segment of ours has: the interface's MTU, less the
  * headers */
 static uint16_t our_mss(struct tcp_pcb *pcb)
 {
@@ -33,7 +33,7 @@ static uint16_t our_mss(struct tcp_pcb *pcb)
     return netif ? netif->mtu - sizeof(struct ipv4_hdr) - sizeof(struct tcp_hdr) : TCP_MSS_DEFAULT;
 }
 
-/*
+/**
  * The window advertised: the room in rcvbuf. Its right edge doesn't move
  * by less than a segment (or half the buffer): no small windows (RFC 9293
  * 3.8.6.2.2, the receiver's silly window avoidance), and it never moves
@@ -51,7 +51,7 @@ uint16_t tcp_rcv_window(struct tcp_pcb *pcb)
     return room > 0xffff ? 0xffff : room;
 }
 
-/* a segment of `len' bytes of sndbuf from `off', at `seq'; the ACK is
+/** a segment of `len' bytes of sndbuf from `off', at `seq'; the ACK is
  * rcv_nxt's if TH_ACK */
 static int segment(struct tcp_pcb *pcb, uint32_t seq, int flags, size_t off, size_t len)
 {
@@ -111,7 +111,7 @@ void tcp_rexmt_start(struct tcp_pcb *pcb)
         net_callout_set(&pcb->rexmt, pcb->rto, rexmt_timeout, pcb);
 }
 
-/* SYN, or SYN and ACK (SYN_RECEIVED), its retransmission too */
+/** SYN, or SYN and ACK (SYN_RECEIVED), its retransmission too */
 void tcp_send_syn(struct tcp_pcb *pcb)
 {
     int flags = TH_SYN | (pcb->state == TCP_SYN_RECEIVED ? TH_ACK : 0);
@@ -134,7 +134,7 @@ void tcp_send_ack(struct tcp_pcb *pcb)
     segment(pcb, pcb->snd_nxt, TH_ACK, 0, 0);
 }
 
-/* a keepalive probe: a byte already acked (none of it), for an ACK */
+/** a keepalive probe: a byte already acked (none of it), for an ACK */
 void tcp_send_keepalive(struct tcp_pcb *pcb)
 {
     segment(pcb, pcb->snd_una - 1, TH_ACK, 0, 0);
@@ -145,7 +145,7 @@ void tcp_send_rst(struct tcp_pcb *pcb)
     segment(pcb, pcb->snd_nxt, TH_RST | TH_ACK, 0, 0);
 }
 
-/* a segment for no connection: RST (RFC 9293 3.10.7.1) */
+/** a segment for no connection: RST (RFC 9293 3.10.7.1) */
 void tcp_reply_rst(struct netif *netif, const struct ipv4_hdr *ih, const struct tcp_hdr *th, size_t len)
 {
     if (th->flags & TH_RST)
@@ -177,7 +177,7 @@ void tcp_reply_rst(struct netif *netif, const struct ipv4_hdr *ih, const struct 
     ipv4_output(netif, ih->dst, ih->src, IP_PROTO_TCP, nb);
 }
 
-/* the states the data and FIN are sent in */
+/** the states the data and FIN are sent in */
 static int sending(struct tcp_pcb *pcb)
 {
     switch (pcb->state) {
@@ -192,7 +192,7 @@ static int sending(struct tcp_pcb *pcb)
     return 0;
 }
 
-/*
+/**
  * As much as the windows let go: segments of at most mss bytes; a small
  * one only if it's the last of the data and nothing is unacked (Nagle,
  * unless TCP_NODELAY), and not because the peer's window is small (the
@@ -259,7 +259,7 @@ void tcp_output(struct tcp_pcb *pcb)
     }
 }
 
-/* RFC 6298 */
+/** RFC 6298 */
 void tcp_rtt_update(struct tcp_pcb *pcb, uint64_t rtt)
 {
     if (!pcb->srtt) {
@@ -281,7 +281,7 @@ static void dack_timeout(void *arg)
     tcp_send_ack(arg);
 }
 
-/* a segment to ack: now if it's the second, else in DACK_DELAY */
+/** a segment to ack: now if it's the second, else in DACK_DELAY */
 void tcp_dack(struct tcp_pcb *pcb)
 {
     if (++pcb->ack_pending >= 2)

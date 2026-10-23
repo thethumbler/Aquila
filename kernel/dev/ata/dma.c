@@ -1,4 +1,4 @@
-/*
+/** \file
  * ATA bus master DMA (IDE controllers, as QEMU's PIIX): the controller
  * moves the data of a command to or from memory itself, and the request
  * waits for the drive's interrupt. PIO moves it a word at a time through
@@ -32,7 +32,7 @@
 #define DMA_BUF_SIZE    (64 * 1024)
 #define DMA_MAX_SECTORS (DMA_BUF_SIZE / 512)
 
-/* physical region descriptor */
+/** physical region descriptor */
 struct prd {
     uint32_t addr;
     uint16_t size;      /* 0 is 64 KiB */
@@ -50,7 +50,7 @@ static int channel_index(struct ata_drive *drive)
     return drive->id / 2;
 }
 
-/* the transfer is over: what the controller and the drive say, which
+/** the transfer is over: what the controller and the drive say, which
  * also acknowledges the interrupt */
 static void dma_complete(struct ata_channel *ch, uint8_t bm_status)
 {
@@ -60,7 +60,7 @@ static void dma_complete(struct ata_channel *ch, uint8_t bm_status)
     ch->done = 1;
 }
 
-/* the channel's interrupt */
+/** the channel's interrupt */
 void dma_irq(struct ata_channel *ch)
 {
     uint8_t bm_status = ch->bm.addr ? io_in8(&ch->bm, BM_STATUS) : 0;
@@ -165,7 +165,7 @@ static ssize_t dma_write(struct ata_drive *drive, uint64_t lba, size_t count, vo
     return 0;
 }
 
-/* DMA for a drive that can, if its controller can; 0 if it does now */
+/** DMA for a drive that can, if its controller can; 0 if it does now */
 int dma_init(struct ata_drive *drive)
 {
     if (!drive->channel->bm.addr || !(drive->capabilities & ATA_CAP_DMA))

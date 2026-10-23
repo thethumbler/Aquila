@@ -12,8 +12,7 @@ static int vcache_eq(void *_a, void *_b)
 }
 
 /**
- * \ingroup vfs
- * \brief initialize vnode caching structure
+ * initialize vnode caching structure
  */
 void vcache_init(struct vcache *vcache)
 {

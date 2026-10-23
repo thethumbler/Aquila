@@ -17,8 +17,7 @@ struct session;
 struct tty;
 
 /**
- * \ingroup sys
- * \brief session
+ * session
  */
 struct session {
     /** Session ID */
@@ -37,7 +36,7 @@ struct session {
     struct qnode *qnode;
 };
 
-/*
+/**
  * A file descriptor: the open file it refers to (fs/file.c, shared with
  * the descriptors dup() and fork() copied), and its own flags
  */
@@ -49,8 +48,7 @@ struct fd {
 #define FD_RESERVED ((struct file *) -1)
 
 /**
- * \ingroup sys
- * \brief process Group
+ * process Group
  */
 struct pgroup {
     /** Process Group ID */
@@ -71,8 +69,7 @@ struct pgroup {
 };
 
 /**
- * \ingroup sys
- * \brief process
+ * process
  */
 struct proc {
     /** Process ID */

@@ -105,7 +105,7 @@ static ssize_t pio_write_sectors(struct ata_drive *drive, uint64_t lba, size_t c
     return 0;
 }
 
-/* writes in the drive's cache to the disk */
+/** writes in the drive's cache to the disk */
 static int pio_flush(struct ata_drive *drive)
 {
     ata_select_drive(drive, drive->mode);

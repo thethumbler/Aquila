@@ -9,8 +9,7 @@
 #include <sys/callout.h>
 
 /**
- * \ingroup net
- * \brief TCP (RFC 9293), net/inet/tcp_*.c
+ * TCP (RFC 9293), net/inet/tcp_*.c
  */
 
 struct tcp_hdr {
@@ -54,8 +53,7 @@ enum tcp_state {
 #define TCP_MSS_DEFAULT 536     /* the peer's, if it doesn't say (RFC 9293) */
 
 /**
- * \ingroup net
- * \brief a connection (its control block): it may outlive its socket
+ * a connection (its control block): it may outlive its socket
  * (sending what is left, TIME_WAIT), and has none until it is accepted
  */
 struct tcp_pcb {

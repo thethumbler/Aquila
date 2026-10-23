@@ -81,7 +81,7 @@ static int cmos_time(struct cmos_rtc *rtc)
     return 0;
 }
 
-/* FIXME: Should be elsewhere */
+/** FIXME: Should be elsewhere */
 int arch_time_get(struct timespec *ts)
 {
     struct cmos_rtc rtc;

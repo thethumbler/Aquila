@@ -2,8 +2,7 @@
 #include <minix.h>
 
 /**
- * \ingroup fs-minix
- * \brief allocate a new block
+ * allocate a new block
  */
 blk_t minix_block_alloc(struct minix *desc)
 {
@@ -25,8 +24,7 @@ blk_t minix_block_alloc(struct minix *desc)
 }
 
 /**
- * \ingroup fs-minix
- * \brief free a block
+ * free a block
  */
 void minix_block_free(struct minix *desc, blk_t blk)
 {
@@ -45,8 +43,7 @@ void minix_block_free(struct minix *desc, blk_t blk)
 }
 
 /**
- * \ingroup fs-minix
- * \brief read a block from device
+ * read a block from device
  */
 ssize_t minix_block_read(struct minix *desc, blk_t blk, void *buf)
 {
@@ -54,8 +51,7 @@ ssize_t minix_block_read(struct minix *desc, blk_t blk, void *buf)
 }
 
 /**
- * \ingroup fs-minix
- * \brief write a block to device
+ * write a block to device
  */
 ssize_t minix_block_write(struct minix *desc, blk_t blk, void *buf)
 {
@@ -63,8 +59,7 @@ ssize_t minix_block_write(struct minix *desc, blk_t blk, void *buf)
 }
 
 /**
- * \ingroup fs-minix
- * \brief get a block from block cache, cache in if not found
+ * get a block from block cache, cache in if not found
  */
 int minix_bcache_get(struct minix *desc, blk_t blk, void **data)
 {

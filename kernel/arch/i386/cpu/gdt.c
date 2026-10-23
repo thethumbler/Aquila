@@ -52,7 +52,7 @@ static const struct x86_gdt_entry gdt_template[X86_GDT_TSS] = {
 #define MSR_GS_BASE         0xC0000101
 #define MSR_KERNEL_GS_BASE  0xC0000102
 
-/* a system or data segment's base and limit (byte granular) */
+/** a system or data segment's base and limit (byte granular) */
 static void segment_set(struct x86_gdt_entry *e, uintptr_t base, size_t limit)
 {
     e->limit_lo = limit & 0xFFFF;
@@ -62,7 +62,7 @@ static void segment_set(struct x86_gdt_entry *e, uintptr_t base, size_t limit)
     e->base_hi  = (base >> 24) & 0xFF;
 }
 
-/*
+/**
  * The running CPU's GDT, `cpu''s: loaded, with its TSS (interrupts from
  * user mode take the stack `sp'), and %gs (curcpu()) set to `cpu'
  */

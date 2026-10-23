@@ -71,7 +71,7 @@ int vfs_chown(struct vnode *vnode, uid_t uid, gid_t gid, struct uio *uio)
     return store(vnode, &saved);
 }
 
-/* one time from utimensat(2), `now' for UTIME_NOW */
+/** one time from utimensat(2), `now' for UTIME_NOW */
 static void set_time(_time_t *time, const struct aquila_timespec *ts, struct timespec *now)
 {
     int32_t nsec = ts ? (int32_t) ts->tv_nsec : UTIME_NOW;
