@@ -241,13 +241,11 @@ static ssize_t procfs_buddyinfo(off_t off, size_t size, char *buf)
 
     int sz = 0;
 
-    /*
     sz += snprintf(buddyinfo_buf + sz, sizeof(buddyinfo_buf) - sz, "Zone DMA\n");
     for (int i = 0; i < BUDDY_MAX_ORDER + 1; ++i) {
         sz += snprintf(buddyinfo_buf + sz, sizeof(buddyinfo_buf) - sz, "2^%d: %d\n",
                 12 + i, buddies[0][i].usable);
     }
-    */
 
     sz += snprintf(buddyinfo_buf + sz, sizeof(buddyinfo_buf) - sz, "\nZone Normal\n");
     for (int i = 0; i < BUDDY_MAX_ORDER + 1; ++i) {

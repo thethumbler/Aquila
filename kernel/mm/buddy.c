@@ -12,6 +12,22 @@
 size_t k_total_mem, k_used_mem;
 static uintptr_t kstart = 0, kend = 0;
 
+/*
+ * What isn't free at boot is set unusable a block of BUDDY_MAX_BS at a
+ * time, the ranges kept; the first allocation gives the rest of those
+ * blocks back, a page at a time (buddy_reserved_done()).
+ */
+#define RESERVED_MAX    64
+
+static struct {
+    paddr_t start, end;
+} reserved[RESERVED_MAX];
+
+static int reserved_nr, reserved_done;
+
+/* the pages of each zone that are RAM (buddy_setup) */
+static size_t zone_blocks[BUDDY_ZONE_NR];
+
 /** the bitmaps are sized by the memory, from what mm_setup() set aside */
 static inline void *alloc(size_t size, size_t align)
 {
@@ -103,10 +119,17 @@ static void buddy_recursive_free(int zone, size_t order, size_t idx)
  * @param zone zone index
  * @param _sz chunk size
  */
+static void buddy_reserved_done(void);
+
+/** a block of `_sz' (rounded to a power of two) from `zone', or
+ * (paddr_t) -1 if it has none */
 paddr_t buddy_alloc(int zone, size_t _sz)
 {
     if (_sz > BUDDY_MAX_BS)
         panic("Cannot allocate buddy");
+
+    if (!reserved_done)
+        buddy_reserved_done();
 
     size_t sz = BUDDY_MIN_BS;
 
@@ -118,16 +141,13 @@ paddr_t buddy_alloc(int zone, size_t _sz)
         sz <<= 1;
     }
 
-    k_used_mem += sz;
-
     size_t idx = buddy_recursive_alloc(zone, order);
 
-    if (idx != (size_t) -1) {
-        return buddy_zone_offset[zone] + (uintptr_t) (idx * (BUDDY_MIN_BS << order));
-    } else {
-        panic("Cannot find free buddy");
-        //return (uintptr_t) NULL;
-    }
+    if (idx == (size_t) -1)
+        return (paddr_t) -1;
+
+    k_used_mem += sz;
+    return buddy_zone_offset[zone] + (uintptr_t) (idx * (BUDDY_MIN_BS << order));
 }
 
 void buddy_free(int zone, paddr_t addr, size_t size)
@@ -157,6 +177,17 @@ void buddy_set_unusable(paddr_t addr, size_t size)
     if (!size) return;
 
     printk("buddy: set unusable: %p-%p\n", addr, addr+size-1);
+
+    if (reserved_done)
+        panic("buddy: memory set unusable after the first allocation");
+
+    if (reserved_nr == RESERVED_MAX)
+        panic("buddy: too many unusable ranges");
+
+    /* its pages, whole */
+    reserved[reserved_nr].start = addr & ~(paddr_t) (BUDDY_MIN_BS - 1);
+    reserved[reserved_nr].end   = (addr + size + BUDDY_MIN_BS - 1) & ~(paddr_t) (BUDDY_MIN_BS - 1);
+    reserved_nr++;
 
     /* End of region (exclusive), clamped on wrap-around */
     uintptr_t end = addr + size;
@@ -199,9 +230,52 @@ void buddy_set_unusable(paddr_t addr, size_t size)
 
         if (ffidx >= start_idx && ffidx <= end_idx)
             buddy->first_free_idx = end_idx + 1;
-
-        k_used_mem += zone_size;
     }
+}
+
+static int reserved_page(paddr_t page)
+{
+    for (int i = 0; i < reserved_nr; ++i)
+        if (page >= reserved[i].start && page < reserved[i].end)
+            return 1;
+
+    return 0;
+}
+
+/**
+ * The blocks set unusable at boot: their pages that no range covers are
+ * freed (and merge back into bigger blocks as they would), the others stay
+ * used. What's free then is RAM less what's reserved, to the page.
+ */
+static void buddy_reserved_done(void)
+{
+    size_t free = 0;
+
+    reserved_done = 1;
+
+    for (int zone = 0; zone < BUDDY_ZONE_NR; ++zone) {
+        struct buddy *top = &buddies[zone][BUDDY_MAX_ORDER];
+
+        for (size_t idx = 0; idx < zone_blocks[zone]; ++idx) {
+            if (!bitmap_check(&top->bitmap, idx)) {
+                free += BUDDY_MAX_BS;
+                continue;
+            }
+
+            paddr_t block = buddy_zone_offset[zone] + idx * BUDDY_MAX_BS;
+            size_t first = idx << BUDDY_MAX_ORDER;
+
+            for (size_t i = 0; i < (1U << BUDDY_MAX_ORDER); ++i) {
+                if (!reserved_page(block + i * BUDDY_MIN_BS)) {
+                    buddy_recursive_free(zone, 0, first + i);
+                    free += BUDDY_MIN_BS;
+                }
+            }
+        }
+    }
+
+    /* what /proc/meminfo's MemFree is: k_total_mem - k_used_mem */
+    k_used_mem = k_total_mem > free ? k_total_mem - free : 0;
 }
 
 int buddy_setup(size_t total_mem)
@@ -219,6 +293,8 @@ int buddy_setup(size_t total_mem)
 
         if (zone_end > zone_start)
             bits_cnt = (zone_end - zone_start) / BUDDY_MAX_BS;
+
+        zone_blocks[zone] = bits_cnt;
 
         if (!bits_cnt) {
             /* No memory in this zone, keep a single block marked as used */

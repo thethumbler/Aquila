@@ -60,8 +60,16 @@ size_t mm_page_ref(paddr_t paddr)
  */
 struct vm_page *mm_page_alloc(void)
 {
-    /* Get new frame */
+    /* a page above 16 MiB, or below once there's none left there (nothing
+     * needs memory an ISA device can reach) */
     paddr_t paddr = buddy_alloc(BUDDY_ZONE_NORMAL, PAGE_SIZE);
+
+    if (paddr == (paddr_t) -1)
+        paddr = buddy_alloc(BUDDY_ZONE_DMA, PAGE_SIZE);
+
+    if (paddr == (paddr_t) -1)
+        panic("out of memory");
+
     struct vm_page *vm_page = &PAGE(paddr);
 
     memset(vm_page, 0, sizeof(struct vm_page));
@@ -75,8 +83,10 @@ struct vm_page *mm_page_alloc(void)
  */
 void mm_page_dealloc(paddr_t paddr)
 {
-    /* (an address past its zone, buddy_free leaves alone) */
-    buddy_free(BUDDY_ZONE_NORMAL, paddr, PAGE_SIZE);
+    /* to the zone it came from (an address past RAM, buddy_free leaves
+     * alone) */
+    int zone = paddr < buddy_zone_offset[BUDDY_ZONE_NORMAL] ? BUDDY_ZONE_DMA : BUDDY_ZONE_NORMAL;
+    buddy_free(zone, paddr, PAGE_SIZE);
 }
 
 /** (the pages' references are the vm objects', not the mappings') */
@@ -299,8 +309,10 @@ void mm_setup(struct boot *boot)
     }
 #endif
 
-    /* the buddy allocator works in blocks of BUDDY_MAX_BS */
-    ram_end &= ~(paddr_t) (BUDDY_MAX_BS - 1);
+    /* the buddy allocator works in blocks of BUDDY_MAX_BS: up to the next
+     * one, past RAM is set unusable (mm_mark_unusable()) and only RAM is
+     * handed out (buddy_reserved_done()) */
+    ram_end = (ram_end + BUDDY_MAX_BS - 1) & ~(paddr_t) (BUDDY_MAX_BS - 1);
 
     printk("kernel: %ld MiB of memory, up to %p\n", ram >> 20, ram_end);
 
@@ -314,6 +326,9 @@ void mm_setup(struct boot *boot)
     pages = mm_boot_alloc(pages_size, sizeof(uintptr_t));
 
     buddy_setup(ram_end);
+
+    /* physical page 0 never: 0 is what "no page" is (no mapping) */
+    buddy_set_unusable(0, PAGE_SIZE);
 
     buddy_set_unusable(boot_mem_start, PAGE_ROUND(boot_mem_next) - boot_mem_start);
     mm_mark_unusable(boot, ram_end);

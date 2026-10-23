@@ -14,6 +14,8 @@
 #define BUDDY_ZONE_DMA      0
 #define BUDDY_ZONE_NORMAL   1
 
+extern uintptr_t buddy_zone_offset[];
+
 int     buddy_setup(size_t total_mem);
 paddr_t buddy_alloc(int zone, size_t size);
 void    buddy_free(int zone, paddr_t paddr, size_t size);

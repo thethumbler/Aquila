@@ -81,7 +81,7 @@ static void slab_page_free(struct slab *slab)
     paddr_t paddr = arch_page_get_mapping(kvm_space.pmap, vaddr);
 
     pmap_remove(kvm_space.pmap, vaddr, vaddr + PAGE_SIZE);
-    buddy_free(BUDDY_ZONE_NORMAL, paddr, PAGE_SIZE);
+    mm_page_dealloc(paddr);
     slab_used -= PAGE_SIZE;
 
     slab_map[i / 8] &= ~(1 << (i % 8));

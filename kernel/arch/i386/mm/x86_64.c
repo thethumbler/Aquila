@@ -73,7 +73,7 @@ static paddr_t table_alloc(void)
 
 static void table_free(paddr_t paddr)
 {
-    buddy_free(BUDDY_ZONE_NORMAL, paddr, PAGE_SIZE);
+    mm_page_dealloc(paddr);
 }
 
 /** the entry of the page table that maps `va' in `pmap', the tables on the
