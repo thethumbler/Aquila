@@ -47,53 +47,54 @@ int kdev_close(struct devid *dev __unused)
 
 ssize_t kdev_bread(struct devid *dd, off_t offset, size_t size, void *buf)
 {
-    //printk("kdev_bread(dd=%p, offset=%d, size=%d, buf=%p)\n", dd, offset, size, buf);
-
     struct dev *dev = kdev_get(dd);
-    size_t bs = dev->getbs(dd);
 
-    int err = 0;
-    ssize_t ret = 0;
+    if (!dev || !dev->bread || !dev->getbs)
+        return -ENXIO;
+
+    size_t bs = dev->getbs(dd);
+    ssize_t ret = 0, r = 0;
 
     char *cbuf = buf;
     char *bbuf = NULL;
 
+    /* a driver's bread() gives how many blocks it read: fewer, the
+     * device ended there, and so does what's read */
+
     /* Read up to block boundary */
     if (offset % bs) {
-        if (!bbuf && !(bbuf = kmalloc(bs, &M_KDEV_BLK, 0)))
+        if (!(bbuf = kmalloc(bs, &M_KDEV_BLK, 0)))
             return -ENOMEM;
 
         size_t start = MIN(bs - offset % bs, size);
 
-        if (start) {
-            if ((err = dev->bread(dd, offset/bs, 1, bbuf)) < 0)
-                goto error;
+        if ((r = dev->bread(dd, offset/bs, 1, bbuf)) < 1)
+            goto done;
 
-            memcpy(cbuf, bbuf + (offset % bs), start);
+        memcpy(cbuf, bbuf + (offset % bs), start);
 
-            ret    += start;
-            size   -= start;
-            cbuf   += start;
-            offset += start;
+        ret    += start;
+        size   -= start;
+        cbuf   += start;
+        offset += start;
 
-            if (!size)
-                goto done;
-        }
+        if (!size)
+            goto done;
     }
 
     /* Read entire blocks */
     size_t count = size/bs;
 
     if (count) {
-        if ((err = dev->bread(dd, offset/bs, count, cbuf)) < 0)
-            goto error;
+        if ((r = dev->bread(dd, offset/bs, count, cbuf)) < 0)
+            goto done;
 
-        ret    += count * bs;
-        size   -= count * bs;
-        cbuf   += count * bs;
-        offset += count * bs;
+        ret    += r * bs;
+        size   -= r * bs;
+        cbuf   += r * bs;
+        offset += r * bs;
 
-        if (!size)
+        if (!size || (size_t) r < count)
             goto done;
     }
 
@@ -101,77 +102,74 @@ ssize_t kdev_bread(struct devid *dd, off_t offset, size_t size, void *buf)
 
     if (end) {
         if (!bbuf && !(bbuf = kmalloc(bs, &M_KDEV_BLK, 0)))
-            return -ENOMEM;
+            return ret ? ret : -ENOMEM;
 
-        if ((err = dev->bread(dd, offset/bs, 1, bbuf)) < 0)
-            goto error;
+        if ((r = dev->bread(dd, offset/bs, 1, bbuf)) < 1)
+            goto done;
 
         memcpy(cbuf, bbuf, end);
         ret += end;
     }
 
 done:
-    if (bbuf)
-        kfree(bbuf);
+    kfree(bbuf);
 
-    return ret;
-
-error:
-    if (bbuf)
-        kfree(bbuf);
-
-    return err;
+    /* an error, if nothing was read before it */
+    return r < 0 && !ret ? r : ret;
 }
 
 ssize_t kdev_bwrite(struct devid *dd, off_t offset, size_t size, void *buf)
 {
     struct dev *dev = kdev_get(dd);
-    size_t bs = dev->getbs(dd);
 
-    ssize_t ret = 0, err = 0;
+    if (!dev || !dev->bread || !dev->bwrite || !dev->getbs)
+        return -ENXIO;
+
+    size_t bs = dev->getbs(dd);
+    ssize_t ret = 0, r = 0;
+
     char *cbuf = buf;
     char *bbuf = NULL;
 
+    /* as kdev_bread(): fewer blocks than asked, the device ended there */
+
     if (offset % bs) {
-        if (!bbuf && !(bbuf = kmalloc(bs, &M_KDEV_BLK, 0)))
+        if (!(bbuf = kmalloc(bs, &M_KDEV_BLK, 0)))
             return -ENOMEM;
 
         /* Write up to block boundary */
         size_t start = MIN(bs - offset % bs, size);
 
-        if (start) {
-            if ((err = dev->bread(dd, offset/bs, 1, bbuf)) < 0)
-                goto error;
+        if ((r = dev->bread(dd, offset/bs, 1, bbuf)) < 1)
+            goto done;
 
-            memcpy(bbuf + (offset % bs), cbuf, start);
+        memcpy(bbuf + (offset % bs), cbuf, start);
 
-            if ((err = dev->bwrite(dd, offset/bs, 1, bbuf)) < 0)
-                goto error;
+        if ((r = dev->bwrite(dd, offset/bs, 1, bbuf)) < 1)
+            goto done;
 
-            ret    += start;
-            size   -= start;
-            cbuf   += start;
-            offset += start;
+        ret    += start;
+        size   -= start;
+        cbuf   += start;
+        offset += start;
 
-            if (!size)
-                goto done;
-        }
+        if (!size)
+            goto done;
     }
-
 
     /* Write entire blocks */
     size_t count = size/bs;
 
     if (count) {
-        if ((err = dev->bwrite(dd, offset/bs, count, cbuf)) < 0)
-            goto error;
+        if ((r = dev->bwrite(dd, offset/bs, count, cbuf)) < 0)
+            goto done;
 
-        ret    += count * bs;
-        size   -= count * bs;
-        cbuf   += count * bs;
-        offset += count * bs;
+        ret    += r * bs;
+        size   -= r * bs;
+        cbuf   += r * bs;
+        offset += r * bs;
 
-        if (!size)
+        if (!size || (size_t) r < count)
             goto done;
     }
 
@@ -179,30 +177,28 @@ ssize_t kdev_bwrite(struct devid *dd, off_t offset, size_t size, void *buf)
 
     if (end) {
         if (!bbuf && !(bbuf = kmalloc(bs, &M_KDEV_BLK, 0)))
-            return -ENOMEM;
+            return ret ? ret : -ENOMEM;
 
-        if ((err = dev->bread(dd, offset/bs, 1, bbuf)) < 0)
-            goto error;
+        if ((r = dev->bread(dd, offset/bs, 1, bbuf)) < 1)
+            goto done;
 
         memcpy(bbuf, cbuf, end);
 
-        if ((err = dev->bwrite(dd, offset/bs, 1, bbuf)) < 0)
-            goto error;
+        if ((r = dev->bwrite(dd, offset/bs, 1, bbuf)) < 1)
+            goto done;
 
         ret += end;
     }
 
 done:
-    if (bbuf)
-        kfree(bbuf);
+    kfree(bbuf);
 
-    return ret;
+    /* an error, if nothing was written before it; nothing at all past
+     * the end, no room */
+    if (r < 0 && !ret)
+        return r;
 
-error:
-    if (bbuf)
-        kfree(bbuf);
-
-    return err;
+    return ret || !size ? ret : -ENOSPC;
 }
 
 /**
@@ -424,9 +420,6 @@ void kdev_chrdev_register(devid_t major, struct dev *dev)
     printk("kdev: registered chrdev %d: %s\n", major, dev->name);
 }
 
-/**
- * register a new block device
- */
 /** what was written to the block cache, and what block devices have in
  * their write caches, to the media */
 int kdev_sync(void)
@@ -440,6 +433,9 @@ int kdev_sync(void)
     return err;
 }
 
+/**
+ * register a new block device
+ */
 void kdev_blkdev_register(devid_t major, struct dev *dev)
 {
     blkdev[major] = dev; /* XXX */

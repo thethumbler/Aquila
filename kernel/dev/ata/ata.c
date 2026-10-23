@@ -220,7 +220,8 @@ static int ata_locate(struct devid *dd, int write, struct ata_drive **ref,
     return err;
 }
 
-/** sectors of the partition, from `offset' on: none past its end */
+/** sectors of the partition, from `offset' on: none past its end; how
+ * many were read (a block driver's bread) */
 static ssize_t ata_read(struct devid *dd, off_t offset, size_t size, void *buf)
 {
     struct ata_drive *drive;
@@ -234,7 +235,9 @@ static ssize_t ata_read(struct devid *dd, off_t offset, size_t size, void *buf)
         return 0;
 
     size = MIN(size, nsectors - offset);
-    return blkcache_read(drive, start + offset, size, buf, drive->max_lba, drive_read);
+    err = blkcache_read(drive, start + offset, size, buf, drive->max_lba, drive_read);
+
+    return err < 0 ? err : (ssize_t) size;
 }
 
 static ssize_t ata_write(struct devid *dd, off_t offset, size_t size, void *buf)
@@ -250,7 +253,9 @@ static ssize_t ata_write(struct devid *dd, off_t offset, size_t size, void *buf)
         return size ? -ENOSPC : 0;
 
     size = MIN(size, nsectors - offset);
-    return blkcache_write(drive, start + offset, size, buf, drive_write);
+    err = blkcache_write(drive, start + offset, size, buf, drive_write);
+
+    return err < 0 ? err : (ssize_t) size;
 }
 
 /**
