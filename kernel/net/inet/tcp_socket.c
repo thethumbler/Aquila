@@ -356,7 +356,11 @@ static int port_used(uint32_t addr, uint16_t port, int reuseaddr)
 static int bind_port(struct tcp_pcb *pcb, uint32_t addr, uint16_t port)
 {
     if (!port) {
-        static uint16_t next = PORT_FIRST;
+        /* from a random one on, the first free (RFC 6056, algorithm 1):
+         * the next port isn't the last one plus one, for anyone to guess */
+        uint16_t next;
+        random_get(&next, sizeof(next));
+        next = PORT_FIRST + next % (PORT_LAST - PORT_FIRST + 1);
 
         for (int i = 0; i <= PORT_LAST - PORT_FIRST; ++i) {
             uint16_t p = htons(next);

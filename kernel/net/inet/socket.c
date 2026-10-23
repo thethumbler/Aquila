@@ -10,6 +10,7 @@
  */
 
 #include <core/system.h>
+#include <dev/random.h>
 #include <core/string.h>
 #include <core/arch.h>
 #include <ds/queue.h>
@@ -82,7 +83,11 @@ static int port_used(uint8_t proto, uint32_t addr, uint16_t port)
 static int sock_bind(struct inet_sock *sock, uint32_t addr, uint16_t port)
 {
     if (!port) {
-        static uint16_t next = PORT_FIRST;
+        /* from a random one on, the first free (RFC 6056, algorithm 1):
+         * the next port isn't the last one plus one, for anyone to guess */
+        uint16_t next;
+        random_get(&next, sizeof(next));
+        next = PORT_FIRST + next % (PORT_LAST - PORT_FIRST + 1);
 
         for (int i = 0; i <= PORT_LAST - PORT_FIRST; ++i) {
             uint16_t p = htons(next);

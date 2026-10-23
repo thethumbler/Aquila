@@ -208,6 +208,17 @@ static void loopback(void)
     check("sendto", sendto(c, "hello", 5, lo, 7000), 5);
     check("sendto: bound to an ephemeral port", port_of(c) >= 49152, 1);
 
+    /* not one after the other, for anyone to guess (RFC 6056) */
+    int e[3];
+    for (int k = 0; k < 3; ++k) {
+        e[k] = udp();
+        sendto(e[k], "x", 1, lo, 7009);
+    }
+    check("ephemeral ports: not in sequence",
+          !(port_of(e[1]) == port_of(e[0]) + 1 && port_of(e[2]) == port_of(e[1]) + 1), 1);
+    for (int k = 0; k < 3; ++k)
+        SC(SYS_close, e[k], 0, 0);
+
     int avail = -1;
     check("FIONREAD", SC(SYS_ioctl, s, FIONREAD, &avail), 0);
     check("FIONREAD: the datagram", avail, 5);
