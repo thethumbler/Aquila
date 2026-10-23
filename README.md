@@ -99,6 +99,16 @@ make test           # or tests/run.sh
 boots the kernel in QEMU with test programs and checks the system built
 from source, see [tests/](tests/README.md).
 
+## Documentation
+
+How the kernel works, subsystem by subsystem, is in
+[docs/kernel/](docs/kernel/README.md). Its code reference, from the
+comments in the sources:
+
+```
+make docs           # build/docs/kernel/api/index.html (needs doxygen)
+```
+
 ## Layout
 
 | directory                    |                                                    |
@@ -115,6 +125,7 @@ from source, see [tests/](tests/README.md).
 | [boot/](boot/)               | bootloader configuration                           |
 | [configs/](configs/)         | kernel build configurations                        |
 | [tests/](tests/)             | QEMU based test suite                              |
+| [docs/](docs/)               | documentation: the kernel's design, its code reference's configuration |
 
 ## Features
 
