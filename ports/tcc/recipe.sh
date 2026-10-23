@@ -16,7 +16,11 @@ build()
     # a native compiler for AquilaOS, built by the cross compiler: static
     # executables by default (no dynamic linking), no dlopen() and no
     # threads; no -run, no bounds checker and backtraces (no-run.patch)
-    # (the code it makes is the system's, $ARCH's: i386 or x86_64)
+    # (the code it makes is the system's, $ARCH's: i386, x86_64 or aarch64,
+    # which tcc calls arm64)
+    local cpu=$ARCH
+    [ "$ARCH" = aarch64 ] && cpu=arm64
+
     ./configure --prefix=/usr --cpu="$ARCH" --cross-prefix="$TARGET-" --cc=gcc --ar=ar \
         --sysincludepaths=/usr/lib/tcc/include:/usr/include \
         --libpaths={B}:/usr/lib --crtprefix=/usr/lib --tcc-switches=-static \
@@ -30,7 +34,12 @@ build()
     # itself can't run here
     # (the sources are in AquilaOS's tree, its git commit isn't tcc's)
     GIT_DIR=/nonexistent make -j"$JOBS" tcc LIBS=-lm
-    make libtcc1.a LIBS=-lm "$ARCH-libtcc1-usegcc=yes"
+    # (arm64's armflush.o defines __clear_cache with tcc's builtin, gcc has
+    # none: libgcc's, added below, is the one)
+    local objs=()
+    [ "$cpu" = arm64 ] && objs=('OBJ-arm64=$(ARM64_O) $(LIN_O)')
+
+    make libtcc1.a LIBS=-lm "$cpu-libtcc1-usegcc=yes" "${objs[@]}"
 
     # gcc built the C library, which calls its helper functions (libgcc,
     # e.g. __divmoddi4): they are added after tcc's own, which tcc links

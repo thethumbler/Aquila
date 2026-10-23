@@ -153,6 +153,8 @@ initrd: userland $(if $(filter $(BUILDDIR)/contrib/root,$(CONTRIB_ROOT)),contrib
 	@$(MKDIR) $(ROOTFS)
 	@cd $(ROOTFS) && $(MKDIR) bin sbin dev mnt proc run tmp root home/live
 	@$(CP) -r $(SRCDIR)/rootfs/. $(ROOTFS)/
+	@# no virtual terminals (aarch64's virt): no logins on them
+	@$(if $(filter y,$(DEV_CONSOLE)),true,$(RM) $(ROOTFS)/etc/service/getty-tty[0-9])
 	@if [ -n "$(ROOTFS_OVERLAY)" ]; then $(CP) -r $(ROOTFS_OVERLAY)/. $(ROOTFS)/; fi
 	@# runit is init (contrib/runit)
 	@$(LN) -s /sbin/runit-init $(ROOTFS)/init
