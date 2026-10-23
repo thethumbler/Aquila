@@ -32,6 +32,7 @@ typedef uint16_t elf64_half;
 #define EM_860      0x0007
 #define EM_MIPS     0x0008
 #define EM_X86_64   0x003E
+#define EM_AARCH64  0x00B7
 
 #define EV_NONE     0x0000
 #define EV_CURRENT  0x0001

@@ -1,4 +1,4 @@
-dirs-y += pci/
+dirs-$(DEV_PCI) += pci/
 dirs-$(DEV_KEYBOARD) += kbd/
 dirs-$(DEV_FRAMEBUFFER) += fb/
 dirs-y += tty/

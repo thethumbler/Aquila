@@ -15,11 +15,15 @@
  * one), /dev/ttyS0 and up uarts */
 struct dev *sttydev_mux(struct devid *dd)
 {
+#ifdef CONFIG_DEV_UART
     if (dd->minor >= 64)
         return &uart;
+#endif
 
+#ifdef CONFIG_DEV_CONSOLE
     if (dd->minor <= VT_COUNT)
         return &vtdev;
+#endif
 
     return NULL;
 }
@@ -60,10 +64,19 @@ struct dev *ttydev_mux(struct devid *dd)
     switch (dd->minor) {
         case 0: /* /dev/tty */
             return &cttydev;
-        case 1: /* /dev/console, the first virtual terminal */
+        case 1: /* /dev/console, the first virtual terminal, or without
+                 * them the first uart (uart_get()) */
+#if defined(CONFIG_DEV_CONSOLE)
             return &vtdev;
+#elif defined(CONFIG_DEV_UART)
+            return &uart;
+#else
+            return NULL;
+#endif
+#ifdef CONFIG_DEV_PTY
         case 2: /* /dev/ptmx */
             return &ptmdev;
+#endif
     }
 
     return NULL;

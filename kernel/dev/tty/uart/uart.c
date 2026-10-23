@@ -76,6 +76,12 @@ ssize_t uart_slave_write(struct tty *tty, size_t size, void *buf)
 /** uart minors start at 64 */
 static struct uart *uart_get(devid_t minor)
 {
+#ifndef CONFIG_DEV_CONSOLE
+    /* no virtual terminals: /dev/console (5, 1) is the first uart */
+    if (minor == 1)
+        minor = 64;
+#endif
+
     if (minor < 64 || minor - 64 >= UART_MAX)
         return NULL;
 

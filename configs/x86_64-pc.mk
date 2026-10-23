@@ -61,12 +61,18 @@ PLATFORM_X86_MISC_CMOS=y
 DEV_FRAMEBUFFER=y
 # Virtual terminals (vt) on the framebuffer or VGA text mode
 DEV_CONSOLE=y
+# VGA text mode, when there's no framebuffer
+DEV_CONSOLE_VGA=y
 DEV_KEYBOARD=y
 DEV_MOUSE=y
 DEV_KEYBOARD_PS2=y
 DEV_UART=y
+# the PC's serial port (16550)
+DEV_UART_8250=y
 DEV_PTY=y
 DEV_MEMDEV=y
+# the PCI bus (configuration mechanism #1, the PC's ports)
+DEV_PCI=y
 DEV_ATA=y
 # Intel 8254x Ethernet (e1000)
 DEV_E1000=y

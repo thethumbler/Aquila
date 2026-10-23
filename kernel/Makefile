@@ -24,8 +24,12 @@ INCLUDES := \
 	-I$(KSRC)/include \
 	-I$(KSRC)
 
-KCFLAGS  := $(CFLAGS) $(INCLUDES) -MMD -MP
-KASFLAGS := $(ASFLAGS) $(INCLUDES) -MMD -MP
+# the configuration's options set to y, to C as CONFIG_<option> (as
+# Linux's): code that only some configurations have is #ifdef'd on them
+KCONFIG := $(foreach v,$(filter ARCH_% PLATFORM_% DEV_% FS_% NET_% INITRAMFS_% FBDEV_% X86_%,$(.VARIABLES)),$(if $(filter y,$($(v))),-DCONFIG_$(v)))
+
+KCFLAGS  := $(CFLAGS) $(INCLUDES) $(KCONFIG) -MMD -MP
+KASFLAGS := $(ASFLAGS) $(INCLUDES) $(KCONFIG) -MMD -MP
 
 #
 # Collect objects

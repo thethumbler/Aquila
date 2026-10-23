@@ -12,15 +12,18 @@
 #include <sys/elf.h>
 #include <mm/vm.h>
 
-/* the kernel's own class and machine, the only ones it runs */
+/* the kernel's own class and machine, the only ones it runs (the
+ * machine is the architecture's: its config.h) */
+#ifndef ELF_MACHINE
+#error "the architecture's config.h has no ELF_MACHINE"
+#endif
+
 #if ARCH_BITS==32
 #define ELF_CLASS       ELFCLASS32
-#define ELF_MACHINE     EM_386
 typedef struct elf32_hdr  elf_hdr;
 typedef struct elf32_phdr elf_phdr;
 #else
 #define ELF_CLASS       ELFCLASS64
-#define ELF_MACHINE     EM_X86_64
 typedef struct elf64_hdr  elf_hdr;
 typedef struct elf64_phdr elf_phdr;
 #endif

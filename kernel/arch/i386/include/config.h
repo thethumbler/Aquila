@@ -7,12 +7,18 @@
 #define ARCH_BITS 32
 #define MULTIBOOT_GFX   1
 
+/* the programs it runs (sys/binfmt/elf.c) */
+#define ELF_MACHINE      0x0003   /* EM_386 */
+
 #define UTSNAME_MACHINE  "i386"
 #else
 #define ARCH X86_64
 #define ARCH_X86_64
 #define ARCH_BITS 64
 #define MULTIBOOT_GFX   1
+
+/* the programs it runs (sys/binfmt/elf.c) */
+#define ELF_MACHINE      0x003E   /* EM_X86_64 */
 
 #define UTSNAME_MACHINE  "x86_64"
 #endif
