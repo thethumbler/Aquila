@@ -7,7 +7,7 @@
 #include <cpu/cpu.h>
 #include <cpu/io.h>
 
-#include <platform/misc.h>   /* XXX */
+#include <dev/irq.h>
 
 #define UART_MMIO   0
 
@@ -58,7 +58,7 @@ ssize_t uart_8250_transmit(struct uart *u __unused, char c)
     return 1;
 }
 
-void uart_8250_irq()
+static void uart_8250_irq(void *arg __unused)
 {
     /* every byte the FIFO has: one interrupt may come for several, and
      * another may not come for those left (v86's 16550 doesn't) */
@@ -101,7 +101,7 @@ void uart_8250_comm_init(struct uart *u __unused)
 int uart_8250_init()
 {
     //serial_init();
-    x86_irq_handler_install(UART_8250_IRQ, uart_8250_irq);
+    irq_install(UART_8250_IRQ, uart_8250_irq, NULL);
 
 #if 0
     struct pci_dev dev;

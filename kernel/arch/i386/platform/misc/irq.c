@@ -21,6 +21,7 @@
 #include <core/panic.h>
 #include <core/string.h>
 #include <cpu/cpu.h>
+#include <dev/irq.h>
 #include <platform/misc.h>
 #include <sys/sched.h>
 #include <sys/signal.h>
@@ -30,7 +31,8 @@
 MALLOC_DEFINE(M_IRQ, "irq", "IRQ handler");
 
 struct handler {
-    x86_irq_handler_t fn;
+    irq_handler_t fn;
+    void *arg;
     struct handler *next;
 };
 
@@ -79,17 +81,18 @@ int x86_irq_alloc(struct x86_irq_chip *c)
     return -1;
 }
 
-void x86_irq_handler_install(unsigned irq, x86_irq_handler_t fn)
+int irq_install(unsigned irq, irq_handler_t fn, void *arg)
 {
     if (irq >= X86_IRQ_NR)
-        panic("irq: no such IRQ");
+        return -1;
 
     struct handler *h = kmalloc(sizeof(*h), &M_IRQ, M_ZERO);
 
     if (!h)
-        panic("irq: no memory for a handler");
+        return -1;
 
-    h->fn = fn;
+    h->fn  = fn;
+    h->arg = arg;
 
     /* the first: the controller lets it through */
     int first = !irqs[irq].handlers;
@@ -102,21 +105,28 @@ void x86_irq_handler_install(unsigned irq, x86_irq_handler_t fn)
 
     if (first && chip_of(irq) && irq != X86_IRQ_TIMER)
         chip_of(irq)->unmask(irq);
+
+    return 0;
 }
 
-void x86_irq_handler_uninstall(unsigned irq)
+void irq_uninstall(unsigned irq, irq_handler_t fn, void *arg)
 {
     if (irq >= X86_IRQ_NR)
         return;
 
-    if (chip_of(irq) && irq != X86_IRQ_TIMER)
-        chip_of(irq)->mask(irq);
+    for (struct handler **p = &irqs[irq].handlers; *p; p = &(*p)->next) {
+        struct handler *h = *p;
 
-    while (irqs[irq].handlers) {
-        struct handler *h = irqs[irq].handlers;
-        irqs[irq].handlers = h->next;
-        kfree(h);
+        if (h->fn == fn && h->arg == arg) {
+            *p = h->next;
+            kfree(h);
+            break;
+        }
     }
+
+    /* the last: the controller keeps it out */
+    if (!irqs[irq].handlers && chip_of(irq) && irq != X86_IRQ_TIMER)
+        chip_of(irq)->mask(irq);
 }
 
 /** the tick: switch to the next thread once the interrupt is done */
@@ -133,9 +143,10 @@ static void irq_handle(struct x86_regs *r)
 
     if (irq < X86_IRQ_NR) {
         irqs[irq].count++;
+        curcpu()->arch.irq_regs = r;
 
         for (struct handler *h = irqs[irq].handlers; h; h = h->next)
-            h->fn(r);
+            h->fn(h->arg);
     }
 
     struct x86_irq_chip *c = irq < X86_IRQ_NR ? chip_of(irq) : chip;

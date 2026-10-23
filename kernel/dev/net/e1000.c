@@ -28,7 +28,7 @@
 #include <dev/pci.h>
 #include <mm/mm.h>
 #include <net/netif.h>
-#include <platform/misc.h>
+#include <dev/irq.h>
 
 #include <aquila/errno.h>
 
@@ -327,7 +327,7 @@ static void link_check(void)
         e1000.netif.flags &= ~NETIF_RUNNING;
 }
 
-static void e1000_irq(struct x86_regs *r)
+static void e1000_irq(void *arg __unused)
 {
     /* reading it acknowledges them */
     uint32_t icr = reg_read(E1000_ICR);
@@ -390,12 +390,12 @@ static int e1000_probe(void)
     netif_register(&e1000.netif);
 
     /* its interrupts as messages if it can (MSI), else its line */
-    int irq = pci_msi_enable(&e1000.pci, e1000_irq);
+    int irq = pci_msi_enable(&e1000.pci, e1000_irq, NULL);
     int msi = irq >= 0;
 
     if (!msi) {
         irq = pci_irq_line(&e1000.pci);
-        x86_irq_handler_install(irq, e1000_irq);
+        irq_install(irq, e1000_irq, NULL);
     }
 
     e1000.irq = irq;

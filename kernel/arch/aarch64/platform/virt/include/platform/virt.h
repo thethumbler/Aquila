@@ -27,13 +27,13 @@ int  platform_init(void);
 /* GICv2 (platform/virt/gic.c) */
 void     gic_setup(void);
 void     gic_enable(unsigned irq);
+void     gic_disable(unsigned irq);
 unsigned gic_ack(void);             /* the interrupt that came, 1023 none */
 void     gic_eoi(unsigned irq);
 
-/* interrupts' handlers (platform/virt/irq.c) */
+/* interrupts' handlers (platform/virt/irq.c; irq_install(): dev/irq.h) */
 #define IRQ_NR          128
-void irq_install(unsigned irq, void (*handler)(void));
-void irq_handle(void);              /* the interrupt that came: its handler */
+void irq_handle(void);              /* the interrupt that came: its handlers */
 
 /* the generic timer: the tick, every `period_ns' (platform/virt/timer.c) */
 uint64_t timer_setup(uint64_t period_ns, void (*handler)(void));

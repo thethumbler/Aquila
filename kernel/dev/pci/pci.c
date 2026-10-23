@@ -303,18 +303,19 @@ uint8_t pci_cap_find(struct pci_dev *dev, uint8_t id)
 #define MSI_CTRL_64BIT          0x0080
 
 /**
- * The device's interrupts as messages (MSI): one, its IRQ to `handler';
+ * The device's interrupts as messages (MSI): one, its IRQ to `handler'
+ * (with `arg');
  * its legacy line (INTx) off. The IRQ, -1 if it can't (no capability, or
  * the architecture takes no MSI: the line it is, then).
  */
-int pci_msi_enable(struct pci_dev *dev, void (*handler)())
+int pci_msi_enable(struct pci_dev *dev, irq_handler_t handler, void *arg)
 {
     uint8_t cap = pci_cap_find(dev, PCI_CAP_MSI);
     uint64_t addr;
     uint32_t data;
     int irq;
 
-    if (!cap || !arch_msi_alloc || (irq = arch_msi_alloc(handler, &addr, &data)) < 0)
+    if (!cap || !arch_msi_alloc || (irq = arch_msi_alloc(handler, arg, &addr, &data)) < 0)
         return -1;
 
     uint16_t ctrl = pci_reg16_read(dev, cap + MSI_CTRL);

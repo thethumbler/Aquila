@@ -17,6 +17,7 @@
 #include <cpu/io.h>
 #include <dev/tty.h>
 #include <dev/uart.h>
+#include <dev/irq.h>
 #include <platform/virt.h>
 
 #define UART_DR         0x00    /* data */
@@ -51,7 +52,7 @@ static char pl011_receive(struct uart *u __unused)
     return (char) mmio_read32(base + UART_DR);
 }
 
-static void pl011_irq(void)
+static void pl011_irq(void *arg __unused)
 {
     /* cleared first, then every byte the FIFO has: a byte that comes
      * meanwhile raises it again (cleared after, its interrupt would be
@@ -76,7 +77,7 @@ static void pl011_comm_init(struct uart *u __unused)
 
 static int pl011_init(void)
 {
-    irq_install(VIRT_UART_IRQ, pl011_irq);
+    irq_install(VIRT_UART_IRQ, pl011_irq, NULL);
     uart_register(0, &uart_pl011);
     return 0;
 }

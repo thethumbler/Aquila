@@ -238,7 +238,7 @@ static struct x86_irq_chip msi_chip = {
 /** an IRQ for a device's MSI, to `handler': the message's address and data
  * (to the boot CPU's local APIC, the IRQ's vector, edge); -1 without the
  * APIC (the 8259 gets no MSI) or a free IRQ */
-int arch_msi_alloc(void (*handler)(), uint64_t *addr, uint32_t *data)
+int arch_msi_alloc(irq_handler_t handler, void *arg, uint64_t *addr, uint32_t *data)
 {
     if (!lapic)
         return -1;
@@ -248,7 +248,8 @@ int arch_msi_alloc(void (*handler)(), uint64_t *addr, uint32_t *data)
     if (irq < 0)
         return -1;
 
-    x86_irq_handler_install(irq, (x86_irq_handler_t) handler);
+    if (irq_install(irq, handler, arg))
+        return -1;
 
     *addr = 0xFEE00000ULL | (uint64_t) lapic_id << 12;
     *data = 32 + irq;
@@ -437,14 +438,14 @@ static uint32_t timer_calibrate(uint32_t ns)
 }
 
 /** the tick, every `period_ns', to `handler'; the period it is */
-uint32_t x86_lapic_timer_setup(uint32_t period_ns, x86_irq_handler_t handler)
+uint32_t x86_lapic_timer_setup(uint32_t period_ns, irq_handler_t handler)
 {
     timer_count = timer_calibrate(period_ns);
 
     if (!timer_count)
         timer_count = 1;
 
-    x86_irq_handler_install(X86_IRQ_TIMER, handler);
+    irq_install(X86_IRQ_TIMER, handler, NULL);
 
     x86_lapic_timer_cpu_start();
 

@@ -37,10 +37,8 @@ static int has_byte(void)
     return read_status() & STATUS_OBUF_FULL;
 }
 
-static void x86_i8042_first_handler(struct x86_regs *r)
+static void x86_i8042_first_handler(void *arg __unused)
 {
-    (void) r;
-
     if (!has_byte())
         return;
 
@@ -50,10 +48,8 @@ static void x86_i8042_first_handler(struct x86_regs *r)
         channel1_handler(scancode);
 }
 
-static void x86_i8042_second_handler(struct x86_regs *r)
+static void x86_i8042_second_handler(void *arg __unused)
 {
-    (void) r;
-
     if (!has_byte())
         return;
 
@@ -66,10 +62,10 @@ static void x86_i8042_second_handler(struct x86_regs *r)
 static void x86_i8042_handler_install(void)
 {
     printk("i8042: installing IRQ %d\n", FIRST_IRQ);
-    x86_irq_handler_install(FIRST_IRQ, x86_i8042_first_handler);
+    irq_install(FIRST_IRQ, x86_i8042_first_handler, NULL);
 
     printk("i8042: installing IRQ %d\n", SECOND_IRQ);
-    x86_irq_handler_install(SECOND_IRQ, x86_i8042_second_handler);
+    irq_install(SECOND_IRQ, x86_i8042_second_handler, NULL);
 
     /* flush any pending data */
     for (int i = 0; i < 10; ++i)

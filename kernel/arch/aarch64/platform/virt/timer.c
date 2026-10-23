@@ -10,12 +10,13 @@
 
 #include <core/system.h>
 #include <cpu/cpu.h>
+#include <dev/irq.h>
 #include <platform/virt.h>
 
 static uint64_t freq, interval;
 static void (*tick)(void);
 
-static void timer_irq(void)
+static void timer_irq(void *arg __unused)
 {
     /* the next one, `interval' counts from now */
     write_sysreg(cntv_tval_el0, interval);
@@ -31,7 +32,7 @@ uint64_t timer_setup(uint64_t period_ns, void (*handler)(void))
     interval = freq * period_ns / 1000000000ULL;
     tick = handler;
 
-    irq_install(VIRT_TIMER_IRQ, timer_irq);
+    irq_install(VIRT_TIMER_IRQ, timer_irq, NULL);
 
     write_sysreg(cntv_tval_el0, interval);
     write_sysreg(cntv_ctl_el0, 1);      /* enabled, not masked */

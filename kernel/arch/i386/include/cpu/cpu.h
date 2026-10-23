@@ -119,6 +119,7 @@ struct arch_cpu {
     struct x86_tss tss __aligned(8);
     struct pmap *pmap;          /* CR3's (pmap_switch) */
     struct thread *fpu_thread;  /* whose state the FPU has */
+    struct x86_regs *irq_regs;  /* the interrupted context, for the tick */
     int tick_switch;            /* the tick asked for a switch (irq.c) */
     int ticking;                /* its local APIC's timer runs */
     uintptr_t idle_stack;       /* the idle loop's, its top */

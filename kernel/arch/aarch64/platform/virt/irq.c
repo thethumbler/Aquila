@@ -1,25 +1,74 @@
 /** \file
- * Interrupts' handlers: one an interrupt, installed by its driver; the
- * GIC says which came
+ * Interrupts' handlers, installed by their drivers (dev/irq.h): an
+ * interrupt may have several (a shared line), each is called. The GIC
+ * says which came; the first handler enables it, the last one gone
+ * disables it.
  */
 
 #include <core/system.h>
 #include <core/string.h>
+#include <mm/mm.h>
+#include <dev/irq.h>
 #include <platform/virt.h>
 
-static void (*handlers[IRQ_NR])(void);
+MALLOC_DEFINE(M_IRQ, "irq", "IRQ handler");
+
+struct handler {
+    irq_handler_t fn;
+    void *arg;
+    struct handler *next;
+};
+
+static struct handler *handlers[IRQ_NR];
 static uint64_t counts[IRQ_NR];
 
-void irq_install(unsigned irq, void (*handler)(void))
+int irq_install(unsigned irq, irq_handler_t fn, void *arg)
+{
+    if (irq >= IRQ_NR)
+        return -1;
+
+    struct handler *h = kmalloc(sizeof(*h), &M_IRQ, M_ZERO);
+
+    if (!h)
+        return -1;
+
+    h->fn  = fn;
+    h->arg = arg;
+
+    int first = !handlers[irq];
+    struct handler **p = &handlers[irq];
+
+    while (*p)
+        p = &(*p)->next;
+
+    *p = h;
+
+    if (first)
+        gic_enable(irq);
+
+    return 0;
+}
+
+void irq_uninstall(unsigned irq, irq_handler_t fn, void *arg)
 {
     if (irq >= IRQ_NR)
         return;
 
-    handlers[irq] = handler;
-    gic_enable(irq);
+    for (struct handler **p = &handlers[irq]; *p; p = &(*p)->next) {
+        struct handler *h = *p;
+
+        if (h->fn == fn && h->arg == arg) {
+            *p = h->next;
+            kfree(h);
+            break;
+        }
+    }
+
+    if (!handlers[irq])
+        gic_disable(irq);
 }
 
-/** the interrupt that came: its handler, then the GIC told it's done
+/** the interrupt that came: its handlers, then the GIC told it's done
  * (before a thread switch: the next ones keep coming) */
 void irq_handle(void)
 {
@@ -31,8 +80,8 @@ void irq_handle(void)
     if (irq < IRQ_NR) {
         counts[irq]++;
 
-        if (handlers[irq])
-            handlers[irq]();
+        for (struct handler *h = handlers[irq]; h; h = h->next)
+            h->fn(h->arg);
     }
 
     gic_eoi(irq);

@@ -19,6 +19,7 @@
 #define GICD_CTLR           0x000
 #define GICD_ISENABLER(n)   (0x100 + 4 * (n))
 #define GICD_ICENABLER(n)   (0x180 + 4 * (n))
+#define GICD_ICENABLER(n)   (0x180 + 4 * (n))
 #define GICD_IPRIORITYR(n)  (0x400 + 4 * (n))
 #define GICD_ITARGETSR(n)   (0x800 + 4 * (n))
 #define GICD_ICFGR(n)       (0xC00 + 4 * (n))
@@ -56,6 +57,11 @@ void gic_setup(void)
 void gic_enable(unsigned irq)
 {
     mmio_write32(gicd + GICD_ISENABLER(irq / 32), 1U << (irq % 32));
+}
+
+void gic_disable(unsigned irq)
+{
+    mmio_write32(gicd + GICD_ICENABLER(irq / 32), 1U << (irq % 32));
 }
 
 unsigned gic_ack(void)

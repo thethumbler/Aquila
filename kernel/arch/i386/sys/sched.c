@@ -20,8 +20,10 @@ uint64_t arch_cycles(void)
 }
 
 /** the tick, every CPU's: the boot CPU keeps the time */
-static void x86_sched_handler(struct x86_regs *r)
+static void x86_sched_handler(void *arg __unused)
 {
+    struct x86_regs *r = curcpu()->arch.irq_regs;
+
     if (curcpu()->id) {
         sched_cpu_tick(timer_period, (r->cs & 3) == 3);
         x86_irq_tick_switch();

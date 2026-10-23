@@ -3,6 +3,7 @@
 
 #include <core/types.h>
 #include <sys/proc.h>
+#include <dev/irq.h>
 
 /* arch/ARCH/sys/proc.c */
 void arch_proc_init(struct proc *proc);
@@ -48,9 +49,10 @@ void *arch_phys_map(uintptr_t paddr, size_t size);
  * cached) */
 void *arch_mmio_map(uintptr_t paddr, size_t size);
 
-/* an IRQ for a device's MSI, to handler: the message to write (address,
- * data); -1 if it can't (the architecture's interrupt controller) */
-int arch_msi_alloc(void (*handler)(), uint64_t *addr, uint32_t *data) __attribute__((weak));
+/* an IRQ for a device's MSI, to handler (with arg): the message to write
+ * (address, data); -1 if it can't (the architecture's interrupt
+ * controller) */
+int arch_msi_alloc(irq_handler_t handler, void *arg, uint64_t *addr, uint32_t *data) __attribute__((weak));
 
 void arch_reboot(void);
 void arch_halt(void) __attribute__((noreturn));

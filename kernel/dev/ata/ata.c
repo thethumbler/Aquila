@@ -16,7 +16,7 @@
 
 #include <dev/pci.h>
 #include <dev/blkcache.h>
-#include <platform/misc.h>
+#include <dev/irq.h>
 #include <sys/sched.h>
 
 #include <ata.h>
@@ -67,14 +67,9 @@ static ssize_t drive_write(void *_drive, uint64_t lba, size_t count, void *buf)
     return ret;
 }
 
-static void ata_irq_primary(struct x86_regs *r __unused)
+static void ata_irq(void *channel)
 {
-    dma_irq(&channels[0]);
-}
-
-static void ata_irq_secondary(struct x86_regs *r __unused)
-{
-    dma_irq(&channels[1]);
+    dma_irq(channel);
 }
 
 /* last drive select register value written, invalidated by a reset */
@@ -536,10 +531,8 @@ static int ata_probe()
 
     /* DMA transfers end with them, the others are acknowledged */
     if (count) {
-        x86_irq_handler_install(channels[0].irq, ata_irq_primary);
-
-        if (channels[1].irq != channels[0].irq)
-            x86_irq_handler_install(channels[1].irq, ata_irq_secondary);
+        irq_install(channels[0].irq, ata_irq, &channels[0]);
+        irq_install(channels[1].irq, ata_irq, &channels[1]);
     }
 
     kdev_blkdev_register(3, &atadev);

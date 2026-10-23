@@ -79,13 +79,13 @@ static int x86_pc_cmos_init(void)
 static int apic;
 
 /** the tick: the local APIC's timer, or the PIT */
-uint32_t platform_timer_setup(size_t period_ns, void (*handler)())
+uint32_t platform_timer_setup(size_t period_ns, irq_handler_t handler)
 {
     if (apic)
         return x86_lapic_timer_setup(period_ns, handler);
 
     uint32_t period = x86_pit_period_set(period_ns);
-    x86_irq_handler_install(PIT_IRQ, handler);
+    irq_install(PIT_IRQ, handler, NULL);
     return period;
 }
 

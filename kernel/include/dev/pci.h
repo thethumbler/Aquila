@@ -8,6 +8,7 @@ struct pci_dev;
 
 #include <dev/dev.h>
 #include <cpu/io.h>
+#include <dev/irq.h>
 
 #define PCI_CONFIG_ADDRESS  0x00
 #define PCI_CONFIG_DATA     0x04
@@ -62,6 +63,6 @@ uint8_t  pci_irq_line(struct pci_dev *dev);
 #define PCI_CAP_MSIX    0x11
 
 uint8_t  pci_cap_find(struct pci_dev *dev, uint8_t id);
-int      pci_msi_enable(struct pci_dev *dev, void (*handler)());
+int      pci_msi_enable(struct pci_dev *dev, irq_handler_t handler, void *arg);
 
 #endif /* ! _DEV_PCI_H */

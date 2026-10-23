@@ -3,8 +3,7 @@
 
 #include <cpu/cpu.h>
 #include <cpu/io.h>
-
-typedef void (*x86_irq_handler_t)(struct x86_regs *r);
+#include <dev/irq.h>
 
 /* irq.c: IRQ n is vector 32 + n; the local APIC's timer an IRQ apart */
 #define X86_IRQ_NR          49
@@ -27,8 +26,6 @@ struct x86_irq_chip {
 void x86_irq_chip_set(struct x86_irq_chip *chip);
 const char *x86_irq_chip_name(void);
 void x86_irq_gates_setup(void);
-void x86_irq_handler_install(unsigned irq, x86_irq_handler_t handler);
-void x86_irq_handler_uninstall(unsigned irq);
 void x86_irq_tick_switch(void);
 void x86_irq_alloc_from(unsigned first);
 int  x86_irq_alloc(struct x86_irq_chip *chip);
@@ -40,7 +37,7 @@ extern struct x86_irq_chip x86_pic_chip;
 
 /* lapic.c, ioapic.c: the APIC; 0 if it's what brings the interrupts */
 int  x86_apic_setup(void) __attribute__((weak));
-uint32_t x86_lapic_timer_setup(uint32_t period_ns, x86_irq_handler_t handler) __attribute__((weak));
+uint32_t x86_lapic_timer_setup(uint32_t period_ns, irq_handler_t handler) __attribute__((weak));
 void x86_lapic_cpu_setup(void);
 int  x86_apic_cpus(uint32_t *ids, int max);
 void x86_lapic_ipi(uint32_t id, uint32_t icr);
