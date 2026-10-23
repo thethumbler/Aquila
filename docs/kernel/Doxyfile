@@ -1,8 +1,9 @@
-# The AquilaOS kernel's documents and code reference (make docs): only
-# what differs from Doxygen's defaults. Run from docs/kernel/, the
-# output's directory in $DOXYGEN_OUTPUT.
+# The AquilaOS documentation (make docs): for now its one section, the
+# kernel's documents and code reference. Only what differs from Doxygen's
+# defaults. Run from docs/kernel/, the output's directory in
+# $DOXYGEN_OUTPUT.
 
-PROJECT_NAME           = "AquilaOS kernel"
+PROJECT_NAME           = "AquilaOS documentation"
 PROJECT_BRIEF          = "How it works, and its code"
 OUTPUT_DIRECTORY       = $(DOXYGEN_OUTPUT)
 HTML_OUTPUT            = api
