@@ -3,7 +3,8 @@
  * others (from their requests and replies, and the IPv4 packets they send
  * us), and asks for those packets are sent to: they wait for the answer
  * (ARP_HOLD of them an address), the question is asked ARP_TRIES times a
- * second apart
+ * second apart. An address not heard from in ARP_EXPIRE is asked for
+ * again: its machine may have gone, or another taken its address.
  */
 
 #include <core/system.h>
@@ -11,16 +12,21 @@
 #include <net/byteorder.h>
 #include <net/inet.h>
 #include <sys/callout.h>
+#include <core/arch.h>
 
 #include <aquila/errno.h>
 
 #define ARP_ENTRIES 32
+
+/* how long an address is good for once heard from, as the BSDs keep it */
+#define ARP_EXPIRE  (20 * 60 * 1000ULL)     /* ms */
 
 static struct arp_entry {
     struct netif *netif;
     uint32_t ip;
     uint8_t mac[6];
     uint32_t used;      /* when it was last updated, for replacing */
+    uint64_t heard;     /* then, in ms since boot, for expiring */
 } table[ARP_ENTRIES];
 
 static uint32_t clock;
@@ -169,6 +175,7 @@ void arp_update(struct netif *netif, uint32_t ip, const uint8_t mac[6])
     slot->netif = netif;
     slot->ip    = ip;
     slot->used  = ++clock;
+    slot->heard = arch_rtime_ms();
     memcpy(slot->mac, mac, 6);
 
     pending_flush(netif, ip, mac);
@@ -178,6 +185,12 @@ int arp_lookup(struct netif *netif, uint32_t ip, uint8_t mac[6])
 {
     for (int i = 0; i < ARP_ENTRIES; ++i) {
         if (table[i].netif == netif && table[i].ip == ip) {
+            /* too old: asked for again (the entry goes) */
+            if (arch_rtime_ms() - table[i].heard > ARP_EXPIRE) {
+                table[i].netif = NULL;
+                return -1;
+            }
+
             memcpy(mac, table[i].mac, 6);
             return 0;
         }
