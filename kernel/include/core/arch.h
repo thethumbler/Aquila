@@ -6,7 +6,6 @@
 
 /* arch/ARCH/sys/proc.c */
 void arch_proc_init(struct proc *proc);
-void arch_proc_kill(struct proc *proc);
 void arch_init_execve(struct proc *proc, int argc, char * const _argp[], int envc, char * const _envp[]);
 void arch_sleep(void);
 
@@ -26,7 +25,6 @@ void arch_syscall_return(struct thread *thread, uintptr_t val);
 
 /* arch/ARCH/sys/sched.c */
 void arch_sched_init(void);
-void arch_sched();
 void arch_cur_thread_kill(void);// __attribute__((noreturn));
 void arch_yield(void);  /* the current thread runs again after the ready ones */
 
@@ -53,8 +51,6 @@ void *arch_mmio_map(uintptr_t paddr, size_t size);
 /* an IRQ for a device's MSI, to handler: the message to write (address,
  * data); -1 if it can't (the architecture's interrupt controller) */
 int arch_msi_alloc(void (*handler)(), uint64_t *addr, uint32_t *data) __attribute__((weak));
-
-void arch_disable_interrupts(void);
 
 void arch_reboot(void);
 void arch_halt(void) __attribute__((noreturn));

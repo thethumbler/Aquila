@@ -1,4 +1,5 @@
 #include <core/system.h>
+#include <ds/queue.h>
 
 #include <core/string.h>
 #include <console/earlycon.h>

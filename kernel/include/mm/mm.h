@@ -14,6 +14,8 @@
 #define PF_EXEC     0x008
 #define PF_USER     0x010
 
+struct pmap;
+
 void mm_setup(struct boot *boot);
 
 struct vm_page *mm_page_alloc(void);
