@@ -21,6 +21,7 @@
 
 #define UART_DR         0x00    /* data */
 #define UART_FR         0x18    /* flags */
+#define UART_LCR_H      0x2C    /* line control */
 #define UART_IMSC       0x38    /* interrupts' mask: set, enabled */
 #define UART_ICR        0x44    /* interrupts cleared */
 
@@ -28,6 +29,8 @@
 #define FR_TXFF         (1 << 5)    /* transmit FIFO full */
 #define INT_RX          (1 << 4)    /* received */
 #define INT_RT          (1 << 6)    /* received, then a pause */
+#define LCR_H_FEN       (1 << 4)    /* the FIFOs on */
+#define LCR_H_WLEN8     (3 << 5)    /* 8-bit characters */
 
 static uintptr_t base = VIRT_REG(VIRT_UART);
 
@@ -50,20 +53,24 @@ static char pl011_receive(struct uart *u __unused)
 
 static void pl011_irq(void)
 {
-    /* every byte the FIFO has */
+    /* cleared first, then every byte the FIFO has: a byte that comes
+     * meanwhile raises it again (cleared after, its interrupt would be
+     * lost, and with it the input: the UART waits for it to be read) */
+    mmio_write32(base + UART_ICR, INT_RX | INT_RT);
+
     while (!(mmio_read32(base + UART_FR) & FR_RXFE)) {
         if (uart_pl011.tty)     /* if open */
             uart_receive_handler(&uart_pl011, 1);
         else
             pl011_receive(&uart_pl011);
     }
-
-    mmio_write32(base + UART_ICR, INT_RX | INT_RT);
 }
 
-/* QEMU's needs no speed set: input's interrupts only */
+/* QEMU's needs no speed set: 8-bit characters, the FIFOs, input's
+ * interrupts */
 static void pl011_comm_init(struct uart *u __unused)
 {
+    mmio_write32(base + UART_LCR_H, LCR_H_WLEN8 | LCR_H_FEN);
     mmio_write32(base + UART_IMSC, INT_RX | INT_RT);
 }
 
