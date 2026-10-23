@@ -1517,6 +1517,12 @@ void aq_main(void)
     check("waitpid st", SC(SYS_waitpid, c, &st, 0), c);
     check("status", st, 4 << 8);
 
+    /* the pid of a process just reaped isn't the next one's */
+    int next = SC(SYS_fork, 0, 0, 0);
+    if (!next) SC(SYS_exit, 0, 0, 0);
+    SC(SYS_waitpid, next, 0, 0);
+    check("a reaped pid isn't given again at once", next != c, 1);
+
     /* kill a zombie */
     c = SC(SYS_fork, 0, 0, 0);
     if (!c) SC(SYS_exit, 5, 0, 0);

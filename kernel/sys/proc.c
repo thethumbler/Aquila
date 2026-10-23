@@ -37,15 +37,45 @@ struct queue *sessions = QUEUE_NEW();
 /* all process groups */
 
 struct bitmap *pid_bitmap = BITMAP_NEW(4096);
-static int ff_pid = 1;
 
+/* the last pid given out: the next is the first free one after it,
+ * wrapping around, as UNIX does (the pid of a process just reaped isn't
+ * the next one: a kill() meant for it doesn't find a new process) */
+static int last_pid;
+
+/** a process group or a session has `pid' as its id: not a new pid, as
+ * POSIX says (they outlive their leader) */
+static int pid_is_group(int pid)
+{
+    queue_for (snode, sessions) {
+        struct session *session = snode->value;
+
+        if (session->sid == pid)
+            return 1;
+
+        queue_for (gnode, session->pgps) {
+            struct pgroup *pgrp = gnode->value;
+
+            if (pgrp->pgid == pid)
+                return 1;
+        }
+    }
+
+    return 0;
+}
+
+/** a new pid, from 1 (init's) on; -1 if none is left */
 int proc_pid_alloc()
 {
-    for (int i = ff_pid; (size_t) i < pid_bitmap->max_idx; ++i) {
-        if (!bitmap_check(pid_bitmap, i)) {
-            bitmap_set(pid_bitmap, i);
-            ff_pid = i;
-            return i;
+    size_t range = pid_bitmap->max_idx - 1;     /* 1 to max_idx - 1 */
+
+    for (size_t n = 0; n < range; ++n) {
+        int pid = 1 + (last_pid + n) % range;
+
+        if (!bitmap_check(pid_bitmap, pid) && !pid_is_group(pid)) {
+            bitmap_set(pid_bitmap, pid);
+            last_pid = pid;
+            return pid;
         }
     }
 
@@ -55,8 +85,6 @@ int proc_pid_alloc()
 void proc_pid_free(int pid)
 {
     bitmap_clear(pid_bitmap, pid);
-    if (pid < ff_pid)
-        ff_pid = pid;
 }
 
 int proc_new(struct proc **ref)
@@ -124,27 +152,21 @@ struct proc *proc_pid_find(pid_t pid)
 
 int proc_init(struct proc *proc)
 {
-    int err = 0;
-
     if (!proc)
         return -EINVAL;
 
-    proc->pid = proc_pid_alloc();
+    /* all taken: fork() says try again */
+    if ((proc->pid = proc_pid_alloc()) < 0)
+        return -EAGAIN;
 
     proc->fds = kmalloc(FDS_COUNT * sizeof(struct fd), &M_FDS, M_ZERO);
 
     if (!proc->fds) {
-        err = -ENOMEM;
-        goto error;
+        proc_pid_free(proc->pid);
+        return -ENOMEM;
     }
 
     return 0;
-
-error:
-    if (proc->fds)
-        kfree(proc->fds);
-
-    return err;
 }
 
 /**
