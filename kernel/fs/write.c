@@ -2,6 +2,7 @@
 #include <fs/vfs.h>
 #include <fs/iobuf.h>
 #include <dev/dev.h>
+#include <mm/vm.h>
 
 /**
  * write data to a vnode, through an iobuf
@@ -26,7 +27,13 @@ ssize_t vfs_write_io(struct vnode *vnode, off_t off, struct iobuf *io)
     if (!vnode->fs->vops.write)
         return -ENOSYS;
 
-    return vnode->fs->vops.write(vnode, off, io);
+    ssize_t ret = vnode->fs->vops.write(vnode, off, io);
+
+    /* the file's pages in the page cache, if it's mapped */
+    if (ret > 0)
+        vnode_pages_update(vnode, off, off + ret);
+
+    return ret;
 }
 
 /**

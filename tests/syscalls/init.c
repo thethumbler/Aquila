@@ -1632,6 +1632,23 @@ void aq_main(void)
         SC(SYS_close, ls2, 0, 0);
     }
 
+    /* a file's mapping sees what is written to the file, and zeros past
+     * its end once it's truncated (its pages in the page cache follow) */
+    int mf = SC(SYS_open, "/tmp/mapped", O_CREAT | O_RDWR, 0644);
+    SC(SYS_write, mf, "old!", 4);
+    struct aquila_mmap_args fa = {0, 4096, PROT_READ, MAP_PRIVATE, mf, 0};
+    check("mmap file", SC(SYS_mmap, &fa, &mret, 0), 0);
+    volatile char *mapped = mret;
+    check("mmap file read", mapped[0], 'o');
+    SC(SYS_lseek, mf, 0, 0);
+    SC(SYS_write, mf, "new!", 4);
+    check("mmap file sees a write", mapped[0], 'n');
+    check("ftruncate mapped", SC(SYS_ftruncate, mf, 0, 0), 0);
+    check("mmap file zero after truncate", mapped[0], 0);
+    SC(SYS_munmap, mapped, 4096, 0);
+    SC(SYS_close, mf, 0, 0);
+    SC(SYS_unlink, "/tmp/mapped", 0, 0);
+
     /* shutdown(): one direction ends, the other still works */
     {
         struct sockaddr_un la = {AF_UNIX, "/tmp/shut"};
