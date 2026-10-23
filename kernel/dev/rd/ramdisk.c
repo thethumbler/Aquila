@@ -47,6 +47,11 @@ static ssize_t rd_write(struct devid *dd __unused, off_t offset, size_t size, vo
 static int rd_probe()
 {
     extern struct boot *__kboot;
+
+    /* no module, the root is on a disk (root=): no ramdisk */
+    if (!__kboot->modules_count)
+        return 0;
+
     module_t *rd_module = &__kboot->modules[0];
 
     /* the module, where the boot loader put it */

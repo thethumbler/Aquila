@@ -12,6 +12,10 @@ static int snputc(char *s, size_t n, char c)
 
 static int snputs(char *s, size_t n, char *str)
 {
+    /* a NULL string is a bug, printing it shouldn't make another one */
+    if (!str)
+        str = "(null)";
+
     unsigned i;
     for (i = 0; i < n && str[i]; ++i)
         s[i] = str[i];

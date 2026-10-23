@@ -191,9 +191,11 @@ static ssize_t procfs_rdcmdline(off_t off, size_t size, char *buf)
     char rdcmdline_buf[512];
 
     extern struct boot *__kboot;
-    module_t *rd_module = &__kboot->modules[0];
 
-    int sz = snprintf(rdcmdline_buf, 512, "%s\n", rd_module->cmdline);
+    /* none, from a disk (root=): an empty line */
+    char *cmdline = __kboot->modules_count ? __kboot->modules[0].cmdline : "";
+
+    int sz = snprintf(rdcmdline_buf, 512, "%s\n", cmdline);
 
     if (off < sz) {
         ssize_t ret = MIN(size, (size_t)(sz - off));
