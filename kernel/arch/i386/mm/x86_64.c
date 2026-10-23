@@ -49,6 +49,9 @@ extern struct boot *__kboot;
 
 static struct pmap k_pmap;
 
+/* the end of the direct map: RAM, in 2 MiB pages (pmap_init) */
+static paddr_t dmap_end;
+
 /* the running CPU's (in its CR3) */
 #define cur_pmap (curcpu()->arch.pmap)
 
@@ -143,6 +146,7 @@ void pmap_init(void)
 
     /* the rest of the RAM in the direct map, with 2 MiB pages */
     paddr_t end = (ram_end() + LARGE_SIZE - 1) & ~(LARGE_SIZE - 1);
+    dmap_end = end;
 
     for (paddr_t pa = 0; pa < end; pa += LARGE_SIZE) {
         vaddr_t va = ARCH_DMAP_BASE + pa;
@@ -421,16 +425,11 @@ int pmap_page_write(paddr_t paddr, off_t off, size_t size, void *buf)
 
 /** all of the RAM is in the direct map (and what the boot loader left is
  * in RAM) */
-void *arch_phys_map(uintptr_t paddr, size_t size)
-{
-    return PHYS2VIRT(paddr);
-}
-
 /* where the window has room for devices' registers */
 static vaddr_t mmio_next = ARCH_MMIO_BASE;
 
-/** a device's registers, uncached */
-void *arch_mmio_map(uintptr_t paddr, size_t size)
+/** physical memory mapped in the window, with `flags' */
+static void *window_map(uintptr_t paddr, size_t size, uint32_t flags)
 {
     paddr_t start = PAGE_ALIGN(paddr);
     size_t  len   = PAGE_ROUND(paddr + size) - start;
@@ -442,7 +441,23 @@ void *arch_mmio_map(uintptr_t paddr, size_t size)
     mmio_next += len;
 
     for (size_t off = 0; off < len; off += PAGE_SIZE)
-        pmap_add(&k_pmap, vaddr + off, start + off, VM_KRW | VM_NOCACHE);
+        pmap_add(&k_pmap, vaddr + off, start + off, flags);
 
     return (void *) (vaddr + (paddr - start));
+}
+
+/** physical memory: in the direct map if it's there (RAM), else mapped
+ * in the window, cached (memory past RAM: a firmware's) */
+void *arch_phys_map(uintptr_t paddr, size_t size)
+{
+    if (paddr + size <= dmap_end)
+        return PHYS2VIRT(paddr);
+
+    return window_map(paddr, size, VM_KRW);
+}
+
+/** a device's registers, uncached */
+void *arch_mmio_map(uintptr_t paddr, size_t size)
+{
+    return window_map(paddr, size, VM_KRW | VM_NOCACHE);
 }
