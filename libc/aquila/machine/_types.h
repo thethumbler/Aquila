@@ -18,4 +18,9 @@ typedef unsigned long __uid_t;
 typedef unsigned long __gid_t;
 #endif
 
+/* the kernel's inode numbers are 64-bit (struct aquila_stat), some are
+ * pointers: newlib's default, an unsigned short, cut them */
+#define __machine_ino_t_defined
+typedef __uint64_t __ino_t;
+
 #endif /* ! _MACHINE__TYPES_H */

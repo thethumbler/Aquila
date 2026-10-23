@@ -27,6 +27,8 @@
  * - open files: shared by dup() and fork() (offset, status flags), kept
  *   open by a call using one
  * - the FPU of threads that start while another has it: their own
+ * - inode numbers whole: stat's are readdir's (the initramfs's are
+ *   pointers, they were cut to 16 bits)
  * - user memory that isn't mapped: EFAULT, the process goes on, a read's
  *   bytes stay, a buffer running into it is used up to it
  * - virtual terminals: KD* and VT_* ioctls, switching, VT_PROCESS
@@ -34,6 +36,7 @@
 
 #include "../lib/aqtest.h"
 
+#include <aquila/dirent.h>
 #include <aquila/mman.h>
 #include <aquila/un.h>
 #include <aquila/termios.h>
@@ -975,6 +978,36 @@ static void fpu_threads(void)
         right += fpu_right[i];
 
     check("fpu: threads' sums, their own registers", right, 4);
+}
+
+/* each file of / (the initramfs): its stat's inode number is the one
+ * readdir gave */
+static void inode_numbers(void)
+{
+    struct dirent d;
+    struct aquila_stat st;
+    char path[MAXNAMELEN + 2];
+    int fd = SC(SYS_open, "/", O_RDONLY, 0), n = 0, same = 0;
+
+    while (SC(SYS_readdir, fd, &d, 0) > 0) {
+        if (d.d_name[0] == '.' && (!d.d_name[1] || (d.d_name[1] == '.' && !d.d_name[2])))
+            continue;
+
+        path[0] = '/';
+
+        for (int i = 0; (path[i + 1] = d.d_name[i]); ++i)
+            ;
+
+        /* a directory may be a mount point: stat has the mounted root */
+        if (SC(SYS_lstat, path, &st, 0) || S_ISDIR(st.st_mode))
+            continue;
+
+        n++;
+        same += st.st_ino == d.d_ino;
+    }
+
+    SC(SYS_close, fd, 0, 0);
+    check("inode numbers: stat's are readdir's", n > 0 && same == n, 1);
 }
 
 static void open_files(void)
@@ -2505,6 +2538,7 @@ void aq_main(void)
     orphans();
     open_files();
     fpu_threads();
+    inode_numbers();
     stopped_sleeps();
     vnode_paths();
 

@@ -21,7 +21,7 @@ __attribute__((packed, aligned(4)))
 
 struct aquila_stat {
     uint16_t  st_dev;
-    uint16_t  st_ino;
+    uint64_t  st_ino;       /* the vnode's (a pointer on some filesystems) */
     uint32_t  st_mode;
     uint16_t  st_nlink;
     uint32_t  st_uid;
