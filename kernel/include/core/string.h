@@ -53,11 +53,9 @@ static inline int memcmp(const void *s1, const void *s2, size_t n)
     return 0;
 }
 
+/* as the C library's: a NULL is a caller's bug (it faults), not "equal" */
 static inline int strcmp(const char *s1, const char *s2)
 {
-    if (s1 == NULL || s2 == NULL)
-        return 0;   // FIXME
-
     while (*s1 != '\0' && *s2 != '\0' && *s1 == *s2) {s1++; s2++;}
 
     return (int)(*s1 - *s2);
