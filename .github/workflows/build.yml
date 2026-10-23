@@ -16,7 +16,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential gcc-multilib bison flex \
             texinfo libgmp-dev libmpfr-dev libmpc-dev wget nasm xorriso cpio \
-            qemu-system-x86 e2fsprogs python3 fdisk dosfstools mtools fakeroot
+            qemu-system-x86 e2fsprogs python3 fdisk dosfstools mtools fakeroot \
+            gperf autoconf automake libtool
 
       # QEMU runs the tests with KVM if /dev/kvm can be used
       - name: Enable KVM

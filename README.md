@@ -9,11 +9,13 @@ Everything is built from source into `build/` (the x86-64 system into
 `build/x86_64`). On a Linux host you need a C/C++ compiler with 32-bit
 support, `make`, `bison`, `flex`, `texinfo`, GMP, MPFR and MPC
 development headers, `wget`, `nasm`, `cpio`, `xorriso` and
-`qemu-system-x86_64` (and `gperf` for the ports). On Debian/Ubuntu:
+`qemu-system-x86_64` (and `gperf`, autoconf, automake and libtool for
+the ports). On Debian/Ubuntu:
 
 ```
 sudo apt install build-essential gcc-multilib bison flex texinfo libgmp-dev \
-    libmpfr-dev libmpc-dev wget nasm cpio xorriso qemu-system-x86 gperf
+    libmpfr-dev libmpc-dev wget nasm cpio xorriso qemu-system-x86 gperf \
+    autoconf automake libtool
 ```
 
 Then:
