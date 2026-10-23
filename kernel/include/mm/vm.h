@@ -181,7 +181,6 @@ void kvmem_guardtest(void);
 
 /* mm/vmm.c XXX */
 int  vm_map(struct vm_space *vm_space, struct vm_entry *vm_entry);
-void vm_unmap(struct vm_space *vm_space, struct vm_entry *vm_entry);
 void vm_unmap_full(struct vm_space *vm_space, struct vm_entry *vm_entry);
 
 /* mm/vm_space.c */

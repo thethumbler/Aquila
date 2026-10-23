@@ -61,15 +61,6 @@ size_t mm_page_ref(paddr_t paddr)
 
 /**
  * \ingroup mm
- * \brief get the virtual memory structure associated with a physical page
- */
-struct vm_page *mm_page(paddr_t paddr)
-{
-    return &PAGE(paddr);
-}
-
-/**
- * \ingroup mm
  * \brief allocate an unused page from physical memory
  */
 struct vm_page *mm_page_alloc(void)
@@ -90,43 +81,24 @@ struct vm_page *mm_page_alloc(void)
  */
 void mm_page_dealloc(paddr_t paddr)
 {
-    /* TODO: Check out of bounds */
+    /* (an address past its zone, buddy_free leaves alone) */
     buddy_free(BUDDY_ZONE_NORMAL, paddr, PAGE_SIZE);
-
-    /* Release frame if it is no longer referenced */
-    //if (mm_page_ref(paddr) == 0)
-    //    buddy_free(BUDDY_ZONE_NORMAL, paddr, PAGE_SIZE);
 }
 
+/* (the pages' references are the vm objects', not the mappings') */
 int mm_page_map(struct pmap *pmap, vaddr_t vaddr, paddr_t paddr, int flags)
 {
-    /* TODO: Check out of bounds */
-
-    /* Increment references count to physical page */
-    //mm_page_incref(paddr);
-
     return pmap_add(pmap, vaddr, paddr, flags);
 }
 
 int mm_page_unmap(struct pmap *pmap, vaddr_t vaddr)
 {
-    //printk("mm_page_unmap(pmap=%p, vaddr=%p)\n", pmap, vaddr);
-
-    /* TODO: Check out of bounds */
-
     /* Check if page is mapped */
     paddr_t paddr = arch_page_get_mapping(pmap, vaddr);
 
     if (paddr) {
-        /* Decrement references count to physical page */
-        //mm_page_decref(paddr);
-
         /* Call arch specific page unmapper */
         pmap_remove(pmap, vaddr, vaddr + PAGE_SIZE);
-
-        /* Release page -- checks ref count */
-        //mm_page_dealloc(paddr);
-
         return 0;
     }
 
@@ -135,10 +107,6 @@ int mm_page_unmap(struct pmap *pmap, vaddr_t vaddr)
 
 int mm_map(struct pmap *pmap, paddr_t paddr, vaddr_t vaddr, size_t size, int flags)
 {
-    //printk("mm_map(pmap=%p, paddr=%p, vaddr=%p, size=%d, flags=%x)\n", pmap, paddr, vaddr, size, flags);
-
-    /* TODO: Check out of bounds */
-
     int alloc = !paddr;
 
     vaddr_t endaddr = PAGE_ROUND(vaddr + size);
@@ -165,34 +133,8 @@ int mm_map(struct pmap *pmap, paddr_t paddr, vaddr_t vaddr, size_t size, int fla
     return 0;
 }
 
-void mm_unmap(struct pmap *pmap, vaddr_t vaddr, size_t size)
-{
-    //printk("mm_unmap(pmap=%p, vaddr=%p, size=%ld)\n", pmap, vaddr, size);
-    /* TODO: Check out of bounds */
-
-    if (size < PAGE_SIZE) return;
-
-    vaddr_t sva = PAGE_ROUND(vaddr);
-    vaddr_t eva = PAGE_ALIGN(vaddr + size);
-
-    //pmap_remove(pmap, sva, eva);
-
-#if 1
-    size_t nr = (eva - sva)/PAGE_SIZE;
-
-    while (nr--) {
-        mm_page_unmap(pmap, sva);
-        sva += PAGE_SIZE;
-    }
-#endif
-}
-
 void mm_unmap_full(struct pmap *pmap, vaddr_t vaddr, size_t size)
 {
-    //printk("mm_unmap_full(pmap=%p, vaddr=%p, size=%ld)\n", pmap, vaddr, size);
-
-    /* TODO: Check out of bounds */
-
     vaddr_t start = PAGE_ALIGN(vaddr);
     vaddr_t end   = PAGE_ROUND(vaddr + size);
 

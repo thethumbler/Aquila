@@ -2,7 +2,6 @@
 #define _X86_CPU_H
 
 #include <core/system.h>
-#include <cpu/cpuid.h>
 
 struct x86_regs {
 #if ARCH_BITS==32

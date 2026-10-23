@@ -825,7 +825,7 @@ struct fs procfs = {
         .readdir = posix_file_readdir,
         .close   = posix_file_close,
 
-        .eof     = __vfs_eof_always, /* XXX */
+        .eof     = __vfs_eof_always,    /* a read is a snapshot: its end is the end */
     },
 };
 

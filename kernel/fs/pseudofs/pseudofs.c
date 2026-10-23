@@ -311,10 +311,9 @@ int pseudofs_finddir(struct vnode *dir, const char *name, struct dirent *dirent)
     return -ENOENT;
 }
 
+/* the names are the entries', freed when they go (pseudofs_vunlink) */
 int pseudofs_close(struct vnode *vnode)
 {
-    /* XXX */
-    //kfree(inode->name);
     kfree(vnode);
     return 0;
 }

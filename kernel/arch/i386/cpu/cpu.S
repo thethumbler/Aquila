@@ -1,22 +1,5 @@
 #include <config.h>
 
-.global x86_cpuid_check
-x86_cpuid_check:
-#if ARCH_BITS==32
-    pushf
-    pushf
-    xorl $1 << 21, (%esp)
-    popf
-    pushf
-    pop %eax
-    xorl (%esp), %eax
-    andl $1 << 21, %eax
-    popf
-    ret
-#else
-    /* TODO */
-#endif
-
 /*
  * ISRs -- Interrupt Service Routines
  *
