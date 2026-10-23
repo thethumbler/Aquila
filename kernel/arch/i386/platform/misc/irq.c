@@ -199,7 +199,7 @@ void __x86_irq_handler(struct x86_regs *r)
      * interrupt handled (a device's, the controller's EOI), it goes */
     if (took && curthread && curthread->killed) {
         irq_handle(r);
-        arch_cur_thread_kill();
+        sched_thread_killed();
     }
 
     irq_dispatch(r);

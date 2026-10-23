@@ -12,6 +12,8 @@
  * - a signal to a process running on another CPU, taken
  * - the FPU's state, threads moving from CPU to CPU: what each computes
  *   comes out right
+ * - exec while three threads run on the other CPUs: they end first, the
+ *   new image (this program again, "alone") runs by itself
  * - threads still run at the same time after all that: no CPU was left
  *   unable to take interrupts (a killed thread's)
  */
@@ -332,8 +334,67 @@ static int fpu_moving(void)
     return ok;
 }
 
+/*
+ * exec while threads run on the other CPUs: they write where the new
+ * image checks a pattern; had one gone on (the same code), it'd change
+ */
+static volatile unsigned char exec_pattern[16384];
+
+static int str_eq(const char *a, const char *b)
+{
+    while (*a && *a == *b)
+        ++a, ++b;
+
+    return *a == *b;
+}
+
+static void exec_alone(void)
+{
+    uptr *entry = (uptr *) aq_entry_esp;
+    char **argv = (char **) entry[1];
+
+    if (entry[0] != 2 || !str_eq(argv[1], "alone"))
+        return;
+
+    for (int round = 0; round < 40; ++round) {
+        for (int i = 0; i < (int) sizeof(exec_pattern); ++i)
+            exec_pattern[i] = i * 7 + round;
+
+        aq_spin(200000);
+
+        for (int i = 0; i < (int) sizeof(exec_pattern); ++i)
+            if (exec_pattern[i] != (unsigned char) (i * 7 + round))
+                SC(SYS_exit, 1, 0, 0);
+    }
+
+    SC(SYS_exit, 0x55, 0, 0);
+}
+
+static void exec_writer(void *u, void *a)
+{
+    int me = thread_id();
+
+    for (;;)
+        exec_pattern[1000 * (me + 1)] = 1;
+}
+
+static void exec_while_running(void)
+{
+    next_id = 0;
+
+    for (int i = 0; i < 3; ++i)
+        thread(i, exec_writer);
+
+    aq_spin(2000000);
+
+    char *argv[] = {"/init", "alone", 0}, *envp[] = {0};
+    SC(SYS_execve, "/init", argv, envp);
+    SC(SYS_exit, 9, 0, 0);
+}
+
 void aq_main(void)
 {
+    exec_alone();
     aq_begin("smp");
 
     int pct = at_once();
@@ -348,6 +409,7 @@ void aq_main(void)
     check("exit: threads running on other CPUs", exited_while_running(), 1);
     check("signal: to a process running on another CPU", signal_while_running(), 7 << 8);
     check("fpu: threads moving between CPUs", fpu_moving(), 1);
+    check("exec: the threads on other CPUs end first", aq_child_status(exec_while_running), 0x55 << 8);
 
     pct = at_once();
     aq_puts("at once, after: ");

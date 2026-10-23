@@ -35,6 +35,7 @@ void sched_cpu_tick(uint32_t period, int user);
  * entering the kernel now */
 struct cpu *sched_thread_cpu(struct thread *thread);
 void sched_thread_kick(struct thread *thread);
+void sched_thread_killed(void);
 
 int  sched_sleep(uint64_t until);
 int  sched_wait(struct queue *queue, uint64_t until);

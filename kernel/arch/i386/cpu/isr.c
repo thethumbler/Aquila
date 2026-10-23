@@ -228,7 +228,7 @@ void __x86_isr(struct x86_regs *regs)
     /* its process was killed while it ran here (on another CPU): it goes,
      * what it came in for with it */
     if (took && curthread && curthread->killed)
-        arch_cur_thread_kill();
+        sched_thread_killed();
 
     isr_dispatch(regs);
     kernel_leave(took);

@@ -200,6 +200,24 @@ void sched_thread_kick(struct thread *thread)
         arch_cpu_kick(cpu);
 }
 
+/*
+ * The running thread was killed while it ran here (thread->killed): it
+ * goes; if its process lives on (exec ended it), it leaves it, and wakes
+ * the exec waiting for it (proc_threads_exec)
+ */
+void sched_thread_killed(void)
+{
+    struct thread *thread = curthread;
+
+    if (thread->owner) {
+        queue_remove(&thread->owner->threads, thread);
+        thread_queue_wakeup(&thread->owner->thread_join);
+        thread->owner = NULL;
+    }
+
+    arch_cur_thread_kill();
+}
+
 /* a thread is ready: a CPU that idles runs it (if this one idles, it's in
  * an interrupt, it does on the way out: sched_idle_wakeup) */
 static void sched_cpu_wake(void)

@@ -185,6 +185,8 @@ void pgrp_release(struct pgroup *pgrp);
 int  pgrp_orphaned(struct pgroup *pgrp, struct proc *gone);
 
 void proc_kill(struct proc *proc);
+int  proc_threads_end(struct proc *proc, struct thread *keep, int exiting);
+void proc_threads_exec(struct proc *proc);
 int  proc_reap(struct proc *proc);
 int  proc_fd_get(struct proc *proc);
 void proc_fd_release(struct proc *proc, int fd);

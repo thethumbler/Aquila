@@ -14,7 +14,9 @@ static int binfmt_fmt_load(struct proc *proc, const char *path, struct vnode *vn
     int err = 0;
 
     /* point of no return: the old image is gone after this, on failure
-     * the vm space is left empty and the caller has to kill the process */
+     * the vm space is left empty and the caller has to kill the process;
+     * the other threads, which run in it, end first */
+    proc_threads_exec(proc);
     vm_space_destroy(&proc->vm_space);
 
     if ((err = binfmt->load(proc, path, vnode)))

@@ -29,6 +29,8 @@
  * - the FPU of threads that start while another has it: their own
  * - inode numbers whole: stat's are readdir's (the initramfs's are
  *   pointers, they were cut to 16 bits)
+ * - exec ends the other threads (one asleep, one ready to run): the new
+ *   image runs alone, nothing of the old one writes to its memory
  * - user memory that isn't mapped: EFAULT, the process goes on, a read's
  *   bytes stay, a buffer running into it is used up to it
  * - virtual terminals: KD* and VT_* ioctls, switching, VT_PROCESS
@@ -355,6 +357,67 @@ static void script_interpreter(void)
 
     SC(SYS_exit, str_eq(argv[0], "/init") && str_eq(argv[2], "/tmp/script") &&
                  str_eq(argv[3], "arg") ? 42 : 1, 0, 0);
+}
+
+/*
+ * exec with other threads: they end, the new image (this program again,
+ * "alone") runs by itself. They write where it checks a pattern: had one
+ * gone on, in the new image (the same code), the pattern would change.
+ */
+static volatile unsigned char exec_pattern[16384];
+static char exec_stacks[2][8192] __attribute__((aligned(16)));
+
+static void exec_alone(void)
+{
+    uptr *entry = (uptr *) aq_entry_esp;
+    char **argv = (char **) entry[1];
+
+    if (entry[0] != 2 || !str_eq(argv[1], "alone"))
+        return;
+
+    for (int round = 0; round < 40; ++round) {
+        for (int i = 0; i < (int) sizeof(exec_pattern); ++i)
+            exec_pattern[i] = i * 7 + round;
+
+        aq_spin(200000);
+
+        for (int i = 0; i < (int) sizeof(exec_pattern); ++i)
+            if (exec_pattern[i] != (unsigned char) (i * 7 + round))
+                SC(SYS_exit, 1, 0, 0);
+    }
+
+    SC(SYS_exit, 0x55, 0, 0);
+}
+
+static void exec_spinner(void *u, void *a)
+{
+    for (;;)
+        exec_pattern[1000] = 1;
+}
+
+static void exec_sleeper(void *u, void *a)
+{
+    struct aquila_timespec ts = {0, 100000000};
+    SC(SYS_nanosleep, &ts, 0, 0);
+
+    for (;;)
+        exec_pattern[2000] = 1;
+}
+
+static void exec_with_threads(void)
+{
+    void (*fns[2])(void *, void *) = {exec_spinner, exec_sleeper};
+
+    for (int i = 0; i < 2; ++i) {
+        struct aquila_thread_args ta = {(uptr) &exec_stacks[i][8192], (uptr) fns[i], 0, 0, 0};
+        SC(SYS_thread_create, &ta, 0, 0);
+    }
+
+    aq_spin(1000000);
+
+    char *argv[] = {"/init", "alone", 0}, *envp[] = {0};
+    SC(SYS_execve, "/init", argv, envp);
+    SC(SYS_exit, 9, 0, 0);
 }
 
 /*
@@ -1232,6 +1295,7 @@ static void vnode_paths(void)
 void aq_main(void)
 {
     script_interpreter();
+    exec_alone();
     aq_begin("syscalls");
 
     char buf[512];
@@ -2539,6 +2603,8 @@ void aq_main(void)
     open_files();
     fpu_threads();
     inode_numbers();
+    check("exec: the other threads end, the new image runs alone",
+          aq_child_status(exec_with_threads), 0x55 << 8);
     stopped_sleeps();
     vnode_paths();
 

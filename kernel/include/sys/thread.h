@@ -89,9 +89,9 @@ struct thread {
      *  woke it returns (sched_thread_wake): the network's thread */
     int urgent;
 
-    /** Killed (proc_kill) while it ran on another CPU: it frees itself
-     *  there, when that CPU next enters the kernel (its process may be
-     *  gone by then) */
+    /** Killed (proc_threads_end) while it ran on another CPU: it frees
+     *  itself there, when that CPU next enters the kernel (its process,
+     *  owner, NULL if it goes too: sched_thread_killed) */
     int killed;
 };
 

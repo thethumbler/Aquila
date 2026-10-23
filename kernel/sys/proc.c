@@ -220,6 +220,73 @@ static void proc_zombie_notify(struct proc *proc)
         proc_reap(proc);
 }
 
+/*
+ * The threads of `proc' but `keep' end: freed, or, running on another CPU
+ * (in user mode: this one has the kernel lock), killed there, freeing
+ * themselves when they enter the kernel, which they do now. `exiting':
+ * the process goes, they're detached from it; else they leave its list
+ * when they go and wake proc->thread_join. How many run elsewhere.
+ */
+int proc_threads_end(struct proc *proc, struct thread *keep, int exiting)
+{
+    int elsewhere = 0;
+
+    for (struct qnode *node = proc->threads.head, *next; node; node = next) {
+        struct thread *thread = node->value;
+        next = node->next;
+
+        if (thread == keep)
+            continue;
+
+        if (sched_thread_cpu(thread)) {
+            thread->killed = 1;
+            sched_thread_kick(thread);
+            elsewhere++;
+
+            if (exiting) {
+                queue_node_remove(&proc->threads, node);
+                thread->owner = NULL;
+            }
+
+            continue;
+        }
+
+        queue_node_remove(&proc->threads, node);
+
+        if (thread->sleep_node) /* Thread is sleeping on some queue */
+            queue_node_remove(thread->sleep_queue, thread->sleep_node);
+
+        sched_timer_cancel(thread);
+
+        if (thread->sched_node) /* Thread is in the scheduler queue */
+            queue_node_remove(thread->sched_queue, thread->sched_node);
+
+        /* a system call it won't return from: the files it held */
+        thread_files_release(thread);
+
+        /* zombie threads (thread_exit) already released their resources */
+        if (thread->state != ZOMBIE)
+            thread_kill(thread);
+
+        kfree(thread);
+    }
+
+    return elsewhere;
+}
+
+/*
+ * exec: the threads of the process but the running one end (they run in
+ * the image that is replaced, POSIX), those on other CPUs waited for
+ */
+void proc_threads_exec(struct proc *proc)
+{
+    if (!curthread || curthread->owner != proc)
+        return;
+
+    while (proc_threads_end(proc, curthread, 0))
+        thread_queue_sleep_unint(&proc->thread_join);
+}
+
 void proc_kill(struct proc *proc)
 {
     if (proc->pid == 1) {
@@ -237,42 +304,15 @@ void proc_kill(struct proc *proc)
     /* no more SIGALRM */
     sched_alarm(proc, 0, 0, NULL, NULL);
 
-    int kill_curthread = 0;
+    /* its threads end, the current one last (it runs this) */
+    struct thread *self = curthread && curthread->owner == proc ? curthread : NULL;
+    int kill_curthread = self != NULL;
 
-    /* Kill all threads */
-    while (proc->threads.count) {
-        struct thread *thread = dequeue(&proc->threads);
+    proc_threads_end(proc, self, 1);
 
-        if (thread->sleep_node) /* Thread is sleeping on some queue */
-            queue_node_remove(thread->sleep_queue, thread->sleep_node);
-
-        sched_timer_cancel(thread);
-
-        if (thread->sched_node) /* Thread is in the scheduler queue */
-            queue_node_remove(thread->sched_queue, thread->sched_node);
-
-        /* a system call it won't return from: the files it held */
-        thread_files_release(thread);
-
-        if (thread == curthread) {
-            kill_curthread = 1;
-            continue;
-        }
-
-        /* running on another CPU (in user mode, this one has the kernel
-         * lock): it frees itself there, its map gone, when it enters the
-         * kernel, which it does now */
-        if (sched_thread_cpu(thread)) {
-            thread->killed = 1;
-            sched_thread_kick(thread);
-            continue;
-        }
-
-        /* zombie threads (thread_exit) already released their resources */
-        if (thread->state != ZOMBIE)
-            thread_kill(thread);
-
-        kfree(thread);
+    if (self) {
+        queue_remove(&proc->threads, self);
+        thread_files_release(self);
     }
 
     /* close all file descriptors */
