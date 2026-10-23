@@ -130,6 +130,7 @@ int minix_inode_read(struct minix *desc, ino_t ino, struct minix_inode *ref);
 int minix_inode_write(struct minix *desc, ino_t ino, struct minix_inode *ref);
 ssize_t minix_inode_block_read(struct minix *desc, struct minix_inode *m_inode, size_t idx, void *buf);
 ssize_t minix_inode_block_write(struct minix *desc, struct minix_inode *inode, ino_t ino, size_t idx, void *buf);
+void minix_zones_free(struct minix *desc, struct minix_inode *inode, size_t from);
 
 /* dentry.c */
 uint32_t minix_dentry_find(struct minix *desc, struct minix_inode *m_inode, const char *name);

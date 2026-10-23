@@ -36,8 +36,9 @@ void minix_block_free(struct minix *desc, blk_t blk)
         /* TODO warn */
         return;
 
-    /* update bitmap */
+    /* update bitmap; a cached copy of it (a table) goes */
     bitmap_clear(&desc->zmap, blk);
+    bcache_remove(desc->bcache, blk + desc->superblock->firstdatazone - 1);
 
     /* sync bitmap -- TODO defer */
     vfs_write(desc->supernode, desc->zmap_off, desc->superblock->zmap_blocks * desc->bs, desc->zmap.map);

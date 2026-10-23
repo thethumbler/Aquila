@@ -15,7 +15,8 @@
 # QEMU uses KVM when /dev/kvm can be used, KVM=0 in the environment turns
 # it off.
 #
-# tests: ata cpu syscalls memory kvmem clock irq smp net tcp ext2 libc system disk tcc curl bash
+# tests: ata cpu syscalls memory kvmem clock irq smp net tcp ext2 minix libc system disk tcc curl
+# bash
 # (default: all)
 #
 # Requires gcc with 32-bit support, ld, cpio and qemu-system-i386 (or
@@ -31,7 +32,7 @@ set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 TESTS=$ROOT/tests
 
-ALL_TESTS="ata cpu syscalls memory kvmem clock irq smp net tcp ext2 libc system disk tcc curl bash"
+ALL_TESTS="ata cpu syscalls memory kvmem clock irq smp net tcp ext2 minix libc system disk tcc curl bash"
 
 ARCH=x86_64
 build=1
@@ -700,6 +701,37 @@ EOF
     echo "e2fsck clean, file contents and directory verified on the host"
 }
 
+# minix (v1, 1K zones) on the first disk: tests/minix/init.c writes,
+# reads, makes holes and truncates; fsck.minix checks the image on the
+# host (its zone and inode maps against the files)
+test_minix()
+{
+    local img=$OUT/minix/disk.img
+    local log=$OUT/minix/serial.log
+
+    if ! command -v mkfs.minix >/dev/null || ! command -v fsck.minix >/dev/null; then
+        echo "SKIP: mkfs.minix or fsck.minix not found"
+        return 0
+    fi
+
+    rm -f "$img"
+    truncate -s 4M "$img"
+    mkfs.minix -1 "$img" >/dev/null || return 1
+
+    run_qemu "$log" 60 'aqtest: done' -initrd "$OUT/minix/initrd.img" \
+        -drive file="$img",format=raw,index=0,media=disk
+
+    aqtest_result "$log" || return 1
+
+    if ! fsck.minix -f "$img" > "$OUT/minix/fsck.log" 2>&1; then
+        echo "fsck.minix found errors:"
+        sed 's/^/    /' "$OUT/minix/fsck.log"
+        return 1
+    fi
+
+    echo "$(grep -a -c '^PASS' "$log") passed, fsck.minix clean"
+}
+
 # C library: errno, signals, stat and library functions through newlib
 test_libc()
 {
@@ -1125,7 +1157,7 @@ needed=" $selected "
 case "$needed" in *" ata "*|*" smp "*) needed="$needed cpu " ;; esac
 [ -x "$CROSS_CC" ] || needed=${needed/ libc / }
 
-for name in cpu syscalls memory kvmem clock irq smp net tcp ext2 libc; do
+for name in cpu syscalls memory kvmem clock irq smp net tcp ext2 minix libc; do
     case "$needed" in
         *" $name "*)
             mkdir -p "$OUT/$name"

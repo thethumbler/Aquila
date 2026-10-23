@@ -297,21 +297,37 @@ int minix_trunc(struct vnode *vnode, off_t len)
         return 0;
     }
 
-    /* otherwise the new size is smaller, we need to free the extra blocks */
-    /* TODO */
+    /* smaller: the zones past the new end are freed, the rest of the last
+     * one zeroed (the file reads zeros there if it grows again) */
+    struct minix *desc = vnode->p;
+    struct minix_inode m_inode;
+    size_t bs = desc->bs;
+    int err;
 
+    if ((err = minix_inode_read(desc, vnode->ino, &m_inode)))
+        return err;
 
-#if 0
-    blk_t old_blocks = (vnode->size  + desc->bs - 1) / desc->bs;
-    blk_t new_blocks = ((size_t) len + desc->bs - 1) / desc->bs;
+    if (len % bs) {
+        char *buf = kmalloc(bs, &M_BUFFER, 0);
 
-    for (blk_t blk = old_blocks + 1; blk < new_blocks; ++blk) {
-        printk("should free block %d\n", blk);
-        //minix_inode_block(struct minix *desc, ino_t ino, blk_t blk)
+        if (!buf)
+            return -ENOMEM;
+
+        /* a zone that can't be read isn't written over */
+        if (!(err = minix_inode_block_read(desc, &m_inode, len / bs, buf))) {
+            memset(buf + len % bs, 0, bs - len % bs);
+            err = minix_inode_block_write(desc, &m_inode, vnode->ino, len / bs, buf);
+        }
+
+        kfree(buf);
+
+        if (err)
+            return err;
     }
-#endif
 
+    minix_zones_free(desc, &m_inode, (len + bs - 1) / bs);
+
+    m_inode.size = len;
     vnode->size = len;
-    minix_inode_sync(vnode);
-    return 0;
+    return minix_inode_write(desc, vnode->ino, &m_inode);
 }
