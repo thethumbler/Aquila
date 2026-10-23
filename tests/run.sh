@@ -4,7 +4,9 @@
 #
 # usage: tests/run.sh [-a arch] [-c cpus] [-k args] [-n] [-v] [test...]
 #
-#   -a      the architecture: x86_64 (default) or i386
+#   -a      the architecture: x86_64 (default), i386, or aarch64 (QEMU's
+#           virt machine, the kernel and tests built with clang; only the
+#           aarch64 test by default)
 #   -c      the CPUs QEMU has (-smp), every boot (but the irq and smp
 #           tests', which choose)
 #   -k      more for the kernel's command line, every boot (e.g. apic=off;
@@ -16,7 +18,7 @@
 # it off.
 #
 # tests: ata cpu syscalls memory kvmem clock irq smp net tcp ext2 minix libc system disk tcc curl
-# bash
+# bash; aarch64 (-a aarch64)
 # (default: all)
 #
 # Requires gcc with 32-bit support, ld, cpio and qemu-system-i386 (or
@@ -36,6 +38,12 @@ ALL_TESTS="ata cpu syscalls memory kvmem clock irq smp net tcp ext2 minix libc s
 
 ARCH=x86_64
 build=1
+# what QEMU's machine is, besides its default
+MACHINE=
+# the freestanding tests' compiler (and what x86's needs), the tools needed
+TEST_CC=gcc
+TEST_CFLAGS=-fcf-protection=none
+TOOLS="gcc ld cpio"
 verbose=0
 kargs=
 smp=
@@ -70,12 +78,26 @@ case $ARCH in
         # more than 4 GiB filled: pages above 4 GiB are used
         MEMORY_TEST_RAM=6G MEMORY_TEST_FILL=4608
         CROSS_CC=$ROOT/build/toolchain/bin/x86_64-aquila-gcc ;;
+    aarch64)
+        OUT=$TESTS/out/aarch64
+        QEMU=qemu-system-aarch64
+        MACHINE="-M virt -cpu cortex-a72"
+        TEST_CC="clang --target=aarch64-none-elf -fuse-ld=lld -mgeneral-regs-only"
+        TEST_CFLAGS=
+        TOOLS="clang ld.lld llvm-objcopy cpio"
+        ALL_TESTS="aarch64"
+        CROSS_CC=
+        # no KVM: another CPU
+        KVM=0 ;;
     *)
         echo "error: unknown architecture: $ARCH" >&2
         exit 2 ;;
 esac
 
-CONFIG=../tests/host/$ARCH-pc
+case $ARCH in
+    aarch64) CONFIG=aarch64-virt ;;
+    *)       CONFIG=../tests/host/$ARCH-pc ;;
+esac
 
 # the main build (make, make CONFIG=x86_64-pc), contrib/ and ports/ come
 # from there
@@ -86,7 +108,7 @@ esac
 
 selected=${*:-$ALL_TESTS}
 
-for tool in gcc ld cpio $QEMU; do
+for tool in $TOOLS $QEMU; do
     if ! command -v $tool >/dev/null; then
         echo "error: $tool not found" >&2
         exit 2
@@ -114,7 +136,9 @@ if [ $build = 1 ]; then
     fi
 fi
 
-KERNEL=$(ls "$OUT"/build/kernel/kernel-*.$ARCH 2>/dev/null | head -1)
+# the kernel's flat image if it has one (aarch64's), its ELF file else
+KERNEL=$(ls "$OUT"/build/kernel/kernel-*.$ARCH.img 2>/dev/null | head -1)
+[ -n "$KERNEL" ] || KERNEL=$(ls "$OUT"/build/kernel/kernel-*.$ARCH 2>/dev/null | head -1)
 
 # -k, -c: QEMU through a wrapper that adds them to -append, and -smp (a
 # script, timeout runs it); QEMU_BIN is QEMU itself
@@ -161,8 +185,8 @@ build_initrd()
         "$CROSS_CC" -O1 -Wall -o "$root/init" "$TESTS/$name/init.c" \
             > "$OUT/$name/gcc.log" 2>&1 || { cat "$OUT/$name/gcc.log"; return 1; }
     else
-        gcc $HOST_CC_ARCH -static -nostdlib -ffreestanding -fno-builtin -fno-pic -no-pie \
-            -fno-stack-protector -fcf-protection=none -O1 -Wall -Wno-unused-function \
+        $TEST_CC ${HOST_CC_ARCH:-} -static -nostdlib -ffreestanding -fno-builtin -fno-pic -no-pie \
+            -fno-stack-protector $TEST_CFLAGS -O1 -Wall -Wno-unused-function \
             -I"$ROOT/include/uapi" -Wl,--build-id=none -o "$root/init" "$TESTS/$name/init.c" \
             > "$OUT/$name/gcc.log" 2>&1 || { cat "$OUT/$name/gcc.log"; return 1; }
     fi
@@ -192,7 +216,7 @@ run_qemu()
     shift 3
 
     rm -f "$log"
-    $QEMU $ACCEL -kernel "$KERNEL" -m "${QEMU_MEM:-256}" -display none -no-reboot \
+    $QEMU $ACCEL $MACHINE -kernel "$KERNEL" -m "${QEMU_MEM:-256}" -display none -no-reboot \
         -serial file:"$log" "$@" >/dev/null 2>&1 &
 
     local pid=$! ticks=0
@@ -290,6 +314,14 @@ test_cpu()
 {
     run_qemu "$OUT/cpu/serial.log" 30 'aqtest: done' -initrd "$OUT/cpu/initrd.img"
     aqtest_result "$OUT/cpu/serial.log"
+}
+
+# the generic kernel on aarch64: user mode, system calls, fork, exec,
+# pipes, memory, faults, signals, the tick
+test_aarch64()
+{
+    run_qemu "$OUT/aarch64/serial.log" 60 'aqtest: done' -initrd "$OUT/aarch64/initrd.img"
+    aqtest_result "$OUT/aarch64/serial.log"
 }
 
 test_syscalls()
@@ -1163,7 +1195,7 @@ needed=" $selected "
 case "$needed" in *" ata "*|*" smp "*) needed="$needed cpu " ;; esac
 [ -x "$CROSS_CC" ] || needed=${needed/ libc / }
 
-for name in cpu syscalls memory kvmem clock irq smp net tcp ext2 minix libc; do
+for name in cpu syscalls memory kvmem clock irq smp net tcp ext2 minix libc aarch64; do
     case "$needed" in
         *" $name "*)
             mkdir -p "$OUT/$name"

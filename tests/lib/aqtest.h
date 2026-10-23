@@ -1,9 +1,9 @@
 /*
  * aqtest - minimal freestanding harness for kernel test programs
  *
- * Each test is a static ELF (i386 or x86_64, the kernel's) that runs as
- * /init from its own initrd. It talks to the kernel through raw
- * `int $0x80' syscalls (no libc), and
+ * Each test is a static ELF (i386, x86_64 or aarch64, the kernel's) that
+ * runs as /init from its own initrd. It talks to the kernel through raw
+ * system calls (`int $0x80', aarch64's `svc #0'; no libc), and
  * reports results on the first serial port, one line per check:
  *
  *      PASS <name> got=<value> want=<value>
@@ -35,18 +35,28 @@ typedef unsigned long uptr;     /* a pointer's size */
 #define DEV(major, minor)   (((major) << 8) | (minor))
 
 /* an address in kernel space, must never be accepted from user space */
-#ifdef __x86_64__
+#if defined(__x86_64__)
 #define KADDR       0xFFFFFFFF80100000ul
+#elif defined(__aarch64__)
+#define KADDR       0xFFFF000040080000ul
 #else
 #define KADDR       0xC0100000u
 #endif
 
 /* the number in eax, the arguments in ebx, ecx, edx, esi and edi; on
- * x86_64 in rdi, rsi, rdx, r10 and r8 */
+ * x86_64 in rdi, rsi, rdx, r10 and r8; on aarch64 the number in x8, the
+ * arguments in x0 to x4 */
 static inline long sc3(long n, uptr a, uptr b, uptr c)
 {
     long r;
-#ifdef __x86_64__
+#if defined(__aarch64__)
+    register uptr x8 asm("x8") = n;
+    register uptr x0 asm("x0") = a;
+    register uptr x1 asm("x1") = b;
+    register uptr x2 asm("x2") = c;
+    asm volatile("svc #0" : "+r"(x0) : "r"(x8), "r"(x1), "r"(x2) : "memory");
+    r = x0;
+#elif defined(__x86_64__)
     asm volatile("int $0x80" : "=a"(r) : "a"(n), "D"(a), "S"(b), "d"(c) : "memory");
 #else
     asm volatile("int $0x80" : "=a"(r) : "a"(n), "b"(a), "c"(b), "d"(c) : "memory");
@@ -59,7 +69,16 @@ static inline long sc3(long n, uptr a, uptr b, uptr c)
 static inline long sc5(long n, uptr a, uptr b, uptr c, uptr d, uptr e)
 {
     long r;
-#ifdef __x86_64__
+#if defined(__aarch64__)
+    register uptr x8 asm("x8") = n;
+    register uptr x0 asm("x0") = a;
+    register uptr x1 asm("x1") = b;
+    register uptr x2 asm("x2") = c;
+    register uptr x3 asm("x3") = d;
+    register uptr x4 asm("x4") = e;
+    asm volatile("svc #0" : "+r"(x0) : "r"(x8), "r"(x1), "r"(x2), "r"(x3), "r"(x4) : "memory");
+    r = x0;
+#elif defined(__x86_64__)
     register uptr r10 asm("r10") = d;
     register uptr r8 asm("r8") = e;
     asm volatile("int $0x80" : "=a"(r) : "a"(n), "D"(a), "S"(b), "d"(c), "r"(r10), "r"(r8) : "memory");
@@ -84,7 +103,23 @@ static inline int aq_mount(const char *type, const char *dir, void *data)
 uptr aq_entry_esp;
 void aq_main(void);
 
-#ifdef __x86_64__
+#if defined(__aarch64__)
+/* aarch64: main()'s argc and argv come in x0 and x1 */
+long aq_argc;
+char **aq_argv;
+
+asm(".globl _start\n"
+    "_start:\n"
+    "    mov x9, sp\n"
+    "    adrp x10, aq_entry_esp\n"
+    "    str x9, [x10, :lo12:aq_entry_esp]\n"
+    "    adrp x10, aq_argc\n"
+    "    str x0, [x10, :lo12:aq_argc]\n"
+    "    adrp x10, aq_argv\n"
+    "    str x1, [x10, :lo12:aq_argv]\n"
+    "    bl aq_main\n"
+    "1:  b 1b\n");
+#elif defined(__x86_64__)
 asm(".globl _start\n"
     "_start:\n"
     "    mov %rsp, aq_entry_esp(%rip)\n"
