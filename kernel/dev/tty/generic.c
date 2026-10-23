@@ -550,12 +550,16 @@ int tty_new(struct proc *proc, size_t buf_size, ttyio master,
 /**
  * A terminal device was opened: it becomes the controlling terminal of a
  * session leader that has none (unless O_NOCTTY), if no session has it.
+ * Not through /dev/console (as Linux): init writes there, and would take
+ * the terminal that is also the console (the first virtual terminal, or
+ * the uart) from the session a getty starts on it.
  */
 void tty_open(struct tty *tty, struct file *file)
 {
     struct session *session = curproc->pgrp->session;
+    int console = file->vnode && file->vnode->rdev == DEV(5, 1);
 
-    if ((file->flags & O_NOCTTY) || session->leader != curproc ||
+    if ((file->flags & O_NOCTTY) || console || session->leader != curproc ||
         session->ctty || tty->session)
         return;
 
