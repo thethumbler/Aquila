@@ -772,6 +772,7 @@ static int procfs_close(struct vnode *vnode)
         if (vcache_find(&procfs_vcache, vnode->ino))
             vcache_remove(&procfs_vcache, vnode);
 
+        vnode_pages_free(vnode);
         kfree(vnode);
     }
 

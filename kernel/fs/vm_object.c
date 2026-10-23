@@ -133,6 +133,29 @@ void vnode_pages_update(struct vnode *vnode, off_t start, off_t end)
     kfree(buf);
 }
 
+/**
+ * The vnode is being freed: its object and its cached pages go with it.
+ * Nothing maps them: a mapping holds the vnode (vm_object_incref()).
+ */
+void vnode_pages_free(struct vnode *vnode)
+{
+    struct vm_object *vm_object = vnode->vm_object;
+
+    if (!vm_object)
+        return;
+
+    hashmap_for (qnode, vm_object->pages) {
+        struct hashmap_node *node = (struct hashmap_node *) qnode->value;
+        struct vm_page *vm_page = (struct vm_page *) node->entry;
+
+        mm_page_dealloc(vm_page->paddr);
+    }
+
+    hashmap_free(vm_object->pages);
+    kfree(vm_object);
+    vnode->vm_object = NULL;
+}
+
 static struct vm_pager vnode_pager = {
     .in = vnode_page_in,
     .out = NULL,

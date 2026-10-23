@@ -141,7 +141,7 @@ int vm_space_fork(struct vm_space *src, struct vm_space *dst)
         }
 
         if (s_entry->vm_object) {
-            s_entry->vm_object->ref++;
+            vm_object_incref(s_entry->vm_object);
         }
 
         if (s_entry->flags & (VM_UW|VM_KW) && !(s_entry->flags & VM_SHARED)) {

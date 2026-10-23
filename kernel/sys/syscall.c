@@ -1450,6 +1450,14 @@ static void sys_mmap(struct aquila_mmap_args *uargs, void **ret)
     /* without an object, pages are zero-filled when first used */
     vm_entry->vm_object = anon ? NULL : vm_object_vnode(file->vnode);
 
+    if (!anon && !vm_entry->vm_object) {
+        err = -ENOMEM;
+        goto error;
+    }
+
+    if (vm_entry->vm_object)
+        vm_object_incref(vm_entry->vm_object);
+
     if (!(args->flags & MAP_FIXED))
         vm_entry->base = 0;  /* Allocate memory region */
 
@@ -1470,6 +1478,9 @@ error:
     if (vm_entry) {
         if (vm_entry->qnode)
             queue_node_remove(&curproc->vm_space.vm_entries, vm_entry->qnode);
+
+        if (vm_entry->vm_object)
+            vm_object_decref(vm_entry->vm_object);
 
         kfree(vm_entry);
     }

@@ -139,6 +139,7 @@ int ext2_close(struct vnode *vnode)
     if (!vnode->nlink) {
         ext2_inode_discard(desc, vnode->ino);
         vcache_remove(desc->vcache, vnode);
+        vnode_pages_free(vnode);
         kfree(vnode);
     }
 

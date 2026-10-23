@@ -98,20 +98,25 @@ int binfmt_load(struct proc *proc, const char *path, struct proc **ref)
         return -ENOENT;
 
     /* a regular file the process may execute */
-    if (!S_ISREG(vnode->mode))
-        return -EACCES;
+    if (!S_ISREG(vnode->mode)) {
+        err = -EACCES;
+        goto done;
+    }
 
     if ((err = vfs_access(vnode, &uio, VFS_X)))
-        return err;
+        goto done;
+
+    err = -ENOEXEC;
 
     for (size_t i = 0; i < NR_BINFMT; ++i) {
         if (!binfmt_list[i].check(vnode)) {
             err = binfmt_fmt_load(proc, path, vnode, &binfmt_list[i], ref);
-            //vfs_close(vnode);
-            return err;
+            break;
         }
     }
 
-    //vfs_close(vnode);
-    return -ENOEXEC;
+done:
+    /* the lookup's reference: the program's mappings hold their own */
+    vfs_close(vnode);
+    return err;
 }
