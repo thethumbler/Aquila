@@ -119,7 +119,9 @@ static int minix_load(struct vnode *dev, struct vnode **super)
             break;
     }
 
-    if (!version) {
+    /* zones of one block of 1 KiB, what version 1 has (the code keeps
+     * blocks in buffers on the stack) */
+    if (!version || sb->block_size) {
         err = -EINVAL;
         goto error;
     }

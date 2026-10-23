@@ -158,20 +158,28 @@ ssize_t ext2_readdir(struct vnode *dir, off_t offset, struct dirent *dirent)
     size_t bs = desc->bs;
     size_t blocks_nr = inode.size / bs;
 
-    char buf[bs];
+    /* not on the stack: a block is up to 4 KiB, i386's stack is 8 */
+    char *buf = kmalloc(bs, &M_BUFFER, 0);
+    if (!buf) return -ENOMEM;
 
     struct ext2_dentry *dentry;
     off_t idx = 0;
     char found = 0;
 
     for (size_t i = 0; i < blocks_nr; ++i) {
-        if ((err = ext2_inode_block_read(desc, &inode, i, buf)))
+        if ((err = ext2_inode_block_read(desc, &inode, i, buf))) {
+            kfree(buf);
             return err;
+        }
 
         dentry = (struct ext2_dentry *) buf;
 
-        while ((char *) dentry < (char *) buf + bs) {
+        /* an entry, its header and its name, in the block */
+        while ((char *) dentry + sizeof(*dentry) <= buf + bs) {
             if (!dentry->size)  /* corrupted entry */
+                break;
+
+            if ((char *) dentry->name + dentry->length > buf + bs)
                 break;
 
             /* unused entry */
@@ -196,6 +204,7 @@ ssize_t ext2_readdir(struct vnode *dir, off_t offset, struct dirent *dirent)
             break;
     }
 
+    kfree(buf);
     return found;
 }
 

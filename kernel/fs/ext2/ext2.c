@@ -114,8 +114,10 @@ int ext2_load(struct vnode *dev, struct vnode **super)
     if ((err = vfs_read(dev, 1024, sizeof(struct ext2_superblock), sb)) < 0)
         goto error;
 
-    /* valid ext2? */
-    if (sb->ext2_signature != EXT2_SIGNATURE) {
+    /* valid ext2? blocks of 1, 2 or 4 KiB (the code keeps blocks in
+     * buffers, some on the stack), and groups of blocks */
+    if (sb->ext2_signature != EXT2_SIGNATURE || sb->block_size > 2 ||
+        !sb->gblocks) {
         err = -EINVAL;
         goto error;
     }
