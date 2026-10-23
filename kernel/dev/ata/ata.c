@@ -159,31 +159,48 @@ void ata_setup(struct ata_drive *drive, uint64_t lba, size_t count)
 }
 
 static char read_buf[BLOCK_SIZE] __aligned(16);
-static size_t ata_partition_offset(struct ata_drive *drive, size_t part)
+/*
+ * Partition `part' of `drive' (1 to 4; 0 is the whole disk): its first
+ * sector and how many, from the MBR (read once). -ENXIO if the MBR has no
+ * partition there (no signature, an empty entry, one past the disk's
+ * end), -EIO if it can't be read
+ */
+static int ata_partition(struct ata_drive *drive, size_t part, uint64_t *start, uint64_t *nsectors)
 {
-    if (!part) /* Whole Disk */
+    if (!part) {
+        *start = 0;
+        *nsectors = drive->max_lba;
         return 0;
+    }
 
     part -= 1;
 
-    if (drive->poff[part] != 0)
-        return drive->poff[part];
+    if (!drive->psize[part]) {
+        if (drive->read(drive, 0, 1, read_buf) < 0)
+            return -EIO;
 
-    struct mbr *mbr;
+        struct mbr *mbr = (struct mbr *) read_buf;
+        struct mbr_part *e = &mbr->ptab[part];
 
-    if (drive->read(drive, 0, 1, read_buf) < 0)
-        return 0;
+        /* the CHS fields aren't used: LBA's are what any disk since the
+         * 90s has */
+        if (mbr->boot_signature != 0xAA55 || !e->type || !e->sectors_count ||
+            (uint64_t) e->start_lba + e->sectors_count > drive->max_lba)
+            return -ENXIO;
 
-    mbr = (struct mbr *) read_buf;
+        drive->poff[part]  = e->start_lba;
+        drive->psize[part] = e->sectors_count;
+    }
 
-    /* TODO Support CHS */
-    return drive->poff[part] = mbr->ptab[part].start_lba;
+    *start = drive->poff[part];
+    *nsectors = drive->psize[part];
+    return 0;
 }
 
-static ssize_t ata_read(struct devid *dd, off_t offset, size_t size, void *buf)
+/* the drive, and where the partition of `dd' is on it */
+static int ata_locate(struct devid *dd, int write, struct ata_drive **ref,
+                      uint64_t *start, uint64_t *nsectors)
 {
-    //printk("ata_read(dd=%p, offset=%d, size=%d, buf=%p)\n", dd, offset, size, buf);
-
     /* Get drive and parition numbers */
     size_t drive_id  = dd->minor / 64;
     size_t partition = dd->minor % 64;
@@ -193,35 +210,48 @@ static ssize_t ata_read(struct devid *dd, off_t offset, size_t size, void *buf)
 
     struct ata_drive *drive = &drives[drive_id];
 
-    if (!drive->read)
+    if (!(write ? drive->write : drive->read))
         return -ENXIO;
 
     channel_acquire(drive->channel);
-    offset += ata_partition_offset(drive, partition);
+    int err = ata_partition(drive, partition, start, nsectors);
     channel_release(drive->channel);
 
-    return blkcache_read(drive, offset, size, buf, drive->max_lba, drive_read);
+    *ref = drive;
+    return err;
+}
+
+/* sectors of the partition, from `offset' on: none past its end */
+static ssize_t ata_read(struct devid *dd, off_t offset, size_t size, void *buf)
+{
+    struct ata_drive *drive;
+    uint64_t start, nsectors;
+    int err;
+
+    if ((err = ata_locate(dd, 0, &drive, &start, &nsectors)))
+        return err;
+
+    if ((uint64_t) offset >= nsectors)
+        return 0;
+
+    size = MIN(size, nsectors - offset);
+    return blkcache_read(drive, start + offset, size, buf, drive->max_lba, drive_read);
 }
 
 static ssize_t ata_write(struct devid *dd, off_t offset, size_t size, void *buf)
 {
-    /* Get drive and parition numbers */
-    size_t drive_id  = dd->minor / 64;
-    size_t partition = dd->minor % 64;
+    struct ata_drive *drive;
+    uint64_t start, nsectors;
+    int err;
 
-    if (drive_id >= 4 || partition > 4)
-        return -ENXIO;
+    if ((err = ata_locate(dd, 1, &drive, &start, &nsectors)))
+        return err;
 
-    struct ata_drive *drive = &drives[drive_id];
+    if ((uint64_t) offset >= nsectors)
+        return size ? -ENOSPC : 0;
 
-    if (!drive->write)
-        return -ENXIO;
-
-    channel_acquire(drive->channel);
-    offset += ata_partition_offset(drive, partition);
-    channel_release(drive->channel);
-
-    return blkcache_write(drive, offset, size, buf, drive_write);
+    size = MIN(size, nsectors - offset);
+    return blkcache_write(drive, start + offset, size, buf, drive_write);
 }
 
 /**

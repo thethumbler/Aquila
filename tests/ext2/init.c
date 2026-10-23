@@ -5,7 +5,8 @@
  * large enough to need singly and doubly indirect blocks (1K blocks),
  * appends to it after reopening, and reads everything back. Then
  * directories that grow past a block, removing, renaming and linking,
- * and truncating. tests/run.sh then checks the image on the host with
+ * and truncating; the disk has no partition table: its first partition
+ * isn't there (it isn't the whole disk). tests/run.sh then checks the image on the host with
  * e2fsck, compares the file contents with the same pattern and lists
  * what is left.
  */
@@ -224,6 +225,13 @@ void aq_main(void)
     for (int i = 0; i < 2000; ++i)
         zeros &= buf[i] == 0;
     check("grown part reads zeros", zeros, 1);
+    SC(SYS_close, fd, 0, 0);
+
+    /* no partition table: no first partition (not the whole disk from
+     * sector 0) */
+    SC(SYS_mknod, "/dev/hda1", S_IFBLK | 0644, DEV(3, 1));
+    fd = SC(SYS_open, "/dev/hda1", O_RDONLY, 0);
+    check("a partition the disk doesn't have", fd >= 0 ? SC(SYS_read, fd, buf, 512) : fd, -ENXIO);
     SC(SYS_close, fd, 0, 0);
 
     /* the disk has what was written (the host checks it) */

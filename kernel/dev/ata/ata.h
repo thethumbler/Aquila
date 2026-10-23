@@ -118,7 +118,8 @@ struct ata_drive {
     uint8_t  mode;
     uint16_t type;
     uint8_t  slave;
-    size_t   poff[4];
+    size_t   poff[4];       /* the partitions' first sectors */
+    size_t   psize[4];      /* and their sectors, 0 until the MBR was read */
 
 
     uint16_t signature;
