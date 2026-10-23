@@ -29,25 +29,21 @@ static uint8_t read_status(void)
     return io_in8(&i8042_ioaddr, STATUS_PORT);
 }
 
-static void x86_i8042_read_wait(void)
+/* the controller has a byte for us (its output buffer is full): the
+ * interrupt comes when it has, there is nothing to wait for; one with
+ * nothing to read is spurious */
+static int has_byte(void)
 {
-    /* TODO -- timeout */
-    while (read_status() & STATUS_IBUF_FULL);
-}
-
-static int x86_i8042_check(void)
-{
-    io_out8(&i8042_ioaddr, COMMAND_PORT, 0xAA);
-    while (!(read_status() & STATUS_OBUF_FULL));
-    uint8_t r = io_in8(&i8042_ioaddr, DATA_PORT);
-    return r == 0x55;
+    return read_status() & STATUS_OBUF_FULL;
 }
 
 static void x86_i8042_first_handler(struct x86_regs *r)
 {
     (void) r;
 
-    x86_i8042_read_wait();
+    if (!has_byte())
+        return;
+
     int scancode = io_in8(&i8042_ioaddr, DATA_PORT);
 
     if (channel1_handler)
@@ -58,10 +54,13 @@ static void x86_i8042_second_handler(struct x86_regs *r)
 {
     (void) r;
 
-    x86_i8042_read_wait();
+    if (!has_byte())
+        return;
+
     int scancode = io_in8(&i8042_ioaddr, DATA_PORT);
+
     if (channel2_handler)
-        channel2_handler(scancode); 
+        channel2_handler(scancode);
 }
 
 static void x86_i8042_handler_install(void)
@@ -133,7 +132,6 @@ int x86_i8042_setup(struct ioaddr *io)
         printk("i8042: skipping check\n");
     }
 
-    //x86_i8042_check();
 
     printk("i8042: initializing controller [%p (%s)]\n", io->addr, ioaddr_type_str(io));
     x86_i8042_handler_install();
