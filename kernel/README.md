@@ -1,13 +1,15 @@
-# AquilaOS Kernel
+# The AquilaOS kernel
 
-### Source tree structure
-- arch/     - all arch. dependent code
-- configs/  - configurations used during build
-- core/     - system components that do not fit anywhere else
-- dev/      - kdev and supported devices
-- fs/       - vfs and supported filesystems
-- include/  - generic include headers
-- mm/       - arch independent memory management
-- scripts/  - scripts used during build
-- sys/      - core system components (processes, threads, scheduler, etc...)
+How it works, subsystem by subsystem, is in
+[docs/kernel/](../docs/kernel/README.md); start there.
 
+| directory  |                                                              |
+|------------|--------------------------------------------------------------|
+| `core/`    | `kmain()`, printk, panic, kernel arguments, module init      |
+| `mm/`      | physical pages (buddy), the kernel heap (kvmem), address spaces, page faults |
+| `sys/`     | processes, threads, the scheduler, system calls, signals     |
+| `fs/`      | the VFS, and initramfs, tmpfs, devfs, devpts, procfs, ext2, minix |
+| `dev/`     | the device layer and the drivers                             |
+| `net/`     | Unix sockets, IPv4 (ARP, ICMP, UDP, TCP)                     |
+| `include/` | the kernel's headers                                         |
+| `arch/`    | `i386/` (also x86_64, `x86_64` is a link to it) and `aarch64/`, each with its platforms |

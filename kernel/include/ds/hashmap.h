@@ -57,7 +57,6 @@ static inline struct hashmap *hashmap_new(size_t n, int (*eq)(void *, void *))
     hashmap = kmalloc(sizeof(struct hashmap), &M_HASHMAP, 0);
     if (!hashmap) return NULL;
 
-    //printk("hashmap_new(%d) -> %p\n", n, hashmap);
 
     memset(hashmap, 0, sizeof(struct hashmap));
 
@@ -231,16 +230,6 @@ static inline void hashmap_node_remove(struct hashmap *hashmap, struct hashmap_n
     kfree(node);
     hashmap->count--;
 }
-
-#if 0
-static inline void hashmap_remove(struct hashmap *hashmap, hash_t id)
-{
-    struct hashmap_node *node = hashmap_lookup(hashmap, id);
-
-    if (node)
-        hashmap_node_remove(hashmap, node);
-}
-#endif
 
 /**
  * free all resources associated with a hashmap

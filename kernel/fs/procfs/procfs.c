@@ -61,8 +61,6 @@ static ssize_t procfs_meminfo(off_t off, size_t size, char *buf)
 /** proc/kvmem */
 static ssize_t procfs_kvmem(off_t off, size_t size, char *buf)
 {
-    //printk("procfs_kvmem(off=%d, size=%d, buf=%p)\n", off, size, buf);
-
     extern struct queue *malloc_types;
 
     char kvmem_buf[1024];
@@ -567,8 +565,6 @@ static ssize_t procfs_read(struct vnode *node, off_t offset, struct iobuf *io)
 
 static ssize_t procfs_readdir(struct vnode *vnode, off_t offset, struct dirent *dirent)
 {
-    //printk("procfs_readdir(vnode=%p, offset=%d, dirent=%p)\n", vnode, offset, dirent);
-
     if (vnode == procfs_root) {
         if (offset == 0) {
             dirent->d_ino = 0;
@@ -633,8 +629,6 @@ static ssize_t procfs_readdir(struct vnode *vnode, off_t offset, struct dirent *
 
 static int procfs_finddir(struct vnode *parent, const char *name, struct dirent *dirent)
 {
-    //printk("procfs_finddir(parent=%p, name=%s, dirent=%p)\n", parent, name, dirent);
-
     if (parent->ino == (ino_t) procfs_root) {
         for (size_t i = 0; i < PROCFS_ENTRIES; ++i) {
             if (!strcmp(name, entries[i].name)) {
@@ -680,8 +674,6 @@ static int procfs_finddir(struct vnode *parent, const char *name, struct dirent 
 
 static int procfs_vget(struct vnode *super, ino_t ino, struct vnode **vnode)
 {
-    //printk("procfs_vget(super=%p, ino=%d, vnode=%p)\n", super, ino, vnode);
-
     int err = 0;
 
     if (ino == (vino_t) procfs_root) {

@@ -41,8 +41,6 @@ static void unix_conn_wakeup(struct un_conn *conn)
 
 int socket_unix_create(struct file *file, int domain, int type, int protocol)
 {
-    //printk("socket_unix_create(file=%p, domain=%d, type=%d, protocol=%d)\n", file, domain, type, protocol);
-
     /* streams only: a datagram socket would be one too, silently */
     if (type != SOCK_STREAM)
         return -EPROTONOSUPPORT;
@@ -66,8 +64,6 @@ int socket_unix_create(struct file *file, int domain, int type, int protocol)
 
 static int socket_unix_accept(struct file *file, struct file *conn, const struct sockaddr *addr, socklen_t *len)
 {
-    //printk("%d:%d socket_unix_accept(socket=%p, conn=%p, addr=%p, len=%p)\n", curthread->tid, curproc->pid, file, conn, addr, len);
-    
     if (!file || !file->socket)
         return -EINVAL;
 
@@ -126,7 +122,6 @@ static int socket_unix_accept(struct file *file, struct file *conn, const struct
 
 static int socket_unix_bind(struct file *file, const struct sockaddr *addr, socklen_t len)
 {
-    //printk("socket_unix_bind(file=%p, addr=%p, len=%d)\n", file, addr, len);
     struct sockaddr_un *addr_un = (struct sockaddr_un *) addr;
 
     /* Get path vnode */
@@ -176,8 +171,6 @@ static int socket_unix_bind(struct file *file, const struct sockaddr *addr, sock
 
 static int socket_unix_connect(struct file *file, const struct sockaddr *addr, socklen_t len)
 {
-    //printk("socket_unix_connect(socket=%p, addr=%p, len=%d)\n", file, addr, len);
-
     struct sockaddr_un *addr_un = (struct sockaddr_un *) addr;
 
     /* Get path vnode */
@@ -248,8 +241,6 @@ static int socket_unix_connect(struct file *file, const struct sockaddr *addr, s
 
 static int socket_unix_listen(struct file *file, int backlog)
 {
-    //printk("socket_unix_listen(file=%p, backlog=%d)\n", file, backlog);
-
     struct un_socket *socket = (struct un_socket *) file->socket->p;
 
     /* must be bound (and not a connection) */
@@ -467,8 +458,6 @@ static ssize_t socket_unix_recv(struct file *file, struct iobuf *io, int flags,
 
 static int socket_unix_can_read(struct file *file, size_t len)
 {
-    //printk("socket_unix_can_read(file=%p, len=%d)\n", file, len);
-
     if (!file || !file->socket)
         return -EINVAL;
 
@@ -526,8 +515,6 @@ static struct queue *socket_unix_wait_queue(struct file *file, int write)
 
 static int socket_unix_can_write(struct file *file, size_t len)
 {
-    //printk("socket_unix_can_write(file=%p, len=%d)\n", file, len);
-
     if (file->socket->domain != AF_UNIX_CONN)
         return -ENOTCONN;
 
@@ -588,8 +575,6 @@ static int socket_unix_shut(struct file *file, int how)
 
 static int socket_unix_shutdown(struct file *file, int how)
 {
-    //printk("socket_unix_shutdown(file=%p, how=%d)\n", file, how);
-    
     if (!file || !file->socket)
         return -EINVAL;
     

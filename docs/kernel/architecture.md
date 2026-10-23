@@ -34,9 +34,7 @@ machine it is.
   clock, ACPI's tables, the Multiboot boot loader, and a table of the
   devices no bus finds (the serial ports, the PS/2 controller: see
   "Devices: drivers and the platform" below).
-  Another x86 machine could differ here and not in the architecture: the
-  Intel Quark platform (`platform/quark/`) was one; its build
-  configuration has fallen behind.
+  Another x86 machine could differ here and not in the architecture.
 
 Drivers sit in between. A driver in `kernel/dev/` is generic code for a
 particular device (an e1000 network card, an ATA disk, an 8250 serial
@@ -169,8 +167,7 @@ with:
 
 `kernel/arch/aarch64/` is the second one: the CPU's part, and QEMU's
 virt machine as its platform (`platform/virt/`: the GIC, the generic
-timer, the PL031 clock, PSCI, the devicetree). `kernel/arch/none/` and
-`kernel/arch/arm/` are placeholders: a few headers, no code.
+timer, the PL031 clock, PSCI, the devicetree).
 
 ## Where the line is blurred
 

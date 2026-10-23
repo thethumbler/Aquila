@@ -524,7 +524,6 @@ static int ata_probe()
             case ATADEV_NOTFOUND:
                 break;
             default:
-                //printk("ata%d: unkown ATA type %d\n", i, drives[i].type);
                 break;
         }
     }

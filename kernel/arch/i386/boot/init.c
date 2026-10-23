@@ -95,13 +95,13 @@ static void switch_to_higher_half(void)
 
 void x86_bootstrap()
 {
-    /* We assume that GrUB loaded a valid GDT */
-    /* Then we map the kernel to the higher half */
+    /* the segments are the boot loader's until x86_cpu_init() loads our
+     * GDT: Multiboot leaves them flat (0 to 4 GiB; x86_64's bootstrap
+     * loads its own). The kernel mapped to the higher half: */
     switch_to_higher_half();
 
     /* Now we make SP in the higher half */
 #if ARCH_BITS==32
-    //asm volatile("add %0, %%esp"::"g"(VMA((uintptr_t) 0)):"esp");
     extern void early_init_fix_stack(uintptr_t);
     early_init_fix_stack(VMA((uintptr_t) 0));
 #else

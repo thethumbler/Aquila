@@ -62,7 +62,6 @@ DEV_PCI_CONF1=y
 DEV_ATA=y
 # Intel 8254x Ethernet (e1000)
 DEV_E1000=y
-DEV_FDC=y
 
 #
 # Framebuffer

@@ -39,15 +39,6 @@ static ssize_t kmsgdev_read(struct devid *dd __unused, off_t offset, struct iobu
 
 static ssize_t kmsgdev_write(struct devid *dd __unused, off_t offset __unused, struct iobuf *io)
 {
-    //printk("kmsg: [%d: %d] %s: ", cur_thread->owner->pid, cur_thread->tid, cur_thread->owner->name);
-    //char *_buf = (char *) buf;
-    //size_t sz = size;
-    //while (size--)
-    //    earlycon_putc(*_buf++);
-    //return sz;
-    //printk("\n");
-    //return ringbuf_write(kmsg, size, buf);
-
     /* the buffer is not NUL-terminated, print exactly what it has */
     char tmp[65];
     size_t size = io->resid, done = 0;

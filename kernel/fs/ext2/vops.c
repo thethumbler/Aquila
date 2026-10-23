@@ -351,8 +351,6 @@ int ext2_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, struc
 
 int ext2_finddir(struct vnode *dir, const char *fn, struct dirent *dirent)
 {
-    //printk("ext2_vfind(dir=%p, fn=%s, child=%p)\n", dir, fn, child);
-
     int err = 0;
 
     struct ext2 *desc = dir->p;

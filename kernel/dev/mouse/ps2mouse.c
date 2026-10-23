@@ -133,7 +133,6 @@ static int ps2mouse_file_can_read(struct file *file, size_t size)
 
 static int ps2mouse_file_close(struct file *file)
 {
-    //printk("ps2mouse_file_close(file=%p)\n", file);
     proc = NULL;
     return posix_file_close(file);
 }

@@ -172,8 +172,6 @@ error:
 
 int minix_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, struct uio *uio, struct vnode **ref)
 {
-    //printk("minix_vmknod(dir=%p, fn=%s, mode=%d, dev=%x, uio=%p, ref=%p)\n", dir, fn, mode, dev, uio, ref);
-
     int err = 0;
 
     if (!fn || !*fn)
@@ -233,7 +231,6 @@ int minix_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, stru
         /* update links count to parent directory */
         struct vnode *parent_inode;
         minix_inode_build(desc, dir->ino, &parent_inode);
-        //printk("parent vnode links %d\n", parent_inode->nlink);
         parent_inode->nlink += 1;
         minix_inode_sync(parent_inode);
     } else {

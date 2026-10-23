@@ -18,8 +18,6 @@
 
 static ssize_t pio_read_sectors(struct ata_drive *drive, uint64_t lba, size_t count, void *buf)
 {
-    //printk("pio_read(drive=%p, lba=%ld, count=%d, buf=%p)\n", drive, lba, count, buf);
-
     int retry_count = 0;
 
 retry:

@@ -20,8 +20,6 @@ static char *cursor = (char *) ARCH_EARLYFB_BASE;
 
 void earlycon_fb_register(uintptr_t paddr, uint32_t scanline, uint32_t yres, uint32_t xres, uint32_t depth)
 {
-    //printk("earlycon_fb_register(paddr=%p, scanline=%d, yres=%d, xres=%d, depth=%d)\n",
-    //        paddr, scanline, yres, xres, depth);
     fb_paddr    = paddr;
     fb_scanline = scanline;
     fb_yres     = yres;

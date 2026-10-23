@@ -9,14 +9,14 @@ OUTPUT_DIRECTORY       = $(DOXYGEN_OUTPUT)
 HTML_OUTPUT            = api
 
 # the documents (README.md the main page), in reading order, and the
-# kernel's sources (not arch/arm and arch/none, which aren't built)
+# kernel's sources
 INPUT                  = README.md architecture.md booting.md interrupts.md \
                          memory.md processes.md smp.md syscalls.md \
                          signals.md vfs.md filesystems.md devices.md \
                          networking.md building.md ../../kernel
 FILE_PATTERNS          = *.md *.c *.h
 RECURSIVE              = YES
-EXCLUDE                = doxygen ../../kernel/arch/arm ../../kernel/arch/none ../../kernel/README.md
+EXCLUDE                = doxygen ../../kernel/README.md
 EXCLUDE_PATTERNS       = */tags
 USE_MDFILE_AS_MAINPAGE = README.md
 FULL_PATH_NAMES        = YES

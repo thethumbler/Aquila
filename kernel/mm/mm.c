@@ -125,7 +125,6 @@ int mm_map(struct pmap *pmap, paddr_t paddr, vaddr_t vaddr, size_t size, int fla
         if (!phys) {
             if (alloc) {
                 paddr = mm_page_alloc()->paddr;
-                //printk("paddr = %p\n", paddr);
             }
             mm_page_map(pmap, vaddr, paddr, flags);
         }

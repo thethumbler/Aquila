@@ -116,7 +116,4 @@ int thread_kill(struct thread *thread);
 /* the files its system call holds, let go of (fs/file.c) */
 void thread_files_release(struct thread *thread);
 
-/* sys/execve.h */
-int thread_execve(struct thread *thread, char * const argp[], char * const envp[]);
-
 #endif /* ! _SYS_THREAD_H */

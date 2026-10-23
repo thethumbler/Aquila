@@ -53,8 +53,6 @@ void arch_thread_spawn(struct thread *thread)
 
 void arch_thread_switch(struct thread *thread)
 {
-    //printk("[%d:%d] %s: arch_thread_switch(thread=%p)\n", thread->owner->pid, thread->tid, thread->owner->name, thread);
-
     struct x86_thread *arch  = thread->arch;
     struct pmap *pmap = thread->owner->vm_space.pmap;
 

@@ -124,8 +124,6 @@ static void scan_device(uint8_t bus, uint8_t dev)
 
             printk("Bus: %d, Device: %d, Function %d\n", bus, dev, func);
             printk("  -> Vendor ID: %x, Device ID: %x, Class: %x, Subclass: %x\n", vendor_id, device_id, class_code, subclass_code);
-            //printk("  -> Vednor: %s\n", get_vendor_name(vendor_id));
-            //printk("  -> Device: %s\n", get_device_name(vendor_id, device_id));
         }
     }
 }
