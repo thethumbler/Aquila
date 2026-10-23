@@ -16,6 +16,10 @@
  * - a TCP connection to 10.0.2.2:6000, which the peer plays segment by
  *   segment: 200 bytes from it (out of order), 6500 to it (losses, a
  *   zero window), then a reset
+ * - another, to 10.0.2.2:6002: the end of 200 bytes out of order, then
+ *   all of them again with the FIN; the answer, and closed with a FIN
+ *   (what waited came again before the FIN: it isn't data unread, which
+ *   would make the close a reset)
  *
  * TCP over loopback first, both ends here (and a child process).
  *
@@ -609,6 +613,14 @@ static void peer(void)
         out[i] = i * 7;
     check("tcp to the peer: 6500 bytes", send_all(t, out, 6500), 6500);
     check("tcp to the peer: reset", recv_some(t, in, 1, 0), -ECONNRESET);
+    SC(SYS_close, t, 0, 0);
+
+    /* the end out of order, then all of it again with the FIN */
+    t = tcp();
+    check("tcp to the peer, again: connect", tcp_connect(t, gw, 6002), 0);
+    check("tcp to the peer, again: 200 bytes, then the end",
+          recv_all(t, in, 200) == 200 && recv_some(t, in, 1, 0) == 0, 1);
+    check("tcp to the peer, again: an answer", send_all(t, "ok", 2), 2);
     SC(SYS_close, t, 0, 0);
 
     SC(SYS_close, fd, 0, 0);

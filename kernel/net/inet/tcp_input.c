@@ -335,6 +335,18 @@ static void ooo_insert(struct tcp_pcb *pcb, struct netbuf *nb, struct seg *s, in
     *p = nb;
 }
 
+/* nothing follows the FIN: what still waits goes (it's what came before
+ * it, again: the peer resent it cut otherwise), it isn't data no one read
+ * (socket_tcp_shutdown) */
+static void ooo_purge(struct tcp_pcb *pcb)
+{
+    while (pcb->ooo) {
+        struct netbuf *nb = pcb->ooo;
+        pcb->ooo = nb->next;
+        netbuf_free(nb);
+    }
+}
+
 /* what waited and now follows rcv_nxt; 1 if the FIN came with it */
 static int ooo_drain(struct tcp_pcb *pcb)
 {
@@ -360,8 +372,10 @@ static int ooo_drain(struct tcp_pcb *pcb)
 
         netbuf_free(nb);
 
-        if (fin)
+        if (fin) {
+            ooo_purge(pcb);
             break;
+        }
     }
 
     return fin;
@@ -501,6 +515,8 @@ static void segment_input(struct tcp_pcb *pcb, struct netbuf *nb, struct seg *s,
 
             if (!fin_now && waiting)
                 fin_now = ooo_drain(pcb);
+            else if (fin_now)
+                ooo_purge(pcb);
 
             /* a hole filled, or the FIN: acked now (fin_input) */
             if (n && !fin_now) {

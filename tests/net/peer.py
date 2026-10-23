@@ -12,7 +12,9 @@
 # Its own checks first (ARP, pings), then it sends "go" to the guest's
 # test program (tests/net/init.c) and answers it, step by step; last, it
 # plays a TCP peer the guest connects to (10.0.2.2:6000), segment by
-# segment: losses, a segment out of order, a zero window, a reset.
+# segment: losses, a segment out of order, a zero window, a reset; then
+# again (10.0.2.2:6002): the end out of order, then all of it with the
+# FIN, the guest's close a FIN, not a reset.
 
 import socket
 import struct
@@ -376,6 +378,35 @@ if syn:
 
     # reset (the guest checks ECONNRESET)
     tcp_send(gport, Y + 201, 0, R)
+
+# again: the end out of order, then all of it at once with the FIN (as a
+# peer may resend it, cut otherwise): what waited is before the FIN, not
+# data the guest didn't read; its answer, then its close is a FIN
+syn = guest_tcp(port=6002, timeout=10)
+check("tcp, again: the guest's SYN", syn is not None and syn.flags == S)
+if syn:
+    G, gport = syn.seq, syn.sport
+    Y = 2000000
+    tcp_send(gport, Y, G + 1, S | A, sport=6002)
+    guest_tcp(port=6002)
+    tcp_send(gport, Y + 101, G + 1, A | P, data=bytes(range(100, 200)), sport=6002)
+    guest_tcp(port=6002)
+    tcp_send(gport, Y + 1, G + 1, A | P | F, data=bytes(range(200)), sport=6002)
+
+    answer, fin, rst = b"", False, False
+    deadline = time.time() + 5
+    while time.time() < deadline and not (fin or rst):
+        s = guest_tcp(port=6002, timeout=1)
+        if not s:
+            continue
+        answer += s.data
+        rst = rst or bool(s.flags & R)
+        fin = fin or bool(s.flags & F)
+        tcp_send(gport, Y + 202, s.seq + len(s.data) + (1 if s.flags & F else 0), A, sport=6002)
+
+    check("tcp, again: the answer", answer == b"ok", repr(answer))
+    check("tcp, again: closed with a FIN, not a reset", fin and not rst,
+          "fin" if fin else "rst" if rst else "nothing")
 
 # a SYN to a port nobody listens on: RST
 tcp_send(6999, 5000, 0, S, sport=6001)
