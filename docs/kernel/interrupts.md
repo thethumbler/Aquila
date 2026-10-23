@@ -5,32 +5,130 @@ then return to it. Devices use interrupts to say "something happened" (a
 key was pressed, a packet arrived, a disk request finished), the CPU uses
 them to report faults (a page that isn't mapped, a division by zero), the
 timer uses one to give the scheduler a chance to switch threads, and
-programs use one to call the kernel. On x86 they all go through the same
-mechanism: a number, the *vector*, and a table that says where each
-vector's handler is.
+programs use one to call the kernel.
 
-This document covers that mechanism on AquilaOS: the vectors and the
-table, the path from the CPU's entry to the C handlers, the interrupt
-controllers that bring device interrupts to the CPU (the 8259 PIC, the
-APIC, MSI), how an interrupt is dispatched, and how interrupts fit with
-the scheduler and with several CPUs.
+How an interrupt reaches the kernel is the machine's business: every CPU
+does it its own way, and every machine has its own interrupt controllers.
+What the kernel does with it is not. This document starts with the
+kernel's side, the same on every machine, then describes how x86 and the
+PC bring interrupts to it (see [The kernel and the machine](architecture.md)
+for the split).
 
-## The x86 side
+## The kernel's side
 
-### Vectors and the IDT
+### Four kinds of events
 
-There are 256 vectors. The first 32 are the CPU's own *exceptions*
-(vector 14 is a page fault, 13 a general protection fault, and so on);
-the rest are free for the system to use. The *Interrupt Descriptor
-Table* (IDT) has an entry, a *gate*, for each vector: the address of its
-handler, the code segment to run it in, and the privilege level allowed
-to raise it with an `int` instruction.
+To the kernel, an interrupt is one of four things, each with its own
+entry into the kernel:
+
+| Event                         | Comes from                         | The kernel's entry                       |
+|-------------------------------|------------------------------------|------------------------------------------|
+| a **system call**             | the running program, on purpose    | its handler in `syscall_table[]` (see [System calls](syscalls.md)) |
+| a **fault**                   | the running program, by accident   | a page fault: `mm_page_fault()`; anything else: a signal |
+| a **device interrupt**        | a device                           | the handlers its driver installed        |
+| the **tick**                  | the timer                          | `sched_timer_tick()`, `sched_cpu_tick()` |
+
+The architecture catches each one, saves what was running, works out
+which it is, and calls the kernel. The kernel never sees vectors, error
+codes or controllers: it gets "a write to this address from user mode
+faulted", or "IRQ 11 came".
+
+### The kernel runs with interrupts off
+
+The central decision: **the kernel runs with interrupts disabled**. When
+an interrupt or a system call enters the kernel, nothing else interrupts
+it until it returns to user mode or goes to sleep. The only place
+interrupts are allowed in the kernel is the idle loop, which waits for
+the next one.
+
+This is what keeps the kernel simple. A system call never finds a data
+structure half-changed by an interrupt handler, so the kernel needs no
+locks against its own interrupts, and code is never preempted in the
+middle. The price is latency: an interrupt that comes while the kernel
+runs waits until the kernel is done. AquilaOS's system calls are short or
+sleep, so it waits little. Big kernels (Linux, the BSDs) made the
+opposite choice long ago, and pay for it with locks everywhere.
+
+With several CPUs, the same promise is kept by the **kernel lock**: one
+CPU at a time runs in the kernel. An interrupt from user mode or from
+the idle loop takes the lock on its way in (`kernel_enter()`) and lets
+it go on its way out. Device interrupts all go to the boot CPU. See
+[SMP and the kernel lock](smp.md).
+
+### Device interrupts
+
+Devices raise numbered *IRQs*. A driver installs a handler for its IRQ;
+several handlers can share one (PCI devices share lines), so every
+handler checks its device and does nothing if the interrupt wasn't its.
+
+A handler does as little as it can: it takes the data off the device (a
+received packet, a key), acknowledges it, and wakes the threads waiting
+for it (`sched_thread_wake()`). The work that takes time (TCP's
+processing, a filesystem's) happens in those threads, with interrupts
+off as anywhere else in the kernel, but no longer in the handler.
+
+### Switching threads
+
+An interrupt is where threads switch without asking to. After the
+handlers ran:
+
+- if the **tick** asked for a switch (the running thread's time slice is
+  over), the running thread goes back to the ready queue and the next one
+  runs (`schedule()`);
+- if the interrupt came while the CPU was **idle** and made a thread
+  ready (a disk request finished), that thread runs now, not at the next
+  tick (`sched_idle_wakeup()`);
+- if an **urgent** thread was woken (the network's, by a packet), it runs
+  before the interrupted user thread goes on.
+
+On the way back to user mode, the signals that came meanwhile are
+delivered (`signal_take()`, see [Signals](signals.md)).
+
+### The tick
+
+The scheduler's tick is an interrupt every 2 ms, on every CPU
+(`arch_sched_init()` sets it up). On each one the tick charges the
+running process its time and may ask for a switch
+(`sched_cpu_tick()`); the boot CPU's also keeps the time, runs the
+timeouts (callouts), and wakes the threads whose sleep is over
+(`sched_timer_tick()`).
+
+### Messages between CPUs
+
+With several CPUs, one sometimes has to make another do something now:
+flush its TLB after page tables changed, or enter the kernel because a
+thread became ready for it or one of its threads was killed. The kernel
+asks with `tlb_shootdown()` and `arch_cpu_kick()`; the architecture
+sends an *inter-processor interrupt* (IPI).
+
+### Faults
+
+A **page fault** goes to the memory manager, `mm_page_fault()`, which maps
+the page if the address is part of the process's memory (demand paging,
+copy on write; see [Memory](memory.md)). If it isn't:
+
+- from user mode, the process gets `SIGSEGV`;
+- from the kernel copying to or from user memory (`copyin()`,
+  `copyout()`), the copy stops and returns `EFAULT`;
+- anywhere else, it's a bug in the kernel, which panics.
+
+Any other fault from user mode is a signal to the process (a division by
+zero is `SIGFPE`, an invalid instruction `SIGILL`); from the kernel, a
+panic.
+
+## x86: vectors and the IDT
+
+On x86 every interrupt has a number, its *vector*, from 0 to 255. The
+first 32 are the CPU's own *exceptions* (14 is a page fault, 13 a general
+protection fault, and so on); the rest are free for the system to use.
+The *Interrupt Descriptor Table* (IDT) has an entry, a *gate*, for each
+vector: the address of its handler, the code segment to run it in, and
+the privilege level allowed to raise it with an `int` instruction.
 
 AquilaOS uses *interrupt gates* everywhere: the CPU clears the interrupt
-flag (`IF`) when it enters through one, so a handler isn't interrupted by
-another interrupt. The system call gate (vector `0x80`) is the only one
-user mode may raise itself; the others are raised by the CPU or by the
-interrupt controllers.
+flag (`IF`) when it enters through one, which is how the kernel runs with
+interrupts off. The system call gate (vector `0x80`) is the only one user
+mode may raise itself.
 
 AquilaOS's vectors:
 
@@ -39,16 +137,14 @@ AquilaOS's vectors:
 | 0 – 31      | CPU exceptions                                               |
 | 32 – 79     | device interrupts, IRQ 0 to 47 (vector = 32 + IRQ)           |
 | `0x80`      | system calls (`int $0x80`)                                   |
-| `0xF0`      | the local APIC's timer (the scheduler's tick)                |
-| `0xF1`      | IPI: flush the TLB (SMP)                                     |
-| `0xF2`      | IPI: wake up and enter the kernel (SMP)                      |
+| `0xF0`      | the local APIC's timer (the tick)                            |
+| `0xF1`      | IPI: flush the TLB                                           |
+| `0xF2`      | IPI: wake up and enter the kernel (`arch_cpu_kick()`)        |
 | `0xFF`      | the local APIC's spurious interrupt                          |
 
 The IDT is one table, shared by every CPU; it is filled in by
 `x86_idt_setup()` and `x86_isr_setup()` (exceptions, the system call) and
 `x86_irq_gates_setup()` (the rest).
-
-### What the CPU does on entry
 
 When an interrupt comes, the CPU pushes the interrupted context's
 instruction pointer, code segment and flags; if it came from user mode it
@@ -58,7 +154,7 @@ exceptions push an *error code* after those (a page fault's says whether
 it was a read or a write, from user or kernel mode). Then it jumps to the
 gate's handler. `iret` undoes it.
 
-## From the gate to C
+## x86: from the gate to C
 
 Every vector's gate points to a small stub in
 [`cpu/cpu.S`](../../kernel/arch/i386/cpu/cpu.S). The stubs make every
@@ -80,17 +176,66 @@ interrupt look the same to C:
    context through it (a system call's return value goes into its `eax`).
 4. On the way back the same steps are undone in reverse, and `iret`
    returns to the interrupted code (or, after a thread switch, to another
-   thread's: see below).
+   thread's).
 
 The C handlers are `__x86_isr()` for exceptions and system calls
 ([`cpu/isr.c`](../../kernel/arch/i386/cpu/isr.c)) and `__x86_irq_handler()`
 for device interrupts and IPIs
 ([`platform/misc/irq.c`](../../kernel/arch/i386/platform/misc/irq.c)).
 
-## Interrupt controllers
+### Exceptions
+
+`__x86_isr()` turns the CPU's exceptions into the kernel's events:
+
+- a **page fault** (14): the address is in `CR2`, what was tried in the
+  error code; `arch_mm_page_fault()` turns them into `mm_page_fault()`'s
+  arguments. When a copy from or to user memory faults, the faulting
+  instruction is looked up in a table of the copy routines' instructions
+  that may fault, which says where the routine goes on to return the
+  error (`uaccess_fixup()`, [`cpu/uaccess.S`](../../kernel/arch/i386/cpu/uaccess.S));
+- **device not available** (7) is how the FPU is switched lazily: a
+  thread's first FPU instruction after a switch traps, and the FPU is
+  given its state then (`x86_fpu_trap()`);
+- **`int $0x80`** is a system call (`arch_syscall()`);
+- any other exception: a signal from user mode (division by zero:
+  `SIGFPE`, invalid opcode: `SIGILL`, general protection: `SIGSEGV`), a
+  panic from the kernel.
+
+### Dispatching device interrupts
+
+`__x86_irq_handler()` handles every vector from 32 on:
+
+1. The IRQ is the vector minus 32 (the local APIC's timer, vector `0xF0`,
+   is an IRQ of its own: `X86_IRQ_TIMER`).
+2. Each handler installed for the IRQ runs (`x86_irq_handler_install()`).
+3. The interrupt controller is told it's done (*end of interrupt*, EOI).
+   For a level-triggered line this must come after the device was
+   serviced, or the line, still asserted, would raise the interrupt again
+   at once.
+4. Then the switches above happen (`x86_preempt()` for the tick), and on
+   the way back to user mode, the signals (`x86_return_to_user()`).
+
+A thread switch happens inside the handler, on the interrupted thread's
+kernel stack: the thread's registers are saved there, and the stack is
+left as it is until the thread runs again and returns through the rest of
+the handler. Because the controller was told it's done before the switch,
+other interrupts keep coming meanwhile.
+
+The number of times each IRQ came is kept, and `/proc/interrupts` shows
+them with the controller and each IRQ's route:
+
+```
+controller: apic
+timer: 2551 lapic
+1: 1 ioapic gsi 1 edge
+11: 140 ioapic gsi 11 level
+24: 33 msi
+```
+
+## PC: interrupt controllers
 
 Devices don't talk to the CPU directly: an *interrupt controller* takes
-their interrupt lines and turns them into vectors. A PC has had two kinds,
+their interrupt lines and turns them into vectors. PCs have had two kinds,
 and AquilaOS supports both behind one interface, `struct x86_irq_chip`:
 
 ```c
@@ -105,8 +250,9 @@ struct x86_irq_chip {
 ```
 
 An IRQ is unmasked when its first handler is installed, masked when its
-handlers are removed, and acknowledged (*end of interrupt*, EOI) after its
-handlers ran.
+handlers are removed, and acknowledged after its handlers ran. Which
+controller is used is chosen at boot (`x86_pc_irq_init()`,
+[`platform/pc/init.c`](../../kernel/arch/i386/platform/pc/init.c)).
 
 ### The 8259 PIC
 
@@ -127,15 +273,15 @@ interrupt from one lands on a harmless vector) and then masked.
 
 ### The APIC
 
-Every CPU since the Pentium has a *local APIC*, and chipsets have one or
-more *I/O APICs*
+Every x86 CPU since the Pentium has a *local APIC*, and chipsets have one
+or more *I/O APICs*
 ([`platform/misc/apic.c`](../../kernel/arch/i386/platform/misc/apic.c)).
 
 - The **local APIC** is the CPU's own: it receives interrupts for its CPU,
-  has a timer, and sends and receives *inter-processor interrupts* (IPIs).
-  Its registers are memory-mapped (at `0xFEE00000` usually). Each CPU's is
-  enabled by `x86_lapic_cpu_setup()`; it is acknowledged by writing its
-  EOI register.
+  has a timer, and sends and receives IPIs. Its registers are
+  memory-mapped (at `0xFEE00000` usually). Each CPU's is enabled by
+  `x86_lapic_cpu_setup()`; it is acknowledged by writing its EOI
+  register.
 - An **I/O APIC** has a number of input *pins*, numbered system-wide as
   *global system interrupts* (GSIs), and a *redirection entry* for each:
   which vector to send, to which CPU, whether the line is edge- or
@@ -162,143 +308,62 @@ line at all: it raises an interrupt by writing a value (the *data*) to an
 address (the *message address*), which the local APIC receives. The
 address names the CPU, the data the vector.
 
-`pci_msi_enable()` ([`dev/pci/pci.c`](../../kernel/dev/pci/pci.c)) asks
-the architecture for an IRQ and its message (`arch_msi_alloc()`), writes
-them to the device's MSI capability and turns the device's line off. The
-IRQs for messages are allocated above the I/O APICs' pins
-(`x86_irq_alloc()`), each with a controller of its own, `msi_chip`, whose
-EOI is the local APIC's. The e1000 driver uses MSI when the device has it
-(QEMU's `e1000e`) and its line otherwise (`e1000`). With the 8259 there are
-no messages: `arch_msi_alloc()` fails and the driver falls back to the
-line.
+MSI is PCI's, so the kernel's side is generic: `pci_msi_enable()`
+([`dev/pci/pci.c`](../../kernel/dev/pci/pci.c)) asks the architecture for
+an IRQ and its message (`arch_msi_alloc()`), writes them to the device's
+MSI capability, and turns the device's line off. On the PC, the IRQs for
+messages are allocated above the I/O APICs' pins (`x86_irq_alloc()`),
+each with a controller of its own, `msi_chip`, whose EOI is the local
+APIC's. The e1000 driver uses MSI when the device has it (QEMU's
+`e1000e`) and its line otherwise (`e1000`). With the 8259 there are no
+messages: `arch_msi_alloc()` fails and the driver falls back to the line.
 
-## Dispatching an interrupt
+### The timer
 
-`__x86_irq_handler()` handles every vector from 32 on:
+The tick comes from ([`sys/sched.c`](../../kernel/arch/i386/sys/sched.c),
+`platform_timer_setup()`):
 
-1. The IRQ is the vector minus 32 (the local APIC's timer, vector `0xF0`,
-   is an IRQ of its own: `X86_IRQ_TIMER`).
-2. Each handler installed for the IRQ runs (`x86_irq_handler_install()`).
-   A line can be shared, as PCI lines are: every handler looks at its
-   device and does nothing if the interrupt wasn't its.
-3. The controller is told it's done (EOI). For a level-triggered line this
-   must come after the device was serviced, or the line, still asserted,
-   would raise the interrupt again at once.
-4. Then whatever the interrupt made runnable may run:
-   - the **tick**, the timer's interrupt, asked for a switch: the running
-     thread goes back to the ready queue and the next one runs
-     (`x86_preempt()`), or, on an idle CPU, a ready thread runs;
-   - an interrupt on an idle CPU woke a thread up (a disk request
-     finished): it runs now, not at the next tick (`sched_idle_wakeup()`);
-   - an *urgent* thread was woken (the network's, by a packet): it runs
-     before the interrupted user thread goes on.
-5. On the way back to user mode, the signals that came meanwhile are
-   delivered (`x86_return_to_user()`).
+- with the APIC, the **local APIC's timer**, periodic, on vector `0xF0`,
+  one on each CPU. Its rate depends on the CPU's bus clock, which nothing
+  tells the kernel: it is *calibrated*, counted against a clock the
+  kernel knows (the TSC or the HPET, or the PIT's channel 2) for 20 ms
+  (`timer_calibrate()`);
+- with the 8259, the **PIT**, the 8254's channel 0, on IRQ 0, and only
+  one CPU.
 
-A thread switch happens inside the handler, on the interrupted thread's
-kernel stack: the thread's registers are saved there, and the stack is
-left as it is until the thread runs again and returns through the rest of
-the handler. Because the controller was told it's done before the switch,
-the other interrupts keep coming meanwhile.
+### IPIs
 
-The number of times each IRQ came is kept, and `/proc/interrupts` shows
-them with the controller and each IRQ's route:
+The local APIC sends the IPIs: `0xF1` to flush another CPU's TLB, `0xF2`
+for `arch_cpu_kick()` ([`mm/tlb.c`](../../kernel/arch/i386/mm/tlb.c),
+[`cpu/smp.c`](../../kernel/arch/i386/cpu/smp.c)). The TLB flush is handled
+*without* the kernel lock: the CPU that sent it holds the lock while it
+waits for the others. A CPU spinning for the lock with interrupts off does
+the flush from its spin loop instead.
 
-```
-controller: apic
-timer: 2551 lapic
-1: 1 ioapic gsi 1 edge
-11: 140 ioapic gsi 11 level
-24: 33 msi
-```
-
-## The timer
-
-The scheduler's tick is an interrupt every 2 ms
-([`sys/sched.c`](../../kernel/arch/i386/sys/sched.c), `arch_sched_init()`):
-
-- With the APIC, it's the **local APIC's timer**, periodic, on vector
-  `0xF0`. Its rate depends on the CPU's bus clock, which nothing tells the
-  kernel: it is *calibrated*, counted against a clock the kernel knows
-  (the TSC or the HPET, or the PIT's channel 2) for 20 ms
-  (`timer_calibrate()`).
-- With the 8259, it's the **PIT**, the 8254's channel 0, on IRQ 0.
-
-On every CPU the tick charges the running process its time and asks for a
-switch; the boot CPU's also keeps the time, runs the timeouts (callouts)
-and wakes the threads whose sleep is over.
-
-## Interrupts and the kernel
-
-### Interrupts are off in the kernel
-
-The kernel runs with interrupts disabled: the gates clear `IF`, and
-nothing in the kernel sets it again, except the idle loop, which waits
-for the next interrupt with `sti; hlt`. A system call, or an interrupt,
-runs to completion (or to a sleep) without being interrupted. This is
-what kept the kernel simple on one CPU: nothing else could run in the
-kernel meanwhile.
-
-### Several CPUs
-
-With several CPUs, the *kernel lock* keeps that true: an
-interrupt or exception that comes from user mode or from the idle loop
-takes it (`kernel_enter()`), and lets it go on the way back. Device
-interrupts all go to the boot CPU; the other CPUs get their own timer's
-tick and two IPIs:
-
-- **TLB flush** (`0xF1`): a CPU that changed a process's page tables asks
-  the CPUs that have them loaded to flush their TLB, and waits until they
-  have. This one is handled *without* the kernel lock: the CPU that sent it
-  holds the lock while it waits. A CPU spinning for the lock with
-  interrupts off does the flush from its spin loop instead.
-- **Wake** (`0xF2`): a thread became ready and this CPU is idle, or a
-  thread running here has a signal waiting or was killed: enter the
-  kernel now rather than at the next tick.
-
-A thread killed while it runs on another CPU frees itself the next time
-that CPU enters the kernel. If it enters through a device interrupt, the
-interrupt is handled and acknowledged first: a local APIC that never gets
-its EOI blocks every vector of the same or lower priority, the CPU's own
-tick and IPIs included.
-
-## Exceptions
-
-`__x86_isr()` handles the CPU's exceptions and the system call:
-
-- A **page fault** (14) goes to the memory manager (`arch_mm_page_fault()`),
-  which maps the page if the address is part of the process's memory
-  (demand paging, copy on write). Otherwise, from user mode the process gets
-  `SIGSEGV`; from the kernel copying to or from user memory
-  (`copyin()`/`copyout()`, [`cpu/uaccess.S`](../../kernel/arch/i386/cpu/uaccess.S))
-  the copy stops and returns `EFAULT`; anywhere else it's a kernel bug,
-  and the kernel panics.
-- **Device not available** (7) is how the FPU is switched lazily: a
-  thread's first FPU instruction after a switch traps, and the FPU is given
-  its state then (`x86_fpu_trap()`).
-- **`int $0x80`** is a system call (`arch_syscall()`).
-- Any other exception from user mode is a signal to the process (a
-  division by zero is `SIGFPE`, an invalid instruction `SIGILL`, a general
-  protection fault `SIGSEGV`); from the kernel, a panic.
+A local APIC that never gets its EOI blocks every vector of the same or
+lower priority, the CPU's own tick and IPIs included. So a device
+interrupt is always acknowledged, even when the thread it interrupted was
+killed meanwhile and frees itself on the way out.
 
 ## Where it is
 
-| File                                         | What                                    |
-|----------------------------------------------|-----------------------------------------|
-| `kernel/arch/i386/cpu/idt.c`                 | the IDT and its gates                   |
-| `kernel/arch/i386/cpu/cpu.S`                 | the entry stubs, the context switch     |
-| `kernel/arch/i386/cpu/isr.c`                 | exceptions and the system call          |
-| `kernel/arch/i386/platform/misc/irq.c`       | IRQs: handlers, dispatch, `/proc/interrupts` |
-| `kernel/arch/i386/platform/misc/pic.c`       | the 8259 PIC                            |
-| `kernel/arch/i386/platform/misc/apic.c`      | the local and I/O APICs, MSI, IPIs      |
-| `kernel/arch/i386/platform/misc/pit.c`       | the PIT (8254)                          |
-| `kernel/arch/i386/platform/pc/init.c`        | which controller and timer are used     |
-| `kernel/arch/i386/sys/sched.c`               | the tick                                |
-| `kernel/arch/i386/mm/tlb.c`                  | the TLB flush IPI                       |
-| `kernel/dev/pci/pci.c`                       | MSI on PCI devices                      |
-
-Both i386 and x86_64 build from `kernel/arch/i386/`; where they differ,
-it's `#if ARCH_BITS==32` and `#else`.
+| File                                         | Layer    | What                                    |
+|----------------------------------------------|----------|-----------------------------------------|
+| `kernel/sys/sched.c`                         | kernel   | the tick, switching, waking             |
+| `kernel/mm/fault.c`                          | kernel   | `mm_page_fault()`                       |
+| `kernel/sys/signal.c`                        | kernel   | signals from faults                     |
+| `kernel/dev/pci/pci.c`                       | kernel   | MSI on PCI devices                      |
+| `kernel/arch/i386/cpu/idt.c`                 | x86      | the IDT and its gates                   |
+| `kernel/arch/i386/cpu/cpu.S`                 | x86      | the entry stubs, the context switch     |
+| `kernel/arch/i386/cpu/isr.c`                 | x86      | exceptions and the system call          |
+| `kernel/arch/i386/cpu/uaccess.S`             | x86      | copies from and to user memory          |
+| `kernel/arch/i386/sys/sched.c`               | x86      | the tick's handler                      |
+| `kernel/arch/i386/mm/tlb.c`                  | x86      | the TLB flush IPI                       |
+| `kernel/arch/i386/platform/misc/irq.c`       | PC       | IRQs: handlers, dispatch, `/proc/interrupts` |
+| `kernel/arch/i386/platform/misc/pic.c`       | PC       | the 8259 PIC                            |
+| `kernel/arch/i386/platform/misc/apic.c`      | PC       | the local and I/O APICs, MSI, IPIs      |
+| `kernel/arch/i386/platform/misc/pit.c`       | PC       | the PIT (8254)                          |
+| `kernel/arch/i386/platform/pc/init.c`        | PC       | which controller and timer are used     |
 
 ## References
 

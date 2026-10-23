@@ -25,47 +25,71 @@ There are two kinds of documentation:
 
 ## The kernel at a glance
 
-AquilaOS's kernel is a monolithic UNIX-like kernel for x86: 32-bit (i386)
-and 64-bit (x86_64) PCs, one CPU or several. It boots from a Multiboot
-boot loader (Limine), with an initial RAM disk (initramfs) as its first
-root, or with its root on an ext2 disk. User programs are ELF binaries
-built against newlib.
+AquilaOS's kernel is a monolithic UNIX-like kernel. It runs on x86 PCs:
+32-bit (i386) and 64-bit (x86_64), one CPU or several. It boots from a
+Multiboot boot loader (Limine), with an initial RAM disk (initramfs) as
+its first root, or with its root on an ext2 disk. User programs are ELF
+binaries built against newlib.
+
+### Three layers
+
+The kernel is written so that what is *kernel design* and what is
+*the machine* stay apart:
+
+| Layer                | What                                                         | Where                                  |
+|----------------------|--------------------------------------------------------------|----------------------------------------|
+| **the kernel**       | processes, memory, files, devices, networking: the design, the same on any machine | `kernel/core`, `mm`, `sys`, `fs`, `dev`, `net` |
+| **the architecture** | the CPU: its modes, page tables, traps, context switch (x86) | `kernel/arch/i386/` (both i386 and x86_64) |
+| **the platform**     | the machine around the CPU: boot loader, interrupt controllers, timers, firmware tables (the PC) | `kernel/arch/i386/platform/` |
+
+The kernel calls the architecture through the `arch_*` and `pmap_*`
+functions, and the architecture calls back into the kernel when the
+machine does something. [The kernel and the machine](architecture.md)
+explains where the line is.
+
+The documents follow the same split. Each one describes the subsystem's
+design first, the same on every machine. Sections about one architecture
+or platform say so in their title: **"x86: ..."** for the CPU, **"PC:
+..."** for the machine around it. If you're here to learn how a kernel
+works, the untitled sections are the ones that carry over to any kernel;
+the x86 and PC ones are how one machine fills them in.
+
+### The sources
 
 The sources are in `kernel/`:
 
-| Directory      | What                                                                |
-|----------------|---------------------------------------------------------------------|
-| `arch/i386/`   | the x86 code, both i386 and x86_64: booting, the CPU (GDT, IDT, interrupts, the FPU, SMP), paging, the PC's devices (APIC, 8259, PIT, ACPI, HPET), context switching, system call entry, signal frames |
-| `core/`        | the kernel's entry (`kmain`), its command line, `printk`, the clock |
-| `mm/`          | memory: the physical page allocator (buddy), the kernel's allocator (vmem, slabs, `kmalloc`), address spaces, page faults |
-| `sys/`         | processes and threads, the scheduler, `fork` and `exec`, signals, the kernel lock, system calls |
-| `fs/`          | the virtual filesystem (vnodes, path lookup, files) and the filesystems: initramfs, tmpfs, devfs, devpts, procfs, ext2, minix, pipes |
-| `dev/`         | devices: the device layer (`kdev`), terminals (virtual terminals, serial ports, pseudo-terminals), ATA disks, the framebuffer, the keyboard and mouse, PCI, the e1000 network card |
-| `net/`         | sockets, and the network stack: Ethernet, ARP, IPv4, ICMP, UDP, TCP; Unix sockets |
-| `include/`     | the headers shared by all of it                                     |
+| Directory      | Layer        | What                                                                |
+|----------------|--------------|---------------------------------------------------------------------|
+| `core/`        | kernel       | the kernel's entry (`kmain`), its command line, `printk`, the clock |
+| `mm/`          | kernel       | memory: the physical page allocator (buddy), the kernel's allocator (vmem, slabs, `kmalloc`), address spaces, page faults |
+| `sys/`         | kernel       | processes and threads, the scheduler, `fork` and `exec`, signals, the kernel lock, system calls |
+| `fs/`          | kernel       | the virtual filesystem (vnodes, path lookup, files) and the filesystems: initramfs, tmpfs, devfs, devpts, procfs, ext2, minix, pipes |
+| `dev/`         | kernel       | devices: the device layer (`kdev`), terminals (virtual terminals, serial ports, pseudo-terminals), ATA disks, the framebuffer, the keyboard and mouse, PCI, the e1000 network card |
+| `net/`         | kernel       | sockets, and the network stack: Ethernet, ARP, IPv4, ICMP, UDP, TCP; Unix sockets |
+| `include/`     | kernel       | the kernel's headers, and the interface to the architecture (`core/arch.h`, `mm/pmap.h`) |
+| `arch/i386/`   | architecture | x86: booting (`boot/`), the CPU (`cpu/`: GDT, IDT, traps, the FPU, SMP), paging (`mm/`), threads, system calls and signal frames (`sys/`), its headers (`include/`) |
+| `arch/i386/platform/` | platform | the PC: interrupt controllers (8259, APIC), timers (PIT, HPET), ACPI, CMOS, PS/2 (`misc/`), and their setup (`pc/`) |
 
 The system call interface, shared with the C library, is in the
 repository's top-level `include/uapi/`.
 
 ## The documents
 
-| Document                         | About                                                     |
-|----------------------------------|-----------------------------------------------------------|
-| [Booting](booting.md)            | the boot loader, paging and long mode on, the order of the kernel's setup, the first process |
-| [Interrupts](interrupts.md)      | the IDT, the entry path, the 8259, the APIC, MSI, dispatch, the timer, IPIs, exceptions |
-
-Planned:
-
-- Memory: physical pages, the kernel's allocator, address spaces, page faults
-- Processes, threads and the scheduler
-- SMP and the kernel lock
-- System calls and user memory
-- Signals
-- The virtual filesystem: vnodes, path lookup, files
-- Devices and terminals
-- Filesystems: initramfs, tmpfs, procfs, ext2, minix
-- Networking: sockets, IPv4, TCP
-- Building and testing the kernel
+| Document                                   | About                                                     |
+|--------------------------------------------|-----------------------------------------------------------|
+| [The kernel and the machine](architecture.md) | the three layers, the `arch_*` interface, where the line is |
+| [Booting](booting.md)                      | what the kernel is given, the order of its setup, the first process; Multiboot, paging and long mode on |
+| [Interrupts](interrupts.md)                | system calls, faults, device interrupts and the tick, to the kernel; the IDT, the 8259, the APIC, MSI |
+| [Memory](memory.md)                        | physical pages, the kernel's allocator, address spaces, page faults; x86's page tables |
+| [Processes and threads](processes.md)      | processes, threads, the scheduler, sleeping and waking, `fork`, `exec`, `exit` |
+| [SMP and the kernel lock](smp.md)          | several CPUs, the kernel lock, TLB shootdown; starting the other CPUs |
+| [System calls](syscalls.md)                | the table, arguments and results, user memory, restarts   |
+| [Signals](signals.md)                      | sending, blocking, delivering, handlers, `sigreturn`      |
+| [The virtual filesystem](vfs.md)           | vnodes, path lookup, mounts, open files, the caches       |
+| [Filesystems](filesystems.md)              | initramfs, tmpfs, devfs, procfs, ext2, minix, pipes       |
+| [Devices and terminals](devices.md)        | the device layer, disks, terminals and the line discipline, the console, PCI |
+| [Networking](networking.md)                | sockets, the network interfaces, Ethernet, ARP, IPv4, UDP, TCP, Unix sockets |
+| [Building and testing](building.md)        | the build, the configurations, the images, the tests      |
 
 ## Reading the code
 

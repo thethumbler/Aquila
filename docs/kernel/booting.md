@@ -1,26 +1,175 @@
 # Booting
 
-When a PC is switched on, its firmware (the BIOS, or UEFI) finds a boot
-loader on a disk and runs it. The boot loader loads the kernel into
-memory, and whatever else the kernel asks for, and jumps to it. From
-there the kernel is on its own: it has to set up the CPU, find out how
-much memory there is and take it over, find its devices, mount a root
-filesystem, and start the first program, *init*, in user mode. Every
-other process descends from init.
+When a computer is switched on, its firmware finds a boot loader and runs
+it. The boot loader loads the kernel into memory, and whatever else the
+kernel asks for, and jumps to it. From there the kernel is on its own: it
+has to set up the CPU, find out how much memory there is and take it
+over, find its devices, mount a root filesystem, and start the first
+program, *init*, in user mode. Every other process descends from init.
 
-This document follows AquilaOS from the boot loader's jump to init's
-first instruction: how the kernel is loaded, how it turns paging on
-(and, on x86_64, long mode), the order in which the kernel's parts are
-set up, and how the first process is made.
+Booting crosses all three layers (see [The kernel and the machine](architecture.md)):
+the platform decides how the kernel is loaded and what it is told, the
+architecture brings the CPU to a state where C code can run at the
+kernel's addresses, and the kernel does the rest, the same everywhere.
+This document starts with what the kernel needs and does, then follows
+the PC and x86 from the boot loader's jump to `kmain()`.
 
-## The boot loader
+## The kernel's side
+
+### What the kernel is given
+
+The architecture hands the kernel a `struct boot`
+(`kernel/include/boot/boot.h`), the machine-independent summary of what
+the boot loader said:
+
+```c
+struct boot {
+    char *cmdline;          /* the kernel's command line */
+    uintptr_t total_mem;    /* how much memory, if there's no map */
+    int modules_count;      /* the files loaded with the kernel */
+    int mmap_count;
+    module_t *modules;      /* each: physical address, size, command line */
+    mmap_t *mmap;           /* the memory map: usable or reserved ranges */
+    struct elf32_shdr *shdr;    /* the kernel's sections and symbols, */
+    uint32_t shdr_num;          /* for backtraces */
+    struct elf32_shdr *symtab;
+    size_t symnum;
+    struct elf32_shdr *strtab;
+};
+```
+
+The kernel never sees the boot loader's own structures; a machine booted
+another way would fill the same `struct boot`. `__kboot` points to it.
+
+### The order of things
+
+Each step needs the ones before it. The architecture runs the first ones,
+calling the kernel's functions where the work is generic, and ends by
+calling `kmain()`:
+
+| Step                                   | Layer        | Function                          |
+|----------------------------------------|--------------|-----------------------------------|
+| the CPU at the kernel's addresses      | architecture | the boot code                     |
+| this CPU's own state (`curcpu()`)      | architecture | `x86_gdt_setup()`                 |
+| the kernel lock, taken until init runs | kernel       | `kernel_lock()`                   |
+| the early console: `printk()` works    | platform     | `earlycon_init()`                 |
+| traps reported, not fatal              | architecture | `x86_idt_setup()`, `x86_isr_setup()` |
+| `struct boot` filled in                | platform     | `process_multiboot_info()`        |
+| physical memory taken over             | kernel       | `mm_setup()`, then `pmap_init()` (architecture) |
+| the kernel's allocator                 | kernel       | `kvmem_setup()`                   |
+| the command line                       | kernel       | `kargs_parse()`                   |
+| the console on the screen              | platform     | `earlycon_reinit()`               |
+| interrupt controllers, timers, CPUs    | platform     | `platform_init()`                 |
+| devices, filesystems, the root, init   | kernel       | `kmain()`                         |
+
+On x86 the architecture's part is `x86_cpu_init()`
+([`cpu/init.c`](../../kernel/arch/i386/cpu/init.c)), described below.
+
+### Memory
+
+The memory map says which ranges of physical memory are RAM (*usable*)
+and which aren't: the firmware's, the devices', the boot loader's
+tables. `mm_setup()` ([`mm/mm.c`](../../kernel/mm/mm.c)) takes it over
+before there is any allocator:
+
+1. It finds the end of RAM, and how much there is. An architecture can
+   set a limit (`ARCH_RAM_MAX`): i386 uses the first 768 MiB only, what
+   fits in its direct map.
+2. It sets aside room for its own structures: `pages[]`, a
+   `struct vm_page` for each physical page, and the buddy allocator's
+   bitmaps. They go in the first free RAM after the kernel that the boot
+   page tables map (`boot_mem_place()`, `ARCH_BOOT_MAPPED`), and are
+   handed out from there by `mm_boot_alloc()`.
+3. It sets up the *buddy allocator*, the physical page allocator, over
+   all of RAM, and marks used what isn't free: the kernel, those
+   structures, the memory map's holes and reserved ranges, and the
+   modules.
+4. It hands over to the architecture (`arch_mm_setup()`), which keeps
+   what it needs out of the allocator and builds the kernel's page tables
+   (`pmap_init()`).
+
+`kvmem_setup()` then starts the kernel's own allocator, `kmalloc()`.
+See [Memory](memory.md).
+
+### The command line
+
+The command line is parsed (`kargs_parse()`,
+[`core/kargs.c`](../../kernel/core/kargs.c)) into `key` and `key=value`
+arguments, which any part of the kernel looks up with `kargs_get()`. The
+arguments read at boot:
+
+| Argument                 | What                                                        |
+|--------------------------|-------------------------------------------------------------|
+| `root=`                  | the root filesystem is this disk partition (`/dev/hda2`), not the initramfs |
+| `rootfstype=`            | the root filesystem's type: `ext2` (the default) or `minix` |
+| `earlycon=`              | PC: where the kernel's messages go: `ttyS0`, `vga` or `fb` (default: the framebuffer if there is one, else the serial port) |
+| `apic=off`               | PC: the 8259s, not the APIC (and one CPU)                   |
+| `smp=off`                | x86: the boot CPU only                                      |
+| `kvmem.test`, `kvmem.guard` | check the kernel's allocator at boot                     |
+
+### kmain
+
+`kmain()` ([`core/main.c`](../../kernel/core/main.c)) is the same on every
+architecture:
+
+1. With `kvmem.test` or `kvmem.guard` on the command line, it checks the
+   kernel's allocator (the `kvmem` test).
+2. **The devices and filesystems**: the device layer (`kdev_init()`), the
+   VFS (`vfs_init()`), then every *built-in module* (`modules_init()`,
+   [`core/module.c`](../../kernel/core/module.c)). A driver or filesystem
+   declares its init function with `MODULE_INIT()`, which puts a pointer
+   to it in the `.__minit` section; the linker script gathers them between
+   `__minit` and `__minit_end`, and `modules_init()` calls them all. The
+   terminals, the serial ports, the disks, the network card, the
+   filesystems: all register themselves this way.
+3. **The root filesystem**:
+   - with `root=` on the command line, that disk partition is mounted,
+     as ext2 unless `rootfstype=` says otherwise;
+   - otherwise the first module is the *initramfs*, a `cpio` archive
+     (`make initrd`), mounted as it is (`load_ramdisk()`,
+     [`fs/initramfs/initramfs.c`](../../kernel/fs/initramfs/initramfs.c)):
+     a read-only filesystem whose files are read from the module's memory,
+     where the boot loader left it;
+   - with neither, the kernel panics.
+4. **`/dev`**: devfs is mounted on it, with `/dev/console`, which init may
+   write to at once.
+5. **init**, the first process: below.
+
+### The first process
+
+There is no process to `fork()` the first one from, so it's made by hand.
+`kmain()` makes an empty process (`proc_new()`), makes it the current one,
+switches to its address space, and loads `/init` into it
+(`binfmt_load()`): an ELF program, whose segments are mapped as for
+`exec`. In the initramfs, `/init` is a link to runit's `/sbin/runit-init`.
+The architecture gives its thread a kernel stack and its user-mode
+registers, the program's entry point and the top of the user stack
+(`arch_proc_init()`), and puts the arguments and the environment on the
+user stack, as `execve()` does (`arch_init_execve()`). init has one
+argument, the module's command line, and no environment.
+
+`sched_init_spawn()` ([`sys/sched.c`](../../kernel/sys/sched.c)) then
+starts the system:
+
+1. init's working directory is the root, its umask `022`, and it leads a
+   new session.
+2. The architecture starts the clock and the scheduler's tick, and wakes
+   the other CPUs, which start their own ticks (`arch_sched_init()`).
+3. init's thread is spawned (`arch_thread_spawn()`): the CPU moves to
+   its kernel stack, the kernel lock is let go, and the CPU drops to user
+   mode at init's first instruction.
+
+The boot stack is never used again. From here on, the kernel only runs
+when something enters it: a system call, an interrupt, an exception.
+
+## PC: the boot loader
 
 ### Multiboot
 
-AquilaOS is loaded with the *Multiboot* protocol (version 1), which GRUB,
-Limine and QEMU's `-kernel` all speak. A Multiboot kernel is an ELF file
-with a *Multiboot header* in its first 8 KiB: a magic number, flags that
-say what the kernel wants, and a checksum. AquilaOS asks for:
+On the PC, AquilaOS is loaded with the *Multiboot* protocol (version 1),
+which GRUB, Limine and QEMU's `-kernel` all speak. A Multiboot kernel is
+an ELF file with a *Multiboot header* in its first 8 KiB: a magic number,
+flags that say what the kernel wants, and a checksum. AquilaOS asks for:
 
 - its sections page-aligned (`MULTIBOOT_PAGE_ALIGN`);
 - the memory map (`MULTIBOOT_MEMORY_INFO`);
@@ -37,7 +186,12 @@ the *modules* (the initial RAM disk), and jumps to the kernel's entry,
 flat segments. `%eax` holds Multiboot's magic number, `%ebx` the physical
 address of the *Multiboot information*: the kernel's command line, the
 memory map, the modules, the framebuffer, and the kernel's ELF section
-headers (its symbols, for backtraces).
+headers.
+
+`process_multiboot_info()` ([`include/boot/boot.h`](../../kernel/arch/i386/include/boot/boot.h))
+turns it into the `struct boot`. The framebuffer, if the boot loader set a
+graphics mode, is added to the memory map as reserved, and registered for
+the early console and for `/dev/fb0`.
 
 ### Limine
 
@@ -55,7 +209,14 @@ Each has an entry with the console on the serial port (`earlycon=ttyS0`).
 `make run` doesn't need a disk: QEMU loads the kernel and the initrd
 itself (`-kernel`, `-initrd`).
 
-## Where the kernel is
+### The early console
+
+Until the terminals are up, `printk()` writes through the *early console*
+([`earlycon/`](../../kernel/arch/i386/earlycon/earlycon.c)): the first
+serial port from the start, then, once the command line is read, the
+framebuffer if there is one, or VGA's text mode, as `earlycon=` says.
+
+## x86: where the kernel is
 
 The kernel is linked to run in the *higher half* of the address space,
 where it is the same in every process's address space and out of user
@@ -74,7 +235,7 @@ scripts make the difference (`kernel/arch/i386/kernel.i386.ld`,
 The `VMA()` and `LMA()` macros (`kernel/arch/i386/include/mm/mm.h`) go from
 one to the other.
 
-## Paging on
+## x86: paging on
 
 The entry, `_start` ([`boot/multiboot.S`](../../kernel/arch/i386/boot/multiboot.S)),
 saves `%eax` and `%ebx`, loads its own stack (Multiboot gives it none),
@@ -86,10 +247,10 @@ physical address keeps running, and where it is linked.
 
 `x86_bootstrap()` ([`boot/init.c`](../../kernel/arch/i386/boot/init.c)),
 in C, at its physical address, maps the first 768 MiB of memory (the
-whole *direct map*, see below) at 0 and at `0xC0000000` with 4 KiB pages,
-from a page directory and tables in the boot code's own `.bss`. It turns
-paging on, and write protection in the kernel too (`CR0.WP`: copy on
-write depends on it), moves the stack pointer to its higher-half address
+whole *direct map*) at 0 and at `0xC0000000` with 4 KiB pages, from a
+page directory and tables in the boot code's own `.bss`. It turns paging
+on, and write protection in the kernel too (`CR0.WP`: copy on write
+depends on it), moves the stack pointer to its higher-half address
 (`early_init_fix_stack`, in [`boot/sys.S`](../../kernel/arch/i386/boot/sys.S)),
 and calls `x86_cpu_init()`, now at its kernel address.
 
@@ -114,71 +275,34 @@ mode*; a far jump through a small GDT with a 64-bit code segment brings it
 to 64-bit mode. A last jump goes to `x86_64_start`, at the kernel's
 address, which loads a 64-bit stack and calls `x86_cpu_init()`.
 
-From there both kernels run the same C code.
+From there both run the same C code.
 
-## Setting up the kernel
+## x86: x86_cpu_init
 
-`x86_cpu_init()` ([`cpu/init.c`](../../kernel/arch/i386/cpu/init.c))
-sets up the kernel in order; each step needs the ones before it.
+`x86_cpu_init()` ([`cpu/init.c`](../../kernel/arch/i386/cpu/init.c)) runs
+the steps of the table above. The x86-specific ones:
 
-1. **The boot CPU's `struct cpu`** (`cpus[0]`), and its GDT and TSS
-   (`x86_gdt_setup()`). The GDT has the kernel's and user mode's segments;
-   `%gs` is made to point at the CPU's `struct cpu`, so `curcpu()` and
-   `curthread` work from here on (see [Interrupts](interrupts.md)).
-2. **The kernel lock** is taken: the boot CPU holds it until init runs.
-3. **The early console** (`earlycon_init()`): `printk()` writes to the
-   first serial port from now on.
-4. **The IDT** and the exception handlers (`x86_idt_setup()`,
-   `x86_isr_setup()`), so that a fault from here on is reported, not a
-   triple fault and a reset; the FPU (`x86_fpu_setup()`).
-5. **The Multiboot information** is turned into a `struct boot`
-   (`process_multiboot_info()`, [`include/boot/boot.h`](../../kernel/arch/i386/include/boot/boot.h)):
-   the command line, the memory map, the modules, the symbol table. The
-   framebuffer, if the boot loader set a graphics mode, is added to the
-   memory map as reserved, and registered for the early console and for
-   `/dev/fb0`. `struct boot` (`kernel/include/boot/boot.h`) is what the
-   rest of the kernel knows of the boot loader; `__kboot` points to it.
-6. **Memory** (`mm_setup()`, `kvmem_setup()`): see below.
-7. **The command line** is parsed (`kargs_parse()`,
-   [`core/kargs.c`](../../kernel/core/kargs.c)) into `key` and
-   `key=value` arguments, which any part of the kernel looks up with
-   `kargs_get()`. Only now can the early console move to the screen
-   (`earlycon_reinit()`): to the framebuffer if there is one, unless
-   `earlycon=` says `ttyS0`, `vga` or `fb`.
-8. **The platform** (`platform_init()`,
-   [`platform/pc/init.c`](../../kernel/arch/i386/platform/pc/init.c)):
-   PCI's configuration ports, the interrupt controllers (the APIC, or the
-   8259s, see [Interrupts](interrupts.md)), the PS/2 controller, the PIT,
-   the CMOS clock, and the other CPUs (below).
-9. **`kmain()`**, the architecture-independent rest.
+- **The boot CPU's `struct cpu`** (`cpus[0]`), its GDT and TSS
+  (`x86_gdt_setup()`, [`cpu/gdt.c`](../../kernel/arch/i386/cpu/gdt.c)).
+  The GDT has the kernel's and user mode's segments; `%gs` is made to
+  point at the CPU's `struct cpu`, so `curcpu()` and `curthread` work from
+  here on (see [Interrupts](interrupts.md)).
+- **The IDT** and the exception handlers, so that a fault from here on is
+  reported, not a triple fault and a reset; the FPU (`x86_fpu_setup()`).
+- **The kernel's page tables** (`pmap_init()`, called by
+  `arch_mm_setup()`): the boot tables become the kernel's. On x86_64 the
+  direct map is extended to all of RAM (with 2 MiB pages); on both, the
+  kernel's half gets all its top-level entries now, so that every address
+  space made later shares them; and the mapping at 0 is removed, since
+  user space goes there. The SMP trampoline's page (`0x8000`) is kept out
+  of the allocator.
+- **The platform** (`platform_init()`,
+  [`platform/pc/init.c`](../../kernel/arch/i386/platform/pc/init.c)):
+  PCI's configuration ports, the interrupt controllers (the APIC, or the
+  8259s), the PS/2 controller, the PIT, the CMOS clock, and the other
+  CPUs.
 
-### Memory
-
-The memory map says which ranges of physical memory are RAM (*usable*)
-and which aren't: the BIOS's, the devices', ACPI's. `mm_setup()`
-([`mm/mm.c`](../../kernel/mm/mm.c)):
-
-1. Finds the end of RAM, and how much there is. On i386 only the first
-   768 MiB are used: what fits in the direct map.
-2. Sets aside room for its own structures, before there is an allocator
-   to ask: `pages[]`, a `struct vm_page` for each physical page, and the
-   buddy allocator's bitmaps. They go in the first free RAM after the
-   kernel that the boot page tables map (`boot_mem_place()`), and are
-   handed out from there by `mm_boot_alloc()`.
-3. Sets up the *buddy allocator*, the physical page allocator, over all of
-   RAM, and marks used what isn't free: the kernel, those structures, the
-   memory map's holes and reserved ranges, the modules, and the SMP
-   trampoline's page.
-4. Builds the kernel's page tables (`pmap_init()`): the boot tables become
-   the kernel's. On x86_64 the direct map is extended to all of RAM (with
-   2 MiB pages); on both, the kernel's half gets all its top-level entries
-   now, so that every address space made later shares them; and the
-   mapping at 0 is removed, since user space goes there.
-
-`kvmem_setup()` then starts the kernel's own allocator, `kmalloc()`. The
-memory document (planned) will cover them all.
-
-### The other CPUs
+### x86: the other CPUs
 
 With the APIC, `platform_init()` starts the other CPUs, the *application
 processors*, with `x86_smp_init()` ([`cpu/smp.c`](../../kernel/arch/i386/cpu/smp.c)),
@@ -188,64 +312,15 @@ the *trampoline*, a page below 1 MiB (`0x8000`, `cpu/trampoline.S`),
 which brings it through protected mode (and long mode) to the kernel's
 `x86_ap_start()`, on its own stack and with its own GDT, TSS and
 `struct cpu`. It says it's there and waits, idle, until the scheduler
-starts.
+starts. See [SMP and the kernel lock](smp.md).
 
-## kmain
+### x86: into user mode
 
-`kmain()` ([`core/main.c`](../../kernel/core/main.c)) is the same on every
-architecture:
-
-1. With `kvmem.test` or `kvmem.guard` on the command line, it checks the
-   kernel's allocator (the `kvmem` test).
-2. **The devices and filesystems**: the device layer (`kdev_init()`), the
-   VFS (`vfs_init()`), then every *built-in module* (`modules_init()`,
-   [`core/module.c`](../../kernel/core/module.c)). A driver or filesystem
-   declares its init function with `MODULE_INIT()`, which puts a pointer
-   to it in the `.__minit` section; the linker script gathers them between
-   `__minit` and `__minit_end`, and `modules_init()` calls them all. The
-   terminals, the serial ports, the disks, the network card, the
-   filesystems: all register themselves this way.
-3. **The root filesystem**:
-   - with `root=` on the command line (`root=/dev/hda2`), that disk
-     partition is mounted, as ext2 unless `rootfstype=` says otherwise;
-   - otherwise the first module is the *initramfs*, a `cpio` archive
-     (`make initrd`), mounted as it is (`load_ramdisk()`,
-     [`fs/initramfs/initramfs.c`](../../kernel/fs/initramfs/initramfs.c)):
-     a read-only filesystem whose files are read from the module's memory,
-     where the boot loader left it;
-   - with neither, the kernel panics.
-4. **`/dev`**: devfs is mounted on it, with `/dev/console`, which init may
-   write to at once.
-5. **init**, the first process: below.
-
-## The first process
-
-There is no process to `fork()` the first one from, so it's made by hand.
-`kmain()` makes an empty process (`proc_new()`), makes it the current one,
-switches to its address space, and loads `/init` into it
-(`binfmt_load()`): an ELF program, whose segments are mapped as for
-`exec`. In the initramfs, `/init` is a link to runit's `/sbin/runit-init`.
-`arch_proc_init()` gives its thread a kernel stack and its user-mode
-registers: the program's entry point, the top of the user stack.
-`arch_init_execve()` puts the arguments and the environment on the user
-stack, as `execve()` does; init has one argument, the module's command
-line, and no environment.
-
-`sched_init_spawn()` ([`sys/sched.c`](../../kernel/sys/sched.c)) then
-starts the system:
-
-1. init's working directory is the root, its umask `022`, and it leads a
-   new session.
-2. `arch_sched_init()` starts the clock (the TSC or the HPET) and the
-   scheduler's tick (see [Interrupts](interrupts.md)), and wakes the other
-   CPUs, which start their own ticks.
-3. init's thread is spawned (`arch_thread_spawn()`,
-   [`sys/thread.c`](../../kernel/arch/i386/sys/thread.c)): the CPU moves to
-   its kernel stack, the kernel lock is let go, and `x86_jump_user()`
-   `iret`s into user mode, at init's first instruction.
-
-The boot stack is never used again. From here on, the kernel only runs
-when something enters it: a system call, an interrupt, an exception.
+`arch_thread_spawn()` ([`sys/thread.c`](../../kernel/arch/i386/sys/thread.c))
+loads init's page tables, sets the TSS's stack pointer to the thread's
+kernel stack (where the CPU will switch on the next interrupt from user
+mode), and jumps there; `x86_jump_user()` then `iret`s into user mode,
+with the user code and stack segments.
 
 ## A boot
 
@@ -280,44 +355,35 @@ AquilaOS version v0.0.2
 login:
 ```
 
-The first `buddy: set unusable` is the kernel itself, from 1 MiB. The
-command line QEMU passes starts with the kernel's file name, which the
-kernel ignores.
-
-## The command line
-
-The arguments the kernel reads at boot:
-
-| Argument                 | What                                                        |
-|--------------------------|-------------------------------------------------------------|
-| `earlycon=`              | where the kernel's messages go: `ttyS0`, `vga` or `fb` (default: the framebuffer if there is one, else the serial port) |
-| `root=/dev/hdXN`         | the root filesystem is this partition, not the initramfs    |
-| `rootfstype=`            | the root filesystem's type: `ext2` (the default) or `minix` |
-| `apic=off`               | the 8259s, not the APIC (and one CPU)                       |
-| `smp=off`                | the boot CPU only                                           |
-| `kvmem.test`, `kvmem.guard` | check the kernel's allocator at boot                     |
+The messages starting `x86:`, `apic:`, `i8254:` and `cmos:` are the
+architecture's and platform's; `kernel:`, `buddy:` and `kdev:` are the
+kernel's. The first `buddy: set unusable` is the kernel itself, from
+1 MiB. The command line QEMU passes starts with the kernel's file name,
+which the kernel ignores.
 
 ## Where it is
 
-| File                                            | What                                         |
-|-------------------------------------------------|----------------------------------------------|
-| `boot/limine*.conf`                             | the boot loader's configurations             |
-| `kernel/arch/i386/kernel.i386.ld`, `kernel.x86_64.ld` | where the kernel is linked and loaded |
-| `kernel/arch/i386/boot/multiboot.S`             | the Multiboot header, the entry              |
-| `kernel/arch/i386/boot/init.c`, `sys.S`         | i386: paging on                              |
-| `kernel/arch/i386/boot/x86_64_bootstrap.S`      | x86_64: paging and long mode on              |
-| `kernel/arch/i386/include/boot/boot.h`          | the Multiboot information to `struct boot`   |
-| `kernel/arch/i386/cpu/init.c`                   | `x86_cpu_init()`: the order of it all        |
-| `kernel/arch/i386/cpu/gdt.c`                    | the GDT and the TSS                          |
-| `kernel/arch/i386/earlycon/`                    | the early console: serial, VGA, framebuffer  |
-| `kernel/mm/mm.c`                                | `mm_setup()`: the memory map, the boot memory |
-| `kernel/arch/i386/mm/i386.c`, `x86_64.c`        | `pmap_init()`: the kernel's page tables      |
-| `kernel/arch/i386/platform/pc/init.c`           | `platform_init()`: the PC's devices          |
-| `kernel/arch/i386/cpu/smp.c`, `trampoline.S`    | the other CPUs                               |
-| `kernel/core/kargs.c`                           | the command line                             |
-| `kernel/core/module.c`                          | the built-in modules                         |
-| `kernel/core/main.c`                            | `kmain()`: the root filesystem, init         |
-| `kernel/sys/sched.c`                            | `sched_init_spawn()`                         |
+| File                                            | Layer    | What                                    |
+|-------------------------------------------------|----------|-----------------------------------------|
+| `kernel/include/boot/boot.h`                    | kernel   | `struct boot`                           |
+| `kernel/mm/mm.c`                                | kernel   | `mm_setup()`: the memory map, the boot memory |
+| `kernel/core/kargs.c`                           | kernel   | the command line                        |
+| `kernel/core/module.c`                          | kernel   | the built-in modules                    |
+| `kernel/core/main.c`                            | kernel   | `kmain()`: the root filesystem, init    |
+| `kernel/sys/sched.c`                            | kernel   | `sched_init_spawn()`                    |
+| `boot/limine*.conf`                             | PC       | the boot loader's configurations        |
+| `kernel/arch/i386/boot/multiboot.S`             | PC       | the Multiboot header, the entry         |
+| `kernel/arch/i386/include/boot/boot.h`          | PC       | the Multiboot information to `struct boot` |
+| `kernel/arch/i386/earlycon/`                    | PC       | the early console: serial, VGA, framebuffer |
+| `kernel/arch/i386/platform/pc/init.c`           | PC       | `platform_init()`                       |
+| `kernel/arch/i386/kernel.i386.ld`, `kernel.x86_64.ld` | x86 | where the kernel is linked and loaded |
+| `kernel/arch/i386/boot/init.c`, `sys.S`         | x86      | i386: paging on                         |
+| `kernel/arch/i386/boot/x86_64_bootstrap.S`      | x86      | x86_64: paging and long mode on         |
+| `kernel/arch/i386/cpu/init.c`                   | x86      | `x86_cpu_init()`: the order of it all   |
+| `kernel/arch/i386/cpu/gdt.c`                    | x86      | the GDT and the TSS                     |
+| `kernel/arch/i386/mm/i386.c`, `x86_64.c`        | x86      | `pmap_init()`: the kernel's page tables |
+| `kernel/arch/i386/cpu/smp.c`, `trampoline.S`    | x86      | the other CPUs                          |
+| `kernel/arch/i386/sys/thread.c`                 | x86      | into user mode                          |
 
 ## References
 
