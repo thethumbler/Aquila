@@ -18,6 +18,11 @@ ssize_t posix_file_write(struct file *file, struct iobuf *io)
 {
     if (!(file->flags & (O_WRONLY | O_RDWR)))   /* File is not opened for writing */
         return -EBADF;
+
+    /* appending: each write at the end, wherever the offset was moved
+     * (POSIX: as if by an lseek() to the end, then the write) */
+    if ((file->flags & O_APPEND) && S_ISREG(file->vnode->mode))
+        file->offset = file->vnode->size;
     
     if (file->flags & O_NONBLOCK) { /* Non-blocking I/O */
         if (vfs_file_can_write(file, io->resid)) {

@@ -1668,6 +1668,26 @@ void aq_main(void)
     SC(SYS_close, mf, 0, 0);
     SC(SYS_unlink, "/tmp/mapped", 0, 0);
 
+    /* O_APPEND: every write at the end, wherever the offset was moved */
+    char ab[8] = {0};
+    int af = SC(SYS_open, "/tmp/append", O_CREAT | O_RDWR | O_APPEND, 0644);
+    SC(SYS_write, af, "ab", 2);
+    SC(SYS_lseek, af, 0, SEEK_SET);
+    check("O_APPEND write", SC(SYS_write, af, "cd", 2), 2);
+    check("O_APPEND: the offset is the end", SC(SYS_lseek, af, 0, SEEK_CUR), 4);
+    SC(SYS_fcntl, af, F_SETFL, 0);
+    SC(SYS_lseek, af, 0, SEEK_SET);
+    SC(SYS_write, af, "A", 1);
+    SC(SYS_fcntl, af, F_SETFL, O_APPEND);
+    SC(SYS_lseek, af, 0, SEEK_SET);
+    SC(SYS_write, af, "e", 1);
+    SC(SYS_lseek, af, 0, SEEK_SET);
+    SC(SYS_read, af, ab, 5);
+    check("O_APPEND, on and off with F_SETFL", ab[0] == 'A' && ab[1] == 'b' && ab[2] == 'c' &&
+          ab[3] == 'd' && ab[4] == 'e', 1);
+    SC(SYS_close, af, 0, 0);
+    SC(SYS_unlink, "/tmp/append", 0, 0);
+
     /* shutdown(): one direction ends, the other still works */
     {
         struct sockaddr_un la = {AF_UNIX, "/tmp/shut"};
