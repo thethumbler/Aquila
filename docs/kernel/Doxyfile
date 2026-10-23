@@ -1,0 +1,64 @@
+# The AquilaOS kernel's code reference (make docs): only what differs from
+# Doxygen's defaults. Run from docs/kernel/, the output's directory in
+# $DOXYGEN_OUTPUT.
+
+PROJECT_NAME           = "AquilaOS kernel"
+PROJECT_BRIEF          = "The code reference"
+OUTPUT_DIRECTORY       = $(DOXYGEN_OUTPUT)
+HTML_OUTPUT            = api
+
+# the kernel's sources (not arch/arm and arch/none, which aren't built),
+# and this reference's main page
+INPUT                  = api.md ../../kernel
+FILE_PATTERNS          = *.c *.h
+RECURSIVE              = YES
+EXCLUDE                = ../../kernel/arch/arm ../../kernel/arch/none
+EXCLUDE_PATTERNS       = */tags
+USE_MDFILE_AS_MAINPAGE = api.md
+FULL_PATH_NAMES        = YES
+STRIP_FROM_PATH        = ../..
+
+# the comments quote names `like this', Markdown wants `like this`
+FILTER_PATTERNS        = *.c=doxygen/quotes.sh *.h=doxygen/quotes.sh
+
+# C; a comment's first sentence is its summary (the comments are prose,
+# without tags); everything listed, documented or not, static functions too
+OPTIMIZE_OUTPUT_FOR_C  = YES
+JAVADOC_AUTOBRIEF      = YES
+QT_AUTOBRIEF           = YES
+EXTRACT_ALL            = YES
+EXTRACT_STATIC         = YES
+SOURCE_BROWSER         = YES
+REFERENCED_BY_RELATION = YES
+REFERENCES_RELATION    = YES
+
+# the kernel's headers, as the default build (x86_64) sees them
+ENABLE_PREPROCESSING   = YES
+MACRO_EXPANSION        = YES
+EXPAND_ONLY_PREDEF     = YES
+SEARCH_INCLUDES        = YES
+INCLUDE_PATH           = ../../kernel/include ../../kernel/arch/i386/include ../../include/uapi
+PREDEFINED             = ARCH_BITS=64 \
+                         "MALLOC_DEFINE(type, name, desc)=" \
+                         "MALLOC_DECLARE(type)=" \
+                         "MODULE_INIT(name, init, fini)=" \
+                         "LOGGER_DEFINE(module, name, level)=" \
+                         "__packed=" \
+                         "__aligned(x)=" \
+                         "__unused=" \
+                         "__attribute__(x)="
+
+# HTML only, with doxygen-awesome-css's theme (doxygen/, MIT)
+GENERATE_LATEX         = NO
+GENERATE_TREEVIEW      = YES
+DISABLE_INDEX          = NO
+FULL_SIDEBAR           = NO
+HTML_COLORSTYLE        = LIGHT
+HTML_EXTRA_STYLESHEET  = doxygen/doxygen-awesome.css \
+                         doxygen/doxygen-awesome-sidebar-only.css
+HAVE_DOT               = NO
+
+# what's undocumented isn't a warning (yet): most of it is
+QUIET                  = YES
+WARN_IF_UNDOCUMENTED   = NO
+WARN_LOGFILE           = $(DOXYGEN_OUTPUT)/warnings.log

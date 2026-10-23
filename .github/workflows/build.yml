@@ -17,7 +17,7 @@ jobs:
           sudo apt-get install -y build-essential gcc-multilib bison flex \
             texinfo libgmp-dev libmpfr-dev libmpc-dev wget nasm xorriso cpio \
             qemu-system-x86 e2fsprogs python3 fdisk dosfstools mtools fakeroot \
-            gperf autoconf automake libtool
+            gperf autoconf automake libtool doxygen
 
       # QEMU runs the tests with KVM if /dev/kvm can be used
       - name: Enable KVM
@@ -51,6 +51,16 @@ jobs:
       - name: Test
         run: tests/run.sh -v
 
+      # the kernel's code reference, without a warning (an unclosed quote,
+      # a stray command in a comment)
+      - name: Code reference
+        run: |
+          make docs
+          if [ -s build/docs/kernel/warnings.log ]; then
+            cat build/docs/kernel/warnings.log
+            exit 1
+          fi
+
       - name: Upload images
         uses: actions/upload-artifact@v4
         with:
@@ -60,3 +70,4 @@ jobs:
             build/x86_64/aquila.img
             build/x86_64/initrd.img
             build/x86_64/kernel/kernel-*.x86_64
+            build/docs/kernel/api

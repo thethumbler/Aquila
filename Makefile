@@ -41,6 +41,8 @@
 #   QEMU uses KVM when /dev/kvm can be used, KVM=0 turns it off (also for
 #   make test).
 #   make test         kernel test suite (tests/run.sh, uses the host gcc)
+#   make docs         the kernel's code reference, build/docs/kernel/api/
+#                     (needs doxygen); the documents are docs/kernel/*.md
 #   make clean        remove build output except the toolchain, downloads
 #                     and the hard disk (it has what was saved on it)
 #   make distclean    remove build/
@@ -91,7 +93,7 @@ MAKEFLAGS += --no-print-directory
 
 export
 
-.PHONY: all toolchain kernel userland contrib ports initrd iso live hdd hdd-kernel hdd-update run run-iso run-hdd test clean distclean check-toolchain
+.PHONY: all toolchain kernel userland contrib ports initrd iso live hdd hdd-kernel hdd-update run run-iso run-hdd test docs clean distclean check-toolchain
 
 all: kernel userland contrib initrd
 
@@ -223,6 +225,16 @@ run-hdd:
 
 test:
 	@$(SRCDIR)/tests/run.sh -a $(ARCH)
+
+# the kernel's code reference, from the comments in its sources
+DOCS := $(SRCDIR)/build/docs/kernel
+
+docs:
+	@command -v doxygen >/dev/null || { echo "error: doxygen not found" >&2; exit 1; }
+	@mkdir -p $(DOCS)
+	@$(ECHO) "  DOXYGEN " build/docs/kernel/api
+	@cd $(SRCDIR)/docs/kernel && DOXYGEN_OUTPUT=$(DOCS) doxygen Doxyfile
+	@echo "  $$(grep -c . $(DOCS)/warnings.log || true) warnings, in build/docs/kernel/warnings.log"
 
 clean:
 	@$(RM) -r $(BUILDDIR)/kernel $(BUILDDIR)/userland $(ROOTFS) $(BUILDDIR)/iso \
