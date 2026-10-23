@@ -51,11 +51,11 @@ repository's top-level `include/uapi/`.
 
 | Document                         | About                                                     |
 |----------------------------------|-----------------------------------------------------------|
+| [Booting](booting.md)            | the boot loader, paging and long mode on, the order of the kernel's setup, the first process |
 | [Interrupts](interrupts.md)      | the IDT, the entry path, the 8259, the APIC, MSI, dispatch, the timer, IPIs, exceptions |
 
 Planned:
 
-- Booting: from the boot loader to the first process
 - Memory: physical pages, the kernel's allocator, address spaces, page faults
 - Processes, threads and the scheduler
 - SMP and the kernel lock
