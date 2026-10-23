@@ -1,6 +1,5 @@
 #include <ext2.h>
 #include <ds/bitmap.h>
-#include <core/panic.h>
 
 static inline off_t ext2_inode_off(struct ext2 *desc, ino_t ino)
 {
@@ -18,119 +17,138 @@ static inline off_t ext2_inode_off(struct ext2 *desc, ino_t ino)
 int ext2_inode_read(struct ext2 *desc, ino_t ino, struct ext2_inode *ref)
 {
     off_t off;
-    
+
     if ((off = ext2_inode_off(desc, ino)) < 0)
         return off;
-    
-    if (ref) {
-        size_t size = sizeof(struct ext2_inode);
-        ssize_t r;
 
-        if ((r = vfs_read(desc->supernode, off, size, ref)) != (ssize_t) size) {
-            if (r < 0)
-                return r;
-
-            /* FIXME Check for further errors? */
-            return -EINVAL;
-        }
-    }
-
-    return 0;
+    return ref ? ext2_io(desc, 0, off, sizeof(struct ext2_inode), ref) : 0;
 }
 
 int ext2_inode_write(struct ext2 *desc, ino_t ino, struct ext2_inode *ext2_inode)
 {
     off_t off = ext2_inode_off(desc, ino);
-    size_t inode_size = desc->superblock->inode_size;
 
     if (off < 0)
         return off;
-     
-    return vfs_write(desc->supernode, off, sizeof(struct ext2_inode), ext2_inode);
+
+    return ext2_io(desc, 1, off, sizeof(struct ext2_inode), ext2_inode);
 }
 
-size_t ext2_inode_block_read(struct ext2 *desc, struct ext2_inode *inode, size_t idx, void *buf)
+/*
+ * The tree block `idx' of a file is in: its root's slot in the inode (0 to
+ * 11 the direct pointers, 12 to 14 the indirect ones), its depth (0: the
+ * slot is the block's, 1 to 3: the levels of indirect blocks above it)
+ * and the block's index in it; -EFBIG past them
+ */
+#define SLOT_SINGLY     EXT2_DIRECT_POINTERS
+
+static int block_tree(struct ext2 *desc, size_t idx, int *slot, size_t *rel)
 {
-    size_t bs = desc->bs;
-    size_t blocks_nr = (inode->size + bs - 1) / bs;
     size_t p = desc->bs / 4;    /* Pointers per block */
 
-    if (idx >= blocks_nr) {
-        panic("Trying to get invalid block!\n");
-    }
-
     if (idx < EXT2_DIRECT_POINTERS) {
-        if (!inode->direct_pointer[idx]) {  /* sparse block */
-            memset(buf, 0, bs);
-            return 0;
-        }
-
-        ext2_block_read(desc, inode->direct_pointer[idx], buf);
+        *slot = idx;
+        *rel = 0;
         return 0;
     }
 
     idx -= EXT2_DIRECT_POINTERS;
-    
-    if (idx < p) {
-        /* singly indirect */
-        if (!inode->singly_indirect_pointer) {  /* sparse block */
-            memset(buf, 0, bs);
-            return 0;
+
+    for (size_t depth = 1, n = p; depth <= 3; ++depth, n *= p) {
+        if (idx < n) {
+            *slot = SLOT_SINGLY + depth - 1;
+            *rel = idx;
+            return depth;
         }
 
-        uint32_t *tmp = kmalloc(desc->bs, &M_BUFFER, 0);
-        ext2_block_read(desc, inode->singly_indirect_pointer, tmp);
-        uint32_t block = tmp[idx];
-        kfree(tmp);
+        idx -= n;
+    }
 
-        if (!block) {   /* sparse block */
-            memset(buf, 0, bs);
-            return 0;
+    return -EFBIG;
+}
+
+/* the pointer in slot `slot' of the inode (it's packed: no pointers to
+ * its fields) */
+static uint32_t slot_get(struct ext2_inode *inode, int slot)
+{
+    switch (slot) {
+        case SLOT_SINGLY:     return inode->singly_indirect_pointer;
+        case SLOT_SINGLY + 1: return inode->doubly_indirect_pointer;
+        case SLOT_SINGLY + 2: return inode->triply_indirect_pointer;
+        default:              return inode->direct_pointer[slot];
+    }
+}
+
+static void slot_set(struct ext2_inode *inode, int slot, uint32_t block)
+{
+    switch (slot) {
+        case SLOT_SINGLY:     inode->singly_indirect_pointer = block; break;
+        case SLOT_SINGLY + 1: inode->doubly_indirect_pointer = block; break;
+        case SLOT_SINGLY + 2: inode->triply_indirect_pointer = block; break;
+        default:              inode->direct_pointer[slot] = block; break;
+    }
+}
+
+/* the data blocks under an indirect block `depth' levels above them */
+static size_t tree_span(struct ext2 *desc, int depth)
+{
+    size_t span = 1;
+
+    while (depth-- > 1)
+        span *= desc->bs / 4;
+
+    return span;
+}
+
+/* block `idx' of a file into `buf' (zeros where it's sparse) */
+int ext2_inode_block_read(struct ext2 *desc, struct ext2_inode *inode, size_t idx, void *buf)
+{
+    int slot;
+    size_t rel;
+    int depth = block_tree(desc, idx, &slot, &rel), err = 0;
+
+    if (depth < 0)
+        return depth;
+
+    uint32_t block = slot_get(inode, slot);
+
+    if (depth && block) {
+        uint32_t *table = kmalloc(desc->bs, &M_BUFFER, 0);
+
+        if (!table)
+            return -ENOMEM;
+
+        for (; depth && block; --depth) {
+            size_t span = tree_span(desc, depth);
+
+            if ((err = ext2_block_read(desc, block, table)))
+                break;
+
+            block = table[rel / span];
+            rel %= span;
         }
 
-        ext2_block_read(desc, block, buf);
+        kfree(table);
+
+        if (err)
+            return err;
+    }
+
+    if (!block) {   /* sparse block */
+        memset(buf, 0, desc->bs);
         return 0;
     }
 
-    idx -= p;
-    
-    if (idx < p * p) {
-        /* doubly indirect */
-        if (!inode->doubly_indirect_pointer) {  /* sparse block */
-            memset(buf, 0, bs);
-            return 0;
-        }
-
-        uint32_t *tmp = kmalloc(desc->bs, &M_BUFFER, 0);
-        ext2_block_read(desc, inode->doubly_indirect_pointer, tmp);
-        uint32_t block = tmp[idx / p];
-
-        if (block) {
-            ext2_block_read(desc, block, tmp);
-            block = tmp[idx % p];
-        }
-
-        kfree(tmp);
-
-        if (!block) {   /* sparse block */
-            memset(buf, 0, bs);
-            return 0;
-        }
-
-        ext2_block_read(desc, block, buf);
-        return 0;
-    }
-
-    panic("Not impelemented");
-
-    /* unreachable */
+    return ext2_block_read(desc, block, buf);
 }
 
 /* allocate a block owned by the inode, i_blocks counts 512-byte sectors */
 static int ext2_inode_block_alloc(struct ext2 *desc, struct ext2_inode *inode, uint32_t *block)
 {
-    if (!(*block = ext2_block_alloc(desc)))
-        return -ENOSPC;
+    int err;
+
+    if ((err = ext2_block_alloc(desc, block)))
+        return err;
 
     inode->blocks += desc->bs / 512;
     return 0;
@@ -145,118 +163,111 @@ static int ext2_indirect_block_get(struct ext2 *desc, struct ext2_inode *inode, 
     if (!tmp)
         return -ENOMEM;
 
-    ext2_block_read(desc, table, tmp);
+    if ((err = ext2_block_read(desc, table, tmp)))
+        goto done;
 
     if (!(*block = tmp[idx])) {    /* Allocate */
         if (!(err = ext2_inode_block_alloc(desc, inode, block))) {
             tmp[idx] = *block;
-            ext2_block_write(desc, table, tmp);
+            err = ext2_block_write(desc, table, tmp);
         }
     }
 
+done:
     kfree(tmp);
     return err;
 }
 
-ssize_t ext2_inode_block_write(struct ext2 *desc, struct ext2_inode *inode, uint32_t inode_nr, size_t idx, void *buf)
+/* `buf' as block `idx' of a file, the blocks it needs allocated */
+int ext2_inode_block_write(struct ext2 *desc, struct ext2_inode *inode, uint32_t inode_nr, size_t idx, void *buf)
 {
-    size_t p = desc->bs / 4;    /* Pointers per block */
     uint32_t nblocks = inode->blocks;
-    uint32_t block = 0;
-    int err = 0;
+    int slot;
+    size_t rel;
+    int depth = block_tree(desc, idx, &slot, &rel), err = 0;
 
-    if (idx < EXT2_DIRECT_POINTERS) {
-        if (!(block = inode->direct_pointer[idx])) {    /* Allocate */
-            if (!(err = ext2_inode_block_alloc(desc, inode, &block)))
-                inode->direct_pointer[idx] = block;
-        }
-    } else if ((idx -= EXT2_DIRECT_POINTERS) < p) {
-        uint32_t table = inode->singly_indirect_pointer;
+    if (depth < 0)
+        return depth;
 
-        if (!table && !(err = ext2_inode_block_alloc(desc, inode, &table)))
-            inode->singly_indirect_pointer = table;
+    uint32_t block = slot_get(inode, slot);
 
-        if (!err)
-            err = ext2_indirect_block_get(desc, inode, table, idx, &block);
-    } else if ((idx -= p) < p * p) {
-        uint32_t table = inode->doubly_indirect_pointer;
-        uint32_t indirect = 0;
+    if (!block && !(err = ext2_inode_block_alloc(desc, inode, &block)))
+        slot_set(inode, slot, block);
 
-        if (!table && !(err = ext2_inode_block_alloc(desc, inode, &table)))
-            inode->doubly_indirect_pointer = table;
+    for (; !err && depth; --depth) {
+        size_t span = tree_span(desc, depth);
+        uint32_t next = 0;
 
-        if (!err)
-            err = ext2_indirect_block_get(desc, inode, table, idx / p, &indirect);
-
-        if (!err)
-            err = ext2_indirect_block_get(desc, inode, indirect, idx % p, &block);
-    } else {
-        /* TODO triply indirect blocks */
-        return -EFBIG;
+        err = ext2_indirect_block_get(desc, inode, block, rel / span, &next);
+        block = next;
+        rel %= span;
     }
 
     /* persist new block pointers and i_blocks */
-    if (inode->blocks != nblocks)
-        ext2_inode_write(desc, inode_nr, inode);
+    if (inode->blocks != nblocks) {
+        int werr = ext2_inode_write(desc, inode_nr, inode);
+        err = err ? err : werr;
+    }
 
     if (err)
         return err;
 
-    ext2_block_write(desc, block, buf);
-    return 0;
+    return ext2_block_write(desc, block, buf);
 }
 
-ino_t ext2_inode_alloc(struct ext2 *desc)
+/* a free inode, marked used, into `*ino': 0, -ENOSPC, or an error (a
+ * bitmap that couldn't be read isn't written back) */
+int ext2_inode_alloc(struct ext2 *desc, ino_t *ino)
 {
     vfs_log(LOG_DEBUG, "ext2_inode_alloc(desc=%p)\n", desc);
 
     uint32_t *buf = kmalloc(desc->bs, &M_BUFFER, 0);
-    uint32_t inode = 0, real_inode = 0, group = 0;
+    uint32_t idx = 0, group = 0;
     struct bitmap bm = {0};
-    int found = 0;
+    int err = -ENOSPC;
+
+    if (!buf)
+        return -ENOMEM;
 
     for (unsigned i = 0; i < desc->ngroups; ++i) {
-        inode = 0;
+        if (!desc->groups[i].free_inodes)
+            continue;
 
-        if (desc->groups[i].free_inodes) {
-            ext2_block_read(desc, desc->groups[i].imap, buf);
+        if ((err = ext2_block_read(desc, desc->groups[i].imap, buf)))
+            goto done;
 
-            bm.map = buf;
-            bm.max_idx = desc->superblock->ginodes;
-            
-            /* look for a free inode */
-            for (; inode < bm.max_idx && bitmap_check(&bm, inode); ++inode);
+        bm.map = buf;
+        bm.max_idx = desc->superblock->ginodes;
 
-            if (inode == bm.max_idx)
-                continue;
+        /* look for a free inode */
+        for (idx = 0; idx < bm.max_idx && bitmap_check(&bm, idx); ++idx);
 
+        if (idx < bm.max_idx) {
             group = i;
-            real_inode = inode + group * desc->superblock->ginodes + 1;
-            found = 1;
+            err = 0;
             break;
         }
+
+        err = -ENOSPC;
     }
 
-    if (!found) {
-        /* Out of space */
-        kfree(buf);
-        return 0;
-    }
-
-    //printk("group %d, inode %d, real_inode %d\n", group, inode, real_inode);
+    if (err)
+        goto done;
 
     /* Update bitmap */
-    bitmap_set(&bm, inode);
-    ext2_block_write(desc, desc->groups[group].imap, buf);
+    bitmap_set(&bm, idx);
 
-    /* Update block group descriptor */
+    if ((err = ext2_block_write(desc, desc->groups[group].imap, buf)))
+        goto done;
+
+    /* Update block group descriptor, and super block */
     desc->groups[group].free_inodes--;
-    ext2_bgd_table_rewrite(desc);
-
-    /* Update super block */
     desc->superblock->free_inodes--;
-    ext2_superblock_rewrite(desc);
 
+    if (!(err = ext2_bgd_table_rewrite(desc)) && !(err = ext2_superblock_rewrite(desc)))
+        *ino = idx + group * desc->superblock->ginodes + 1;
+
+done:
     kfree(buf);
-    return real_inode;
+    return err;
 }

@@ -5,8 +5,10 @@
  * large enough to need singly and doubly indirect blocks (1K blocks),
  * appends to it after reopening, and reads everything back. Then
  * directories that grow past a block, removing, renaming and linking,
- * and truncating; the disk has no partition table: its first partition
- * isn't there (it isn't the whole disk). tests/run.sh then checks the image on the host with
+ * and truncating; a sparse file with a block past the doubly indirect
+ * ones (triply indirect), kept, and another truncated away; the disk has
+ * no partition table: its first partition isn't there (it isn't the whole
+ * disk). tests/run.sh then checks the image on the host with
  * e2fsck, compares the file contents with the same pattern and lists
  * what is left.
  */
@@ -18,6 +20,9 @@
 /* > 12 direct + 256 singly indirect 1K blocks, reaches doubly indirect */
 #define FIRST   300000u
 #define EXTRA   5000u
+
+/* past 12 + 256 + 65536 1K blocks: triply indirect */
+#define HUGE_AT (70u << 20)
 
 static char buf[8192];
 static char st[128];
@@ -226,6 +231,35 @@ void aq_main(void)
         zeros &= buf[i] == 0;
     check("grown part reads zeros", zeros, 1);
     SC(SYS_close, fd, 0, 0);
+
+    /* past the doubly indirect blocks (12 + 256 + 65536 KiB): triply
+     * indirect, a sparse file; the hole reads zeros */
+    fd = SC(SYS_open, "/mnt/huge", O_CREAT | O_RDWR, 0644);
+    SC(SYS_lseek, fd, HUGE_AT, 0);
+    check("write past the doubly indirect blocks", write_pattern(fd, HUGE_AT, 4096), 0);
+    SC(SYS_fstat, fd, st, 0);
+    check("its size", ST->st_size, HUGE_AT + 4096);
+    SC(SYS_lseek, fd, HUGE_AT, 0);
+    int same = SC(SYS_read, fd, buf, 4096) == 4096;
+    for (u32 i = 0; i < 4096; ++i)
+        same &= (unsigned char) buf[i] == pat(HUGE_AT + i);
+    check("read back, triply indirect", same, 1);
+    SC(SYS_lseek, fd, HUGE_AT - 8192, 0);
+    zeros = SC(SYS_read, fd, buf, 8192) == 8192;
+    for (int i = 0; i < 8192; ++i)
+        zeros &= buf[i] == 0;
+    check("the hole before reads zeros", zeros, 1);
+    SC(SYS_close, fd, 0, 0);
+
+    /* and freed: truncated to nothing (e2fsck counts the free blocks) */
+    fd = SC(SYS_open, "/mnt/huge2", O_CREAT | O_RDWR, 0644);
+    SC(SYS_lseek, fd, HUGE_AT, 0);
+    write_pattern(fd, HUGE_AT, 4096);
+    check("truncate a triply indirect file", SC(SYS_ftruncate, fd, 0, 0), 0);
+    SC(SYS_fstat, fd, st, 0);
+    check("no blocks left", ST->st_blocks, 0);
+    SC(SYS_close, fd, 0, 0);
+    check("unlink it", SC(SYS_unlink, "/mnt/huge2", 0, 0), 0);
 
     /* no partition table: no first partition (not the whole disk from
      * sector 0) */

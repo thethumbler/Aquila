@@ -1,6 +1,6 @@
 #include <ext2.h>
 
-void ext2_superblock_rewrite(struct ext2 *desc)
+int ext2_superblock_rewrite(struct ext2 *desc)
 {
-    vfs_write(desc->supernode, 1024, sizeof(struct ext2_superblock), desc->superblock);
+    return ext2_io(desc, 1, 1024, sizeof(struct ext2_superblock), desc->superblock);
 }

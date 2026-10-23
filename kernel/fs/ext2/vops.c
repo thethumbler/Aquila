@@ -40,7 +40,8 @@ ssize_t ext2_read(struct vnode *node, off_t offset, struct iobuf *io)
         size_t off = (offset + done) % bs;
         size_t len = MIN(bs - off, size - done);
 
-        ext2_inode_block_read(desc, &inode, (offset + done) / bs, block);
+        if ((r = ext2_inode_block_read(desc, &inode, (offset + done) / bs, block)))
+            break;
 
         if ((r = iobuf_out(io, block + off, len)) < 0)
             break;
@@ -107,9 +108,11 @@ ssize_t ext2_write(struct vnode *node, off_t offset, struct iobuf *io)
         size_t off = (offset + done) % bs;
         size_t len = MIN(bs - off, size - done);
 
-        /* part of a block: the rest of it stays */
-        if (off || len < bs)
-            ext2_inode_block_read(desc, &ext2_inode, (offset + done) / bs, block);
+        /* part of a block: the rest of it stays (if it can't be read, it
+         * isn't written over) */
+        if ((off || len < bs) &&
+            (r = ext2_inode_block_read(desc, &ext2_inode, (offset + done) / bs, block)))
+            break;
 
         if ((r = iobuf_in(io, block + off, len)) <= 0)
             break;
@@ -146,10 +149,8 @@ ssize_t ext2_readdir(struct vnode *dir, off_t offset, struct dirent *dirent)
     struct ext2 *desc = dir->p;
     struct ext2_inode inode;
     
-    if ((err = ext2_inode_read(desc, dir->ino, &inode))) {
-        /* TODO Error */
-        printk("err = %d\n", err);
-    }
+    if ((err = ext2_inode_read(desc, dir->ino, &inode)))
+        return err;
 
     if (!S_ISDIR(inode.mode))
         return -ENOTDIR;
@@ -164,8 +165,9 @@ ssize_t ext2_readdir(struct vnode *dir, off_t offset, struct dirent *dirent)
     char found = 0;
 
     for (size_t i = 0; i < blocks_nr; ++i) {
+        if ((err = ext2_inode_block_read(desc, &inode, i, buf)))
+            return err;
 
-        ext2_inode_block_read(desc, &inode, i, buf);
         dentry = (struct ext2_dentry *) buf;
 
         while ((char *) dentry < (char *) buf + bs) {
@@ -221,13 +223,23 @@ int ext2_trunc(struct vnode *inode, off_t len)
 
     ext2_blocks_free(desc, &einode, (len + bs - 1) / bs);
 
-    /* the rest of the last block reads as zeros if the file grows again */
+    /* the rest of the last block reads as zeros if the file grows again
+     * (a block that can't be read isn't written over) */
     if (len % bs) {
         char *buf = kmalloc(bs, &M_BUFFER, 0);
-        ext2_inode_block_read(desc, &einode, len / bs, buf);
-        memset(buf + len % bs, 0, bs - len % bs);
-        ext2_inode_block_write(desc, &einode, inode->ino, len / bs, buf);
+
+        if (!buf)
+            return -ENOMEM;
+
+        if (!(err = ext2_inode_block_read(desc, &einode, len / bs, buf))) {
+            memset(buf + len % bs, 0, bs - len % bs);
+            err = ext2_inode_block_write(desc, &einode, inode->ino, len / bs, buf);
+        }
+
         kfree(buf);
+
+        if (err)
+            return err;
     }
 
     einode.size = len;
@@ -245,23 +257,22 @@ int ext2_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, struc
     struct ext2 *desc = dir->p;
     struct ext2_inode dir_inode;
     
-    if ((err = ext2_inode_read(desc, dir->ino, &dir_inode))) {
-        /* TODO Error checking */
-    }
+    if ((err = ext2_inode_read(desc, dir->ino, &dir_inode)))
+        return err;
 
     /* file exists */
-    if (ext2_dentry_find(desc, &dir_inode, fn))
+    ino_t ino;
+
+    if (!(err = ext2_dentry_find(desc, &dir_inode, fn, &ino)))
         return -EEXIST;
 
-    ino_t ino = ext2_inode_alloc(desc);
-    if (!ino)   /* out of inodes */
-        return -ENOSPC;
+    if (err != -ENOENT)
+        return err;
+
+    if ((err = ext2_inode_alloc(desc, &ino)))
+        return err;
 
     struct ext2_inode inode;
-    
-    if ((err = ext2_inode_read(desc, ino, &inode))) {
-        /* TODO Error checking */
-    }
 
     memset(&inode, 0, sizeof(struct ext2_inode));
 
@@ -294,14 +305,18 @@ int ext2_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, struc
         d->length = 2;
         d->type = EXT2_DENTRY_TYPE_DIR;
         memcpy(d->name, "..", 2);
-        ext2_inode_block_write(desc, &inode, ino, 0, buf);
+        err = ext2_inode_block_write(desc, &inode, ino, 0, buf);
         kfree(buf);
     } else {
         inode.nlink = 1;
-        ext2_inode_write(desc, ino, &inode);
+        err = ext2_inode_write(desc, ino, &inode);
     }
 
-    ext2_dentry_create(dir, fn, ino, inode.mode);
+    /* not in the directory: it goes again */
+    if (err || (err = ext2_dentry_create(dir, fn, ino, inode.mode))) {
+        ext2_inode_discard(desc, ino);
+        return err;
+    }
 
     if (S_ISDIR(mode)) {
         /* the new directory's .. */
@@ -312,10 +327,7 @@ int ext2_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, struc
         ext2_bgd_table_rewrite(desc);
     }
 
-    if (ref)
-        ext2_inode_build(desc, ino, ref);
-
-    return 0;
+    return ref ? ext2_inode_build(desc, ino, ref) : 0;
 }
 
 int ext2_finddir(struct vnode *dir, const char *fn, struct dirent *dirent)
@@ -329,20 +341,14 @@ int ext2_finddir(struct vnode *dir, const char *fn, struct dirent *dirent)
     uint32_t inode = dir->ino;
 
     struct ext2_inode i;
-    if ((err = ext2_inode_read(desc, inode, &i))) {
-        /* TODO Error checking */
-    }
+    ino_t inode_nr;
 
-    uint32_t inode_nr = ext2_dentry_find(desc, &i, fn);
+    if ((err = ext2_inode_read(desc, inode, &i)) ||
+        (err = ext2_dentry_find(desc, &i, fn, &inode_nr)))
+        return err;
 
-    if (!inode_nr)  /* Not found */
-        return -ENOENT;
-
-    inode = inode_nr;
-
-    if (dirent) {
-        dirent->d_ino  = inode_nr;
-    }
+    if (dirent)
+        dirent->d_ino = inode_nr;
 
     return 0;
 }
@@ -351,11 +357,7 @@ int ext2_vget(struct vnode *super, ino_t ino, struct vnode **ref)
 {
     struct ext2 *desc = super->p;
 
-    if (ref) {
-        ext2_inode_build(desc, ino, ref);
-    }
-
-    return 0;
+    return ref ? ext2_inode_build(desc, ino, ref) : 0;
 }
 
 int ext2_setattr(struct vnode *vnode)

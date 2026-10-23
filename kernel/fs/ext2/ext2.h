@@ -186,26 +186,30 @@ struct ext2 {
 
 extern struct fs ext2fs;
 
+/* the functions that read or write the disk return 0, or an error: -EIO
+ * if not all of it was read or written */
+
 /* super.c */
-void ext2_superblock_rewrite(struct ext2 *desc);
+int ext2_superblock_rewrite(struct ext2 *desc);
 
 /* block.c */
-void ext2_bgd_table_rewrite(struct ext2 *desc);
-void *ext2_block_read(struct ext2 *desc, uint32_t number, void *buf);
-void *ext2_block_write(struct ext2 *desc, uint32_t number, void *buf);
-uint32_t ext2_block_alloc(struct ext2 *desc);
-void ext2_block_free(struct ext2 *desc, uint32_t block);
+int ext2_io(struct ext2 *desc, int write, off_t off, size_t size, void *buf);
+int ext2_bgd_table_rewrite(struct ext2 *desc);
+int ext2_block_read(struct ext2 *desc, uint32_t number, void *buf);
+int ext2_block_write(struct ext2 *desc, uint32_t number, void *buf);
+int ext2_block_alloc(struct ext2 *desc, uint32_t *block);
+int ext2_block_free(struct ext2 *desc, uint32_t block);
 
 /* inode.c */
 int ext2_inode_read(struct ext2 *desc, ino_t inode, struct ext2_inode *ref);
 int ext2_inode_write(struct ext2 *desc, ino_t inode, struct ext2_inode *i);
 
-size_t ext2_inode_block_read(struct ext2 *desc, struct ext2_inode *inode, size_t idx, void *buf);
-ssize_t ext2_inode_block_write(struct ext2 *desc, struct ext2_inode *inode, uint32_t inode_nr, size_t idx, void *buf);
-ino_t ext2_inode_alloc(struct ext2 *desc);
+int ext2_inode_block_read(struct ext2 *desc, struct ext2_inode *inode, size_t idx, void *buf);
+int ext2_inode_block_write(struct ext2 *desc, struct ext2_inode *inode, uint32_t inode_nr, size_t idx, void *buf);
+int ext2_inode_alloc(struct ext2 *desc, ino_t *ino);
 
 /* dentry.c */
-ino_t ext2_dentry_find(struct ext2 *desc, struct ext2_inode *inode, const char *name);
+int ext2_dentry_find(struct ext2 *desc, struct ext2_inode *inode, const char *name, ino_t *ino);
 int ext2_dentry_create(struct vnode *dir, const char *name, ino_t ino, mode_t mode);
 
 /* iops.c */
@@ -224,8 +228,10 @@ int ext2_vunlink(struct vnode *dir, const char *fn, struct uio *uio);
 int ext2_vlink(struct vnode *dir, const char *fn, struct vnode *vnode, struct uio *uio);
 int ext2_vrename(struct vnode *odir, const char *ofn, struct vnode *ndir, const char *nfn, struct uio *uio);
 void ext2_blocks_free(struct ext2 *desc, struct ext2_inode *inode, size_t from);
+void ext2_inode_discard(struct ext2 *desc, ino_t ino);
 
-int ext2_inode_build(struct ext2 *desc, ino_t ino, struct vnode **ref_inode);  /* XXX */
+/* the vnode of inode `ino' (the cached one, or a new one) */
+int ext2_inode_build(struct ext2 *desc, ino_t ino, struct vnode **ref_inode);
 int ext2_inode_sync(struct vnode *inode);
 
 #endif 

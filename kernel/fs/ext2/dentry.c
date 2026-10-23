@@ -1,29 +1,38 @@
 #include <ext2.h>
-#include <core/panic.h> /* XXX */
 
-ino_t ext2_dentry_find(struct ext2 *desc, struct ext2_inode *inode, const char *name)
+/* the inode of `name' in directory `inode', into `*ino': 0, -ENOENT, or an
+ * error */
+int ext2_dentry_find(struct ext2 *desc, struct ext2_inode *inode, const char *name, ino_t *ino)
 {
     if ((inode->mode & S_IFMT) != S_IFDIR)
         return -ENOTDIR;
 
     size_t bs = desc->bs;
     size_t blocks_nr = inode->size / bs;
+    size_t length = strlen(name);
 
     char *buf = kmalloc(bs, &M_BUFFER, 0);
     struct ext2_dentry *d;
-    ino_t ino = 0;
+    int err = -ENOENT;
 
     if (!buf)
-        return 0;
+        return -ENOMEM;
 
-    for (size_t i = 0; i < blocks_nr && !ino; ++i) {
-        ext2_inode_block_read(desc, inode, i, buf);
+    for (size_t i = 0; i < blocks_nr && err == -ENOENT; ++i) {
+        int r;
+
+        if ((r = ext2_inode_block_read(desc, inode, i, buf))) {
+            err = r;
+            break;
+        }
+
         d = (struct ext2_dentry *) buf;
         while ((char *) d < (char *) buf + bs && d->size) {
             /* entries with no inode are unused */
-            if (d->ino && d->length == strlen(name) && !memcmp(d->name, name, d->length)) {
+            if (d->ino && d->length == length && !memcmp(d->name, name, length)) {
                 /* read before the buffer is freed */
-                ino = d->ino;
+                *ino = d->ino;
+                err = 0;
                 break;
             }
             d = (struct ext2_dentry *) ((char *) d + d->size);
@@ -31,7 +40,7 @@ ino_t ext2_dentry_find(struct ext2 *desc, struct ext2_inode *inode, const char *
     }
 
     kfree(buf);
-    return ino;
+    return err;
 }
 
 static inline uint8_t ext2_dentry_type(mode_t mode)
@@ -64,13 +73,16 @@ int ext2_dentry_create(struct vnode *dir, const char *name, ino_t ino, mode_t mo
     size = (size + 3) & ~3; /* Align to 4 bytes */
 
     /* look for a candidate entry */
+    struct ext2_inode dir_inode;
+
+    if ((err = ext2_inode_read(desc, dir->ino, &dir_inode)))
+        return err;
+
     char *buf = kmalloc(desc->bs, &M_BUFFER, 0);
     struct ext2_dentry *cur = NULL;
 
-    struct ext2_inode dir_inode;
-    if ((err = ext2_inode_read(desc, dir->ino, &dir_inode))) {
-        /* TODO Error checking */
-    }
+    if (!buf)
+        return -ENOMEM;
 
     size_t bs = desc->bs;
     size_t blocks_nr = dir_inode.size / bs;
@@ -78,7 +90,10 @@ int ext2_dentry_create(struct vnode *dir, const char *name, ino_t ino, mode_t mo
     size_t block = 0;
 
     for (block = 0; block < blocks_nr; ++block) {
-        ext2_inode_block_read(desc, &dir_inode, block, buf);
+        /* a block that can't be read isn't written back */
+        if ((err = ext2_inode_block_read(desc, &dir_inode, block, buf)))
+            goto out;
+
         cur = (struct ext2_dentry *) buf;
 
         while ((char *) cur < (char *) buf + bs && cur->size) {
@@ -105,7 +120,7 @@ done:
         cur->type   = type;
 
         /* Update block */
-        ext2_inode_block_write(desc, &dir_inode, dir->ino, block, buf);
+        err = ext2_inode_block_write(desc, &dir_inode, dir->ino, block, buf);
     } else if (flag == 2) {
         /* split */
         size_t new_size = (cur->length + sizeof(struct ext2_dentry) + 3) & ~3;
@@ -120,7 +135,7 @@ done:
         cur->size = new_size;
 
         /* Update block */
-        ext2_inode_block_write(desc, &dir_inode, dir->ino, block, buf);
+        err = ext2_inode_block_write(desc, &dir_inode, dir->ino, block, buf);
     } else {
         /* no room left: the entry gets a new block of its own */
         memset(buf, 0, bs);
@@ -131,18 +146,15 @@ done:
         cur->type   = type;
         memcpy(cur->name, name, length);
 
-        ssize_t ret = ext2_inode_block_write(desc, &dir_inode, dir->ino, blocks_nr, buf);
-
-        if (ret < 0) {
-            kfree(buf);
-            return ret;
-        }
+        if ((err = ext2_inode_block_write(desc, &dir_inode, dir->ino, blocks_nr, buf)))
+            goto out;
 
         dir_inode.size += bs;
-        ext2_inode_write(desc, dir->ino, &dir_inode);
+        err = ext2_inode_write(desc, dir->ino, &dir_inode);
         dir->size = dir_inode.size;
     }
 
+out:
     kfree(buf);
-    return 0;
+    return err;
 }

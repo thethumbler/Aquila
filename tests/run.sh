@@ -692,7 +692,7 @@ EOF
     # what the test left: removed, renamed and unlinked-while-open files gone
     local names
     names=$(debugfs -R "ls /" "$img" 2>/dev/null | tr -s ' ' '\n' | grep -v '^[0-9(]' | sort | xargs)
-    if [ "$names" != ". .. a b big lost+found sym trunc" ]; then
+    if [ "$names" != ". .. a b big huge lost+found sym trunc" ]; then
         echo "unexpected files on the image: $names"
         return 1
     fi

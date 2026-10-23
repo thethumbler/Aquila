@@ -27,16 +27,16 @@ int ext2_inode_build(struct ext2 *desc, ino_t ino, struct vnode **ref_inode)
 
     vfs_log(LOG_DEBUG, "ext2_inode_build(desc=%p, ino=%d, ref_inode=%p)\n", desc, ino, ref_inode);
     
-    inode = kmalloc(sizeof(struct vnode), &M_VNODE, M_ZERO);
-    if (!inode) {
-        /* TODO */
-    }
-
     struct ext2_inode einode;
-    
-    if ((err = ext2_inode_read(desc, ino, &einode))) {
 
-    }
+    /* nothing is cached of an inode that couldn't be read */
+    if ((err = ext2_inode_read(desc, ino, &einode)))
+        return err;
+
+    inode = kmalloc(sizeof(struct vnode), &M_VNODE, M_ZERO);
+
+    if (!inode)
+        return -ENOMEM;
 
     inode->ino   = ino;
     inode->size  = einode.size;
