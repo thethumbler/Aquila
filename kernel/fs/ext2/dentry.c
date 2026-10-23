@@ -67,7 +67,7 @@ int ext2_dentry_create(struct vnode *dir, const char *name, ino_t ino, mode_t mo
 
     struct ext2 *desc = dir->p;
 
-    uint8_t type = ext2_dentry_type(mode);
+    uint8_t type = desc->filetype ? ext2_dentry_type(mode) : 0;
     size_t length = strlen(name);
     size_t size = length + sizeof(struct ext2_dentry);
     size = (size + 3) & ~3; /* Align to 4 bytes */

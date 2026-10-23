@@ -310,13 +310,13 @@ int ext2_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, struc
         d->ino = ino;
         d->size = 12;
         d->length = 1;
-        d->type = EXT2_DENTRY_TYPE_DIR;
+        d->type = desc->filetype ? EXT2_DENTRY_TYPE_DIR : 0;
         memcpy(d->name, ".", 1);
         d = (struct ext2_dentry *) ((char *) d + 12);
         d->ino = dir->ino;
         d->size = desc->bs - 12;
         d->length = 2;
-        d->type = EXT2_DENTRY_TYPE_DIR;
+        d->type = desc->filetype ? EXT2_DENTRY_TYPE_DIR : 0;
         memcpy(d->name, "..", 2);
         err = ext2_inode_block_write(desc, &inode, ino, 0, buf);
         kfree(buf);

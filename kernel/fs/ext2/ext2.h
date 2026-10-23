@@ -6,27 +6,19 @@
 
 #define EXT2_SIGNATURE  0xEF53
 
-struct ext2_optional_features_flags {
-    uint8_t preallocate_for_directories : 1;
-    uint8_t afs_server_inodes : 1;
-    uint8_t has_journaling : 1;     // for EXT 3
-    uint8_t inodes_have_extended_attributes : 1;
-    uint8_t can_be_resized : 1;
-    uint8_t directories_use_hash_index : 1;
-} __packed;
+/* revision 1's features: compatible ones may be ignored; an
+ * incompatible one the code doesn't know means it can't use the
+ * filesystem, a read-only compatible one that it can't write it */
+#define EXT2_INCOMPAT_FILETYPE      0x0002  /* the entries' types */
+#define EXT2_RO_COMPAT_SPARSE_SUPER 0x0001  /* backup superblocks in fewer groups */
+#define EXT2_RO_COMPAT_LARGE_FILE   0x0002  /* sizes past 2 GiB (size_high) */
 
-struct ext2_required_features_flags {
-    uint8_t compressed : 1;
-    uint8_t directories_has_types : 1;
-    uint8_t needs_to_replay_journal : 1;
-    uint8_t uses_journal_device : 1;
-} __packed;
+/* what AquilaOS's ext2 handles: what mke2fs -t ext2 makes */
+#define EXT2_INCOMPAT_SUPPORTED     EXT2_INCOMPAT_FILETYPE
+#define EXT2_RO_COMPAT_SUPPORTED    (EXT2_RO_COMPAT_SPARSE_SUPER | EXT2_RO_COMPAT_LARGE_FILE)
 
-struct ext2_read_only_features_flags {
-    uint8_t sparse_sb_and_gdt : 1;
-    uint8_t uses_64bit_file_size : 1;
-    uint8_t directories_contents_are_binary_tree : 1;
-} __packed;
+/* revision 0 has no inode size or first inode in its superblock */
+#define EXT2_GOOD_OLD_INODE_SIZE    128
 
 struct ext2_superblock {
     /** number of inodes */
@@ -69,14 +61,14 @@ struct ext2_superblock {
     uint16_t    uid;
     uint16_t    gid;
 
-    /* for extended superblock fields ... which is always assumed */
+    /* revision 1 (major_version), not 0 */
     uint32_t    first_non_reserved_inode;
     uint16_t    inode_size;
     uint16_t    sb_block_group;
 
-    struct ext2_optional_features_flags   optional_features;
-    struct ext2_required_features_flags   required_features;
-    struct ext2_read_only_features_flags  read_only_features;
+    uint32_t    feature_compat;
+    uint32_t    feature_incompat;
+    uint32_t    feature_ro_compat;
 
     uint8_t     fsid[16];
     uint8_t     name[16];
@@ -177,6 +169,14 @@ struct ext2 {
     size_t ngroups;
 
     size_t bs;
+
+    /** an inode's size on the disk (revision 0's, or the superblock's) */
+    size_t inode_size;
+
+    /** directory entries have their file's type (EXT2_INCOMPAT_FILETYPE);
+     * without it, the byte is 0 */
+    int filetype;
+
     struct vcache *vcache;
 };
 

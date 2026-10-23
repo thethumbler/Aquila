@@ -11,7 +11,7 @@ static inline off_t ext2_inode_off(struct ext2 *desc, ino_t ino)
     uint32_t index    = (ino - 1) % desc->superblock->ginodes;
 
     struct ext2_group *group = &desc->groups[group_id];
-    return group->inodes * desc->bs + index * desc->superblock->inode_size;
+    return group->inodes * desc->bs + index * desc->inode_size;
 }
 
 int ext2_inode_read(struct ext2 *desc, ino_t ino, struct ext2_inode *ref)

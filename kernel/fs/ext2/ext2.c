@@ -139,6 +139,29 @@ int ext2_load(struct vnode *dev, struct vnode **super)
     desc->supernode = dev;
     desc->superblock = sb;
     desc->bs = 1024UL << sb->block_size;
+    desc->inode_size = EXT2_GOOD_OLD_INODE_SIZE;
+
+    /* revision 1: its inode size, and features AquilaOS must know */
+    if (sb->major_version >= 1) {
+        desc->inode_size = sb->inode_size;
+
+        if (desc->inode_size < EXT2_GOOD_OLD_INODE_SIZE || desc->inode_size > desc->bs ||
+            (desc->inode_size & (desc->inode_size - 1))) {
+            err = -EINVAL;
+            goto error;
+        }
+
+        desc->filetype = !!(sb->feature_incompat & EXT2_INCOMPAT_FILETYPE);
+
+        uint32_t incompat = sb->feature_incompat & ~EXT2_INCOMPAT_SUPPORTED;
+        uint32_t ro = sb->feature_ro_compat & ~EXT2_RO_COMPAT_SUPPORTED;
+
+        if (incompat || ro) {
+            printk("ext2: features it can't use: incompat %x, ro_compat %x\n", incompat, ro);
+            err = -EINVAL;
+            goto error;
+        }
+    }
 
     /* read block group descriptor table */
     uint32_t groups    = (desc->bs == 1024)? 2048 : desc->bs;
@@ -150,24 +173,35 @@ int ext2_load(struct vnode *dev, struct vnode **super)
     if (!desc->groups) goto e_nomem;
 
     if ((err = vfs_read(desc->supernode, groups, groups_sz, desc->groups)) < 0)
-        return err;
+        goto error;
 
-    desc->vcache = kmalloc(sizeof(struct vcache), &M_VCACHE, 0);
-    
-    if (!desc->vcache)
-        return -ENOMEM;
+    desc->vcache = kmalloc(sizeof(struct vcache), &M_VCACHE, M_ZERO);
+    if (!desc->vcache) goto e_nomem;
 
     vcache_init(desc->vcache);
 
-    if (super)
-        ext2_inode_build(desc, 2, super);
-    
+    if (!desc->vcache->hashmap) goto e_nomem;
+
+    /* the root (an inode that can't be read: no filesystem) */
+    if (super && (err = ext2_inode_build(desc, 2, super)))
+        goto error;
+
     return 0;
 
 e_nomem:
     err = -ENOMEM;
 error:
-    if (sb) kfree(sb);
+    /* nothing of it is used: nothing was built (the root comes last) */
+    if (desc) {
+        if (desc->vcache && desc->vcache->hashmap)
+            hashmap_free(desc->vcache->hashmap);
+
+        kfree(desc->vcache);
+        kfree(desc->groups);
+        kfree(desc);
+    }
+
+    kfree(sb);
     return err;
 }
 
