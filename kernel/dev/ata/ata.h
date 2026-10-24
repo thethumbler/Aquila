@@ -8,7 +8,7 @@
  */
 
 /* the kinds of drive that detection finds */
-#define ATADEV_UNKOWN               0x000
+#define ATADEV_UNKNOWN               0x000
 #define ATADEV_NOTFOUND             0x001
 #define ATADEV_PATA                 0x002
 #define ATADEV_SATA                 0x003
@@ -161,7 +161,7 @@ static const char *ata_error_string(uint8_t err)
         case ATA_ERROR_ABRT:  return "Command aborted";
         case ATA_ERROR_TK0NF: return "Track 0 not found";
         case ATA_ERROR_AMNF:  return "No address mark";
-        default:              return "Unkown";
+        default:              return "Unknown";
     }
 }
 

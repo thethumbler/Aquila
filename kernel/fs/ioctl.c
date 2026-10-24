@@ -18,7 +18,7 @@
  */
 int vfs_ioctl(struct vnode *vnode, unsigned long request, void *argp)
 {
-    vfs_log(LOG_DEBUG, "vfs_ioctl(vnode=%p, request=%ld, argp=%p)\n", vnode, request, argp);
+    vfs_log(LOG_DEBUG, "vfs_ioctl(vnode=%p, request=%ld, argp=%p)\n", vnode, (int64_t) request, argp);
 
     /* invalid request */
     if (!vnode)

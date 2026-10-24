@@ -1,8 +1,10 @@
 /** \file
- * `snprintf()` and `vsnprintf()`: formatting into a buffer, with a small
- * set of formats: `%c`, `%s`, `%d`, `%x`, `%lx`, `%ld` and `%b` (binary).
- * Each helper below writes at most `n` characters to `s`, and returns how
- * many it wrote.
+ * `snprintf()` and `vsnprintf()`: formatting into a buffer, with the
+ * formats `printk()` has: `%c`, `%s`, `%d` and `%u` (32-bit), `%ld` and
+ * `%lu` (64-bit), `%x` and `%lx` (hexadecimal), `%b` (binary) and `%p`.
+ * The `l` formats take a 64-bit argument on every architecture. Each
+ * helper below writes at most `n` characters to `s`, and returns how many
+ * it wrote.
  */
 
 #include <core/system.h>
@@ -144,7 +146,18 @@ int vsnprintf(char *s, size_t n, const char *fmt, va_list args)
                     case 's':   /* a string */
                         ret += snputs(s + ret, n - ret, (char*)va_arg(args, char*));
                         break;
-                    case 'd':   /* a decimal, printed unsigned */
+                    case 'd':   /* a signed decimal */
+                        {
+                            int32_t val = va_arg(args, int32_t);
+                            if (val < 0) {
+                                ret += snputc(s + ret, n - ret, '-');
+                                ret += snputud(s + ret, n - ret, -(uint32_t) val);
+                            } else {
+                                ret += snputud(s + ret, n - ret, (uint32_t) val);
+                            }
+                        }
+                        break;
+                    case 'u':   /* an unsigned decimal */
                         ret += snputud(s + ret, n - ret, (uint32_t)va_arg(args, uint32_t));
                         break;
                     case 'l':   /* a 64-bit number */
@@ -152,12 +165,31 @@ int vsnprintf(char *s, size_t n, const char *fmt, va_list args)
                             case 'x':   /* in hexadecimal */
                                 ret += snputlx(s + ret, n - ret, (uint64_t)va_arg(args, uint64_t));
                                 break;
-                            case 'd':
+                            case 'd':   /* a signed decimal */
+                                {
+                                    int64_t val = va_arg(args, int64_t);
+                                    if (val < 0) {
+                                        ret += snputc(s + ret, n - ret, '-');
+                                        ret += snputul(s + ret, n - ret, -(uint64_t) val);
+                                    } else {
+                                        ret += snputul(s + ret, n - ret, (uint64_t) val);
+                                    }
+                                }
+                                break;
+                            case 'u':   /* an unsigned decimal */
                                 ret += snputul(s + ret, n - ret, (uint64_t)va_arg(args, uint64_t));
                                 break;
                             default:
                                 ret += snputc(s + ret, n - ret, *--fmt);
                         }
+                        break;
+                    case 'p':   /* a pointer */
+                        ret += snputs(s + ret, n - ret, "0x");
+#if ARCH_BITS==32
+                        ret += snputx(s + ret, n - ret, (uint32_t)va_arg(args, uint32_t));
+#else
+                        ret += snputlx(s + ret, n - ret, (uint64_t)va_arg(args, uint64_t));
+#endif
                         break;
                     
                     case 'b':   /* a byte in binary */

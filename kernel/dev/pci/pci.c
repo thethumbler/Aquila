@@ -246,6 +246,10 @@ int pci_scan_device(uint8_t class, uint8_t subclass, struct pci_dev *_dev, size_
     size_t  idx = 0;
     uint8_t bus = 0;
 
+    /* no room for any */
+    if (!nr)
+        return 0;
+
     for (uint8_t dev = 0; dev < 32; ++dev) {
         for (uint8_t func = 0; func < 8; ++func) {
             uint16_t vendor_id = get_vendor_id(bus, dev, func);

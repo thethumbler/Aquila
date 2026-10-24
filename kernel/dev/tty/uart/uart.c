@@ -270,12 +270,16 @@ int uart_file_open(struct file *file)
 /**
  * Registers a UART, as `/dev/ttyS<id>`.
  *
- * @param id  its number, or -1 for the first free one
+ * @param id  its number (below 192), or -1 for the first free one
  * @param u   the UART
- * @return its number, or `-ENOSPC` if every number is taken
+ * @return its number, `-EINVAL` if `id` is too big, or `-ENOSPC` if
+ *         every number is taken
  */
 int uart_register(int id, struct uart *u)
 {
+    if (id >= 192)
+        return -EINVAL;
+
     if (id < 0) {   /* the first free number */
         for (int i = 0; i < 192; ++i) {
             if (!devices[i]) {

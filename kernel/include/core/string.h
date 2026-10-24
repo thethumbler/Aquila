@@ -101,11 +101,16 @@ static inline size_t strnlen(const char *s, size_t max)
     return n;
 }
 
-/** Returns a copy of a string, from `kmalloc()`. */
+/** Returns a copy of a string, from `kmalloc()`, or NULL if there's no
+ * memory for it. */
 static inline char *strdup(const char *s)
 {
     int len = strlen(s);
     char *ret = kmalloc(len + 1, &M_BUFFER, 0);
+
+    if (!ret)
+        return NULL;
+
     (void) memcpy(ret, s, len + 1);
     return ret;
 }
@@ -136,7 +141,8 @@ static inline char *stpcpy(char *dst, const char *src)
 /**
  * Splits a string at each `c`, leading ones skipped. Returns an array of
  * the pieces, ended by NULL, which `free_tokens()` frees, or NULL if `s`
- * is NULL or empty. The pieces all live in one copy of `s`.
+ * is NULL or empty, or if there's no memory. The pieces all live in one
+ * copy of `s`.
  */
 static inline char **tokenize(const char *s, char c)
 {
@@ -154,8 +160,14 @@ static inline char **tokenize(const char *s, char c)
     int len = strlen(s);
 
     if (!len) {
+        /* nothing but separators: no pieces */
+        kfree(tokens);
+
         char **ret = kmalloc(sizeof(char *), &M_BUFFER, 0);
-        *ret = NULL;
+
+        if (ret)
+            *ret = NULL;
+
         return ret;
     }
 
@@ -171,6 +183,11 @@ static inline char **tokenize(const char *s, char c)
         ++count;
     
     char **ret = kmalloc(sizeof(char *) * (count + 1), &M_BUFFER, 0);
+
+    if (!ret) {
+        kfree(tokens);
+        return NULL;
+    }
 
     int j = 0;
     ret[j++] = tokens;

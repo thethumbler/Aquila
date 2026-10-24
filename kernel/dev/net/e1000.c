@@ -119,7 +119,7 @@ struct tx_desc {
 static struct e1000 {
     struct pci_dev pci;
     struct ioaddr regs;
-    uint8_t irq;
+    int irq;
 
     volatile struct rx_desc *rx;
     volatile struct tx_desc *tx;
@@ -392,6 +392,11 @@ static int e1000_probe(void)
      * them out), read and written 32 bits at a time */
     e1000.regs.type = IOADDR_MMIO8;
     e1000.regs.addr = (uintptr_t) arch_mmio_map(bar.addr, bar.size);
+
+    if (!e1000.regs.addr) {
+        printk("e1000: no room to map its registers\n");
+        return -ENOMEM;
+    }
 
     /* reset the controller, with no interrupts until all is set up */
     reg_write(E1000_IMC, 0xFFFFFFFF);

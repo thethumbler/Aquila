@@ -9,9 +9,7 @@ typedef int       pid_t;
 typedef pid_t     tid_t;
 typedef long int  off_t;
 
-#if !defined(__TINYC__) || !defined(__clang__)
 typedef long int  ssize_t;
-#endif
 
 typedef uintptr_t vino_t;    /* a vnode's number; big enough to hold a pointer */
 typedef uint32_t  mode_t;

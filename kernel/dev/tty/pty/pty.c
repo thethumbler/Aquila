@@ -40,7 +40,8 @@ struct pty {
      *  read */
     struct ringbuf *out;
 
-    /** where the slave's readers and the master's writers sleep */
+    /** where the slave's readers sleep, and the writers waiting for room
+     *  in either ring (pty_slave_write(), pty_master_write()) */
     struct waitq pts_read_queue;
 
     /** where the slave's writers and the master's readers sleep */
@@ -257,7 +258,14 @@ ssize_t pts_read(struct devid *dd, off_t offset __unused, struct iobuf *io)
     int err = tty_background(pty->tty, SIGTTIN);
     if (err) return err;
 
-    return ringbuf_read_iobuf(pty->in, io->resid, io);
+    ssize_t ret = ringbuf_read_iobuf(pty->in, io->resid, io);
+
+    /* there is room in the input now: wake up the master's writers that
+     * wait for some (pty_slave_write() sleeps on this queue) */
+    if (ret > 0)
+        waitq_wakeup(&pty->pts_read_queue);
+
+    return ret;
 }
 
 /**

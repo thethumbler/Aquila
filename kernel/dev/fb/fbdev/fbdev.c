@@ -68,17 +68,6 @@ struct fbdev *fbdev_primary(void)
     return &registered_fbs[0];
 }
 
-/** Reads from a framebuffer, through its driver. */
-static ssize_t fbdev_read(struct devid *dd, off_t offset, struct iobuf *io)
-{
-    struct fbdev *fb = fbdev_get(dd);
-
-    if (!fb || !fb->read)
-        return -ENXIO;
-
-    return fb->read(fb, offset, io);
-}
-
 /** Writes to a framebuffer, through its driver. */
 static ssize_t fbdev_write(struct devid *dd, off_t offset, struct iobuf *io)
 {
@@ -179,11 +168,12 @@ struct dev fbdev = {
     .name = "fbdev",
 
     .probe  = fbdev_probe,
-    .read   = fbdev_read,
     .write  = fbdev_write,
     .ioctl  = fbdev_ioctl,
     .map    = fbdev_map,
 
+    /* no driver can read the screen back (vesa's only writes), so there
+     * is no read() */
     .fops = {
         .open  = posix_file_open,
         .write = posix_file_write,

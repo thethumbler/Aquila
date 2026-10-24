@@ -68,7 +68,8 @@ static int fbdev_vesa_map(struct fbdev *fb, struct vm_space *vm_space, struct vm
 
 /** Sets up the framebuffer from the mode the boot loader chose: maps it
  * into the kernel's address space, and fills in its screen information
- * for `ioctl()`. */
+ * for `ioctl()`. Returns 0, or a negative errno if it can't be mapped,
+ * and then the framebuffer stays unusable (its writes fail). */
 static int fbdev_vesa_prope(int i __unused, struct fbdev *fb)
 {
     struct fbdev_vesa *data = (struct fbdev_vesa *) fb->data;
@@ -81,7 +82,12 @@ static int fbdev_vesa_prope(int i __unused, struct fbdev *fb)
     /* cached, as the early console's mapping is (arch/i386/earlycon/fb.c) */
     vesa_vm.flags = VM_KRW;
 
-    vm_map(&kvm_space, &vesa_vm);
+    int err = vm_map(&kvm_space, &vesa_vm);
+
+    if (err) {
+        printk("vesa: can't map the framebuffer: error %d\n", -err);
+        return err;
+    }
 
     len = size;
 

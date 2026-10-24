@@ -11,9 +11,6 @@ int gettime(struct timespec *ts);
 /* Reads the wall clock in microseconds, for gettimeofday(). */
 int gettimeofday(struct timeval *tv, struct timezone *tz);
 
-/* Sets the wall clock (declared, but not implemented). */
-int settimeofday(const struct timeval *tv, const struct timezone *tz);
-
 /* Sets the wall clock from the real time clock again, if they drifted
  * apart. */
 void time_resync(void);

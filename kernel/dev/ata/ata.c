@@ -179,15 +179,15 @@ void ata_setup(struct ata_drive *drive, uint64_t lba, size_t count)
     io_out8(&drive->base, ATA_REG_LBA2, (uint8_t) (lba >> (8 * 2)));
 }
 
-/* where the MBR is read into */
-static char read_buf[BLOCK_SIZE] __aligned(16);
-
 /**
  * Finds partition `part` of a drive (1 to 4; 0 is the whole disk): its
  * first sector and how many sectors it has, from the MBR, which is read
  * once. Returns 0, `-ENXIO` if the MBR has no partition there (no
- * signature, an empty entry, or one past the disk's end), or `-EIO` if
- * the MBR can't be read.
+ * signature, an empty entry, or one past the disk's end), `-EIO` if the
+ * MBR can't be read, or `-ENOMEM`.
+ *
+ * The MBR is read into a buffer of its own: lookups on the two channels
+ * may run at once, each sleeping while its read is done.
  */
 static int ata_partition(struct ata_drive *drive, size_t part, uint64_t *start, uint64_t *nsectors)
 {
@@ -200,20 +200,33 @@ static int ata_partition(struct ata_drive *drive, size_t part, uint64_t *start, 
     part -= 1;
 
     if (!drive->psize[part]) {
-        if (drive->read(drive, 0, 1, read_buf) < 0)
-            return -EIO;
+        char *buf = kmalloc(BLOCK_SIZE, &M_BUFFER, 0);
 
-        struct mbr *mbr = (struct mbr *) read_buf;
+        if (!buf)
+            return -ENOMEM;
+
+        if (drive->read(drive, 0, 1, buf) < 0) {
+            kfree(buf);
+            return -EIO;
+        }
+
+        struct mbr *mbr = (struct mbr *) buf;
         struct mbr_part *e = &mbr->ptab[part];
 
         /* the CHS fields aren't used: every disk since the 90s has the
          * LBA ones */
-        if (mbr->boot_signature != 0xAA55 || !e->type || !e->sectors_count ||
-            (uint64_t) e->start_lba + e->sectors_count > drive->max_lba)
-            return -ENXIO;
+        int found = mbr->boot_signature == 0xAA55 && e->type && e->sectors_count &&
+            (uint64_t) e->start_lba + e->sectors_count <= drive->max_lba;
 
-        drive->poff[part]  = e->start_lba;
-        drive->psize[part] = e->sectors_count;
+        if (found) {
+            drive->poff[part]  = e->start_lba;
+            drive->psize[part] = e->sectors_count;
+        }
+
+        kfree(buf);
+
+        if (!found)
+            return -ENXIO;
     }
 
     *start = drive->poff[part];
@@ -345,12 +358,12 @@ static uint8_t ata_detect_drive(struct ata_drive *drive)
             type = ATADEV_SATAPI;
             break;
         default:
-            type = ATADEV_UNKOWN;
+            type = ATADEV_UNKNOWN;
             break;
     }
 
-    if (type == ATADEV_UNKOWN) {
-        return ATADEV_UNKOWN;
+    if (type == ATADEV_UNKNOWN) {
+        return ATADEV_UNKNOWN;
     }
 
     drive->type = type;

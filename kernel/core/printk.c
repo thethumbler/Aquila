@@ -5,8 +5,10 @@
  * which `/dev/kmsg` reads, the oldest messages overwritten when it's
  * full), the console if one has registered (`printk_console()`), and the
  * early console until it's disabled. `printk()` understands a small set
- * of formats: `%c`, `%s`, `%d`, `%u`, `%x`, `%lx`, `%ld`, `%b` (binary)
- * and `%p`.
+ * of formats: `%c`, `%s`, `%d` and `%u` (32-bit), `%ld` and `%lu`
+ * (64-bit), `%x` and `%lx` (hexadecimal), `%b` (binary) and `%p`. The
+ * `l` formats take a 64-bit argument on every architecture: cast a
+ * `long` to `int64_t` or `uint64_t`.
  */
 
 #include <core/system.h>
@@ -192,7 +194,18 @@ int vprintk(const char *fmt, va_list args)
                         case 'x':   /* in hexadecimal */
                             ret += putlx((uint64_t)va_arg(args, uint64_t));
                             break;
-                        case 'd':
+                        case 'd':   /* a signed decimal */
+                            {
+                                int64_t val = va_arg(args, int64_t);
+                                if (val < 0) {
+                                    ret += putc('-');
+                                    ret += putul(-(uint64_t) val);
+                                } else {
+                                    ret += putul((uint64_t) val);
+                                }
+                            }
+                            break;
+                        case 'u':   /* an unsigned decimal */
                             ret += putul((uint64_t)va_arg(args, uint64_t));
                             break;
                         default:
