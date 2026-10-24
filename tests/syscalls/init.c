@@ -1703,6 +1703,17 @@ void aq_main(void)
     SC(SYS_close, af, 0, 0);
     SC(SYS_unlink, "/tmp/append", 0, 0);
 
+#if __SIZEOF_LONG__ == 8
+    /* an offset past 2 GiB (off_t is 64 bits on x86_64 and aarch64): all
+     * of it comes back */
+    int bf = SC(SYS_open, "/tmp/far", O_CREAT | O_RDWR, 0644);
+    long far = 3L << 30;
+    check("lseek past 2 GiB", SC(SYS_lseek, bf, far, SEEK_SET) == far, 1);
+    check("lseek past 2 GiB: SEEK_CUR", SC(SYS_lseek, bf, 1, SEEK_CUR) == far + 1, 1);
+    SC(SYS_close, bf, 0, 0);
+    SC(SYS_unlink, "/tmp/far", 0, 0);
+#endif
+
     /* shutdown(): one direction ends, the other still works */
     {
         struct sockaddr_un la = {AF_UNIX, "/tmp/shut"};

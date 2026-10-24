@@ -322,8 +322,8 @@ static void sys_linkat(int olddirfd, const char *oldpath, int newdirfd, const ch
 
 static void sys_lseek(int fildes, off_t offset, int whence)
 {
-    syscall_log(LOG_DEBUG, "lseek(fildes=%d, offset=%d, whence=%d)\n",
-            fildes, offset, whence);
+    syscall_log(LOG_DEBUG, "lseek(fildes=%d, offset=%ld, whence=%d)\n",
+            fildes, (long) offset, whence);
 
     struct file *file = fd_file(fildes);
 
@@ -337,7 +337,8 @@ static void sys_lseek(int fildes, off_t offset, int whence)
         return;
     }
 
-    int ret = vfs_file_lseek(file, offset, whence);
+    /* the new offset, all of it: an int would cut one past 2 GiB */
+    off_t ret = vfs_file_lseek(file, offset, whence);
     arch_syscall_return(curthread, ret);
 }
 
