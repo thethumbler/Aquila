@@ -317,7 +317,7 @@ void syscall_dispatch(unsigned long nr, uintptr_t a1, uintptr_t a2, uintptr_t a3
 
     if (nr >= syscall_cnt || !syscall_table[nr]) {
         printk("[%d:%d] %s: undefined syscall %ld\n", curproc->pid, curthread->tid,
-               curproc->name, (long) nr);
+               curproc->name, (int64_t) nr);
         arch_syscall_return(curthread, -ENOSYS);
         return;
     }

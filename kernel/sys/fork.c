@@ -44,11 +44,15 @@ static int copy_fds(struct proc *parent, struct proc *fork)
 }
 
 /** Copies what the child inherits from the parent's process structure:
- * its process group, umask, IDs, signal mask and actions, and heap. */
+ * its process group, umask, IDs, signal mask and actions, and heap.
+ * Returns 0, or `-ENOMEM` if there was no memory to put the child in the
+ * process group. */
 static int fork_proc_copy(struct proc *parent, struct proc *fork)
 {
     fork->pgrp = parent->pgrp;
-    fork->pgrp_node = enqueue(fork->pgrp->procs, fork);
+
+    if (!(fork->pgrp_node = enqueue(fork->pgrp->procs, fork)))
+        return -ENOMEM;
 
     fork->mask = parent->mask;
     fork->uid  = parent->uid;

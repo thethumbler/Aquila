@@ -172,6 +172,56 @@ static void tty_output_modes(void)
     SC(SYS_close, slave, 0, 0);
     SC(SYS_close, master, 0, 0);
 
+    /* the master writes three times what the slave's input buffer holds
+     * (4 KiB) in one write, while the slave reads it: the writer sleeps
+     * whenever the buffer is full, and each read must wake it up again */
+    master = SC(SYS_open, "/dev/ptmx", O_RDWR | O_NOCTTY, 0);
+    SC(SYS_ioctl, master, TIOCGPTN, &n);
+    slave = SC(SYS_open, pts_path(n), O_RDWR | O_NOCTTY, 0);
+
+    struct termios raw;
+    SC(SYS_ioctl, slave, TCGETS, &raw);
+    raw.c_lflag &= ~(ICANON | ECHO | ISIG);
+    raw.c_iflag &= ~(IXON | ICRNL);
+    SC(SYS_ioctl, slave, TCSETS, &raw);
+
+    static char big[12000], got[512];
+
+    for (int i = 0; i < (int) sizeof(big); ++i)
+        big[i] = 'a' + i % 26;
+
+    int writer = SC(SYS_fork, 0, 0, 0);
+    if (!writer)
+        SC(SYS_exit, SC(SYS_write, master, big, sizeof(big)) == sizeof(big) ? 0 : 1, 0, 0);
+
+    int total = 0, same = 1;
+
+    while (total < (int) sizeof(big)) {
+        /* nothing for 2 s: the writer is stuck */
+        struct pollfd pf = {slave, POLLIN, 0};
+        if (SC(SYS_poll, &pf, 1, 2000) <= 0)
+            break;
+
+        int r = SC(SYS_read, slave, got, sizeof(got));
+        if (r <= 0)
+            break;
+
+        for (int i = 0; i < r; ++i)
+            if (got[i] != big[total + i])
+                same = 0;
+
+        total += r;
+    }
+
+    check("pty: a write bigger than the buffer, read as it comes", total == (int) sizeof(big) && same, 1);
+
+    SC(SYS_kill, writer, SIGKILL, 0);
+    int wst = -1;
+    SC(SYS_waitpid, writer, &wst, 0);
+
+    SC(SYS_close, slave, 0, 0);
+    SC(SYS_close, master, 0, 0);
+
     /* another node of the serial port the results go to: opened and
      * closed, the first one (aq_out) stays as it was (its vnode used to
      * be closed in its place) */
@@ -1376,6 +1426,53 @@ static void vnode_paths(void)
     fd = SC(SYS_open, "/tmp/ps/f", O_CREAT | O_WRONLY, 0644);
     SC(SYS_close, fd, 0, 0);
     check("path: search permission", aq_child_status(search_permission) >> 8, 0);
+}
+
+/* a child that sleeps until it's killed */
+static void child_sleeps(void)
+{
+    struct aquila_timespec ts = {60, 0};
+    SC(SYS_nanosleep, &ts, 0, 0);
+}
+
+/* a child that tries to mount as a user that isn't root: its exit status
+ * is mount()'s error */
+static void child_mounts_as_user(void)
+{
+    struct { char *dev, *opt; } args = {0, 0};
+
+    if (SC(SYS_setuid, 1000, 0, 0))
+        SC(SYS_exit, 1, 0, 0);
+
+    SC(SYS_exit, -aq_mount("tmpfs", "/tmp", &args), 0, 0);
+}
+
+/*
+ * waitpid() with a status pointer that can't be written fails with
+ * EFAULT, and the event it would have reported (a stop) is reported to
+ * the next call; mount() is root's only (EPERM).
+ */
+static void wait_and_mount(void)
+{
+    int c = SC(SYS_fork, 0, 0, 0);
+
+    if (!c) {
+        child_sleeps();
+        SC(SYS_exit, 0, 0, 0);
+    }
+
+    SC(SYS_kill, c, SIGSTOP, 0);
+    aq_spin(30000000);
+
+    check("waitpid: a bad status pointer", SC(SYS_waitpid, c, KADDR, WUNTRACED), -EFAULT);
+
+    int st = 0;
+    check("waitpid: the stop, reported after all", SC(SYS_waitpid, c, &st, WUNTRACED) == c && (st & 0xff) == 0x7f, 1);
+
+    SC(SYS_kill, c, SIGKILL, 0);
+    SC(SYS_waitpid, c, &st, 0);
+
+    check("mount: not root, EPERM", aq_child_status(child_mounts_as_user) >> 8, EPERM);
 }
 
 void aq_main(void)
@@ -2765,6 +2862,8 @@ void aq_main(void)
           aq_child_status(exec_with_threads), 0x55 << 8);
     stopped_sleeps();
     vnode_paths();
+
+    wait_and_mount();
 
     aq_end();
 }

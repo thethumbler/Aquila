@@ -33,16 +33,19 @@ static int kproc_init(void)
 
     proc->pid  = 0;     /* never allocated: init is 1 */
     proc->name = strdup("[kernel]");
+
+    if (!proc->name)
+        panic("no memory for process 0");
     proc->vm_space.pmap = kvm_space.pmap;
     proc->running = 1;
 
     for (int i = 0; i < SIG_MAX; ++i)
         proc->sigaction[i].sa_handler = SIG_DFL;
 
-    if (!proc->name || session_new(proc))
+    /* the kernel can't boot without process 0 */
+    if (!proc->name || session_new(proc) || !enqueue(procs, proc))
         panic("kthread: can't make process 0");
 
-    enqueue(procs, proc);
     kproc = proc;
 
     return 0;

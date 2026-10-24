@@ -221,7 +221,7 @@ long sys_linkat(int olddirfd, const char *oldpath, int newdirfd, const char *new
 long sys_lseek(int fildes, off_t offset, int whence)
 {
     syscall_log(LOG_DEBUG, "lseek(fildes=%d, offset=%ld, whence=%d)\n",
-            fildes, (long) offset, whence);
+            fildes, (int64_t) offset, whence);
 
     struct file *file = fd_file(fildes);
 
@@ -700,13 +700,13 @@ long sys_readdir(int fd, struct dirent *dirent)
  * @param args  the arguments, in user memory: the file system's type,
  *              the directory, flags, and the data (the device and the
  *              options)
- * @return 0, or a negative errno: `-EACCES`, `-ENOENT`, `-ENODEV`,
- *         `-EFAULT`, ...
+ * @return 0, or a negative errno: `-EPERM` (not root), `-ENOENT`,
+ *         `-ENODEV`, `-EFAULT`, ...
  */
 long sys_mount(struct aquila_mount_args *args)
 {
     if (curproc->uid != 0) {
-        return -EACCES;
+        return -EPERM;
     }
 
     struct aquila_mount_args a;
@@ -1022,7 +1022,7 @@ long sys_getcwd(char *buf, size_t size)
  */
 long sys_mknod(const char *path, uint32_t mode, uint32_t dev)
 {
-    syscall_log(LOG_DEBUG, "mknod(path=%s, mode=%x, dev=%x)\n", path, mode, dev);
+    syscall_log(LOG_DEBUG, "mknod(path=%p, mode=%x, dev=%x)\n", path, mode, dev);
     return do_mknodat(AT_FDCWD, path, mode, dev);
 }
 
@@ -1038,7 +1038,7 @@ long sys_mknod(const char *path, uint32_t mode, uint32_t dev)
  */
 long sys_mknodat(int dirfd, const char *path, uint32_t mode, uint32_t dev)
 {
-    syscall_log(LOG_DEBUG, "mknodat(dirfd=%d, path=%s, mode=%x, dev=%x)\n", dirfd, path, mode, dev);
+    syscall_log(LOG_DEBUG, "mknodat(dirfd=%d, path=%p, mode=%x, dev=%x)\n", dirfd, path, mode, dev);
     return do_mknodat(dirfd, path, mode, dev);
 }
 
@@ -1051,7 +1051,7 @@ long sys_mknodat(int dirfd, const char *path, uint32_t mode, uint32_t dev)
  */
 long sys_lstat(const char *path, struct aquila_stat *buf)
 {
-    syscall_log(LOG_DEBUG, "lstat(path=%s, buf=%p)\n", path, buf);
+    syscall_log(LOG_DEBUG, "lstat(path=%p, buf=%p)\n", path, buf);
     return do_fstatat(AT_FDCWD, path, buf, AT_SYMLINK_NOFOLLOW);
 }
 

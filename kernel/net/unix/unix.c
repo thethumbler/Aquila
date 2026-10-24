@@ -186,17 +186,35 @@ static int socket_unix_bind(struct file *file, const struct sockaddr *addr, sock
 
     /* look up the node just made, for a reference to it */
     if ((err = vfs_lookup(addr_un->sun_path, &uio, &vnode)))
-        return err;
+        goto unlink;
 
     struct un_socket *socket = kmalloc(sizeof(struct un_socket), &M_UN_SOCKET, M_ZERO);
-    if (!socket) return -ENOMEM;
+
+    if (!socket) {
+        err = -ENOMEM;
+        goto close;
+    }
 
     socket->vnode = vnode;
-    enqueue(sockets, socket);
+
+    /* connect() finds a bound socket on this list */
+    if (!enqueue(sockets, socket)) {
+        kfree(socket);
+        err = -ENOMEM;
+        goto close;
+    }
 
     file->socket->p = socket;
 
     return 0;
+
+    /* bind() failed after making the node: the node goes, so that the path
+     * can be bound again */
+close:
+    vfs_close(vnode);
+unlink:
+    vfs_unlink(addr_un->sun_path, &uio);
+    return err;
 }
 
 /** Connects to the socket bound to a path: the request waits on the
@@ -245,17 +263,27 @@ static int socket_unix_connect(struct file *file, const struct sockaddr *addr, s
     struct un_conn *request = kmalloc(sizeof(struct un_conn), &M_UN_CONN, M_ZERO);
     if (!request) return -ENOMEM;
 
-    enqueue(&socket->requests, request);
+    if (!enqueue(&socket->requests, request)) {
+        kfree(request);
+        return -ENOMEM;
+    }
 
     /* wake up the server, if it waits in accept() */
     waitq_wakeup(&socket->accept);
 
-    /* sleep until the connection is accepted */
+    /* sleep until the connection is accepted, or refused */
     while (!request->connected) {
         int err = waitq_sleep(&request->connect);
 
-        if (err)
+        /* a signal gives the connection up, unless it was accepted or
+         * refused meanwhile. The request is still on the listener's queue
+         * then (the listener is alive: closing it would have refused the
+         * request), and is taken off it, so accept() never sees it */
+        if (err && !request->connected) {
+            queue_remove(&socket->requests, request);
+            kfree(request);
             return err;
+        }
     }
 
     /* the listening socket was closed before accepting it */

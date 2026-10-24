@@ -38,8 +38,15 @@ static int binfmt_fmt_load(struct proc *proc, const char *path, struct vnode *vn
     if ((err = binfmt->load(proc, path, vnode)))
         goto error;
 
+    char *name = strdup(path);
+
+    if (!name) {
+        err = -ENOMEM;
+        goto error;
+    }
+
     kfree(proc->name);
-    proc->name = strdup(path);
+    proc->name = name;
 
     /* the heap starts on a page boundary after the program */
     proc->heap_start = PAGE_ROUND(proc->heap_start);
@@ -55,7 +62,12 @@ static int binfmt_fmt_load(struct proc *proc, const char *path, struct vnode *vn
     heap_vm->base  = proc->heap_start;
     heap_vm->size  = 0;
     heap_vm->flags = VM_URW;
-    heap_vm->qnode = enqueue(&proc->vm_space.vm_entries, heap_vm);
+
+    if (!(heap_vm->qnode = enqueue(&proc->vm_space.vm_entries, heap_vm))) {
+        kfree(heap_vm);
+        err = -ENOMEM;
+        goto error;
+    }
 
     heap_vm->vm_object = NULL;
 
@@ -71,7 +83,12 @@ static int binfmt_fmt_load(struct proc *proc, const char *path, struct vnode *vn
     stack_vm->base  = USER_STACK_BASE;
     stack_vm->size  = USER_STACK_SIZE;
     stack_vm->flags = VM_URW;
-    stack_vm->qnode = enqueue(&proc->vm_space.vm_entries, stack_vm);
+
+    if (!(stack_vm->qnode = enqueue(&proc->vm_space.vm_entries, stack_vm))) {
+        kfree(stack_vm);
+        err = -ENOMEM;
+        goto error;
+    }
 
     stack_vm->vm_object = NULL;
 

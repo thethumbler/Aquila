@@ -144,7 +144,11 @@ int proc_new(struct proc **ref)
         proc->sigaction[i].sa_handler = SIG_DFL;
 
     proc->running = 1;
-    enqueue(procs, proc);
+
+    if (!enqueue(procs, proc)) {
+        err = -ENOMEM;
+        goto error;
+    }
 
     if (ref)
         *ref = proc;
@@ -152,6 +156,9 @@ int proc_new(struct proc **ref)
     return 0;
 
 error:
+    if (pmap)
+        pmap_decref(pmap);
+
     if (thread) {
         queue_remove(&proc->threads, thread);
         kfree(thread);
@@ -609,8 +616,12 @@ int session_new(struct proc *proc)
     pgrp->session_node = enqueue(session->pgps, pgrp);
     if (!pgrp->session_node) goto e_nomem;
 
-    proc->pgrp_node = enqueue(pgrp->procs, proc);
-    if (!proc->pgrp_node) goto e_nomem;
+    /* the process's place in its old group is kept until this can't fail
+     * anymore (setsid() takes it back on failure) */
+    struct qnode *node = enqueue(pgrp->procs, proc);
+    if (!node) goto e_nomem;
+
+    proc->pgrp_node = node;
 
     session->sid = proc->pid;
     pgrp->pgid = proc->pid;
@@ -627,6 +638,10 @@ e_nomem:
     err = -ENOMEM;
 error:
     if (session) {
+        /* the group may be on the session's list already */
+        if (pgrp && pgrp->session_node)
+            queue_node_remove(session->pgps, pgrp->session_node);
+
         kfree(session->pgps);
         kfree(session);
     }
@@ -653,6 +668,7 @@ int proc_setpgid(struct proc *proc, pid_t pgid)
 {
     struct session *session = proc->pgrp->session;
     struct pgroup *pgrp = NULL;
+    int made = 0;
 
     if (proc->pgrp->pgid == pgid)
         return 0;
@@ -686,11 +702,22 @@ int proc_setpgid(struct proc *proc, pid_t pgid)
             kfree(pgrp);
             return -ENOMEM;
         }
+
+        made = 1;
     }
 
     struct qnode *node = enqueue(pgrp->procs, proc);
-    if (!node)
+
+    if (!node) {
+        /* a group made for the process goes again, empty */
+        if (made) {
+            queue_node_remove(session->pgps, pgrp->session_node);
+            kfree(pgrp->procs);
+            kfree(pgrp);
+        }
+
         return -ENOMEM;
+    }
 
     if (pgid == proc->pid)
         pgrp->leader = proc;

@@ -193,7 +193,7 @@ long sys_waitpid(int pid, int *stat_loc, int options)
 
         queue_for (node, procs) {
             struct proc *proc = node->value;
-            int status;
+            int status, event = 0;
 
             if (proc->parent != curproc)
                 continue;
@@ -206,20 +206,23 @@ long sys_waitpid(int pid, int *stat_loc, int options)
             if (proc->zombie) {
                 status = proc->exit;
             } else if ((options & WUNTRACED) && (proc->wait_event & WAIT_STOPPED)) {
-                proc->wait_event &= ~WAIT_STOPPED;
+                event = WAIT_STOPPED;
                 status = (proc->stopped << 8) | 0x7f;
             } else if ((options & WCONTINUED) && (proc->wait_event & WAIT_CONTINUED)) {
-                proc->wait_event &= ~WAIT_CONTINUED;
+                event = WAIT_CONTINUED;
                 status = 0xffff;
             } else {
                 continue;
             }
 
-            /* the status can't be written out: a zombie stays to be
-             * waited for again */
+            /* if the status can't be written out, nothing is consumed: a
+             * zombie, or a stop or continue event, stays to be waited for
+             * again */
             if (stat_loc && copyout(stat_loc, &status, sizeof(status))) {
                 return -EFAULT;
             }
+
+            proc->wait_event &= ~event;
 
             pid_t child = proc->pid;
 
