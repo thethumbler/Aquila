@@ -85,7 +85,7 @@ implements all of them:
 
 | What                        | Functions                                                         |
 |-----------------------------|-------------------------------------------------------------------|
-| processes and threads       | `arch_proc_init()`, `arch_proc_fork()`, `arch_thread_create()`, `arch_kthread_create()`, `arch_thread_kill()`, `arch_sys_execve()`, `arch_init_execve()` |
+| processes and threads       | `arch_proc_init()`, `arch_proc_fork()`, `arch_thread_create()`, `arch_kthread_create()`, `arch_thread_kill()`, `arch_exec_start()` |
 | running threads             | `arch_thread_spawn()`, `arch_thread_switch()`, `arch_idle()`, `arch_sleep()`, `arch_yield()`, `arch_cur_thread_kill()`, `arch_sched_init()` |
 | system calls                | `arch_syscall_return()`: a call's result, into the thread's registers |
 | signals                     | `arch_sigcode_map()`, `arch_sigreturn()`: the handler's frame, and back |

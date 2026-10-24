@@ -145,9 +145,9 @@ switches to its address space, and loads `/init` into it
 `exec`. In the initramfs, `/init` is a link to runit's `/sbin/runit-init`.
 The architecture gives its thread a kernel stack and its user-mode
 registers, the program's entry point and the top of the user stack
-(`arch_proc_init()`), and puts the arguments and the environment on the
-user stack, as `execve()` does (`arch_init_execve()`). init has one
-argument, the module's command line, and no environment.
+(`arch_proc_init()`); then its initial stack is built, with its
+arguments and environment, as `execve()` does (`init_execve()`). init
+has one argument, the module's command line, and no environment.
 
 `sched_init_spawn()` ([`sys/sched.c`](../../kernel/sys/sched.c)) then
 starts the system:

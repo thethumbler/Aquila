@@ -264,19 +264,39 @@ with several threads has one, as POSIX says.
 6. Descriptors marked close-on-exec are closed. Caught signals go back to
    their default action; ignored ones stay ignored; the mask and the
    pending signals stay.
-7. The architecture puts the arguments and the environment on the new
-   stack and points the thread at the program's entry
-   (`arch_sys_execve()`), and the thread starts afresh in user mode
+7. The kernel builds the new program's *initial stack*
+   (`exec_stack_build()`, below), the architecture points the thread at
+   the program's entry with its stack pointer there
+   (`arch_exec_start()`), and the thread starts afresh in user mode
    (`sched_thread_spawn()`).
 
 A failure before step 4 returns an error to the old program. After it,
 there is no old program to return to, and the process is killed with
 `SIGSEGV`.
 
-The new program finds `argc`, `argv` and `envp` on its stack, in that
-order, as `main()`'s arguments: the C library's start code passes them
-on. There is no auxiliary vector and no dynamic linker; programs are
-linked statically.
+The initial stack is the System V ABI's, the same on every architecture
+(and what Linux and the BSDs do). At the program's entry, the stack
+pointer is 16-byte aligned and points at, one word each:
+
+```
+argc
+argv[0] ... argv[argc - 1], NULL
+envp[0] ... envp[envc - 1], NULL
+auxiliary vector: (AT_PAGESZ, 4096) (AT_ENTRY, entry) ... (AT_NULL, 0)
+... the strings, at the top of the stack
+```
+
+The *auxiliary vector* tells the program about itself and the system:
+the page size, its entry point, its user and group IDs
+([`aquila/auxv.h`](../../include/uapi/aquila/auxv.h)). It's where a
+dynamic linker would find the program's headers, if there were one;
+programs are linked statically.
+
+The C library's start code ([`crt0.c`](../../libc/aquila/crt0.c)) reads
+it all from the stack pointer, the same way on every architecture, and
+calls `main(argc, argv, envp)`; `getauxval()` looks up the vector, as on
+Linux. So the architecture's part is small: setting the instruction and
+stack pointers.
 
 ### Threads
 
