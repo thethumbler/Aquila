@@ -45,8 +45,8 @@ retry:
             int err;
             if ((err = ata_poll(drive, 1))) {
 
-                /* retry */
-                if (err == -ATA_ERROR_ABRT) {
+                /* the command aborted: again, a few times */
+                if (err == -EAGAIN) {
                     printk("ata: retrying...\n");
 
                     for (int i = 0; i < 5; ++i)
@@ -64,7 +64,7 @@ retry:
         }
 
         if (ata_poll(drive, 0))
-            return -EINVAL;
+            return -EIO;
     } else {
         /* TODO CHS */
         return -ENOTSUP;

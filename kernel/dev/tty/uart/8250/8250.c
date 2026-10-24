@@ -124,11 +124,16 @@ static int uart_8250_attach(const struct platform_device *pd, int id)
     struct uart_8250 *u = kmalloc(sizeof(*u), &M_UART_8250, M_ZERO);
 
     if (!u)
-        return -1;
+        return -ENOMEM;
 
-    if (platform_device_io(pd, &u->io) || !uart_8250_present(&u->io) || !pd->nirq) {
+    int err = platform_device_io(pd, &u->io);
+
+    if (!err && (!uart_8250_present(&u->io) || !pd->nirq))
+        err = -ENODEV;
+
+    if (err) {
         kfree(u);
-        return -1;
+        return err;
     }
 
     u->uart.name     = "8250";
@@ -136,9 +141,9 @@ static int uart_8250_attach(const struct platform_device *pd, int id)
     u->uart.transmit = uart_8250_transmit;
     u->uart.receive  = uart_8250_receive;
 
-    if (irq_install(pd->irq[0], uart_8250_irq, u)) {
+    if ((err = irq_install(pd->irq[0], uart_8250_irq, u))) {
         kfree(u);
-        return -1;
+        return err;
     }
 
     printk("8250: ttyS%d at %p (%s), irq %d\n", id, (void *) pd->io.addr,

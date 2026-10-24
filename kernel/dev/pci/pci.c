@@ -323,7 +323,7 @@ int pci_host_set(struct pci_host *h)
         void *config = arch_mmio_map(h->config.addr, h->size);
 
         if (!config)
-            return -1;
+            return -ENOMEM;
 
         printk("pci: %s at %p\n", h->name, (void *) h->config.addr);
         h->config.addr = (uintptr_t) config;
@@ -384,8 +384,11 @@ int pci_msi_enable(struct pci_dev *dev, irq_handler_t handler, void *arg)
     uint32_t data;
     int irq;
 
-    if (!cap || !arch_msi_alloc || (irq = arch_msi_alloc(handler, arg, &addr, &data)) < 0)
-        return -1;
+    if (!cap || !arch_msi_alloc)
+        return -ENODEV;
+
+    if ((irq = arch_msi_alloc(handler, arg, &addr, &data)) < 0)
+        return irq;
 
     uint16_t ctrl = pci_reg16_read(dev, cap + MSI_CTRL);
 

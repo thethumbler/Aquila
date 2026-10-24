@@ -174,7 +174,7 @@ static int x86_pic_probe(void)
 
     /* Check if there is a devices listening to port */
     if (io_in8(&master, PIC_DATA) != 0xFB)
-        return -1;
+        return -ENODEV;
 
     return 0;
 }
@@ -193,7 +193,7 @@ int x86_pic_setup(struct ioaddr *_master, struct ioaddr *_slave)
 
     if (x86_pic_probe()) {
         printk("i8259: Controller not found\n");
-        return -1;
+        return -ENODEV;
     }
 
     printk("i8259: initializing [Master: %p (%s), Salve: %p (%s)]\n",

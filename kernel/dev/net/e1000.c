@@ -359,7 +359,7 @@ static int e1000_probe(void)
 
     if (pci_bar(&e1000.pci, 0, &bar) || bar.io) {
         printk("e1000: no registers (BAR 0)\n");
-        return -1;
+        return -ENODEV;
     }
 
     pci_enable(&e1000.pci);

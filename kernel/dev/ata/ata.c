@@ -76,9 +76,6 @@ static void ata_irq(void *channel)
 static struct ata_drive *last_selected_drive = NULL;
 static uint32_t last_selected_mode = -1;
 
-/* max status reads while waiting for a drive after a reset */
-#define ATA_RESET_TIMEOUT  1000000
-
 /**
  * reset both drives on the drive's channel and wait for completion
  */
@@ -94,7 +91,7 @@ void ata_reset(struct ata_drive *drive)
     io_out8(&drive->ctrl, 0, 0);
     ata_wait(drive);
 
-    for (int i = 0; i < ATA_RESET_TIMEOUT; ++i) {
+    for (int i = 0; i < ATA_TIMEOUT; ++i) {
         if (!(io_in8(&drive->ctrl, 0) & ATA_STATUS_BSY))
             break;
     }
@@ -409,7 +406,7 @@ static int ata_probe()
 
     if (!count) {
         printk("ata: no IDE controller(s) found\n");
-        return -1;
+        return -ENODEV;
     }
 
     if (count) {

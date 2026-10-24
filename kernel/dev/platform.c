@@ -26,7 +26,7 @@ int platform_device_io(const struct platform_device *pd, struct ioaddr *io)
     void *regs = arch_mmio_map(pd->io.addr, pd->size);
 
     if (!regs)
-        return -1;
+        return -ENOMEM;
 
     io->addr = (uintptr_t) regs;
     return 0;

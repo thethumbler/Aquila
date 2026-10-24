@@ -236,20 +236,22 @@ static struct x86_irq_chip msi_chip = {
 };
 
 /** an IRQ for a device's MSI, to `handler': the message's address and data
- * (to the boot CPU's local APIC, the IRQ's vector, edge); -1 without the
- * APIC (the 8259 gets no MSI) or a free IRQ */
+ * (to the boot CPU's local APIC, the IRQ's vector, edge); -ENODEV without
+ * the APIC (the 8259 gets no MSI), -ENOSPC without a free IRQ */
 int arch_msi_alloc(irq_handler_t handler, void *arg, uint64_t *addr, uint32_t *data)
 {
     if (!lapic)
-        return -1;
+        return -ENODEV;
 
     int irq = x86_irq_alloc(&msi_chip);
 
     if (irq < 0)
-        return -1;
+        return -ENOSPC;
 
-    if (irq_install(irq, handler, arg))
-        return -1;
+    int err = irq_install(irq, handler, arg);
+
+    if (err)
+        return err;
 
     *addr = 0xFEE00000ULL | (uint64_t) lapic_id << 12;
     *data = 32 + irq;
@@ -312,14 +314,14 @@ int x86_apic_setup(void)
 
     if (!kargs_get("apic", &arg) && arg && !strcmp(arg, "off")) {
         printk("apic: off (apic=off)\n");
-        return -1;
+        return -ENODEV;
     }
 
     struct acpi_madt *madt = x86_acpi_table ? x86_acpi_table("APIC") : NULL;
 
     if (!cpu_has_apic() || !madt) {
         printk("apic: %s\n", madt ? "the CPU has none" : "no MADT");
-        return -1;
+        return -ENODEV;
     }
 
     /* the ISA IRQs: the same pins, but as the overrides say */
@@ -372,7 +374,7 @@ int x86_apic_setup(void)
 
     if (!ioapics_nr) {
         printk("apic: no I/O APIC\n");
-        return -1;
+        return -ENODEV;
     }
 
     /* the local APIC: where the MADT says, the boot CPU's */

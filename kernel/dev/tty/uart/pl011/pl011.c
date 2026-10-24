@@ -78,11 +78,13 @@ static int pl011_init(void)
 {
     const struct platform_device *pd = platform_device_get("pl011", 0);
 
-    if (!pd || !pd->nirq || platform_device_io(pd, &io))
-        return -1;
+    if (!pd || !pd->nirq)
+        return -ENODEV;
 
-    if (irq_install(pd->irq[0], pl011_irq, NULL))
-        return -1;
+    int err = platform_device_io(pd, &io);
+
+    if (err || (err = irq_install(pd->irq[0], pl011_irq, NULL)))
+        return err;
 
     uart_register(0, &uart_pl011);
     return 0;

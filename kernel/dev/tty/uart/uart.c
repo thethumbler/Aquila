@@ -198,7 +198,7 @@ int uart_register(int id, struct uart *u)
             }
         }
 
-        return -1;  /* Failed */
+        return -ENOSPC;     /* every minor taken */
     }
 
 done:

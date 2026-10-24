@@ -14,6 +14,7 @@
 #include <dev/irq.h>
 #include <dev/platform.h>
 #include <dev/i8042.h>
+#include <aquila/errno.h>
 
 static struct ioaddr i8042_ioaddr;
 static int i8042_found;
@@ -64,27 +65,32 @@ void i8042_handler_register(int port, void (*fun)(int))
         port_handler[port - 1] = fun;
 }
 
-/** the controller takes a byte, -1 if it doesn't in time */
+/** the controller takes a byte, -ETIMEDOUT if it doesn't in time */
 static int write_wait(void)
 {
     for (int i = 0; i < 100000; ++i)
         if (!(read_status() & STATUS_IBUF_FULL))
             return 0;
 
-    return -1;
+    return -ETIMEDOUT;
 }
 
 /** a byte to the second port's device (the mouse), its replies come as
  * its interrupts */
 int i8042_aux_write(uint8_t byte)
 {
-    if (!i8042_found || write_wait())
-        return -1;
+    if (!i8042_found)
+        return -ENODEV;
+
+    int err = write_wait();
+
+    if (err)
+        return err;
 
     io_out8(&i8042_ioaddr, COMMAND_PORT, 0xD4);
 
-    if (write_wait())
-        return -1;
+    if ((err = write_wait()))
+        return err;
 
     io_out8(&i8042_ioaddr, DATA_PORT, byte);
     return 0;
@@ -97,14 +103,14 @@ void i8042_reboot(void)
         io_out8(&i8042_ioaddr, COMMAND_PORT, 0xFE);
 }
 
-/** the controller's reply to a command, -1 if none comes in time */
+/** the controller's reply to a command, -ETIMEDOUT if none comes in time */
 static int read_wait(void)
 {
     for (int i = 0; i < 100000; ++i)
         if (has_byte())
             return io_in8(&i8042_ioaddr, DATA_PORT);
 
-    return -1;
+    return -ETIMEDOUT;
 }
 
 #define CMD_READ_CONFIG   0x20
@@ -116,24 +122,28 @@ static int read_wait(void)
  * polled, before the interrupts are installed */
 static int aux_enable(void)
 {
-    if (write_wait())
-        return -1;
+    int err, config;
+
+    if ((err = write_wait()))
+        return err;
 
     io_out8(&i8042_ioaddr, COMMAND_PORT, CMD_AUX_ENABLE);
 
-    if (write_wait())
-        return -1;
+    if ((err = write_wait()))
+        return err;
 
     io_out8(&i8042_ioaddr, COMMAND_PORT, CMD_READ_CONFIG);
-    int config = read_wait();
 
-    if (config < 0 || write_wait())
-        return -1;
+    if ((config = read_wait()) < 0)
+        return config;
+
+    if ((err = write_wait()))
+        return err;
 
     io_out8(&i8042_ioaddr, COMMAND_PORT, CMD_WRITE_CONFIG);
 
-    if (write_wait())
-        return -1;
+    if ((err = write_wait()))
+        return err;
 
     io_out8(&i8042_ioaddr, DATA_PORT, config | CONFIG_AUX_IRQ);
     return 0;
@@ -143,14 +153,19 @@ static int i8042_init(void)
 {
     const struct platform_device *pd = platform_device_get("i8042", 0);
 
-    if (!pd || platform_device_io(pd, &i8042_ioaddr))
-        return -1;
+    if (!pd)
+        return -ENODEV;
+
+    int err = platform_device_io(pd, &i8042_ioaddr);
+
+    if (err)
+        return err;
 
     /* i8042.nocheck: there even if its status says no */
     if (kargs_get("i8042.nocheck", NULL)) {
         if (!(read_status() & STATUS_SYSTEM)) {
             printk("i8042: controller not found\n");
-            return -1;
+            return -ENODEV;
         }
     } else {
         printk("i8042: skipping check\n");

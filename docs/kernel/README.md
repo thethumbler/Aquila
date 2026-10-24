@@ -104,7 +104,11 @@ A few conventions help:
   those.
 - **Errors are negative `errno` values**: a function returns 0 or a
   positive value on success, `-EINVAL`, `-ENOMEM`, ... on failure. System
-  calls hand them back to user space as they are.
+  calls hand them back to user space as they are. The exceptions return
+  a value, or -1 for "none" where there is no error to tell: a free
+  descriptor or process ID (`proc_fd_get()`, `proc_pid_alloc()`), a
+  device's IRQ (`pci_irq()`), whether a kernel argument was given
+  (`kargs_get()`).
 - **The architecture's side** of a generic interface is called `arch_*`
   (`arch_thread_switch`, `arch_syscall_return`) and lives in
   `kernel/arch/i386/`; x86-specific functions are called `x86_*`.

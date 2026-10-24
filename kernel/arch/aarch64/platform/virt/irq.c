@@ -10,6 +10,7 @@
 #include <mm/mm.h>
 #include <dev/irq.h>
 #include <platform/virt.h>
+#include <aquila/errno.h>
 
 MALLOC_DEFINE(M_IRQ, "irq", "IRQ handler");
 
@@ -25,12 +26,12 @@ static uint64_t counts[IRQ_NR];
 int irq_install(unsigned irq, irq_handler_t fn, void *arg)
 {
     if (irq >= IRQ_NR)
-        return -1;
+        return -EINVAL;
 
     struct handler *h = kmalloc(sizeof(*h), &M_IRQ, M_ZERO);
 
     if (!h)
-        return -1;
+        return -ENOMEM;
 
     h->fn  = fn;
     h->arg = arg;

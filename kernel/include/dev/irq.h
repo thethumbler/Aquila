@@ -17,7 +17,7 @@
 
 typedef void (*irq_handler_t)(void *arg);
 
-/* 0, or -1 if there's no such IRQ or no memory for the handler */
+/* 0, or -EINVAL if there's no such IRQ, -ENOMEM no memory for the handler */
 int  irq_install(unsigned irq, irq_handler_t fn, void *arg);
 void irq_uninstall(unsigned irq, irq_handler_t fn, void *arg);
 

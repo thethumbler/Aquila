@@ -814,7 +814,7 @@ static int vt_probe(void)
     else if (vt_vga_probe() == 0)
         display = &vt_vga_display;
     else
-        return -1;
+        return -ENODEV;
 
     shown = kmalloc(display->rows * display->cols * sizeof(struct vt_cell), &M_VT, 0);
 

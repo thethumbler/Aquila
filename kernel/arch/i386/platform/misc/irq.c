@@ -84,12 +84,12 @@ int x86_irq_alloc(struct x86_irq_chip *c)
 int irq_install(unsigned irq, irq_handler_t fn, void *arg)
 {
     if (irq >= X86_IRQ_NR)
-        return -1;
+        return -EINVAL;
 
     struct handler *h = kmalloc(sizeof(*h), &M_IRQ, M_ZERO);
 
     if (!h)
-        return -1;
+        return -ENOMEM;
 
     h->fn  = fn;
     h->arg = arg;

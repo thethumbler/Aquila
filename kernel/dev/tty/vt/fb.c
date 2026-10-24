@@ -87,13 +87,13 @@ int vt_fb_probe(void)
     struct fbdev *dev = fbdev_primary ? fbdev_primary() : NULL;
 
     if (!dev || !dev->fix_screeninfo || !dev->var_screeninfo)
-        return -1;
+        return -ENODEV;
 
     struct fb_fix_screeninfo *fix = dev->fix_screeninfo;
     struct fb_var_screeninfo *var = dev->var_screeninfo;
 
     if (var->bits_per_pixel != 32 && var->bits_per_pixel != 24 && var->bits_per_pixel != 16)
-        return -1;
+        return -ENODEV;
 
     fb = (uint8_t *) fix->smem_start;
     pitch = fix->line_length;
@@ -103,7 +103,7 @@ int vt_fb_probe(void)
     vt_fb_display.cols = var->xres / FONT_W;
 
     if (!vt_fb_display.rows || !vt_fb_display.cols)
-        return -1;
+        return -ENODEV;
 
     /* the margins aren't drawn on, the early console may have been */
     memset(fb, 0, var->yres * pitch);

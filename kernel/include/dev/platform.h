@@ -28,8 +28,8 @@ extern const struct platform_device platform_devices[];
 /* the `index'th device named `name', NULL past the last */
 const struct platform_device *platform_device_get(const char *name, int index);
 
-/* its registers, for io_in*() and io_out*() (memory mapped); -1 if they
- * can't be */
+/* its registers, for io_in*() and io_out*() (memory mapped); -ENOMEM if
+ * they can't be */
 int platform_device_io(const struct platform_device *pd, struct ioaddr *io);
 
 #endif /* ! _DEV_PLATFORM_H */

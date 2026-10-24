@@ -17,7 +17,7 @@ static size_t fbdev_cnt = 0;
 int fbdev_register(int type, void *data)
 {
     if (fbdev_cnt == MAX_FBDEV)
-        return -1;
+        return -ENOSPC;
 
     registered_fbs[fbdev_cnt].type = type;
     registered_fbs[fbdev_cnt++].data = data;

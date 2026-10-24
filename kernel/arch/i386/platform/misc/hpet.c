@@ -68,18 +68,18 @@ int x86_hpet_init(void)
     struct acpi_hpet *t = x86_acpi_table ? x86_acpi_table("HPET") : NULL;
 
     if (!t || t->header.length < sizeof(*t) || t->address.space != 0 || !t->address.address)
-        return -1;
+        return -ENODEV;
 
     regs = arch_mmio_map(t->address.address, 1024);
 
     if (!regs)
-        return -1;
+        return -ENOMEM;
 
     period_fs = reg32(HPET_CAP + 4);
 
     if (!period_fs || period_fs > PERIOD_MAX_FS) {
         printk("hpet: bad period %ld fs\n", period_fs);
-        return -1;
+        return -ENODEV;
     }
 
     /* counting, from 0, the PIT left as it is */

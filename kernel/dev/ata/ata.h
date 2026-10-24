@@ -91,6 +91,7 @@
 #define ATA_MODE_LBA48              0x40
 
 #include <ds/queue.h>
+#include <aquila/errno.h>
 
 /** an IDE channel, the master and slave drive on it */
 struct ata_channel {
@@ -155,26 +156,42 @@ static void ata_wait(struct ata_drive *drive)
         io_in8(&drive->ctrl, 0);
 }
 
+/* max status reads while waiting for a drive (it's busy for
+ * milliseconds; a drive that never answers isn't waited for forever,
+ * with the interrupts off) */
+#define ATA_TIMEOUT     1000000
+
+/**
+ * The drive done with what it was doing (BSY clear); with
+ * `advanced_check', ready for data (DRQ) and not in error. 0, or
+ * -ETIMEDOUT if it stays busy, -EAGAIN if it aborted the command (it may
+ * be tried again), -EIO for any other error.
+ */
 static int ata_poll(struct ata_drive *drive, int advanced_check)
 {
     ata_wait(drive);
 
-    uint8_t s;
+    uint8_t s = ATA_STATUS_BSY;
 
-    /* Wait until busy clears */
-    while ((s = io_in8(&drive->base, ATA_REG_STATUS)) & ATA_STATUS_BSY);
+    for (int i = 0; i < ATA_TIMEOUT && (s & ATA_STATUS_BSY); ++i)
+        s = io_in8(&drive->base, ATA_REG_STATUS);
+
+    if (s & ATA_STATUS_BSY) {
+        printk("ata: drive busy, not answering\n");
+        return -ETIMEDOUT;
+    }
 
     if (advanced_check) {
         if ((s & ATA_STATUS_ERR) || (s & ATA_STATUS_DF)) {
             ata_wait(drive);
             uint8_t err = io_in8(&drive->base, ATA_REG_ERROR);
             printk("ata: drive error: %s\n", ata_error_string(err));
-            return -err;
+            return err == ATA_ERROR_ABRT ? -EAGAIN : -EIO;
         }
 
         if (!(s & ATA_STATUS_DRQ)) {
             printk("ata: drive error: DRQ not set\n");
-            return -1;
+            return -EIO;
         }
     }
 

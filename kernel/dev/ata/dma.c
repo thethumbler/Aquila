@@ -169,7 +169,7 @@ static ssize_t dma_write(struct ata_drive *drive, uint64_t lba, size_t count, vo
 int dma_init(struct ata_drive *drive)
 {
     if (!drive->channel->bm.addr || !(drive->capabilities & ATA_CAP_DMA))
-        return -1;
+        return -ENODEV;
 
     drive->read  = dma_read;
     drive->write = dma_write;
