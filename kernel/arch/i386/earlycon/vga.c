@@ -1,15 +1,17 @@
 /** \file
  * x86: the early console in VGA text mode, written straight into the
- * text buffer at 0xB8000 (through its i386 kernel address).
+ * text buffer at 0xB8000 (through the kernel's mapping of low memory,
+ * `VMA()`, which i386 and x86_64 both have).
  */
 
 #include <core/system.h>
 #include <core/string.h>
 #include <console/earlycon.h>
 #include <cpu/io.h>
+#include <mm/mm.h>
 
-static char *vga_start = (char*) 0xC00B8000;
-static char *vga = (char*) 0xC00B8000;
+static char *vga_start = (char *) VMA(0xB8000);
+static char *vga = (char *) VMA(0xB8000);
 
 struct ioaddr vga_ioaddr = {
     .addr = 0x3D4,

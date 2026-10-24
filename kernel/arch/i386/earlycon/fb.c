@@ -62,7 +62,7 @@ int earlycon_fb_available(void)
 static void earlycon_fb_scroll(int n)
 {
     size_t size = n * 16 * fb_scanline;
-    memcpy(vmem, vmem + size, fb_size - size);
+    memmove(vmem, vmem + size, fb_size - size);  /* the ranges overlap */
     memset(vmem + fb_size - size, 0, size);
 }
 

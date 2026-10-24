@@ -489,7 +489,10 @@ static void *window_map(uintptr_t paddr, size_t size, uint32_t flags)
 
 /*
  * Maps physical memory into the kernel's address space: RAM is in the
- * direct map already, and anything else is mapped in the window.
+ * direct map already, and anything else is mapped in the window. RAM is
+ * taken to start at 1 GiB, as on QEMU's virt machine: the direct map's
+ * first GiB is its devices', mapped as device memory (boot/head.S), not
+ * to be used for memory. Another platform would say where its RAM is.
  */
 void *arch_phys_map(uintptr_t paddr, size_t size)
 {

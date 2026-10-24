@@ -352,7 +352,9 @@ void x86_lapic_ipi(uint32_t id, uint32_t icr)
  * Sets up the APIC to bring the interrupts, if the CPU has one, the MADT
  * describes it, and the kernel's command line doesn't say `apic=off`.
  *
- * @return 0 if the APIC brings the interrupts from now on, or `-ENODEV`
+ * @return 0 if the APIC brings the interrupts from now on, `-ENODEV` if
+ *         there's no APIC to use, or `-ENOMEM` if its registers couldn't
+ *         be mapped
  */
 int x86_apic_setup(void)
 {
@@ -396,6 +398,11 @@ int x86_apic_setup(void)
 
                 struct ioapic *io = &ioapics[ioapics_nr];
                 io->regs = arch_mmio_map(e->address, 4096);
+
+                /* no room to map its registers: this one isn't used */
+                if (!io->regs)
+                    break;
+
                 io->address = e->address;
                 io->gsi_base = e->gsi_base;
                 io->pins = ((ioapic_read(io, IOAPIC_VER) >> 16) & 0xff) + 1;
@@ -424,8 +431,15 @@ int x86_apic_setup(void)
         return -ENODEV;
     }
 
-    /* the boot CPU's local APIC, where the MADT says */
+    /* the boot CPU's local APIC, where the MADT says; without room to map
+     * it, the 8259s bring the interrupts instead */
     lapic = arch_mmio_map(madt->local_apic_address, 4096);
+
+    if (!lapic) {
+        printk("apic: no room to map the local APIC\n");
+        return -ENOMEM;
+    }
+
     x86_lapic_cpu_setup();
     lapic_id = lapic_read(LAPIC_ID) >> 24;
     cpus[0].arch.apic_id = lapic_id;

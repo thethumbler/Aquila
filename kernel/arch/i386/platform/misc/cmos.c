@@ -25,11 +25,11 @@
 
 static struct ioaddr cmos;
 
-/** Reads a CMOS register. Bit 7 of the index port is "NMI disabled",
- * which this sets. */
+/** Reads a CMOS register. Bit 7 of the index port disables NMIs while it
+ * is set, so it is left clear: setting it would mask them from then on. */
 static uint8_t cmos_reg_read(uint8_t reg)
 {
-    io_out8(&cmos, 0, (1 << 7) | (reg));
+    io_out8(&cmos, 0, reg & 0x7F);
     return io_in8(&cmos, 1);
 }
 
@@ -57,8 +57,9 @@ static int cmos_time(struct cmos_rtc *rtc)
     uint8_t  fmt = cmos_reg_read(RTC_SB);
 
     /* wait for an update in progress to finish, so that the values read
-     * are consistent */
-    while (cmos_reg_read(RTC_SA) & RTC_UIP)
+     * are consistent; bounded, since a machine without a CMOS clock reads
+     * all ones, an update that never ends (an update takes 2 ms at most) */
+    for (int i = 0; i < 1000000 && (cmos_reg_read(RTC_SA) & RTC_UIP); ++i)
         ;
 
     rtc->yr   = cmos_reg_read(RTC_YR);

@@ -7,7 +7,7 @@
  * the stack to the higher half, and goes on to `x86_cpu_init()`.
  *
  * Only i386 builds this file: x86_64 does the same in assembly
- * (`x86_64_bootstrap.S`), so the `ARCH_BITS==64` parts here are unused.
+ * (`x86_64_bootstrap.S`).
  */
 
 #include <core/system.h>
@@ -17,14 +17,8 @@
 #include <boot/multiboot.h>
 #include <boot/boot.h>
 
-/* The boot CPU's first page tables, just enough to map the kernel. */
-#if ARCH_BITS==32
+/* The boot CPU's first page directory, just enough to map the kernel. */
 volatile uint32_t _BSP_PD[1024]  __aligned(PAGE_SIZE);
-#else
-volatile uint64_t _BSP_PD[512]   __aligned(PAGE_SIZE);
-volatile uint64_t _BSP_PDPT[512] __aligned(PAGE_SIZE);
-volatile uint64_t _BSP_PML4[512] __aligned(PAGE_SIZE);
-#endif
 
 #define P   _BV(0)
 #define RW  _BV(1)
@@ -33,18 +27,15 @@ volatile uint64_t _BSP_PML4[512] __aligned(PAGE_SIZE);
 extern char kernel_end;
 char scratch[1024 * 1024] __aligned(PAGE_SIZE); /* 1 MiB for the boot page tables */
 
-/** Loads the top page table into CR3, and turns paging on (i386; on
- * x86_64 it is on already, and loading CR3 switches the tables). */
+/** Loads the page directory into CR3, and turns paging on. */
 static inline void enable_paging(uintptr_t page_directory)
 {
     write_cr3(page_directory);
-#if ARCH_BITS==32
     uint32_t cr0 = read_cr0();
 
     /* without WP the kernel writes through read-only pages, e.g. into a
      * copy-on-write page still shared with another process after fork */
     write_cr0(cr0 | CR0_PG | CR0_WP);
-#endif
 }
 
 /** Builds the boot page tables, which map the first `ARCH_BOOT_MAPPED`
@@ -55,18 +46,12 @@ static void switch_to_higher_half(void)
     uint32_t i;
     uintptr_t entries;
 
-    /* clear the page tables */
+    /* clear the page directory */
     memset((void *) _BSP_PD, 0, sizeof(_BSP_PD));
-
-#if ARCH_BITS==64
-    memset((void *) _BSP_PDPT, 0, sizeof(_BSP_PDPT));
-    memset((void *) _BSP_PML4, 0, sizeof(_BSP_PML4));
-#endif
 
     /* how many page tables it takes to map the kernel and what follows */
     entries = ARCH_BOOT_MAPPED / TABLE_SIZE;
 
-#if ARCH_BITS==32
     uint32_t *_BSP_PT = (uint32_t *) scratch;
 
     /* each page mapped to itself */
@@ -83,26 +68,6 @@ static void switch_to_higher_half(void)
 
     /* turn paging on with the boot CPU's page directory */
     enable_paging((uintptr_t) _BSP_PD);
-#else
-    uint64_t *_BSP_PT = (uint64_t *) scratch;
-
-    /* each page mapped to itself */
-    for (i = 0; i < entries * 512; ++i)
-        _BSP_PT[i] = (i * PAGE_SIZE) | P | RW;
-
-    /* the tables at 0, where the code runs now */
-    for (i = 0; i < entries; ++i)
-        _BSP_PD[i] = ((uint64_t) _BSP_PT + i * PAGE_SIZE) | P | RW;
-
-    _BSP_PDPT[0] = (uint64_t) _BSP_PD   | P | RW;
-    _BSP_PML4[0] = (uint64_t) _BSP_PDPT | P | RW;
-
-    /* the same tables in the higher half, where it runs next */
-    _BSP_PML4[256] = (uint64_t) _BSP_PDPT | P | RW;
-
-    /* switch to the boot CPU's PML4 */
-    enable_paging((uint64_t) _BSP_PML4);
-#endif
 }
 
 /**
@@ -117,12 +82,8 @@ void x86_bootstrap()
     switch_to_higher_half();
 
     /* move the stack pointer to the higher half too */
-#if ARCH_BITS==32
     extern void early_init_fix_stack(uintptr_t);
     early_init_fix_stack(VMA((uintptr_t) 0));
-#else
-    asm volatile("add %0, %%rsp"::"r"(VMA((uintptr_t) 0)):"rsp");
-#endif
 
     /* set up the CPU and go on to the kernel */
     extern void x86_cpu_init(void);

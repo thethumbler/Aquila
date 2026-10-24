@@ -21,7 +21,6 @@
 #define GICD_CTLR           0x000
 #define GICD_ISENABLER(n)   (0x100 + 4 * (n))
 #define GICD_ICENABLER(n)   (0x180 + 4 * (n))
-#define GICD_ICENABLER(n)   (0x180 + 4 * (n))
 #define GICD_IPRIORITYR(n)  (0x400 + 4 * (n))
 #define GICD_ITARGETSR(n)   (0x800 + 4 * (n))
 #define GICD_ICFGR(n)       (0xC00 + 4 * (n))

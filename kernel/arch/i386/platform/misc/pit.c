@@ -145,8 +145,16 @@ void x86_pit_delay(uint32_t us)
     /* the gate on: it counts */
     io_out8(&gate, 0, (io_in8(&gate, 0) & ~SPEAKER) | GATE2);
 
-    while (!(io_in8(&gate, 0) & OUT2))
+    /* bounded (each read takes a microsecond or more), so that a machine
+     * without a PIT doesn't hang: the wait is then too short, and what it
+     * timed is wrong, which the message says */
+    long i;
+
+    for (i = 0; i < 10000000 && !(io_in8(&gate, 0) & OUT2); ++i)
         ;
+
+    if (i == 10000000)
+        printk("i8254: channel 2 didn't count down: no PIT?\n");
 
     io_out8(&gate, 0, io_in8(&gate, 0) & ~GATE2);
 }

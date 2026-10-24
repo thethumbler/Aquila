@@ -9,19 +9,10 @@
 #include <cpu/io.h>
 #include <mm/mm.h>
 
-#define SERIAL_MMIO 0
-
-#if SERIAL_MMIO
-static struct ioaddr earlycon_uart_ioaddr = {
-    .addr = 0xCF00B000,
-    .type = IOADDR_MMIO32,
-};
-#else
 static struct ioaddr earlycon_uart_ioaddr = {
     .addr = 0x3F8,
     .type = IOADDR_PORT,
 };
-#endif
 
 #define UART_IER    1
 #define UART_FCR    2
@@ -53,28 +44,29 @@ static int serial_tx_empty(void)
     return io_in8(&earlycon_uart_ioaddr, 5) & 0x20;
 }
 
-/** Writes a character, a newline as CR LF. Returns 1. */
+/** Writes a character, a newline as CR LF. Returns 1. The wait for the
+ * UART is bounded, so that a UART that never empties doesn't hang the
+ * kernel. */
 static int serial_chr(char chr)
 {
     if (chr == '\n')
         serial_chr('\r');
 
-    while (!serial_tx_empty());
+    for (int i = 0; i < 100000 && !serial_tx_empty(); ++i)
+        ;
 
     io_out8(&earlycon_uart_ioaddr, 0, chr);
 
     return 1;
 }
 
-/** Writes a string, and returns a count of what it wrote. */
+/** Writes a string, and returns how many characters it wrote. */
 static int serial_str(char *str)
 {
     int ret = 0;
 
-    while (*str) {
-        ++ret;
+    while (*str)
         ret += serial_chr(*str++);
-    }
 
     return ret;
 }
@@ -91,9 +83,6 @@ static int earlycon_uart_putc(char c)
 
 static void earlycon_uart_init(void)
 {
-#if SERIAL_MMIO
-    pmman.map_to(0x9000B000, 0xCF00B000, PAGE_SIZE, VM_KRW);
-#endif
     serial_init();
 
     /* there's probably a terminal at the other end: reset its attributes */

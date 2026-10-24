@@ -4,6 +4,7 @@
 
 #include <core/system.h>
 #include <core/string.h>
+#include <core/panic.h>
 #include <core/arch.h>
 #include <sys/proc.h>
 #include <sys/sched.h>
@@ -12,18 +13,17 @@
 #include <mm/pmap.h>
 
 /*
- * Sets up the x86 state of a new process's thread (init's, at boot): a
- * kernel stack, and a start at the program's entry point in user mode.
+ * Sets up the x86 state of init's thread, at boot: a kernel stack, and a
+ * start at the program's entry point in user mode. Panics if there's no
+ * memory: the kernel can't go on without init.
  */
 void arch_proc_init(struct proc *proc)
 {
     struct x86_thread *arch = kmalloc(sizeof(struct x86_thread), &M_X86_THREAD, M_ZERO);
-    if (!arch) {
-        /* not handled: this runs at boot, when there is memory (the
-         * kernel stack's allocation below isn't checked either) */
-    }
+    uintptr_t kstack_base = arch ? (uintptr_t) kmalloc(KERN_STACK_SIZE, &M_KERN_STACK, 0) : 0;
 
-    uintptr_t kstack_base = (uintptr_t) kmalloc(KERN_STACK_SIZE, &M_KERN_STACK, 0);
+    if (!kstack_base)
+        panic("no memory for init's thread");
 
     arch->kstack_base = kstack_base;
     arch->kstack = kstack_base + KERN_STACK_SIZE;   /* its top */

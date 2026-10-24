@@ -17,14 +17,15 @@ static uintptr_t uart = VIRT_REG(VIRT_UART);
 
 /*
  * Writes a character to the UART, waiting while its FIFO is full; a
- * newline is sent as CR LF.
+ * newline is sent as CR LF. The wait is bounded, so that a UART that
+ * never takes the character doesn't hang the kernel.
  */
 int earlycon_putc(char c)
 {
     if (c == '\n')
         earlycon_putc('\r');
 
-    while (mmio_read32(uart + UART_FR) & UART_FR_TXFF)
+    for (int i = 0; i < 100000 && (mmio_read32(uart + UART_FR) & UART_FR_TXFF); ++i)
         ;
 
     mmio_write32(uart + UART_DR, (uint8_t) c);
