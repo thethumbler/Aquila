@@ -173,6 +173,9 @@ int proc_fork(struct thread *thread, struct proc **ref);
 /* sys/execve.c: loads a program into the process of `thread` */
 int proc_execve(struct thread *thread, const char *fn, char * const argv[], char * const env[]);
 
+/* Sets up init, the first process, to start its program, at boot. */
+void init_execve(struct proc *proc, int argc, char * const argv[], int envc, char * const envp[]);
+
 /* sys/proc.c: process IDs, making and ending processes, groups and
  * sessions, file descriptors */
 pid_t proc_pid_alloc(void);

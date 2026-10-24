@@ -23,19 +23,6 @@
 void arch_proc_init(struct proc *proc);
 
 /**
- * Sets up init's user stack, with its arguments and environment, and its
- * registers, before it first runs.
- *
- * @param proc   init's process
- * @param argc   the number of arguments, plus 1 for the NULL at the end
- * @param _argp  the arguments
- * @param envc   the number of environment strings, plus 1 for the NULL
- *               at the end
- * @param _envp  the environment strings
- */
-void arch_init_execve(struct proc *proc, int argc, char * const _argp[], int envc, char * const _envp[]);
-
-/**
  * Puts the current thread to sleep. It stops here, and the next ready
  * thread runs, or the CPU idles; it returns once the thread is woken up
  * and chosen to run again.
@@ -142,18 +129,17 @@ void arch_yield(void);
 /* arch/ARCH/sys/execve.c */
 
 /**
- * Sets up a process's thread to start the program that `execve()`
- * loaded: its first instruction, and its user stack with the arguments
- * and the environment, as the C library's start code expects them.
+ * Sets up a thread to start a new program when it next returns to user
+ * mode: at its entry point, with its stack pointer at its initial stack,
+ * which the kernel has built already (`argc`, `argv`, `envp` and the
+ * auxiliary vector, as the System V ABI has them: `sys/execve.c`). The
+ * other registers start as zeros, and so does the FPU's state.
  *
- * @param proc  the process, whose address space has the new program
- * @param argc  the number of arguments, plus 1 for the NULL at the end
- * @param argp  the arguments, in kernel memory
- * @param envc  the number of environment strings, plus 1 for the NULL at
- *              the end
- * @param envp  the environment strings, in kernel memory
+ * @param thread  the thread, which hasn't run since `execve()` (or ever)
+ * @param entry   the program's entry point
+ * @param sp      the initial stack pointer, 16-byte aligned
  */
-void arch_sys_execve(struct proc *proc, int argc, char * const argp[], int envc, char * const envp[]);
+void arch_exec_start(struct thread *thread, uintptr_t entry, uintptr_t sp);
 
 /* arch/ARCH/sys/signal.c */
 

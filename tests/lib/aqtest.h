@@ -97,26 +97,26 @@ static inline int aq_mount(const char *type, const char *dir, void *data)
 }
 
 /*
- * Entry point: record the stack pointer the kernel handed us (tests check
- * its alignment) and call aq_main() like crt0 would call main().
+ * Entry point: record the stack pointer the kernel handed us and call
+ * aq_main() like crt0 would call main(). The stack pointer points at the
+ * initial stack, the System V ABI's on every architecture (see
+ * kernel/sys/execve.c): argc, then argv's pointers and a NULL, then
+ * envp's and a NULL, then the auxiliary vector. Tests check its alignment
+ * and its contents.
  */
 uptr aq_entry_esp;
 void aq_main(void);
 
-#if defined(__aarch64__)
-/* aarch64: main()'s argc and argv come in x0 and x1 */
-long aq_argc;
-char **aq_argv;
+/* the program's arguments, from its initial stack */
+#define aq_argc     ((long) ((uptr *) aq_entry_esp)[0])
+#define aq_argv     ((char **) ((uptr *) aq_entry_esp + 1))
 
+#if defined(__aarch64__)
 asm(".globl _start\n"
     "_start:\n"
     "    mov x9, sp\n"
     "    adrp x10, aq_entry_esp\n"
     "    str x9, [x10, :lo12:aq_entry_esp]\n"
-    "    adrp x10, aq_argc\n"
-    "    str x0, [x10, :lo12:aq_argc]\n"
-    "    adrp x10, aq_argv\n"
-    "    str x1, [x10, :lo12:aq_argv]\n"
     "    bl aq_main\n"
     "1:  b 1b\n");
 #elif defined(__x86_64__)
@@ -172,6 +172,49 @@ static void check(const char *name, int got, int want)
 
     if (got != want)
         ++aq_fails;
+}
+
+/*
+ * The initial stack, checked: argc, argv's pointers and their NULL,
+ * envp's and theirs, then the auxiliary vector, whose page size and entry
+ * point must be right, ended by AT_NULL. Run at the top of a test, before
+ * anything is pushed below the stack pointer the kernel gave.
+ */
+#include <aquila/auxv.h>
+
+extern void _start(void);
+
+static void aq_check_initial_stack(void)
+{
+    uptr *sp = (uptr *) aq_entry_esp;
+    long argc = (long) sp[0];
+    char **argv = (char **) (sp + 1);
+
+    check("initial stack: argc, argv[0]", argc >= 1 && argv[0] != 0, 1);
+    check("initial stack: argv's NULL", argv[argc] == 0, 1);
+
+    char **envp = argv + argc + 1;
+    int envc = 0;
+
+    while (envp[envc] && envc < 1024)
+        ++envc;
+
+    check("initial stack: envp's NULL", envp[envc] == 0, 1);
+
+    uptr *auxv = (uptr *) (envp + envc + 1);
+    uptr pagesz = 0, entry = 0;
+    int n = 0;
+
+    for (; n < 64 && auxv[2 * n] != AT_NULL; ++n) {
+        if (auxv[2 * n] == AT_PAGESZ)
+            pagesz = auxv[2 * n + 1];
+        else if (auxv[2 * n] == AT_ENTRY)
+            entry = auxv[2 * n + 1];
+    }
+
+    check("initial stack: the auxiliary vector ends", n < 64, 1);
+    check("initial stack: AT_PAGESZ", pagesz == 4096, 1);
+    check("initial stack: AT_ENTRY is _start", entry == (uptr) _start, 1);
 }
 
 /* fork, run fn in the child (exit 0x42 if it returns), return wait status */

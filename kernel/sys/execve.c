@@ -4,19 +4,24 @@
  * The arguments and the environment are copied into the kernel first,
  * since the process's memory is about to go. A script ("#!" on its first
  * line) runs as its interpreter. Then the program is loaded
- * (`binfmt_load()`), the close-on-exec descriptors are closed, caught
- * signals go back to their default action, and the architecture starts
- * the program with its arguments on the stack (`arch_sys_execve()`).
+ * (`binfmt_load()`), the close-on-exec descriptors are closed, and caught
+ * signals go back to their default action. Last, the program's initial
+ * stack is built, the same on every architecture (`exec_stack_build()`),
+ * and the architecture starts the thread at the program's entry point
+ * (`arch_exec_start()`).
  */
 
 #include <core/system.h>
 #include <core/string.h>
 #include <core/arch.h>
 #include <sys/proc.h>
+#include <sys/sched.h>
+#include <mm/pmap.h>
 #include <sys/binfmt.h>
 #include <sys/uaccess.h>
 #include <mm/mm.h>
 #include <aquila/fcntl.h>
+#include <aquila/auxv.h>
 
 /* the most that the arguments and the environment may take, strings and
  * pointers together */
@@ -227,6 +232,117 @@ static int exec_script_args(char *interp, char *arg, const char *path, char ***a
 }
 
 /**
+ * Builds a new program's initial stack, at the top of its user stack, as
+ * the System V ABI has it on every architecture (and as Linux and the
+ * BSDs do). From the stack pointer up, one word each:
+ *
+ *      argc
+ *      argv[0] ... argv[argc - 1], NULL
+ *      envp[0] ... envp[envc - 1], NULL
+ *      the auxiliary vector: (type, value) pairs, AT_NULL last
+ *      ... then the strings, at the top of the stack
+ *
+ * The stack pointer is 16-byte aligned, as every ABI wants it at a
+ * program's entry. The C library's start code (crt0) finds everything
+ * from there. The process's address space must be the current one: its
+ * stack's pages are written directly, and come in as they are touched.
+ * Returns the stack pointer.
+ */
+static uintptr_t exec_stack_build(struct proc *proc, int argc, char * const argv[], int envc, char * const envp[])
+{
+    /* what the program is told about itself (aquila/auxv.h); there are
+     * no separate effective IDs */
+    const uintptr_t auxv[][2] = {
+        {AT_PAGESZ, PAGE_SIZE},
+        {AT_ENTRY,  proc->entry},
+        {AT_UID,    proc->uid},
+        {AT_EUID,   proc->uid},
+        {AT_GID,    proc->gid},
+        {AT_EGID,   proc->gid},
+        {AT_NULL,   0},
+    };
+    const int nauxv = sizeof(auxv) / sizeof(auxv[0]);
+
+    /* the strings go at the top; the caller bounds their total size
+     * (EXEC_ARG_MAX), well below the stack's */
+    size_t strings = 0;
+
+    for (int i = 0; i < argc; ++i)
+        strings += strlen(argv[i]) + 1;
+
+    for (int i = 0; i < envc; ++i)
+        strings += strlen(envp[i]) + 1;
+
+    char *str = (char *) (USER_STACK - strings);
+
+    /* the words below them: argc, the two arrays with their NULLs, and
+     * the auxiliary vector's pairs */
+    size_t words = 1 + (argc + 1) + (envc + 1) + 2 * nauxv;
+    uintptr_t sp = ((uintptr_t) str - words * sizeof(uintptr_t)) & ~(uintptr_t) 15;
+    uintptr_t *w = (uintptr_t *) sp;
+
+    *w++ = argc;
+
+    for (int i = 0; i < argc; ++i) {
+        strcpy(str, argv[i]);
+        *w++ = (uintptr_t) str;
+        str += strlen(argv[i]) + 1;
+    }
+
+    *w++ = 0;
+
+    for (int i = 0; i < envc; ++i) {
+        strcpy(str, envp[i]);
+        *w++ = (uintptr_t) str;
+        str += strlen(envp[i]) + 1;
+    }
+
+    *w++ = 0;
+
+    for (int i = 0; i < nauxv; ++i) {
+        *w++ = auxv[i][0];
+        *w++ = auxv[i][1];
+    }
+
+    return sp;
+}
+
+/** Starts a process's thread at its program's entry point, with its
+ * initial stack built from `argv` and `envp` (`argc` and `envc` strings,
+ * in kernel memory). The process's address space must be the current one. */
+static void exec_start(struct proc *proc, int argc, char * const argv[], int envc, char * const envp[])
+{
+    struct thread *thread = (struct thread *) proc->threads.head->value;
+    uintptr_t sp = exec_stack_build(proc, argc, argv, envc, envp);
+
+    arch_exec_start(thread, proc->entry, sp);
+}
+
+/**
+ * Sets up init, the first process, to start its program: its initial
+ * stack with its arguments and environment, before it first runs. The
+ * kernel calls it at boot, when no process runs yet.
+ *
+ * @param proc  init's process, with its program loaded
+ * @param argc  how many arguments there are
+ * @param argv  the arguments, in kernel memory
+ * @param envc  how many environment strings there are
+ * @param envp  the environment strings, in kernel memory
+ */
+void init_execve(struct proc *proc, int argc, char * const argv[], int envc, char * const envp[])
+{
+    /* init's address space is made current, and init's thread the
+     * current thread, so that the page faults of the writes to its stack
+     * bring its pages in */
+    curthread = (struct thread *) proc->threads.head->value;
+    pmap_switch(proc->vm_space.pmap);
+
+    exec_start(proc, argc, argv, envc, envp);
+
+    curthread = NULL;
+}
+
+/**
  * Runs another program in a thread's process, for `execve()`. On success,
  * the thread starts the new program when it returns to user mode.
  *
@@ -317,7 +433,7 @@ int proc_execve(struct thread *thread, const char *fn, char * const _argp[], cha
         proc->sigaction[i].sa_flags = 0;
     }
 
-    arch_sys_execve(proc, argc + 1, argp, envc + 1, envp);
+    exec_start(proc, argc, argp, envc, envp);
 
 free_resources:
     exec_strings_free(argp, argc);

@@ -485,10 +485,9 @@ static int str_eq(const char *a, const char *b)
  * argv and envp are on the entry stack */
 static void script_interpreter(void)
 {
-    uptr *entry = (uptr *) aq_entry_esp;
-    char **argv = (char **) entry[1];
+    char **argv = aq_argv;
 
-    if (entry[0] != 4 || !str_eq(argv[1], "-x y"))
+    if (aq_argc != 4 || !str_eq(argv[1], "-x y"))
         return;
 
     SC(SYS_exit, str_eq(argv[0], "/init") && str_eq(argv[2], "/tmp/script") &&
@@ -505,10 +504,9 @@ static char exec_stacks[2][8192] __attribute__((aligned(16)));
 
 static void exec_alone(void)
 {
-    uptr *entry = (uptr *) aq_entry_esp;
-    char **argv = (char **) entry[1];
+    char **argv = aq_argv;
 
-    if (entry[0] != 2 || !str_eq(argv[1], "alone"))
+    if (aq_argc != 2 || !str_eq(argv[1], "alone"))
         return;
 
     for (int round = 0; round < 40; ++round) {

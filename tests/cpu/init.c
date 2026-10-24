@@ -40,6 +40,7 @@ void aq_main(void)
     aq_begin("cpu");
 
     check("entry stack 16-byte aligned", aq_entry_esp & 15, 0);
+    aq_check_initial_stack();
 
     /* DF set while entering the kernel: the page fault handler zeroes the
      * new page with rep stos, which must still run forwards */

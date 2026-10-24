@@ -29,18 +29,3 @@ void arch_proc_init(struct proc *proc)
     struct thread *thread = (struct thread *) proc->threads.head->value;
     thread->arch = arch;
 }
-
-/*
- * Sets up init's user stack and registers for its program, from the
- * kernel's boot (no process runs yet).
- */
-void arch_init_execve(struct proc *proc, int argc, char * const _argp[], int envc, char * const _envp[])
-{
-    struct thread *thread = (struct thread *) proc->threads.head->value;
-
-    curthread = thread;
-    pmap_switch(proc->vm_space.pmap);
-
-    arch_sys_execve(proc, argc, _argp, envc, _envp);
-    curthread = NULL;
-}

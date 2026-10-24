@@ -103,7 +103,7 @@ void kmain(struct boot *boot)
     char *argp[] = {cmdline, 0};
     char *envp[] = {0};
 
-    arch_init_execve(init, 2, argp, 1, envp);
+    init_execve(init, 1, argp, 0, envp);
 
 #if EARLYCON_DISABLE_ON_INIT
     earlycon_disable();

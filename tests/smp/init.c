@@ -350,10 +350,9 @@ static int str_eq(const char *a, const char *b)
 
 static void exec_alone(void)
 {
-    uptr *entry = (uptr *) aq_entry_esp;
-    char **argv = (char **) entry[1];
+    char **argv = aq_argv;
 
-    if (entry[0] != 2 || !str_eq(argv[1], "alone"))
+    if (aq_argc != 2 || !str_eq(argv[1], "alone"))
         return;
 
     for (int round = 0; round < 40; ++round) {

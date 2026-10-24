@@ -146,6 +146,7 @@ void aq_main(void)
     check("getpid: init", SC(SYS_getpid, 0, 0, 0), 1);
     check("the stack 16-byte aligned at entry", aq_entry_esp & 15, 0);
     check("argc", aq_argc, 1);
+    aq_check_initial_stack();
 
     /* the console: /dev/console, the first uart without virtual
      * terminals (the kernel made the node) */

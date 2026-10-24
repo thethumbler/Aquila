@@ -33,6 +33,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/auxv.h>
 #include <sys/ioctl.h>
 #include <sys/file.h>
 #include <sys/mount.h>
@@ -814,6 +815,8 @@ static void test_vt(void)
     close(vt);
 }
 
+extern void _start(void);
+
 int main(void)
 {
     struct { char *dev, *opt; } no_args = {0, 0};
@@ -823,6 +826,13 @@ int main(void)
     out = fopen("/dev/ttyS0", "w");
     setvbuf(out, NULL, _IONBF, 0);
     fprintf(out, "aqtest: libc start\n");
+
+    /* the auxiliary vector, through crt0 and getauxval() */
+    check("getauxval(AT_PAGESZ)", getauxval(AT_PAGESZ), 4096);
+    check("getauxval(AT_ENTRY) is _start", getauxval(AT_ENTRY) == (unsigned long) _start, 1);
+    check("getauxval(AT_UID)", getauxval(AT_UID), 0);
+    errno = 0;
+    check("getauxval of no type: 0, ENOENT", getauxval(12345) == 0 && errno == ENOENT, 1);
 
     /* errno values as seen through libc */
     errno = 0;

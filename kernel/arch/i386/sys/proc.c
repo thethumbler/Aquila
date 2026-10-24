@@ -40,19 +40,3 @@ void arch_proc_init(struct proc *proc)
     struct thread *thread = (struct thread *) proc->threads.head->value;
     thread->arch = arch;
 }
-
-/*
- * Sets up init's arguments and stack, in its own address space, before it
- * first runs.
- */
-void arch_init_execve(struct proc *proc, int argc, char * const _argp[], int envc, char * const _envp[])
-{
-    struct pmap *pmap = proc->vm_space.pmap;
-    struct thread *thread = (struct thread *) proc->threads.head->value;
-
-    curthread = thread;
-    pmap_switch(pmap);
-
-    arch_sys_execve(proc, argc, _argp, envc, _envp);
-    curthread = NULL;
-}

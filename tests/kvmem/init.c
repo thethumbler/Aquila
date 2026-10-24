@@ -53,10 +53,9 @@ static void thr(void *u, void *a) { SC(SYS_thread_exit, 0, 0, 0); for (;;); (voi
 void aq_main(void)
 {
     /* executed by itself: done */
-    uptr *entry = (uptr *) aq_entry_esp;
-    char **argv = (char **) entry[1];
+    char **argv = aq_argv;
 
-    if (entry[0] == 2 && str_eq(argv[1], "exec"))
+    if (aq_argc == 2 && str_eq(argv[1], "exec"))
         SC(SYS_exit, 0, 0, 0);
 
     aq_begin("kvmem");
