@@ -1,7 +1,47 @@
 # Aquila OS [![build](https://github.com/thethumbler/aquila/actions/workflows/build.yml/badge.svg)](https://github.com/thethumbler/aquila/actions/workflows/build.yml)
 
-UNIX-like operating system, including the kernel, C library and system
-tools. Intended to be fully **POSIX** compliant.
+A small UNIX-like operating system: its kernel, C library and system
+tools. It's meant to be *boring*: the kernel does what UNIX kernels have
+done for decades, the plain way, in code small enough to read in full,
+with documents that explain each part of it. It's for people who want
+to understand operating systems by reading and changing one, and
+especially for those writing their own. It runs on x86 (i386 and
+x86-64) and on aarch64 (QEMU's virt machine).
+
+## Start here
+
+You need `gcc`, `ld`, `cpio` and `qemu-system-x86_64`, nothing else:
+
+```
+make run-min        # the kernel, booted with one tiny program (a minute)
+```
+
+builds the kernel with your gcc and boots it in QEMU with
+[start/init.c](start/init.c) as the only program: a tiny shell with no
+C library, each of its commands a system call or two. Type `help`;
+Ctrl-A X quits QEMU. Then:
+
+1. **Read** [docs/kernel/](docs/kernel/README.md), in order: how the
+   kernel boots, takes interrupts, manages memory and processes, and the
+   rest, each with pointers into the code. [kernel/](kernel/README.md)
+   lists what's where.
+2. **Change something.** Add a command to `start/init.c`, or a
+   `printk()` to a system call in `kernel/sys/syscall.c`, and
+   `make run-min` again.
+3. **Debug it.** `make debug` boots the same with debugging information
+   and QEMU waiting for gdb: `gdb -x mk/gdbinit` and the kernel file it
+   names stops in `kmain()`. A panic prints a stack trace;
+   [mk/backtrace.sh](mk/backtrace.sh) names its addresses
+   (`mk/backtrace.sh <kernel> < log`).
+4. **Test it.** `make test` runs the kernel's test suite, built with your
+   gcc too ([tests/](tests/README.md)).
+5. **The whole system**: a cross toolchain (`make toolchain`, about 15
+   minutes), then `make run` boots it with a shell, the core utilities
+   and logins, as below.
+
+For aarch64, `make run-min CONFIG=aarch64-virt` (needs `clang`, `ld.lld`
+and `qemu-system-aarch64`); for i386, `CONFIG=i386-pc` (gcc with 32-bit
+support).
 
 ## Building
 
@@ -114,6 +154,7 @@ make docs-serve     # the same, on http://localhost:8000/
 
 | directory                    |                                                    |
 |------------------------------|----------------------------------------------------|
+| [start/](start/)             | the first program to read: `make run-min`'s /init  |
 | [kernel/](kernel/)           | the kernel                                         |
 | [include/uapi/](include/uapi/aquila) | user/kernel ABI: syscall numbers, errno, structures shared by the kernel and libc |
 | [libc/](libc/aquila)         | AquilaOS port of newlib                            |
@@ -121,7 +162,7 @@ make docs-serve     # the same, on http://localhost:8000/
 | [userland/](userland/)       | aqbox (system tools: login, ps, mount, ...)        |
 | [contrib/](contrib/)         | third-party software of the base system (recipes)  |
 | [ports/](ports/)             | optional third-party software (recipes)            |
-| [mk/](mk/)                   | build script for contrib/ and ports/ recipes       |
+| [mk/](mk/)                   | build scripts (contrib/ and ports/ recipes, disks), gdb and backtrace helpers |
 | [rootfs/](rootfs/)           | root filesystem skeleton                           |
 | [boot/](boot/)               | bootloader configuration                           |
 | [configs/](configs/)         | kernel build configurations                        |
@@ -131,8 +172,8 @@ make docs-serve     # the same, on http://localhost:8000/
 ## Features
 
 #### Architectures
-- [X] x86
-- [ ] x86-64
+- [X] x86: i386 and x86-64 (PCs: QEMU; v86 in a browser, i386)
+- [X] aarch64 (QEMU's virt machine: one CPU)
 
 - [X] Multitasking
 - [X] Multithreading
@@ -173,9 +214,10 @@ make docs-serve     # the same, on http://localhost:8000/
               graphics, raw keyboard and switching as the Linux console)
 - [X] ata     (ATA hard disks, PIO mode)
 - [X] fbdev   (framebuffer, VESA; the Linux framebuffer API)
-- [X] 8250    (UART)
+- [X] 8250    (UART: COM1, COM2)
+- [X] pl011   (ARM's UART, aarch64)
 - [X] e1000   (Intel 8254x Ethernet, and the 82574L with MSI: QEMU's
-              e1000 and e1000e)
+              e1000 and e1000e; on aarch64 too, over PCI Express)
 
 #### Network
 - [X] IPv4, ARP, ICMP (echo, unreachable), the loopback interface (lo)

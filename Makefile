@@ -27,6 +27,13 @@
 #                     Limine on a FAT32 /boot, the root filesystem on ext2
 #                     (HDD_SIZE=<MiB>, default 512; needs sfdisk, mkfs.fat,
 #                     mtools, mke2fs and fakeroot). Replaces an existing one.
+#   make run-min      the quick start, no toolchain: the kernel built with
+#                     the host's gcc and start/init.c, a tiny shell, as the
+#                     only program (needs gcc, ld, cpio and QEMU)
+#   make min          build it only (build/min-$(ARCH)/)
+#   make debug        the same with debugging information (DEBUG=1), QEMU
+#                     waiting for gdb: gdb -x mk/gdbinit <the kernel it says>
+#                     (mk/backtrace.sh names a panic's addresses)
 #   make run          boot the kernel and initrd in QEMU, console on stdio
 #   make run-iso      boot the ISO in QEMU (framebuffer console)
 #   make hdd-kernel   put the kernel (and Limine's configuration) on
@@ -99,7 +106,7 @@ MAKEFLAGS += --no-print-directory
 
 export
 
-.PHONY: all toolchain kernel userland contrib ports initrd iso live hdd hdd-kernel hdd-update run run-iso run-hdd test docs docs-serve clean distclean check-toolchain
+.PHONY: all toolchain kernel userland contrib ports initrd iso live hdd hdd-kernel hdd-update run run-iso run-hdd min run-min debug test docs docs-serve clean distclean check-toolchain
 
 all: kernel userland contrib initrd
 
@@ -230,6 +237,41 @@ run-iso: iso
 run-hdd:
 	@if [ -f $(HDD) ]; then $(MAKE) hdd-update; else $(MAKE) hdd; fi
 	$(QEMU) -hda $(HDD) -m 256 -serial stdio
+
+#
+# The quick start: the kernel with the host's gcc (tests/host/; aarch64's
+# is clang already) and start/init.c as /init, no C library: nothing to
+# build first
+#
+
+MIN_BUILD  := $(SRCDIR)/build/min-$(ARCH)$(if $(filter 1,$(DEBUG)),-debug)
+MIN_CONFIG := $(if $(filter aarch64,$(ARCH)),$(CONFIG),../tests/host/$(ARCH)-pc)
+MIN_CC     := $(if $(filter aarch64,$(ARCH)),clang --target=aarch64-none-elf -fuse-ld=lld,gcc -no-pie $(if $(filter i386,$(ARCH)),-m32))
+MIN_KERNEL := $(MIN_BUILD)/kernel/kernel-$(VERSION).$(ARCH)$(if $(filter y,$(KERNEL_BINARY)),.img)
+
+min:
+	@$(MAKE) kernel CONFIG=$(MIN_CONFIG) BUILDDIR=$(MIN_BUILD)
+	@$(ECHO) "  CC      " $(patsubst $(SRCDIR)/%,%,$(MIN_BUILD))/root/init
+	@$(MKDIR) $(MIN_BUILD)/root/dev $(MIN_BUILD)/root/proc
+	@$(MIN_CC) -static -nostdlib -ffreestanding -fno-builtin -fno-pic \
+		-fno-stack-protector -O1 -Wall -I$(SRCDIR)/include/uapi -Wl,--build-id=none \
+		-o $(MIN_BUILD)/root/init $(SRCDIR)/start/init.c
+	@$(ECHO) "  CPIO    " $(patsubst $(SRCDIR)/%,%,$(MIN_BUILD))/initrd.img
+	@cd $(MIN_BUILD)/root && find . | cpio -o -H bin -R 0:0 --quiet > $(MIN_BUILD)/initrd.img
+
+run-min: min
+	$(QEMU) -kernel $(MIN_KERNEL) -initrd $(MIN_BUILD)/initrd.img -append earlycon=ttyS0 \
+		-m 256 -serial mon:stdio -display none
+
+# QEMU stopped before the first instruction, its gdb server on port 1234
+# (-s -S); the kernel's ELF file has the symbols and lines
+debug:
+	@$(MAKE) min DEBUG=1
+	@echo "  QEMU waits for gdb. In another terminal:"
+	@echo "    gdb -x mk/gdbinit $(patsubst $(SRCDIR)/%,%,$(MIN_BUILD)-debug/kernel/kernel-$(VERSION).$(ARCH))"
+	$(QEMU) -kernel $(MIN_BUILD)-debug/kernel/kernel-$(VERSION).$(ARCH)$(if $(filter y,$(KERNEL_BINARY)),.img) \
+		-initrd $(MIN_BUILD)-debug/initrd.img -append earlycon=ttyS0 \
+		-m 256 -serial mon:stdio -display none -s -S
 
 test:
 	@$(SRCDIR)/tests/run.sh -a $(ARCH)

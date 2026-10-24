@@ -25,8 +25,11 @@ There are two kinds of documentation:
 
 ## The kernel at a glance
 
-AquilaOS's kernel is a monolithic UNIX-like kernel. It runs on x86 PCs:
-32-bit (i386) and 64-bit (x86_64), one CPU or several. It boots from a
+AquilaOS's kernel is a monolithic UNIX-like kernel. It runs on x86 PCs,
+32-bit (i386) and 64-bit (x86_64), one CPU or several, and on aarch64
+(QEMU's virt machine, one CPU). These documents describe the x86 PC as
+the machine; [The kernel and the machine](architecture.md) says what
+depends on it. On the PC it boots from a
 Multiboot boot loader (Limine), with an initial RAM disk (initramfs) as
 its first root, or with its root on an ext2 disk. User programs are ELF
 binaries built against newlib.

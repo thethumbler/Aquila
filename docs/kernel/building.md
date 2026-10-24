@@ -145,7 +145,15 @@ The kernel can be built with the host's gcc too, with no cross toolchain:
 `tests/host/x86_64-pc.mk` and `tests/host/i386-pc.mk` are the same
 configurations with `gcc` and `ld`, and the flags that turn off what
 distributions' compilers do by default (position-independent code, the
-stack protector, CET). The tests use them.
+stack protector, CET). The tests use them, and so does `make run-min`
+(below). aarch64's configuration uses clang already, which needs no
+toolchain of its own either.
+
+`DEBUG=1` adds debugging information (`-g`) and lowers the optimization
+to `-Og`, which keeps the code close to the source for gdb. The linker
+scripts keep the DWARF sections in the file, not loaded. Flags alone
+don't make objects be rebuilt, so a debug build goes into a directory
+of its own (`make debug` uses `build/min-<arch>-debug/`).
 
 ## User space
 
@@ -221,8 +229,34 @@ installs its boot code. See [Booting](booting.md) for how they boot.
 | `make run`     | QEMU loads the kernel and the RAM disk itself (`-kernel`, `-initrd`), the console on the terminal |
 | `make run-iso` | boots the CD, on QEMU's screen                                       |
 | `make run-hdd` | boots the hard disk, after putting the system just built on it      |
+| `make run-min` | no toolchain: the kernel built with the host's gcc, and [`start/init.c`](../../start/init.c), a tiny shell without a C library, as the only program (`build/min-<arch>/`) |
+| `make debug`   | `run-min`'s, built with `DEBUG=1`, QEMU stopped before the first instruction with its gdb server on port 1234 (`-s -S`) |
 
 QEMU uses KVM when `/dev/kvm` can be used; `KVM=0` turns it off.
+
+### Debugging
+
+`make debug` prints the command for gdb: `gdb -x mk/gdbinit` and the
+kernel's ELF file. [`mk/gdbinit`](../../mk/gdbinit) connects to QEMU and
+stops at `kmain()` (a hardware breakpoint: the kernel's addresses aren't
+mapped when QEMU starts); from there `break sys_fork`, `continue`, `bt`,
+`next`, `print *curthread` work as in any program. aarch64's kernel is
+debugged the same way (`make debug CONFIG=aarch64-virt`).
+
+A panic prints a stack trace: the return addresses on the kernel stack,
+found through the frame pointers (every configuration keeps them). The
+function names come from the kernel's symbol table if the boot loader
+passed it (Limine does, QEMU's `-kernel` doesn't).
+[`mk/backtrace.sh`](../../mk/backtrace.sh) names the addresses from the
+kernel's file instead, with the file and line of each in a `DEBUG=1`
+build:
+
+```
+mk/backtrace.sh build/min-x86_64-debug/kernel/kernel-0.0.1.x86_64 < serial.log
+```
+
+`kvmem.guard` on the kernel's command line makes one on purpose (a write
+past the end of an object: see [Memory](memory.md)).
 
 ## The documentation
 
@@ -374,6 +408,8 @@ The kernel's compiler flags are in its configuration:
 | `contrib/`, `ports/`, `mk/recipes.sh` | common | third-party software                  |
 | `rootfs/`                          | common   | the root filesystem's own files         |
 | `boot/`, `mk/hdd*.sh`, `mk/live.sh` | PC      | the boot loader's configurations, the images |
+| `start/init.c`                     | common   | `make run-min`'s program               |
+| `mk/gdbinit`, `mk/backtrace.sh`    | common   | debugging                               |
 | `tests/run.sh`, `tests/*/`, `tests/lib/aqtest.h` | common | the tests                      |
 | `tests/host/`                      | x86/PC   | the configurations for the host's gcc  |
 | `docs/kernel/`                     | common   | these documents, `Doxyfile`             |
