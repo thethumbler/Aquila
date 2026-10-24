@@ -774,12 +774,28 @@ test_minix()
 
     rm -f "$img"
     truncate -s 4M "$img"
-    mkfs.minix -1 "$img" >/dev/null || return 1
+    mkfs.minix -1 -i 128 "$img" >/dev/null || return 1
 
     run_qemu "$log" 60 'aqtest: done' -initrd "$OUT/minix/initrd.img" \
         -drive file="$img",format=raw,index=0,media=disk
 
     aqtest_result "$log" || return 1
+
+    # the guest used every inode: each one's bit is set, the last one's
+    # too (bit i is inode i, from 1 to s_ninodes; the bitmap is block 2)
+    if ! python3 - "$img" <<'PY'
+import struct, sys
+img = open(sys.argv[1], "rb").read()
+ninodes = struct.unpack_from("<H", img, 1024)[0]
+imap = img[2048:]
+free = [i for i in range(1, ninodes + 1) if not imap[i // 8] & (1 << (i % 8))]
+if free:
+    print("inodes left free:", free[:10])
+    sys.exit(1)
+PY
+    then
+        return 1
+    fi
 
     if ! fsck.minix -f "$img" > "$OUT/minix/fsck.log" 2>&1; then
         echo "fsck.minix found errors:"

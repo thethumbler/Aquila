@@ -210,8 +210,8 @@ error:
  * @param dev   its device number, for a device node
  * @param uio   who is asking (the owner)
  * @param ref   if not NULL, set to the new vnode
- * @return 0, `-EINVAL` for an empty name, `-EEXIST`, `-ENOSPC`, or an I/O
- *         error
+ * @return 0, `-EINVAL` for an empty name, `-ENOTDIR`, `-EEXIST`,
+ *         `-ENOSPC`, or an I/O error
  */
 int minix_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, struct uio *uio, struct vnode **ref)
 {
@@ -225,6 +225,9 @@ int minix_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, stru
     
     if ((err = minix_inode_read(desc, dir->ino, &dir_inode)))
         goto error;
+
+    if (!S_ISDIR(dir_inode.mode))
+        return -ENOTDIR;
 
     if (minix_dentry_find(desc, &dir_inode, fn)) {
         return -EEXIST;
@@ -268,24 +271,42 @@ int minix_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, stru
         dentry->ino = dir->ino;
         memcpy(dentry->name, "..", 2);
 
-        minix_inode_block_write(desc, &m_inode, ino, 0, buf);
-
-        /* the parent gets a link, the new directory's .. */
-        struct vnode *parent_inode;
-        minix_inode_build(desc, dir->ino, &parent_inode);
-        parent_inode->nlink += 1;
-        minix_inode_sync(parent_inode);
+        if ((err = minix_inode_block_write(desc, &m_inode, ino, 0, buf)))
+            goto free_inode;
     } else {
         m_inode.nlinks = 1;
         m_inode.size   = 0;
     }
 
-    minix_inode_write(desc, ino, &m_inode);
-    minix_dentry_create(dir, fn, ino, m_inode.mode);
+    if ((err = minix_inode_write(desc, ino, &m_inode)))
+        goto free_inode;
+
+    /* its entry in the directory; without one, the new inode goes */
+    if ((err = minix_dentry_create(dir, fn, ino, m_inode.mode)))
+        goto free_inode;
+
+    if (S_ISDIR(mode)) {
+        /* the parent gets a link, the new directory's `..`: on the inode
+         * as it is on the disk now (with the new entry), and in its vnode */
+        if (!minix_inode_read(desc, dir->ino, &dir_inode)) {
+            dir_inode.nlinks += 1;
+            minix_inode_write(desc, dir->ino, &dir_inode);
+            dir->nlink = dir_inode.nlinks;
+        }
+    }
 
     if (ref)
         minix_inode_build(desc, ino, ref);
 
+    return 0;
+
+free_inode:
+    /* only a directory has zones (a device node's first zone slot is its
+     * device number) */
+    if (S_ISDIR(mode))
+        minix_zones_free(desc, &m_inode, 0);
+
+    minix_inode_free(desc, ino);
 error:
     return err;
 }
@@ -297,7 +318,8 @@ error:
  * @param dir     the directory
  * @param fn      the name
  * @param dirent  if not NULL, the entry
- * @return 0, `-ENOENT`, or an I/O error
+ * @return 0, `-ENOTDIR` if `dir` isn't a directory, `-ENOENT`, or an I/O
+ *         error
  */
 int minix_finddir(struct vnode *dir, const char *fn, struct dirent *dirent)
 {
@@ -311,6 +333,9 @@ int minix_finddir(struct vnode *dir, const char *fn, struct dirent *dirent)
 
     if ((err = minix_inode_read(desc, id, &m_inode)))
         goto error;
+
+    if (!S_ISDIR(m_inode.mode))
+        return -ENOTDIR;
 
     ino_t ino = minix_dentry_find(desc, &m_inode, fn);
 

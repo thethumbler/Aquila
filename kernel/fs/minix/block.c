@@ -15,12 +15,13 @@
  */
 blk_t minix_block_alloc(struct minix *desc)
 {
-    /* look for a free zone */
-    blk_t blk = 0;
-    for (; blk < desc->zmap.max_idx && bitmap_check(&desc->zmap, blk); ++blk);
+    /* look for a free zone: bit i of the bitmap is zone firstdatazone +
+     * i - 1 (bit 0 is reserved) */
+    blk_t blk = 1;
+    for (; blk <= desc->zmap.max_idx && bitmap_check(&desc->zmap, blk); ++blk);
 
     /* out of zones */
-    if (blk == desc->zmap.max_idx)
+    if (blk > desc->zmap.max_idx)
         return 0;
 
     bitmap_set(&desc->zmap, blk);
@@ -40,10 +41,13 @@ blk_t minix_block_alloc(struct minix *desc)
  */
 void minix_block_free(struct minix *desc, blk_t blk)
 {
+    /* not a data zone: nothing to free */
+    if (blk < desc->superblock->firstdatazone)
+        return;
+
     blk = blk - desc->superblock->firstdatazone + 1;
 
-    /* not a data zone: nothing to free */
-    if (blk >= desc->zmap.max_idx)
+    if (blk > desc->zmap.max_idx)
         return;
 
     /* clear its bit; a cached copy of the block (an indirect zone's

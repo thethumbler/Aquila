@@ -181,8 +181,11 @@ static int minix_load(struct vnode *dev, struct vnode **super)
     desc->zmap.map = kmalloc(zmap_size, &M_BUFFER, 0);
     if (!desc->imap.map || !desc->zmap.map) goto e_nomem;
 
+    /* the bitmaps' last bits: bit i of the inode bitmap is inode i (1 to
+     * ninodes), bit i of the zone bitmap is zone firstdatazone + i - 1
+     * (zones run to nzones - 1); bit 0 of each is reserved */
     desc->imap.max_idx = sb->ninodes;
-    desc->zmap.max_idx = sb->nzones;
+    desc->zmap.max_idx = sb->nzones > sb->firstdatazone ? sb->nzones - sb->firstdatazone : 0;
 
     ssize_t r;
 

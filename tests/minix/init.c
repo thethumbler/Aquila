@@ -1,12 +1,17 @@
 /*
  * minix (v1, 1K zones)
  *
- * Mounts the minix image attached as the first ATA disk (mkfs.minix -1),
- * writes a file large enough to need the singly and doubly indirect zones
- * and reads it back; a sparse file, its holes (a direct zone, a doubly
- * indirect one) reading zeros; truncating, which frees the zones past
- * the end (and the rest of the last one reads zeros when the file grows
- * again). tests/run.sh then checks the image on the host with fsck.minix.
+ * Mounts the minix image attached as the first ATA disk (mkfs.minix -1,
+ * 128 inodes), writes a file large enough to need the singly and doubly
+ * indirect zones and reads it back; a sparse file, its holes (a direct
+ * zone, a doubly indirect one) reading zeros; truncating, which frees the
+ * zones past the end (and the rest of the last one reads zeros when the
+ * file grows again).
+ *
+ * Then it creates files in one directory until there are no inodes left:
+ * more entries than one block holds, so the directory grows, and every
+ * inode is used, the last one included. tests/run.sh then checks on the
+ * host that the inode bitmap is full, and the image with fsck.minix.
  */
 
 #include "../lib/aqtest.h"
@@ -21,6 +26,41 @@ static char buf[8192];
 static char st[128];
 
 #define ST ((struct aquila_stat *) st)
+
+/* a v1 block holds 64 entries of 16 bytes */
+#define DENTRIES_PER_BLOCK  64
+
+/** Writes `n` as a file name, "f" and its digits, into `name`. */
+static void name_of(char *name, int n)
+{
+    char digits[12];
+    int i = 0;
+
+    do {
+        digits[i++] = '0' + n % 10;
+        n /= 10;
+    } while (n);
+
+    *name++ = 'f';
+
+    while (i)
+        *name++ = digits[--i];
+
+    *name = 0;
+}
+
+/** Returns how many entries a directory has, `.` and `..` included. */
+static int entries(const char *path)
+{
+    int fd = SC(SYS_open, path, O_RDONLY, 0);
+    int n = 0;
+
+    while (SC(SYS_readdir, fd, buf, 0) > 0)
+        ++n;
+
+    SC(SYS_close, fd, 0, 0);
+    return n;
+}
 
 static unsigned char pat(u32 off)
 {
@@ -132,6 +172,36 @@ void aq_main(void)
     fd = SC(SYS_open, "/mnt/sparse", O_RDWR, 0);
     check("truncate the sparse file", SC(SYS_ftruncate, fd, 0, 0), 0);
     SC(SYS_close, fd, 0, 0);
+
+    /* a regular file has no entries: a path through it is ENOTDIR */
+    check("a path through a file", SC(SYS_open, "/mnt/big/x", O_RDONLY, 0), -ENOTDIR);
+
+    /* files until no inode is left, all in one directory: it grows past
+     * its first block */
+    check("mkdir", SC(SYS_mkdir, "/mnt/many", 0755, 0), 0);
+
+    char path[32] = "/mnt/many/";
+    int made = 0, err = 0;
+
+    for (;;) {
+        name_of(path + 10, made);
+        fd = SC(SYS_open, path, O_CREAT | O_RDWR, 0644);
+
+        if (fd < 0) {
+            err = fd;
+            break;
+        }
+
+        SC(SYS_close, fd, 0, 0);
+        ++made;
+    }
+
+    check("out of inodes: ENOSPC", err, -ENOSPC);
+    check("more entries than a block holds", made + 2 > DENTRIES_PER_BLOCK, 1);
+    check("readdir sees them all", entries("/mnt/many"), made + 2);
+
+    name_of(path + 10, made - 1);
+    check("the last one opens", SC(SYS_open, path, O_RDONLY, 0) >= 0, 1);
 
     /* the disk has what was written (the host checks it) */
     check("sync", SC(SYS_sync, 0, 0, 0), 0);

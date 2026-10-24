@@ -12,8 +12,8 @@
  * inode number that doesn't exist. */
 static inline off_t minix_inode_off(struct minix *desc, ino_t ino)
 {
-    /* invalid inode */
-    if (!ino || ino >= desc->superblock->ninodes)
+    /* inodes are numbered from 1 to ninodes */
+    if (!ino || ino > desc->superblock->ninodes)
         return -EINVAL;
 
     return desc->inode_table + (ino - 1) * desc->inode_size;
@@ -339,12 +339,13 @@ void minix_zones_free(struct minix *desc, struct minix_inode *inode, size_t from
  */
 ino_t minix_inode_alloc(struct minix *desc)
 {
-    /* look for a free inode */
-    ino_t ino = 0;
-    for (; ino < desc->imap.max_idx && bitmap_check(&desc->imap, ino); ++ino);
+    /* look for a free inode: bit i of the bitmap is inode i, from 1 to
+     * ninodes (bit 0 is reserved) */
+    ino_t ino = 1;
+    for (; ino <= desc->imap.max_idx && bitmap_check(&desc->imap, ino); ++ino);
 
     /* out of inodes */
-    if (ino == desc->imap.max_idx)
+    if (ino > desc->imap.max_idx)
         return 0;
 
     bitmap_set(&desc->imap, ino);
@@ -365,7 +366,7 @@ ino_t minix_inode_alloc(struct minix *desc)
 void minix_inode_free(struct minix *desc, ino_t ino)
 {
     /* not an inode: nothing to free */
-    if (ino >= desc->imap.max_idx)
+    if (!ino || ino > desc->imap.max_idx)
         return;
 
     bitmap_clear(&desc->imap, ino);
