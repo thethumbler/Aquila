@@ -1,9 +1,26 @@
+/** \file
+ * Links by path: hard links (`link()`), symbolic links (`symlink()`,
+ * `readlink()`), and renaming (`rename()`).
+ */
+
 #include <core/system.h>
 #include <fs/vfs.h>
 #include <aquila/fcntl.h>
 
-/** a new hard link `newpath' (from nuio's directory) to `oldpath' (from
- * ouio's), which is followed unless ouio has O_NOFOLLOW */
+/**
+ * Makes a hard link: a new name for an existing file, in the same mounted
+ * filesystem. Directories can't be linked.
+ *
+ * @param oldpath  the file's path, followed if it's a symbolic link
+ *                 unless `ouio` has `O_NOFOLLOW`
+ * @param ouio     who is asking, and the directory `oldpath` is relative
+ *                 to
+ * @param newpath  the new name's path
+ * @param nuio     who is asking, and the directory `newpath` is relative
+ *                 to
+ * @return 0, `-EPERM` for a directory, `-EEXIST`, `-EXDEV` across
+ *         filesystems, or another negative errno
+ */
 int vfs_link(const char *oldpath, struct uio *ouio, const char *newpath, struct uio *nuio)
 {
     int ret = 0;
@@ -25,7 +42,7 @@ int vfs_link(const char *oldpath, struct uio *ouio, const char *newpath, struct 
         goto done;
     }
 
-    /* in the same mounted filesystem */
+    /* both must be in the same mounted filesystem */
     if (vfs_mount_root_of(odir) != vfs_mount_root_of(dir)) {
         ret = -EXDEV;
         goto done;
@@ -44,7 +61,14 @@ done:
     return ret;
 }
 
-/** a symbolic link at `path' containing `target' */
+/**
+ * Makes a symbolic link.
+ *
+ * @param target  what the link contains (not checked: it may not exist)
+ * @param path    the link's path
+ * @param uio     who is asking
+ * @return 0, `-ENOENT` for an empty target, or a negative errno
+ */
 int vfs_symlink(const char *target, const char *path, struct uio *uio)
 {
     int ret = 0;
@@ -68,7 +92,16 @@ int vfs_symlink(const char *target, const char *path, struct uio *uio)
     return 0;
 }
 
-/** the contents of symbolic link `path', not NUL terminated */
+/**
+ * Reads what a symbolic link contains.
+ *
+ * @param path  the link's path (not followed)
+ * @param uio   who is asking
+ * @param buf   where the contents go, not NUL-terminated
+ * @param size  the buffer's size
+ * @return the number of bytes read, `-EINVAL` if `path` isn't a symbolic
+ *         link, or a negative errno
+ */
 ssize_t vfs_readlink(const char *path, struct uio *uio, char *buf, size_t size)
 {
     struct vnode *vnode = NULL;
@@ -89,7 +122,8 @@ ssize_t vfs_readlink(const char *path, struct uio *uio, char *buf, size_t size)
     return ret;
 }
 
-/** look up the entry `name' of `dir', NULL if there is none */
+/** Gets the vnode of the entry `name` of `dir`, or NULL in `*ref` if there
+ * is none. Returns 0 or a negative errno. */
 static int entry_get(struct vnode *dir, const char *name, struct vnode **ref)
 {
     struct dirent dirent;
@@ -103,7 +137,20 @@ static int entry_get(struct vnode *dir, const char *name, struct vnode **ref)
     return ret ? ret : vfs_vget(dir, dirent.d_ino, ref);
 }
 
-/** `oldpath' (from ouio's directory) renamed `newpath' (from nuio's) */
+/**
+ * Renames a file or a directory, possibly to another directory of the
+ * same mounted filesystem. An entry at the new name is replaced: a file
+ * by a file, or an empty directory by a directory.
+ *
+ * @param oldpath  the path it has
+ * @param ouio     who is asking, and the directory `oldpath` is relative
+ *                 to
+ * @param newpath  the path it gets
+ * @param nuio     the directory `newpath` is relative to
+ * @return 0, `-ENOENT`, `-EXDEV`, `-EINVAL` to move a directory into
+ *         itself, `-ENOTDIR`, `-EISDIR`, `-ENOTEMPTY`, or another
+ *         negative errno
+ */
 int vfs_rename(const char *oldpath, struct uio *ouio, const char *newpath, struct uio *nuio)
 {
     int ret = 0;
@@ -136,7 +183,7 @@ int vfs_rename(const char *oldpath, struct uio *ouio, const char *newpath, struc
     if (ovnode == nvnode || (odir == ndir && !strcmp(oname, nname)))
         goto done;
 
-    /* in the same mounted filesystem */
+    /* both must be in the same mounted filesystem */
     if (vfs_mount_root_of(odir) != vfs_mount_root_of(ndir)) {
         ret = -EXDEV;
         goto done;
@@ -165,7 +212,7 @@ int vfs_rename(const char *oldpath, struct uio *ouio, const char *newpath, struc
         }
     }
 
-    /* replaces an existing new entry */
+    /* the filesystem replaces an entry at the new name */
     ret = vfs_vrename(odir, oname, ndir, nname, uio);
 
 done:

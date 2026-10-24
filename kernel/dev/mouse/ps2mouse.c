@@ -1,11 +1,13 @@
 /** \file
- *          PS/2 Mouse driver
+ * The PS/2 mouse driver: `/dev/mouse` (character device 10, 1).
  *
- * /dev/mouse (c 10 1) is the mouse's bytes as they come, as Linux's
- * /dev/psaux: its packets (3 bytes, 4 with a wheel), and its replies (ACK,
- * IDs) to what is written, which goes to the mouse. Readers find where
- * packets start (bit 3 of the first byte); opening it resets the mouse to
- * a plain PS/2 mouse, from the start of a packet.
+ * As Linux's `/dev/psaux`, reading it gives the mouse's bytes as they
+ * come: its movement packets (3 bytes, or 4 with a wheel), and its
+ * replies (an ACK, its ID) to the commands written to it, which go to the
+ * mouse. A reader finds where packets start by bit 3 of their first byte.
+ * Opening it resets the mouse to a plain PS/2 mouse, so the first byte
+ * read starts a packet. The mouse is on the second port of the i8042
+ * controller (`dev/input/i8042.c`).
  */
 
 
@@ -37,13 +39,20 @@ struct dev ps2mousedev;
 
 #define BUF_SIZE    1024
 
-static struct ringbuf *mouse_ring = RINGBUF_NEW(BUF_SIZE);   /* Mouse ring Buffer */
-static struct proc *proc = NULL; /* Current process using mouse */
+static struct ringbuf *mouse_ring = RINGBUF_NEW(BUF_SIZE);   /* the bytes received */
+static struct proc *proc = NULL;    /* the process that has it open */
 static struct waitq *mouse_read_queue = &(struct waitq){0};  /* readers sleep here */
 
-/* replies of the reset at open, nobody reads them */
+/* how many of the replies to the reset done at open are still to come:
+ * they are dropped, nobody reads them */
 static int skip = 0;
 
+/**
+ * Takes a byte from the mouse, which the i8042 driver received: it goes
+ * to the readers, unless it is a reply to the reset done at open.
+ *
+ * @param byte  the byte
+ */
 void ps2mouse_handler(int byte)
 {
     char b = byte;
@@ -53,24 +62,29 @@ void ps2mouse_handler(int byte)
         return;
     }
 
-    /* lost if nobody reads (the ring is full) */
+    /* if nobody reads and the ring is full, the byte is lost */
     ringbuf_write(mouse_ring, 1, &b);
 
-    /* readers, and select() and poll() (which don't sleep on the queue) */
+    /* wake the readers, and select() and poll(), which don't sleep on
+     * the queue */
     waitq_wakeup(mouse_read_queue);
 }
 
+/** Has the i8042 driver send the bytes of its second port, the mouse's,
+ * to this driver. */
 void ps2mouse_register(void)
 {
     i8042_handler_register(2, ps2mouse_handler);
 }
 
+/** Reads the bytes received from the mouse. */
 static ssize_t ps2mouse_read(struct devid *dd __unused, off_t offset __unused, struct iobuf *io)
 {
     return ringbuf_read_iobuf(mouse_ring, io->resid, io);
 }
 
-/** commands to the mouse, it replies (an ACK to each byte, more to some) */
+/** Sends what is written to the mouse, a byte at a time: commands, which
+ * it replies to (an ACK to each byte, and more to some). */
 static ssize_t ps2mouse_write(struct devid *dd __unused, off_t offset __unused, struct iobuf *io)
 {
     size_t size = io->resid;
@@ -89,9 +103,14 @@ static ssize_t ps2mouse_write(struct devid *dd __unused, off_t offset __unused, 
     return size;
 }
 
-/** its defaults, reporting (the controller's second port is on: the
- * i8042's driver); its replies (ACKs) come before anyone reads, and
- * opening it does the same again */
+/**
+ * Sets the mouse up at boot (its default settings, and reporting on) and
+ * registers `/dev/mouse`. The i8042 driver turned the controller's second
+ * port on. The mouse's replies come before anyone reads, and opening the
+ * device sets the mouse up again anyway.
+ *
+ * @return 0
+ */
 int ps2mouse_probe()
 {
     i8042_aux_write(USE_DEFAULTS);
@@ -103,18 +122,19 @@ int ps2mouse_probe()
     return 0;
 }
 
-/* File Operations */
-
+/** Opens `/dev/mouse`, which one process at a time may have open
+ * (`EACCES` otherwise), and resets the mouse. */
 static int ps2mouse_file_open(struct file *file)
 {
-    if (proc) /* Only one process can open kbd */
+    if (proc) /* only one process can have the mouse open */
         return -EACCES;
 
     proc = curproc;
     file->vnode->read_queue = mouse_read_queue;    
 
-    /* a plain PS/2 mouse, whatever the last opener made it (its replies,
-     * ACK AA 00 and ACK, aren't read), and nothing left of before */
+    /* make it a plain PS/2 mouse again, whatever the last opener made it
+     * (its replies, ACK AA 00 and ACK, are dropped), with nothing left
+     * from before in the ring */
     char c;
     while (ringbuf_read(mouse_ring, 1, &c))
         ;
@@ -125,12 +145,14 @@ static int ps2mouse_file_open(struct file *file)
     return posix_file_open(file);
 }
 
+/** Returns whether there are bytes to read. */
 static int ps2mouse_file_can_read(struct file *file, size_t size)
 {
     (void) file;
     return ringbuf_available(mouse_ring);
 }
 
+/** Closes `/dev/mouse`: another process may open it now. */
 static int ps2mouse_file_close(struct file *file)
 {
     proc = NULL;

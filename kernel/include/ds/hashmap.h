@@ -10,44 +10,50 @@ struct hashmap_node;
 #include <aquila/errno.h>
 #include <ds/queue.h>
 
+/*
+ * Hash tables: entries found by a hash of their key. Each bucket is a
+ * queue of nodes, and a node points to its entry. The caller computes
+ * the hash (hashmap_digest()), and gives the table a function that says
+ * whether an entry is the one for a key. The table doubles its buckets
+ * when it holds more than HASHMAP_LOAD entries per bucket on average.
+ */
+
+/* A key's hash. */
 typedef uintptr_t hash_t;
 
+/* How many buckets a new table has, unless the caller says. */
 #define HASHMAP_DEFAULT 20
 
-/* more entries than this a bucket, on average: twice the buckets */
+/* With more entries than this per bucket on average, the table doubles
+ * its buckets. */
 #define HASHMAP_LOAD    2
 
-/**
- * hashmap
- */
+/** A hash table. */
 struct hashmap {
     size_t count;
 
     size_t buckets_nr;
     struct queue *buckets;
 
+    /* says whether entry `a` is the one for key `b` */
     int (*eq)(void *a, void *b);
 };
 
-/**
- * hashmap node
- */
+/** A hash table's node: an entry, with its key's hash. */
 struct hashmap_node {
     hash_t hash;
     void *entry;
     struct qnode *qnode;
 };
 
-/**
- * iterate over hashmap elements
- */
+/* Loops over each node of a hash table, as a queue node `n` whose value
+ * is the hashmap_node. */
 #define hashmap_for(n, h) \
     for (size_t __i__ = 0; __i__ < (h)->buckets_nr; ++__i__) \
         queue_for ((n), &(h)->buckets[__i__])
 
-/**
- * create a new dynamically allocated hashmap
- */
+/** Makes a new, empty hash table of `n` buckets (0: HASHMAP_DEFAULT).
+ * Returns it, or NULL if there was no memory for it. */
 static inline struct hashmap *hashmap_new(size_t n, int (*eq)(void *, void *))
 {
     if (!n) n = HASHMAP_DEFAULT;
@@ -75,13 +81,11 @@ static inline struct hashmap *hashmap_new(size_t n, int (*eq)(void *, void *))
     return hashmap;
 }
 
-/**
- * get the digest of the hash function
- */
+/** Returns the hash of a key of `size` bytes. */
 static inline hash_t hashmap_digest(const void *_id, size_t size)
 {
-    /* FNV-1a: every byte changes the whole hash (page offsets, all
-     * multiples of 4096, would mostly collide in a sum of the bytes) */
+    /* FNV-1a, where every byte changes the whole hash: page offsets, all
+     * multiples of 4096, would mostly collide in a sum of the bytes */
     const unsigned char *id = (const unsigned char *) _id;
 
 #if ARCH_BITS==64
@@ -100,8 +104,9 @@ static inline hash_t hashmap_digest(const void *_id, size_t size)
     return hash;
 }
 
-/** twice the buckets, the entries move to theirs (the queue nodes are
- * relinked, not made anew); stays as it is if there is no memory */
+/** Doubles a table's buckets, and moves each entry to its new bucket.
+ * The queue nodes are relinked rather than made anew. If there's no
+ * memory for the new buckets, the table stays as it is. */
 static inline void hashmap_grow(struct hashmap *hashmap)
 {
     size_t nr = hashmap->buckets_nr * 2;
@@ -138,9 +143,8 @@ static inline void hashmap_grow(struct hashmap *hashmap)
     hashmap->buckets_nr = nr;
 }
 
-/**
- * insert a new element into a hashmap
- */
+/** Adds an entry to a hash table. Returns 0, `-EINVAL` for a bad table,
+ * or `-ENOMEM` if there was no memory for its node. */
 static inline int hashmap_insert(struct hashmap *hashmap, hash_t hash, void *entry) 
 {
     if (!hashmap || !hashmap->buckets_nr || !hashmap->buckets)
@@ -172,9 +176,8 @@ static inline int hashmap_insert(struct hashmap *hashmap, hash_t hash, void *ent
     return 0;
 }
 
-/**
- * lookup for an element in the hashmap using the hash and the key
- */
+/** Finds the node of the entry for a key, or returns NULL if there's
+ * none. */
 static inline struct hashmap_node *hashmap_lookup(struct hashmap *hashmap, hash_t hash, void *key)
 {
     if (!hashmap || !hashmap->buckets || !hashmap->buckets_nr || !hashmap->count)
@@ -192,9 +195,8 @@ static inline struct hashmap_node *hashmap_lookup(struct hashmap *hashmap, hash_
     return NULL;
 }
 
-/**
- * replace an element in the hashmap using the hash and the key
- */
+/** Replaces the entry for a key, or adds it if there's none. Returns 0,
+ * or what hashmap_insert() returned. */
 static inline int hashmap_replace(struct hashmap *hashmap, hash_t hash, void *key, void *entry)
 {
     if (!hashmap || !hashmap->buckets || !hashmap->buckets_nr || !hashmap->count)
@@ -214,9 +216,7 @@ static inline int hashmap_replace(struct hashmap *hashmap, hash_t hash, void *ke
     return hashmap_insert(hashmap, hash, entry);
 }
 
-/**
- * remove an element from the hashmap given the hashmap node
- */
+/** Removes a node from a hash table, and frees it (not its entry). */
 static inline void hashmap_node_remove(struct hashmap *hashmap, struct hashmap_node *node)
 {
     if (!hashmap || !hashmap->buckets ||
@@ -231,9 +231,7 @@ static inline void hashmap_node_remove(struct hashmap *hashmap, struct hashmap_n
     hashmap->count--;
 }
 
-/**
- * free all resources associated with a hashmap
- */
+/** Frees a hash table and its nodes (not their entries). */
 static inline void hashmap_free(struct hashmap *hashmap)
 {
     for (size_t i = 0; i < hashmap->buckets_nr; ++i) {
@@ -249,4 +247,4 @@ static inline void hashmap_free(struct hashmap *hashmap)
     kfree(hashmap);
 }
 
-#endif /* ! _DS_QUEUE_H */
+#endif /* ! _DS_HASHMAP_H */

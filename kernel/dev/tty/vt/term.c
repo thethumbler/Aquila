@@ -1,8 +1,14 @@
 /** \file
- * Terminal emulator of the virtual terminals: what the Linux console does
- * with what programs write (TERM=linux), and the parts of xterm programs
- * commonly use (alternate screen, 256 colors). Characters are shown with
- * the 256 glyphs of code page 437, UTF-8 is decoded to those.
+ * The terminal emulator of the virtual terminals.
+ *
+ * It does with what programs write what the Linux console does
+ * (`TERM=linux`): control characters, escape and CSI sequences, colours
+ * and attributes, scrolling regions, character sets. It also has the
+ * parts of xterm that programs commonly use: the alternate screen, and
+ * 256 colours. Characters are shown with the 256 glyphs of code page 437:
+ * UTF-8 is decoded, and each character is shown with the closest glyph.
+ * The emulator only changes the terminal's screen in memory; `vt.c` draws
+ * it.
  */
 
 #include <core/system.h>
@@ -12,31 +18,32 @@
 
 MALLOC_DEFINE(M_VT_SCREEN, "vt-screen", "virtual terminal screen");
 
+/* where the emulator is in a sequence */
 enum {
     S_GROUND,
     S_ESC,
-    S_CHARSET,      /* ESC ( or ESC ), the G0 or G1 set follows */
+    S_CHARSET,      /* ESC ( or ESC ): the G0 or G1 set's letter follows */
     S_HASH,         /* ESC # */
     S_PERCENT,      /* ESC % */
     S_CSI,
     S_OSC,
-    S_PALETTE,      /* ESC ] P, 7 hex digits follow */
+    S_PALETTE,      /* ESC ] P: 7 hex digits follow */
     S_STRING,       /* DCS, SOS, PM, APC: ignored up to ST */
-    S_STRING_ESC,   /* ESC in a string, ST if \ follows */
+    S_STRING_ESC,   /* ESC in a string: it is ST if \ follows */
 };
 
 #define DEFAULT_FG  7
 #define DEFAULT_BG  0
 
-/* DEC special graphics, 0x5f to 0x7e */
+/* the glyphs of DEC's special graphics (line drawing), 0x5f to 0x7e */
 static const uint8_t dec_graphics[] = {
-    ' ',  0x04, 0xB1, 0xF9, 0xF9, 0xF9, 0xF9, 0xF8,     /* _ ` a b c d e f */
+    ' ',  0x04, 0xB1, 0xF9, 0xF9, 0xF9, 0xF9, 0xF8,     /* _ (grave) a b c d e f */
     0xF1, 0xB0, 0x0F, 0xD9, 0xBF, 0xDA, 0xC0, 0xC5,     /* g h i j k l m n */
     0xC4, 0xC4, 0xC4, 0xC4, 0xC4, 0xC3, 0xB4, 0xC1,     /* o p q r s t u v */
     0xC2, 0xB3, 0xF3, 0xF2, 0xE3, '!',  0x9C, 0xFA,     /* w x y z { | } ~ */
 };
 
-/* code page 437 0x80 to 0xff */
+/* the characters of code page 437's glyphs 0x80 to 0xff */
 static const uint16_t cp437[128] = {
     0x00C7, 0x00FC, 0x00E9, 0x00E2, 0x00E4, 0x00E0, 0x00E5, 0x00E7,
     0x00EA, 0x00EB, 0x00E8, 0x00EF, 0x00EE, 0x00EC, 0x00C4, 0x00C5,
@@ -56,7 +63,7 @@ static const uint16_t cp437[128] = {
     0x00B0, 0x2219, 0x00B7, 0x221A, 0x207F, 0x00B2, 0x25A0, 0x00A0,
 };
 
-/* the symbols of code page 437 0x01 to 0x1f, and 0x7f */
+/* the characters of code page 437's symbols, 0x01 to 0x1f and 0x7f */
 static const uint16_t cp437_symbols[32] = {
     0x2302, 0x263A, 0x263B, 0x2665, 0x2666, 0x2663, 0x2660, 0x2022,
     0x25D8, 0x25CB, 0x25D9, 0x2642, 0x2640, 0x266A, 0x266B, 0x263C,
@@ -64,7 +71,7 @@ static const uint16_t cp437_symbols[32] = {
     0x2191, 0x2193, 0x2192, 0x2190, 0x221F, 0x2194, 0x25B2, 0x25BC,
 };
 
-/* other characters with a glyph close enough */
+/* other characters, which have a glyph close enough */
 static const struct { uint16_t u; uint8_t ch; } unicode_extra[] = {
     {0x25C6, 0x04},
     {0x256D, 0xDA}, {0x256E, 0xBF}, {0x256F, 0xD9}, {0x2570, 0xC0},
@@ -73,6 +80,7 @@ static const struct { uint16_t u; uint8_t ch; } unicode_extra[] = {
     {0x2026, 0xFA}, {0x00B4, '\''}, {0x00D7, 'x'},
 };
 
+/** Returns the code page 437 glyph that shows a character best, or '?'. */
 static uint8_t unicode_glyph(uint32_t u)
 {
     if (u < 0x80)
@@ -93,7 +101,8 @@ static uint8_t unicode_glyph(uint32_t u)
     return '?';
 }
 
-/** the closest color of the 6x6x6 cube or the gray ramp of the palette */
+/** Returns the closest colour of the palette's 6 x 6 x 6 cube or greys,
+ * for a 24-bit colour. */
 static uint8_t rgb_color(int r, int g, int b)
 {
     int ri = r < 48 ? 0 : r < 115 ? 1 : (r - 35) / 40;
@@ -110,17 +119,20 @@ static uint8_t rgb_color(int r, int g, int b)
     return 16 + 36 * ri + 6 * gi + bi;
 }
 
+/** Returns a cell of the screen. */
 static inline struct vt_cell *cell(struct vt *vt, int row, int col)
 {
     return &vt->screen[row * vt->cols + col];
 }
 
-/** erased cells take the current colors (bce) */
+/** Returns an erased cell: it takes the current colours, as the Linux
+ * console does ("bce"). */
 static inline struct vt_cell blank(struct vt *vt)
 {
     return (struct vt_cell) {.ch = ' ', .fg = vt->pen.fg, .bg = vt->pen.bg};
 }
 
+/** Erases the cells of a row from column `from` up to `to`. */
 static void erase(struct vt *vt, int row, int from, int to)
 {
     struct vt_cell b = blank(vt);
@@ -129,7 +141,8 @@ static void erase(struct vt *vt, int row, int from, int to)
         *cell(vt, row, col) = b;
 }
 
-/** moves rows top+n..bottom up n rows, n blank rows at the bottom */
+/** Scrolls rows `top` to `bottom` up by `n` rows: `n` erased rows come at
+ * the bottom. */
 static void scroll_up(struct vt *vt, int top, int bottom, int n)
 {
     if (n > bottom - top + 1)
@@ -142,6 +155,8 @@ static void scroll_up(struct vt *vt, int top, int bottom, int n)
         erase(vt, row, 0, vt->cols);
 }
 
+/** Scrolls rows `top` to `bottom` down by `n` rows: `n` erased rows come
+ * at the top. */
 static void scroll_down(struct vt *vt, int top, int bottom, int n)
 {
     if (n > bottom - top + 1)
@@ -154,7 +169,8 @@ static void scroll_down(struct vt *vt, int top, int bottom, int n)
         erase(vt, row, 0, vt->cols);
 }
 
-/** cursor movement, within the scrolling region in origin mode */
+/** Moves the cursor, within the screen, or within the scrolling region in
+ * origin mode. */
 static void move_to(struct vt *vt, int row, int col)
 {
     int min = vt->origin ? vt->top : 0;
@@ -165,7 +181,8 @@ static void move_to(struct vt *vt, int row, int col)
     vt->wrap_pending = 0;
 }
 
-/** vertical movement stops at the margins, if it starts within them */
+/** Moves the cursor up or down `n` rows. It stops at the scrolling
+ * region's margins, if it starts within them. */
 static void move_rows(struct vt *vt, int n)
 {
     int row = vt->row + n;
@@ -181,6 +198,7 @@ static void move_rows(struct vt *vt, int n)
     vt->wrap_pending = 0;
 }
 
+/** Moves the cursor down a row, scrolling at the region's bottom. */
 static void linefeed(struct vt *vt)
 {
     if (vt->row == vt->bottom)
@@ -191,6 +209,7 @@ static void linefeed(struct vt *vt)
     vt->wrap_pending = 0;
 }
 
+/** Moves the cursor up a row, scrolling at the region's top. */
 static void reverse_index(struct vt *vt)
 {
     if (vt->row == vt->top)
@@ -201,11 +220,13 @@ static void reverse_index(struct vt *vt)
     vt->wrap_pending = 0;
 }
 
+/** Returns whether there is a tab stop at a column. */
 static int tab_stop(struct vt *vt, int col)
 {
     return col < 256 && (vt->tabs[col / 8] & (1 << (col % 8)));
 }
 
+/** Sets or clears the tab stop at a column. */
 static void tab_set(struct vt *vt, int col, int set)
 {
     if (col >= 256)
@@ -217,6 +238,7 @@ static void tab_set(struct vt *vt, int col, int set)
         vt->tabs[col / 8] &= ~(1 << (col % 8));
 }
 
+/** Moves the cursor `n` tab stops forward, or back if `n` is negative. */
 static void tab(struct vt *vt, int n)
 {
     while (n > 0 && vt->col < vt->cols - 1) {
@@ -234,6 +256,8 @@ static void tab(struct vt *vt, int n)
     vt->wrap_pending = 0;
 }
 
+/** Puts a glyph at the cursor, in the current colours and attributes,
+ * and moves the cursor on, wrapping at the end of the line. */
 static void put_glyph(struct vt *vt, uint8_t ch)
 {
     if (vt->wrap_pending && vt->autowrap) {
@@ -256,7 +280,7 @@ static void put_glyph(struct vt *vt, uint8_t ch)
         vt->wrap_pending = vt->autowrap;
 }
 
-/** a character, through the character set in use */
+/** Puts a character at the cursor, through the character set in use. */
 static void put_char(struct vt *vt, uint32_t u)
 {
     if (vt->charset[vt->gl] == '0') {
@@ -278,6 +302,8 @@ static void put_char(struct vt *vt, uint32_t u)
     put_glyph(vt, unicode_glyph(u));
 }
 
+/** Queues a reply to a request (DSR, DA), which `vt.c` gives the
+ * terminal as input. A reply that doesn't fit is dropped. */
 static void reply(struct vt *vt, const char *s)
 {
     size_t len = strlen(s);
@@ -289,6 +315,7 @@ static void reply(struct vt *vt, const char *s)
     vt->reply_len += len;
 }
 
+/** Saves the cursor: its position, colours, character sets and modes. */
 static void save_cursor(struct vt *vt, struct vt_cursor *save)
 {
     save->row = vt->row;
@@ -301,6 +328,7 @@ static void save_cursor(struct vt *vt, struct vt_cursor *save)
     save->wrap = vt->autowrap;
 }
 
+/** Restores a saved cursor, within the screen. */
 static void restore_cursor(struct vt *vt, struct vt_cursor *save)
 {
     vt->pen = save->pen;
@@ -315,13 +343,14 @@ static void restore_cursor(struct vt *vt, struct vt_cursor *save)
     vt->wrap_pending = 0;
 }
 
+/** Erases the whole screen. */
 static void clear_screen(struct vt *vt)
 {
     for (int row = 0; row < vt->rows; ++row)
         erase(vt, row, 0, vt->cols);
 }
 
-/** the alternate screen (xterm), cleared when it is shown */
+/** Shows the alternate screen (xterm's), cleared, or the main one again. */
 static void alt_screen(struct vt *vt, int on)
 {
     if (on && vt->screen != vt->alt) {
@@ -332,7 +361,8 @@ static void alt_screen(struct vt *vt, int on)
     }
 }
 
-/** modes and pen to the defaults, not the screen (DECSTR) */
+/** Sets the modes and the pen back to the defaults, but not the screen
+ * (DECSTR, a soft reset). */
 static void soft_reset(struct vt *vt)
 {
     vt->pen = (struct vt_cell) {.ch = ' ', .fg = DEFAULT_FG, .bg = DEFAULT_BG};
@@ -356,6 +386,12 @@ static void soft_reset(struct vt *vt)
     vt->saved_alt = vt->saved;
 }
 
+/**
+ * Resets a terminal (RIS, `ESC c`): the defaults, the tab stops every 8
+ * columns, the main screen cleared, and the cursor at the top left.
+ *
+ * @param vt  the terminal
+ */
 void vt_term_reset(struct vt *vt)
 {
     vt->screen = vt->main;
@@ -372,6 +408,15 @@ void vt_term_reset(struct vt *vt)
     vt->last = 0;
 }
 
+/**
+ * Sets a terminal's screens up, the main one and the alternate one, both
+ * cleared, and resets it.
+ *
+ * @param vt    the terminal
+ * @param rows  the screen's rows
+ * @param cols  the screen's columns
+ * @return 0, or `-ENOMEM`
+ */
 int vt_term_init(struct vt *vt, int rows, int cols)
 {
     size_t size = rows * cols * sizeof(struct vt_cell);
@@ -389,7 +434,7 @@ int vt_term_init(struct vt *vt, int rows, int cols)
     vt->rows = rows;
     vt->cols = cols;
 
-    /* both cleared */
+    /* clear the alternate screen; the reset clears the main one */
     vt->screen = vt->alt;
     vt->pen = (struct vt_cell) {.ch = ' ', .fg = DEFAULT_FG, .bg = DEFAULT_BG};
     clear_screen(vt);
@@ -398,12 +443,13 @@ int vt_term_init(struct vt *vt, int rows, int cols)
     return 0;
 }
 
-/** a parameter, 0 or a missing one is the default */
+/** Returns a sequence's parameter `i`, or `def` if it is 0 or missing. */
 static int param(struct vt *vt, int i, int def)
 {
     return i < vt->nparams && vt->params[i] ? vt->params[i] : def;
 }
 
+/** Sets the pen's colours and attributes (SGR, `CSI ... m`). */
 static void sgr(struct vt *vt)
 {
     struct vt_cell *pen = &vt->pen;
@@ -435,7 +481,7 @@ static void sgr(struct vt *vt)
             case 49: pen->bg = DEFAULT_BG; break;
             case 38:
             case 48: {
-                /* 38;5;n or 38;2;r;g;b */
+                /* 38;5;n (one of 256) or 38;2;r;g;b (24 bits) */
                 int color = -1;
 
                 if (i + 2 < vt->nparams && vt->params[i + 1] == 5) {
@@ -469,7 +515,8 @@ static void sgr(struct vt *vt)
     }
 }
 
-/** DEC private modes, CSI ? n h and CSI ? n l */
+/** Sets or resets DEC private modes. These are the `CSI ? n h` and
+ * `CSI ? n l` sequences. */
 static void decset(struct vt *vt, int set)
 {
     for (int i = 0; i < vt->nparams; ++i) {
@@ -505,13 +552,16 @@ static void decset(struct vt *vt, int set)
     }
 }
 
+/** Runs a CSI sequence whose final character is `f`, with its
+ * parameters. */
 static void csi(struct vt *vt, char f)
 {
     int n = param(vt, 0, 1);
     char buf[24];
 
     if (vt->intermediate) {
-        /* CSI ! p (DECSTR), others (cursor style CSI SP q) are ignored */
+        /* CSI ! p (DECSTR); the others (the cursor style, CSI SP q) are
+         * ignored */
         if (vt->intermediate == '!' && f == 'p')
             soft_reset(vt);
         return;
@@ -608,7 +658,7 @@ static void csi(struct vt *vt, char f)
                 while (n--)
                     put_glyph(vt, vt->last);
             break;
-        case 'c': /* DA: a VT102, like the Linux console */
+        case 'c': /* DA: a VT102, as the Linux console says */
             if (!param(vt, 0, 0))
                 reply(vt, "\033[?6c");
             break;
@@ -666,6 +716,7 @@ static void csi(struct vt *vt, char f)
     }
 }
 
+/** Runs an escape sequence, `ESC c`, or starts a longer one. */
 static void esc(struct vt *vt, char c)
 {
     vt->state = S_GROUND;
@@ -680,7 +731,7 @@ static void esc(struct vt *vt, char c)
             break;
         case ']':
             vt->state = S_OSC;
-            vt->nparams = 0;    /* characters of the string so far */
+            vt->nparams = 0;    /* counts the string's characters so far */
             break;
         case 'P':
         case 'X':
@@ -714,6 +765,7 @@ static void esc(struct vt *vt, char c)
     }
 }
 
+/** Runs a control character. */
 static void control(struct vt *vt, char c)
 {
     switch (c) {
@@ -752,6 +804,8 @@ static void control(struct vt *vt, char c)
     }
 }
 
+/** Decodes UTF-8, a byte at a time, and puts each character. A broken
+ * sequence shows '?'. */
 static void utf8(struct vt *vt, uint8_t c)
 {
     if (c < 0x80) {
@@ -788,6 +842,7 @@ static void utf8(struct vt *vt, uint8_t c)
     }
 }
 
+/** Returns a hex digit's value, or -1. */
 static int hexdigit(char c)
 {
     return c >= '0' && c <= '9' ? c - '0' :
@@ -795,6 +850,8 @@ static int hexdigit(char c)
            c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1;
 }
 
+/** Takes one byte of what programs write, in the state of the sequence
+ * it may be in. */
 static void term_char(struct vt *vt, uint8_t c)
 {
     switch (vt->state) {
@@ -827,7 +884,7 @@ static void term_char(struct vt *vt, uint8_t c)
             vt->state = S_ESC;
             break;
         case S_PALETTE:
-            /* not supported, the digits are skipped */
+            /* palettes aren't supported: the digits are skipped */
             if (hexdigit(c) < 0 || ++vt->nparams == 7)
                 vt->state = S_GROUND;
             return;
@@ -856,7 +913,7 @@ static void term_char(struct vt *vt, uint8_t c)
             vt->state = S_GROUND;
             break;
         case S_HASH:
-            /* DECALN: the screen filled with E */
+            /* DECALN: the screen is filled with E */
             if (c == '8') {
                 for (int row = 0; row < vt->rows; ++row)
                     for (int col = 0; col < vt->cols; ++col)
@@ -866,7 +923,7 @@ static void term_char(struct vt *vt, uint8_t c)
             vt->state = S_GROUND;
             break;
         case S_PERCENT:
-            /* UTF-8 is always on */
+            /* UTF-8 is always on: nothing to switch */
             vt->state = S_GROUND;
             break;
         case S_CSI:
@@ -890,6 +947,13 @@ static void term_char(struct vt *vt, uint8_t c)
     }
 }
 
+/**
+ * Takes what programs write to a terminal, and changes its screen.
+ *
+ * @param vt    the terminal
+ * @param buf   what was written
+ * @param size  its size, in bytes
+ */
 void vt_term_write(struct vt *vt, const char *buf, size_t size)
 {
     for (size_t i = 0; i < size; ++i)

@@ -1,6 +1,9 @@
 #ifndef _FS_ROFS_H
 #define _FS_ROFS_H
 
+/* Read-only filesystems' operations (fs/rofs.c): the ones that change
+ * anything fail with EROFS. */
+
 ssize_t rofs_write(struct vnode *vnode, off_t offset, struct iobuf *io);
 int rofs_trunc(struct vnode *vnode, off_t len);
 int rofs_vmknod(struct vnode *dir, const char *fn, uint32_t mode, dev_t dev, struct uio *uio, struct vnode **ref);

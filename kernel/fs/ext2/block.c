@@ -1,8 +1,21 @@
+/** \file
+ * ext2: reading and writing the disk, the block group descriptors, and
+ * allocating and freeing blocks in the groups' block bitmaps.
+ */
+
 #include <ext2.h>
 #include <ds/bitmap.h>
 
-/** `size' bytes at `off' of the device, all of them (`write': to it): 0,
- * or the error, -EIO if fewer went */
+/**
+ * Reads or writes bytes of the filesystem's disk, all of them.
+ *
+ * @param desc   the mounted filesystem
+ * @param write  whether to write (1) or read (0)
+ * @param off    where on the disk, in bytes
+ * @param size   how many bytes
+ * @param buf    the data
+ * @return 0, the device's error, or `-EIO` if fewer bytes went
+ */
 int ext2_io(struct ext2 *desc, int write, off_t off, size_t size, void *buf)
 {
     ssize_t r = write ? vfs_write(desc->supernode, off, size, buf) :
@@ -11,6 +24,13 @@ int ext2_io(struct ext2 *desc, int write, off_t off, size_t size, void *buf)
     return r == (ssize_t) size ? 0 : r < 0 ? (int) r : -EIO;
 }
 
+/**
+ * Writes the block group descriptor table back to the disk, after a
+ * change to a group's counts.
+ *
+ * @param desc  the mounted filesystem
+ * @return 0, or a negative errno
+ */
 int ext2_bgd_table_rewrite(struct ext2 *desc)
 {
     uint32_t bgd_table = (desc->bs == 1024)? 2048 : desc->bs;
@@ -18,18 +38,42 @@ int ext2_bgd_table_rewrite(struct ext2 *desc)
     return ext2_io(desc, 1, bgd_table, bgds_size, desc->groups);
 }
 
+/**
+ * Reads a block from the disk.
+ *
+ * @param desc    the mounted filesystem
+ * @param number  the block number
+ * @param buf     where it goes, a block's size
+ * @return 0, or a negative errno
+ */
 int ext2_block_read(struct ext2 *desc, uint32_t number, void *buf)
 {
     return ext2_io(desc, 0, (off_t) number * desc->bs, desc->bs, buf);
 }
 
+/**
+ * Writes a block to the disk.
+ *
+ * @param desc    the mounted filesystem
+ * @param number  the block number
+ * @param buf     the block's new contents
+ * @return 0, or a negative errno
+ */
 int ext2_block_write(struct ext2 *desc, uint32_t number, void *buf)
 {
     return ext2_io(desc, 1, (off_t) number * desc->bs, desc->bs, buf);
 }
 
-/** a free block, marked used and zeroed, into `*block': 0, -ENOSPC, or
- * an error (a bitmap that couldn't be read isn't written back) */
+/**
+ * Allocates a free block: its bit is set in its group's block bitmap, the
+ * free counts go down, and the block is zeroed. A bitmap that couldn't be
+ * read isn't written back.
+ *
+ * @param desc   the mounted filesystem
+ * @param block  set to the block's number
+ * @return 0, `-ENOSPC` if the filesystem is full, `-ENOMEM`, or an I/O
+ *         error
+ */
 int ext2_block_alloc(struct ext2 *desc, uint32_t *block)
 {
     uint32_t *buf = kmalloc(desc->bs, &M_BUFFER, 0);
@@ -50,7 +94,7 @@ int ext2_block_alloc(struct ext2 *desc, uint32_t *block)
         bm.map = buf;
         bm.max_idx = desc->superblock->gblocks;
 
-        /* Look for a free block */
+        /* look for a free block in this group */
         for (idx = 0; idx < bm.max_idx && bitmap_check(&bm, idx); ++idx);
 
         if (idx < bm.max_idx) {
@@ -65,13 +109,12 @@ int ext2_block_alloc(struct ext2 *desc, uint32_t *block)
     if (err)
         goto done;
 
-    /* Update bitmap */
     bitmap_set(&bm, idx);
 
     if ((err = ext2_block_write(desc, desc->groups[group].bmap, buf)))
         goto done;
 
-    /* Update block group descriptor, and super block */
+    /* one block fewer free, in the group and the filesystem */
     desc->groups[group].free_blocks--;
     desc->superblock->free_blocks--;
 
@@ -81,7 +124,7 @@ int ext2_block_alloc(struct ext2 *desc, uint32_t *block)
     /* block bitmaps start at the first data block (1 for 1K blocks) */
     *block = desc->superblock->dblock + idx + group * desc->superblock->gblocks;
 
-    /* Clear block */
+    /* a new block starts zeroed */
     memset(buf, 0, desc->bs);
     err = ext2_block_write(desc, *block, buf);
 
@@ -90,8 +133,15 @@ done:
     return err;
 }
 
-/** `block' marked free: 0, or an error (the bitmap that couldn't be read
- * isn't written back: the block stays used) */
+/**
+ * Frees a block: its bit is cleared in its group's block bitmap, and the
+ * free counts go up. If the bitmap can't be read, the block stays used.
+ *
+ * @param desc   the mounted filesystem
+ * @param block  the block's number
+ * @return 0, `-EINVAL` for a block outside the filesystem, `-ENOMEM`, or
+ *         an I/O error
+ */
 int ext2_block_free(struct ext2 *desc, uint32_t block)
 {
     /* block bitmaps start at the first data block (1 for 1K blocks) */
@@ -114,13 +164,12 @@ int ext2_block_free(struct ext2 *desc, uint32_t block)
     bm.map = buf;
     uint32_t block_idx = rel % desc->superblock->gblocks;
 
-    /* Update bitmap */
     bitmap_clear(&bm, block_idx);
 
     if ((err = ext2_block_write(desc, desc->groups[group].bmap, buf)))
         goto done;
 
-    /* Update block group descriptor, and super block */
+    /* one block more free, in the group and the filesystem */
     desc->groups[group].free_blocks++;
     desc->superblock->free_blocks++;
 

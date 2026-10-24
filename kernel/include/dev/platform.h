@@ -5,31 +5,33 @@
 #include <cpu/io.h>
 
 /*
- * The devices no bus finds (PCI's are scanned for): where the platform
- * has them, in its table (arch/ARCH/platform/PLATFORM/devices.c). A
- * driver asks for its devices by name, the first, the second... and
- * attaches to each: which drivers there are is the build's (Build.mk),
- * which devices the machine has, and where, the platform's.
+ * The devices that no bus finds (PCI's devices are found by scanning the
+ * bus). The platform lists where its devices are in a table
+ * (arch/ARCH/platform/PLATFORM/devices.c). A driver asks for its devices
+ * by name, the first one, the second one..., and attaches to each. So
+ * which drivers there are is the build's choice (Build.mk), and which
+ * devices the machine has, and where, is the platform's.
  */
 
+/* The most interrupts a platform device can have. */
 #define PLATFORM_IRQS   2
 
+/** A device of the platform's table. */
 struct platform_device {
-    const char   *name;     /* its driver's: "8250", "pl011", "i8042" */
+    const char   *name;     /* its driver's name: "8250", "pl011", "i8042" */
     struct ioaddr io;       /* its registers: ports, or physical memory */
-    size_t        size;     /* how much of them (memory's is mapped) */
-    int           nirq;     /* its interrupts */
+    size_t        size;     /* their size (memory registers are mapped) */
+    int           nirq;     /* how many interrupts it has */
     unsigned      irq[PLATFORM_IRQS];
 };
 
-/* the platform's table, ended by one without a name */
+/* The platform's table, ended by an entry without a name. */
 extern const struct platform_device platform_devices[];
 
-/* the `index'th device named `name', NULL past the last */
+/* Returns the platform's `index`th device named `name`. */
 const struct platform_device *platform_device_get(const char *name, int index);
 
-/* its registers, for io_in*() and io_out*() (memory mapped); -ENOMEM if
- * they can't be */
+/* Gets a device's registers ready for io_in*() and io_out*(). */
 int platform_device_io(const struct platform_device *pd, struct ioaddr *io);
 
 #endif /* ! _DEV_PLATFORM_H */

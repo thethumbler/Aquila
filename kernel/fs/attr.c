@@ -1,13 +1,16 @@
+/** \file
+ * Changing a vnode's attributes: its mode (`chmod()`), its owner
+ * (`chown()`) and its times (`utimensat()`). The vnode is changed in
+ * memory first, then the filesystem stores it (`vops.setattr`); if that
+ * fails, the vnode is restored as it was.
+ */
+
 #include <core/system.h>
 #include <core/time.h>
 #include <fs/vfs.h>
 
-/*
- * Changing the mode, owner and times of a vnode. The vnode is changed,
- * then the filesystem stores it (vops.setattr), and it is restored if
- * that fails.
- */
-
+/** Has the filesystem store a vnode's new attributes, and restores the old
+ * ones (`saved`) if it can't. Returns 0 or the filesystem's error. */
 static int store(struct vnode *vnode, struct vnode *saved)
 {
     int ret = vfs_setattr(vnode);
@@ -24,6 +27,14 @@ static int store(struct vnode *vnode, struct vnode *saved)
     return ret;
 }
 
+/**
+ * Changes a vnode's permission bits. Only its owner, or root, may do it.
+ *
+ * @param vnode  the vnode
+ * @param mode   the new permissions (the file type is kept)
+ * @param uio    who is asking
+ * @return 0, `-EPERM`, or the filesystem's error
+ */
 int vfs_chmod(struct vnode *vnode, mode_t mode, struct uio *uio)
 {
     struct vnode saved = *vnode;
@@ -44,6 +55,16 @@ int vfs_chmod(struct vnode *vnode, mode_t mode, struct uio *uio)
     return store(vnode, &saved);
 }
 
+/**
+ * Changes a vnode's owner and group. Root may change both; a file's owner
+ * may only change its group, to their own group.
+ *
+ * @param vnode  the vnode
+ * @param uid    the new owner, or `(uid_t) -1` to keep it
+ * @param gid    the new group, or `(gid_t) -1` to keep it
+ * @param uio    who is asking
+ * @return 0, `-EPERM`, or the filesystem's error
+ */
 int vfs_chown(struct vnode *vnode, uid_t uid, gid_t gid, struct uio *uio)
 {
     struct vnode saved = *vnode;
@@ -71,7 +92,8 @@ int vfs_chown(struct vnode *vnode, uid_t uid, gid_t gid, struct uio *uio)
     return store(vnode, &saved);
 }
 
-/** one time from utimensat(2), `now' for UTIME_NOW */
+/** Sets one time as `utimensat()` asks: to `now` for `UTIME_NOW` (or no
+ * time given), unchanged for `UTIME_OMIT`, to the time given otherwise. */
 static void set_time(_time_t *time, const struct aquila_timespec *ts, struct timespec *now)
 {
     int32_t nsec = ts ? (int32_t) ts->tv_nsec : UTIME_NOW;
@@ -87,6 +109,18 @@ static void set_time(_time_t *time, const struct aquila_timespec *ts, struct tim
     }
 }
 
+/**
+ * Changes a vnode's access and modification times, for `utimensat()`.
+ * Setting them to the current time needs ownership or write permission;
+ * setting them to other times needs ownership.
+ *
+ * @param vnode  the vnode
+ * @param times  the access and modification times (each may be
+ *               `UTIME_NOW` or `UTIME_OMIT`), or NULL for now
+ * @param uio    who is asking
+ * @return 0, `-EINVAL` for a bad time, `-EPERM`, `-EACCES`, or the
+ *         filesystem's error
+ */
 int vfs_utimens(struct vnode *vnode, const struct aquila_timespec times[2], struct uio *uio)
 {
     struct vnode saved = *vnode;
@@ -105,7 +139,8 @@ int vfs_utimens(struct vnode *vnode, const struct aquila_timespec times[2], stru
         }
     }
 
-    /* setting the current time needs write permission, other times ownership */
+    /* setting the current time needs write permission, other times
+     * ownership */
     if (uio->uid && uio->uid != vnode->uid) {
         if (!to_now)
             return -EPERM;

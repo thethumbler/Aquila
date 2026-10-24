@@ -1,5 +1,10 @@
 /** \file
- * Virtual terminals in VGA text mode, without a framebuffer.
+ * Virtual terminals in VGA text mode, when there is no framebuffer.
+ *
+ * The screen is 80 columns by 25 rows of cells in memory at `0xB8000`,
+ * each a character and its colours. The cursor is set through the CRT
+ * controller's ports (`0x3D4` and `0x3D5`). The virtual terminals
+ * (`vt.c`) draw through `vt_vga_display`.
  */
 
 #include <core/system.h>
@@ -17,14 +22,16 @@ static struct ioaddr crtc = {
     .type = IOADDR_PORT,
 };
 
+/** Draws one cell of the screen. */
 static void vga_draw(int row, int col, struct vt_cell cell)
 {
     vga[row * VGA_COLS + col] = vt_vga_attr(cell) << 8 | cell.ch;
 }
 
+/** Moves the cursor, or hides it. */
 static void vga_cursor(int row, int col, int visible)
 {
-    /* a hidden cursor is past the end of the screen */
+    /* a hidden cursor is one past the end of the screen */
     unsigned pos = visible ? row * VGA_COLS + col : VGA_ROWS * VGA_COLS;
 
     io_out8(&crtc, 0x00, 0x0F);
@@ -33,6 +40,11 @@ static void vga_cursor(int row, int col, int visible)
     io_out8(&crtc, 0x01, (pos >> 8) & 0xFF);
 }
 
+/**
+ * Says whether VGA text mode can be used. It always can, on a PC.
+ *
+ * @return 0
+ */
 int vt_vga_probe(void)
 {
     return 0;

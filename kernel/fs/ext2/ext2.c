@@ -1,5 +1,7 @@
 /** \file
- * ext2 filesystem
+ * ext2: loading and mounting the filesystem, and the vnodes of its
+ * inodes. The block group descriptors are kept in memory, and the vnodes
+ * in use in a cache by inode number. See `ext2.h` for the disk's format.
  */
 #include <core/panic.h>
 #include <core/module.h>
@@ -15,12 +17,21 @@ MALLOC_DEFINE(M_EXT2, "ext2", "ext2 filesystem structure");
 MALLOC_DEFINE(M_EXT2_SB, "ext2-sb", "ext2 filesystem superblock structure");
 MALLOC_DEFINE(M_EXT2_GROUP, "ext2-group", "ext2 block group descriptor");
 
+/**
+ * Gets the vnode of an inode: the cached one if it's in use, or a new one
+ * made from the inode on the disk.
+ *
+ * @param desc       the mounted filesystem
+ * @param ino        the inode number
+ * @param ref_inode  if not NULL, set to the vnode
+ * @return 0, `-ENOMEM`, or an I/O error
+ */
 int ext2_inode_build(struct ext2 *desc, ino_t ino, struct vnode **ref_inode)
 {
     int err = 0;
     struct vnode *inode = NULL;
 
-    /* In open inode table? */
+    /* is it in use already? */
     if ((inode = vcache_find(desc->vcache, ino)))
         goto found;
 
@@ -45,8 +56,8 @@ int ext2_inode_build(struct ext2 *desc, ino_t ino, struct vnode **ref_inode)
     inode->nlink = einode.nlink;
 
     /* a device node's number is in its first block pointer, as Linux
-     * keeps it (major << 8 | minor, AquilaOS's dev_t); 0 there, in the
-     * second, Linux's newer encoding of larger numbers */
+     * keeps it (major << 8 | minor, which is AquilaOS's dev_t); if that's
+     * 0, it's in the second, in Linux's newer encoding of larger numbers */
     if (S_ISCHR(einode.mode) || S_ISBLK(einode.mode)) {
         uint32_t old = einode.direct_pointer[0], new = einode.direct_pointer[1];
 
@@ -73,6 +84,12 @@ found:
     return 0;
 }
 
+/**
+ * Writes a vnode's attributes back to its inode on the disk.
+ *
+ * @param inode  the vnode
+ * @return 0, or an I/O error
+ */
 int ext2_inode_sync(struct vnode *inode)
 {
     vfs_log(LOG_DEBUG, "ext2_inode_sync(inode=%p)\n", inode);
@@ -103,13 +120,27 @@ int ext2_inode_sync(struct vnode *inode)
     return 0;
 }
 
-/* ================== VFS routines ================== */
+/* The filesystem's operations */
 
+/**
+ * Installs the ext2 filesystem at boot.
+ *
+ * @return 0, or `-ENOMEM`
+ */
 int ext2_init()
 {
     return vfs_install(&ext2fs);
 }
 
+/**
+ * Loads an ext2 filesystem from a device: its superblock, its block group
+ * descriptors, and its root directory's vnode.
+ *
+ * @param dev    the device
+ * @param super  if not NULL, set to the root directory's vnode
+ * @return 0, `-EINVAL` if the device doesn't have an ext2 filesystem that
+ *         AquilaOS can use, or a negative errno
+ */
 int ext2_load(struct vnode *dev, struct vnode **super)
 {
     int err = 0;
@@ -120,19 +151,19 @@ int ext2_load(struct vnode *dev, struct vnode **super)
     sb = kmalloc(sizeof(struct ext2_superblock), &M_EXT2_SB, M_ZERO);
     if (!sb) goto e_nomem;
 
-    /* read superblock */
+    /* the superblock */
     if ((err = vfs_read(dev, 1024, sizeof(struct ext2_superblock), sb)) < 0)
         goto error;
 
-    /* valid ext2? blocks of 1, 2 or 4 KiB (the code keeps blocks in
-     * buffers, some on the stack), and groups of blocks */
+    /* is it ext2, with blocks of 1, 2 or 4 KiB (the code keeps blocks in
+     * buffers, some of them on the stack) and groups of blocks? */
     if (sb->ext2_signature != EXT2_SIGNATURE || sb->block_size > 2 ||
         !sb->gblocks) {
         err = -EINVAL;
         goto error;
     }
 
-    /* build descriptor structure */
+    /* the mounted filesystem's structure */
     desc = kmalloc(sizeof(struct ext2), &M_EXT2, M_ZERO);
     if (!desc) goto e_nomem;
 
@@ -141,7 +172,7 @@ int ext2_load(struct vnode *dev, struct vnode **super)
     desc->bs = 1024UL << sb->block_size;
     desc->inode_size = EXT2_GOOD_OLD_INODE_SIZE;
 
-    /* revision 1: its inode size, and features AquilaOS must know */
+    /* revision 1 has an inode size, and features AquilaOS must know */
     if (sb->major_version >= 1) {
         desc->inode_size = sb->inode_size;
 
@@ -163,7 +194,7 @@ int ext2_load(struct vnode *dev, struct vnode **super)
         }
     }
 
-    /* read block group descriptor table */
+    /* the block group descriptor table, after the superblock */
     uint32_t groups    = (desc->bs == 1024)? 2048 : desc->bs;
     size_t   ngroups   = (sb->nblocks + sb->gblocks - 1)/ sb->gblocks;
     size_t   groups_sz = ngroups * sizeof(struct ext2_group);
@@ -182,7 +213,8 @@ int ext2_load(struct vnode *dev, struct vnode **super)
 
     if (!desc->vcache->hashmap) goto e_nomem;
 
-    /* the root (an inode that can't be read: no filesystem) */
+    /* the root directory (if its inode can't be read, there's no
+     * filesystem) */
     if (super && (err = ext2_inode_build(desc, 2, super)))
         goto error;
 
@@ -191,7 +223,7 @@ int ext2_load(struct vnode *dev, struct vnode **super)
 e_nomem:
     err = -ENOMEM;
 error:
-    /* nothing of it is used: nothing was built (the root comes last) */
+    /* nothing of it is in use yet, since the root comes last */
     if (desc) {
         if (desc->vcache && desc->vcache->hashmap)
             hashmap_free(desc->vcache->hashmap);
@@ -205,6 +237,14 @@ error:
     return err;
 }
 
+/**
+ * Mounts the ext2 filesystem of a device on a directory.
+ *
+ * @param dir    the directory
+ * @param flags  not used
+ * @param _args  the arguments, whose `dev` is the device's path
+ * @return 0, `-EINVAL`, or a negative errno
+ */
 int ext2_mount(struct vnode *dir, int flags, void *_args)
 {
     struct {
@@ -215,7 +255,7 @@ int ext2_mount(struct vnode *dir, int flags, void *_args)
     struct vnode *dev = NULL;
     int err;
 
-    struct uio uio = {0};   /* FIXME */
+    struct uio uio = {0};   /* the device is looked up as root */
 
     if (!args || !args->dev)
         return -EINVAL;

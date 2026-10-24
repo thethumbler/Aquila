@@ -1,8 +1,17 @@
+/** \file
+ * x86: a new program's first registers and its stack, for `execve()`.
+ */
+
 #include <core/system.h>
 #include <core/string.h>
 #include <core/arch.h>
 #include <sys/proc.h>
 
+/*
+ * Sets up a process's thread to start a new program: its first
+ * instruction, and its user stack with the arguments and the environment
+ * (argc, argv and envp, then their strings), as crt0 expects them.
+ */
 void arch_sys_execve(struct proc *proc, int argc, char * const _argp[], int envc, char * const _envp[])
 {
     struct thread *thread = (struct thread *) proc->threads.head->value;
@@ -19,8 +28,8 @@ void arch_sys_execve(struct proc *proc, int argc, char * const _argp[], int envc
     char **argp = (char **) _argp;
     char **envp = (char **) _envp;
 
-    /* argc and envc include the terminating NULL entry, the total size
-     * of the strings is bounded by the caller (well below the stack size) */
+    /* argc and envc count the terminating NULL entries too; the caller
+     * bounds the total size of the strings, well below the stack's size */
     size_t strings_size = 0;
 
     for (int i = 0; i < argc - 1; ++i)
@@ -29,14 +38,15 @@ void arch_sys_execve(struct proc *proc, int argc, char * const _argp[], int envc
     for (int i = 0; i < envc - 1; ++i)
         strings_size += strlen(envp[i]) + 1;
 
-    /* Start at the top of user stack: the one the new image was just given
-     * (the kernel's own mapping, its writes fault only to bring pages
-     * in, they don't need copyout) */
+    /* Start at the top of the user stack that the new program was just
+     * given. It is in the current address space, and its pages fault in
+     * as they are written, so this doesn't need copyout(). */
     volatile char *stack = (volatile char *) USER_STACK;
     tlb_flush();
 
-    /* Layout (from the top): envp strings, argp strings, envp array,
-     * argp array -- the pointer arrays are written directly on the stack */
+    /* The layout, from the top: the strings (argv's, then envp's above
+     * them in memory), envp's array, then argv's array, written directly
+     * on the stack. */
     char *str = (char *) (stack - strings_size);
     stack = (volatile char *) ((uintptr_t) str & ~(sizeof(uintptr_t) - 1));
 
@@ -46,7 +56,7 @@ void arch_sys_execve(struct proc *proc, int argc, char * const _argp[], int envc
     stack -= argc * sizeof(char *);
     char **u_argp = (char **) stack;
 
-    /* Push argp strings */
+    /* argv's strings */
     for (int i = 0; i < argc - 1; ++i) {
         strcpy(str, argp[i]);
         u_argp[i] = str;
@@ -55,7 +65,7 @@ void arch_sys_execve(struct proc *proc, int argc, char * const _argp[], int envc
 
     u_argp[argc - 1] = NULL;
 
-    /* Push envp strings */
+    /* envp's strings */
     for (int i = 0; i < envc - 1; ++i) {
         strcpy(str, envp[i]);
         u_envp[i] = str;
@@ -67,8 +77,8 @@ void arch_sys_execve(struct proc *proc, int argc, char * const _argp[], int envc
     uintptr_t env_ptr = (uintptr_t) u_envp;
     uintptr_t arg_ptr = (uintptr_t) u_argp;
 
-    /* the ABI expects the stack to be 16-byte aligned at process entry,
-     * i.e. once argc, argp and envp below are pushed */
+    /* the ABI wants the stack 16-byte aligned at the program's entry,
+     * once argc, argv and envp below are pushed */
 #if ARCH_BITS==32
     size_t frame = 2 * sizeof(uintptr_t) + sizeof(int32_t);
 #else
@@ -76,7 +86,7 @@ void arch_sys_execve(struct proc *proc, int argc, char * const _argp[], int envc
 #endif
     stack = (volatile char *) ((((uintptr_t) stack - frame) & ~(uintptr_t) 15) + frame);
 
-    /* main(int argc, char **argv, char **envp) */
+    /* what crt0 passes on to main(int argc, char **argv, char **envp) */
     stack -= sizeof(uintptr_t);
     *(volatile uintptr_t *) stack = env_ptr;
 

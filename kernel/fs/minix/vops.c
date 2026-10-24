@@ -1,11 +1,23 @@
+/** \file
+ * minix: the vnode operations: reading and writing files, directories,
+ * making nodes, and truncating.
+ *
+ * A file's data moves one block at a time through a kernel buffer: the
+ * block's piece of the iobuf is copied into or out of it.
+ */
+
 #include <minix.h>
 #include <fs/iobuf.h>
 
-/*
- * A file's data moves a block at a time through a kernel buffer: the
- * block's piece of the iobuf is copied in or out of it.
+/**
+ * Reads from a file.
+ *
+ * @param vnode   the file
+ * @param offset  where to read from
+ * @param io      where the data goes, and how much is wanted
+ * @return the number of bytes read (0 at or past the end), or a negative
+ *         errno if nothing was read
  */
-
 ssize_t minix_read(struct vnode *vnode, off_t offset, struct iobuf *io)
 {
     int err = 0;
@@ -42,7 +54,7 @@ ssize_t minix_read(struct vnode *vnode, off_t offset, struct iobuf *io)
 
         done += r;
 
-        /* a fault stopped it */
+        /* a fault stopped the copy */
         if ((size_t) r < len)
             break;
     }
@@ -51,6 +63,15 @@ ssize_t minix_read(struct vnode *vnode, off_t offset, struct iobuf *io)
     return done ? (ssize_t) done : r;
 }
 
+/**
+ * Writes to a file, which grows if the write goes past its end.
+ *
+ * @param vnode   the file
+ * @param offset  where to write
+ * @param io      the data, and how much of it
+ * @return the number of bytes written, or a negative errno if nothing was
+ *         written
+ */
 ssize_t minix_write(struct vnode *vnode, off_t offset, struct iobuf *io)
 {
     int err = 0;
@@ -87,7 +108,7 @@ ssize_t minix_write(struct vnode *vnode, off_t offset, struct iobuf *io)
         size_t off = (offset + done) % bs;
         size_t len = MIN(bs - off, size - done);
 
-        /* part of a block: the rest of it stays */
+        /* writing part of a block: read the rest of it first */
         if ((off || len < bs) &&
             (r = minix_inode_block_read(desc, &m_inode, (offset + done) / bs, block)) < 0)
             break;
@@ -104,20 +125,29 @@ ssize_t minix_write(struct vnode *vnode, off_t offset, struct iobuf *io)
 
         done += r;
 
-        /* a fault stopped it */
+        /* a fault stopped the copy */
         if ((size_t) r < len)
             break;
     }
 
     kfree(block);
 
-    /* it stopped short: the file ends where the data does */
+    /* if it stopped short, the file ends where the data does */
     if (done < size && (size_t) offset + size > old_size)
         minix_trunc(vnode, MAX(old_size, (size_t) offset + done));
 
     return done ? (ssize_t) done : r;
 }
 
+/**
+ * Reads a directory's entry at an offset; unused entries don't count.
+ *
+ * @param dir     the directory
+ * @param off     which entry
+ * @param dirent  the entry, filled in
+ * @return 1 if an entry was read, 0 past the last one, `-ENOTDIR`, or an
+ *         I/O error
+ */
 ssize_t minix_readdir(struct vnode *dir, off_t off, struct dirent *dirent)
 {
     int err = 0;
@@ -163,13 +193,26 @@ ssize_t minix_readdir(struct vnode *dir, off_t off, struct dirent *dirent)
         }
     }
 
-    /* not found */
+    /* past the last entry */
     return 0;
 
 error:
     return err;
 }
 
+/**
+ * Makes a node in a directory: a new inode, and an entry for it. A new
+ * directory gets its `.` and `..` entries.
+ *
+ * @param dir   the directory
+ * @param fn    the new node's name
+ * @param mode  its type (`S_IF*`) and permissions
+ * @param dev   its device number, for a device node
+ * @param uio   who is asking (the owner)
+ * @param ref   if not NULL, set to the new vnode
+ * @return 0, `-EINVAL` for an empty name, `-EEXIST`, `-ENOSPC`, or an I/O
+ *         error
+ */
 int minix_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, struct uio *uio, struct vnode **ref)
 {
     int err = 0;
@@ -184,7 +227,6 @@ int minix_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, stru
         goto error;
 
     if (minix_dentry_find(desc, &dir_inode, fn)) {
-        /* File exists */
         return -EEXIST;
     }
 
@@ -198,7 +240,7 @@ int minix_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, stru
     struct minix_inode m_inode;
     
     if ((err = minix_inode_read(desc, ino, &m_inode))) {
-        /* TODO Error checking */
+        /* not handled: the inode is cleared below anyway */
     }
 
     memset(&m_inode, 0, sizeof(struct minix_inode));
@@ -211,7 +253,7 @@ int minix_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, stru
     if (S_ISCHR(mode) || S_ISBLK(mode))
         m_inode.zones[0] = DEV(DEV_MAJOR(dev), DEV_MINOR(dev));
 
-    if (S_ISDIR(mode)) {   /* Initalize directory structure */
+    if (S_ISDIR(mode)) {   /* a directory starts with . and .. */
         m_inode.nlinks = 2;
         m_inode.size   = 2 * desc->dentry_size;
 
@@ -228,7 +270,7 @@ int minix_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, stru
 
         minix_inode_block_write(desc, &m_inode, ino, 0, buf);
 
-        /* update links count to parent directory */
+        /* the parent gets a link, the new directory's .. */
         struct vnode *parent_inode;
         minix_inode_build(desc, dir->ino, &parent_inode);
         parent_inode->nlink += 1;
@@ -248,6 +290,15 @@ error:
     return err;
 }
 
+/**
+ * Finds the entry of a directory that has a name. Only the entry's inode
+ * number is filled in.
+ *
+ * @param dir     the directory
+ * @param fn      the name
+ * @param dirent  if not NULL, the entry
+ * @return 0, `-ENOENT`, or an I/O error
+ */
 int minix_finddir(struct vnode *dir, const char *fn, struct dirent *dirent)
 {
     int err = 0;
@@ -263,7 +314,7 @@ int minix_finddir(struct vnode *dir, const char *fn, struct dirent *dirent)
 
     ino_t ino = minix_dentry_find(desc, &m_inode, fn);
 
-    if (!ino)  /* Not found */
+    if (!ino)
         return -ENOENT;
 
     if (dirent) {
@@ -276,6 +327,14 @@ error:
     return err;
 }
 
+/**
+ * Gets the vnode of an inode, by its number.
+ *
+ * @param super  any vnode of the filesystem
+ * @param ino    the inode number
+ * @param ref    if not NULL, set to the vnode
+ * @return 0, or a negative errno
+ */
 int minix_vget(struct vnode *super, ino_t ino, struct vnode **ref)
 {
     struct minix *desc = super->p;
@@ -285,21 +344,29 @@ int minix_vget(struct vnode *super, ino_t ino, struct vnode **ref)
     return 0;
 }
 
+/**
+ * Changes a file's length. A file that grows reads zeros past its old end;
+ * a file that shrinks frees its zones past the new end.
+ *
+ * @param vnode  the file
+ * @param len    the new length, in bytes
+ * @return 0, `-ENOMEM`, or an I/O error
+ */
 int minix_trunc(struct vnode *vnode, off_t len)
 {
-    /* do nothing */
     if ((size_t) len == vnode->size)
         return 0;
 
-    /* just extend vnode size */
+    /* growing only changes the size: the new part is a hole */
     if ((size_t) len > vnode->size) {
         vnode->size = len;
         minix_inode_sync(vnode);
         return 0;
     }
 
-    /* smaller: the zones past the new end are freed, the rest of the last
-     * one zeroed (the file reads zeros there if it grows again) */
+    /* shrinking: the zones past the new end are freed, and the rest of the
+     * last one is zeroed (so the file reads zeros there if it grows
+     * again) */
     struct minix *desc = vnode->p;
     struct minix_inode m_inode;
     size_t bs = desc->bs;

@@ -5,11 +5,16 @@
 #include <mm/mm.h>
 #include <fs/iobuf.h>
 
+/*
+ * Ring buffers: a fixed-size buffer of bytes, written at its tail and read
+ * at its head, both wrapping around. A terminal's input and output, a
+ * pipe's data and the kernel's messages are kept in one.
+ */
+
+/* An index wrapped around into the ring. */
 #define RING_INDEX(ring, i) ((i) % ((ring)->size))
 
-/**
- * ring buffer
- */
+/** A ring buffer. */
 struct ringbuf {
     char *buf;
     size_t size;
@@ -17,14 +22,11 @@ struct ringbuf {
     size_t tail;
 };
 
-/**
- * create a new statically allocated ring buffer
- */
+/* A new static ring buffer of `sz` bytes. */
 #define RINGBUF_NEW(sz) (&(struct ringbuf){.buf = (char[sz]){0}, .size = sz, .head = 0, .tail = 0})
 
-/**
- * create a new dynamically allocated ring buffer
- */
+/** Returns a new ring buffer of `size` bytes, from kmalloc(), or NULL if
+ * there was no memory for it. */
 static inline struct ringbuf *ringbuf_new(size_t size)
 {
     struct ringbuf *ring = kmalloc(sizeof(struct ringbuf), &M_BUFFER, 0);
@@ -46,9 +48,7 @@ static inline struct ringbuf *ringbuf_new(size_t size)
     return ring;
 }
 
-/**
- * free a dynamically allocated ring buffer
- */
+/** Frees a ring buffer that ringbuf_new() made (NULL does nothing). */
 static inline void ringbuf_free(struct ringbuf *r)
 {
     if (!r)
@@ -59,25 +59,25 @@ static inline void ringbuf_free(struct ringbuf *r)
 }
 
 /*
- * head and tail are always kept in [0, size), the ring is empty when
- * head == tail and full when tail is right behind head, so a ring can
- * hold at most size - 1 bytes.
+ * The head and the tail are always in [0, size). The ring is empty when
+ * head == tail, and full when the tail is right behind the head, so a
+ * ring can hold at most size - 1 bytes.
  */
 
+/** Returns how many bytes the ring holds. */
 static inline size_t ringbuf_available(struct ringbuf *ring)
 {
     return RING_INDEX(ring, ring->tail + ring->size - ring->head);
 }
 
-/** 
- * read from a ring buffer
- */
+/** Reads up to `n` bytes from the ring into `buf`, and returns how many
+ * there were. */
 static inline size_t ringbuf_read(struct ringbuf *ring, size_t n, char *buf)
 {
     size_t size = n;
 
     while (n) {
-        if (ring->head == ring->tail)   /* Ring is empty */
+        if (ring->head == ring->tail)   /* the ring is empty */
             break;
         *buf++ = ring->buf[ring->head];
         ring->head = RING_INDEX(ring, ring->head + 1);
@@ -87,9 +87,8 @@ static inline size_t ringbuf_read(struct ringbuf *ring, size_t n, char *buf)
     return size - n;
 }
 
-/** 
- * peek (non-destructive read) from a ring buffer
- */
+/** Copies up to `n` bytes from the ring, starting `off` bytes from its
+ * head, without taking them off it. Returns how many were copied. */
 static inline size_t ringbuf_read_noconsume(struct ringbuf *ring, off_t off, size_t n, char *buf)
 {
     size_t available = ringbuf_available(ring);
@@ -109,19 +108,22 @@ static inline size_t ringbuf_read_noconsume(struct ringbuf *ring, off_t off, siz
     return n;
 }
 
-/** the first `n' bytes go, unread (at most what there is) */
+/** Throws away the first `n` bytes of the ring, unread (at most what it
+ * holds). */
 static inline void ringbuf_discard(struct ringbuf *ring, size_t n)
 {
     n = MIN(n, ringbuf_available(ring));
     ring->head = RING_INDEX(ring, ring->head + n);
 }
 
+/** Writes up to `n` bytes from `buf` into the ring, as many as there is
+ * room for, and returns how many. */
 static inline size_t ringbuf_write(struct ringbuf *ring, size_t n, char *buf)
 {
     size_t size = n;
 
     while (n) {
-        if (RING_INDEX(ring, ring->tail + 1) == ring->head) /* Ring is full */
+        if (RING_INDEX(ring, ring->tail + 1) == ring->head) /* the ring is full */
             break;
 
         ring->buf[ring->tail] = *buf++;
@@ -133,12 +135,14 @@ static inline size_t ringbuf_write(struct ringbuf *ring, size_t n, char *buf)
 }
 
 /*
- * Between a ring and an iobuf (a read's or a write's buffer): up to n
- * bytes, a contiguous piece of the ring at a time, a piece taken from (or
- * put in) the ring only once it's copied: how many, -EFAULT if nothing
- * was
+ * Copying between a ring and an iobuf (a read()'s or a write()'s buffer
+ * in user memory): up to n bytes, one contiguous piece of the ring at a
+ * time. A piece is taken off (or added to) the ring only once it has been
+ * copied, so a bad address loses nothing. They return how many bytes were
+ * copied, or -EFAULT if none could be.
  */
 
+/** Reads up to `n` bytes from the ring into an iobuf. */
 static inline ssize_t ringbuf_read_iobuf(struct ringbuf *ring, size_t n, struct iobuf *io)
 {
     size_t done = 0;
@@ -160,6 +164,7 @@ static inline ssize_t ringbuf_read_iobuf(struct ringbuf *ring, size_t n, struct 
     return done;
 }
 
+/** Writes up to `n` bytes from an iobuf into the ring. */
 static inline ssize_t ringbuf_write_iobuf(struct ringbuf *ring, size_t n, struct iobuf *io)
 {
     size_t done = 0;
@@ -182,13 +187,15 @@ static inline ssize_t ringbuf_write_iobuf(struct ringbuf *ring, size_t n, struct
     return done;
 }
 
+/** Writes `n` bytes into the ring, throwing away its oldest bytes if it
+ * is full (the kernel's messages). Returns `n`. */
 static inline size_t ringbuf_write_overwrite(struct ringbuf *ring, size_t n, char *buf)
 {
     size_t size = n;
 
     while (n) {
         if (RING_INDEX(ring, ring->tail + 1) == ring->head) {
-            /* Ring is full, drop the oldest byte */
+            /* the ring is full: drop the oldest byte */
             ring->head = RING_INDEX(ring, ring->head + 1);
         }
 

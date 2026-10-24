@@ -1,27 +1,30 @@
 /** \file
- *          The TLBs: each CPU's, flushed when a mapping changes
+ * x86: keeping the CPUs' TLBs up to date when a mapping changes.
  *
- * A CPU caches the mappings it uses in its TLB. When the tables change
- * (a page unmapped, made read-only, another page in its place), the CPU
- * that changed them flushes its own TLB, and asks the others that may
- * have the old mapping to flush theirs, with an IPI, and waits until
- * they have: the page can't be reused while one may still write to it.
+ * A CPU caches the mappings it uses in its TLB. When the page tables
+ * change (a page is unmapped, made read-only, or replaced), the CPU that
+ * changed them flushes its own TLB, asks the other CPUs that may have the
+ * old mapping to flush theirs with an IPI, and waits until they have. The
+ * page can't be reused while another CPU may still write to it.
  *
- * The ones that may have it: for a process's tables, the CPUs they're
- * loaded on (pmap->cpus, which pmap_switch() keeps). Only the CPU with
- * the kernel lock changes tables, one request at a time then. The others
- * do it without the lock (it's taken), from the IPI's handler or, if they
- * wait for the lock with interrupts off, from the wait (arch_lock_spin()).
+ * For a process's page tables, the CPUs that may have the old mapping are
+ * those the tables are loaded on (`pmap->cpus`, which `pmap_switch()`
+ * keeps up to date). Only the CPU with the kernel lock changes page
+ * tables, so there is one request at a time. The other CPUs do it without
+ * the lock (someone else holds it): from the IPI's handler, or, if they
+ * are waiting for the lock with interrupts off, from that wait
+ * (`arch_lock_spin()`).
  *
- * The kernel's mappings (shared by all tables) are every CPU's, but they
- * aren't asked: outside the lock, a CPU only touches memory that was
- * mapped before it last took the lock and stays mapped while it uses it
- * (its idle stack, its thread's kernel stack, struct cpu, the lock, the
- * tables it has loaded). It flushes its TLB when it takes the lock, if
- * the kernel's mappings changed since it last did (kernel_gen).
+ * The kernel's mappings, shared by all page tables, are in every CPU's
+ * TLB, but the other CPUs aren't asked to flush them. Outside the lock, a
+ * CPU only touches memory that was mapped before it last took the lock,
+ * and that stays mapped while it uses it (its idle stack, its thread's
+ * kernel stack, its struct cpu, the lock, the page tables it has loaded).
+ * Instead, a CPU flushes its TLB when it takes the lock, if the kernel's
+ * mappings changed since it last did (`kernel_gen`).
  *
- * The kernel's pages aren't global but in the direct map, which doesn't
- * change: reloading CR3 flushes all the others.
+ * Reloading CR3 flushes every mapping but the global ones. The only
+ * global pages are x86_64's direct map, which never changes.
  */
 
 #include <core/system.h>
@@ -34,15 +37,18 @@
 #include <sys/cpu.h>
 #include <sys/lock.h>
 
-/* more pages than that: the whole TLB */
+/* above this many pages, the whole TLB is flushed instead */
 #define FLUSH_PAGES_MAX     32
 
 #define ICR_ASSERT          0x4000
 
-/* the kernel's mappings changed, how many times (each CPU's TLB is as of
- * one of them, cpu->arch.kernel_gen) */
+/* how many times the kernel's mappings changed; each CPU's TLB has
+ * the kernel's mappings of one of these generations
+ * (cpu->arch.kernel_gen) */
 static uint64_t kernel_gen;
 
+/* the request to the other CPUs: flush [sva, eva) of pmap, or leave pmap
+ * for the kernel's page tables */
 static struct {
     struct pmap *pmap;
     vaddr_t sva, eva;
@@ -50,6 +56,7 @@ static struct {
     volatile uint32_t pending;  /* the CPUs that haven't done it yet */
 } request;
 
+/** Flushes [sva, eva) from the running CPU's TLB. */
 static void flush(vaddr_t sva, vaddr_t eva)
 {
     if ((eva - sva) / PAGE_SIZE > FLUSH_PAGES_MAX) {
@@ -61,7 +68,8 @@ static void flush(vaddr_t sva, vaddr_t eva)
         asm volatile("invlpg (%0)" :: "r"(va) : "memory");
 }
 
-/** what the request asks of the running CPU */
+/** Does what a request asks of the running CPU: flush the range, if the
+ * CPU may have it, or switch away from page tables that are going away. */
 static void request_do(struct pmap *pmap, vaddr_t sva, vaddr_t eva, int leave)
 {
     struct pmap *loaded = curcpu()->arch.pmap;
@@ -74,7 +82,8 @@ static void request_do(struct pmap *pmap, vaddr_t sva, vaddr_t eva, int leave)
     }
 }
 
-/** the IPI's handler, and the lock's wait: the request, if it's for us */
+/** Does the pending request if it is for the running CPU. It is called
+ * from the TLB IPI's handler, and while waiting for the kernel lock. */
 void x86_tlb_ipi(void)
 {
     uint32_t me = 1U << curcpu()->id;
@@ -87,13 +96,16 @@ void x86_tlb_ipi(void)
     __atomic_and_fetch(&request.pending, ~me, __ATOMIC_RELEASE);
 }
 
+/* Runs in the kernel lock's wait loop: does a pending TLB request, so
+ * that the CPU holding the lock isn't kept waiting for this one. */
 void arch_lock_spin(void)
 {
     x86_tlb_ipi();
     asm volatile("pause");
 }
 
-/** the lock taken: the kernel's mappings as they are now */
+/* Runs when the running CPU takes the kernel lock: flushes its TLB if
+ * the kernel's mappings changed since it last held the lock. */
 void arch_lock_taken(void)
 {
     struct cpu *cpu = curcpu();
@@ -104,13 +116,19 @@ void arch_lock_taken(void)
     }
 }
 
+/*
+ * Flushes a range of an address space from every TLB that may have it,
+ * after its mappings changed, and waits until the other CPUs have done
+ * it. The caller holds the kernel lock.
+ */
 void tlb_shootdown(struct pmap *pmap, vaddr_t sva, vaddr_t eva, int leave)
 {
     uint32_t me = 1U << curcpu()->id;
 
     request_do(pmap, sva, eva, leave);
 
-    /* the others, when they take the lock */
+    /* the kernel's mappings: the other CPUs flush when they take the
+     * lock */
     if (pmap == kvm_space.pmap) {
         curcpu()->arch.kernel_gen = ++kernel_gen;
         return;
@@ -135,7 +153,10 @@ void tlb_shootdown(struct pmap *pmap, vaddr_t sva, vaddr_t eva, int leave)
         asm volatile("pause");
 }
 
-/** the running CPU switched from the tables `from' (NULL: none) to `to' */
+/*
+ * Records that the running CPU switched page tables, so that TLB requests
+ * go to the CPUs that may have a mapping cached.
+ */
 void pmap_loaded(struct pmap *from, struct pmap *to)
 {
     uint32_t me = 1U << curcpu()->id;

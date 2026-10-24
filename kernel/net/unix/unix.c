@@ -1,3 +1,16 @@
+/** \file
+ * Unix domain sockets (`AF_UNIX`): stream sockets between processes of
+ * this machine, named by a path in the file system.
+ *
+ * A server binds a socket to a path, which makes a socket node there, and
+ * listens. A client connects to that path: its request waits on the
+ * listening socket until `accept()` takes it. The connection has a ring
+ * buffer each way, and each side sleeps on its own wait queues when a
+ * ring is empty or full. On a connection's open files, `offset` says the
+ * side: 0 for the server, 1 for the client. Only `SOCK_STREAM` is
+ * supported.
+ */
+
 #include <core/system.h>
 #include <aquila/ioctl.h>
 #include <sys/sched.h>
@@ -9,8 +22,9 @@
 
 #include <aquila/fcntl.h>
 
-/* what a connection holds each way: X servers send replies of hundreds of
- * KB (font metrics), each fill of the ring is a switch between processes */
+/* How much a connection holds each way. X servers send replies of
+ * hundreds of KB (font metrics), and every time the ring fills, the
+ * processes have to switch, so the rings are big. */
 #define SOCKBUF 65536
 
 MALLOC_DEFINE(M_SOCKET, "socket", "socket struct");
@@ -19,10 +33,11 @@ MALLOC_DEFINE(M_UN_CONN, "unix conn", "unix connection struct");
 
 static struct sock_ops socket_unix_ops;
 
-static struct queue *sockets = QUEUE_NEW();  /* Open sockets */
+static struct queue *sockets = QUEUE_NEW();  /* the bound sockets */
 
-/** an AF_UNIX address (the kernel's copy, as big as a sockaddr_un): its
- * path ends in it */
+/** Checks an `AF_UNIX` address (the kernel's copy, as big as a
+ * `struct sockaddr_un`): its path must end within it. Returns 0 or
+ * `-EINVAL`. */
 static int unix_addr_check(const struct sockaddr *addr)
 {
     struct sockaddr_un *addr_un = (struct sockaddr_un *) addr;
@@ -30,7 +45,8 @@ static int unix_addr_check(const struct sockaddr *addr)
     return strnlen(addr_un->sun_path, sizeof(addr_un->sun_path)) < sizeof(addr_un->sun_path) ? 0 : -EINVAL;
 }
 
-/** wake up everyone sleeping on a connection, so they notice state changes */
+/** Wakes up every thread sleeping on a connection, so that they notice
+ * that its state changed. */
 static void unix_conn_wakeup(struct un_conn *conn)
 {
     waitq_wakeup(&conn->server_recv);
@@ -39,9 +55,20 @@ static void unix_conn_wakeup(struct un_conn *conn)
     waitq_wakeup(&conn->client_send);
 }
 
+/**
+ * Makes an `AF_UNIX` socket, for `socket()`. It is neither bound nor
+ * connected yet.
+ *
+ * @param file      the open file that becomes the socket
+ * @param domain    `AF_UNIX`
+ * @param type      `SOCK_STREAM` (the only one supported)
+ * @param protocol  0
+ * @return 0, `-EPROTONOSUPPORT`, or `-ENOMEM`
+ */
 int socket_unix_create(struct file *file, int domain, int type, int protocol)
 {
-    /* streams only: a datagram socket would be one too, silently */
+    /* streams only: refusing other types is better than making a stream
+     * socket where a datagram socket was asked for */
     if (type != SOCK_STREAM)
         return -EPROTONOSUPPORT;
 
@@ -62,6 +89,9 @@ int socket_unix_create(struct file *file, int domain, int type, int protocol)
     return 0;
 }
 
+/** Accepts a connection request on a listening socket, waiting for one
+ * unless the socket doesn't block. `conn` becomes the server's side of the
+ * connection. The peer's address isn't given: names aren't kept. */
 static int socket_unix_accept(struct file *file, struct file *conn, const struct sockaddr *addr, socklen_t *len)
 {
     if (!file || !file->socket)
@@ -72,7 +102,7 @@ static int socket_unix_accept(struct file *file, struct file *conn, const struct
     if (file->socket->domain != AF_UNIX || !socket || !socket->listening)
         return -EINVAL;
 
-    /* Sleep until a connection request is present */
+    /* sleep until a connection request comes */
     while (!socket->requests.count) {
         if (file->flags & O_NONBLOCK)
             return -EAGAIN;
@@ -83,7 +113,8 @@ static int socket_unix_accept(struct file *file, struct file *conn, const struct
             return err;
     }
 
-    /* Allocate everything before taking the request off the queue */
+    /* allocate everything before taking the request off the queue, so
+     * that running out of memory leaves it there */
     struct socket *conn_socket = kmalloc(sizeof(struct socket), &M_SOCKET, 0);
     struct ringbuf *soci = ringbuf_new(SOCKBUF);
     struct ringbuf *sico = ringbuf_new(SOCKBUF);
@@ -102,36 +133,36 @@ static int socket_unix_accept(struct file *file, struct file *conn, const struct
     conn_socket->domain = AF_UNIX_CONN;
     conn_socket->p      = request;
 
-    /* Initialize connection, offset 0 marks the server side */
+    /* the connection's server side: offset 0 marks it */
     conn->socket = conn_socket;
     conn->flags  = FILE_SOCKET;
     conn->offset = 0;
 
-    /* Initialize buffers */
+    /* the rings, one each way */
     request->soci = soci;
     request->sico = sico;
 
-    /* Connection established */
     request->connected = 1;
 
-    /* Wakeup client if waiting for connection */
+    /* wake up the client, which waits in connect() */
     waitq_wakeup(&request->connect);
 
     return 0;
 }
 
+/** Binds a socket to a path: a socket node is made there, which must not
+ * exist yet (`-EADDRINUSE`). */
 static int socket_unix_bind(struct file *file, const struct sockaddr *addr, socklen_t len)
 {
     struct sockaddr_un *addr_un = (struct sockaddr_un *) addr;
 
-    /* Get path vnode */
     int err = 0;
     struct uio uio = PROC_UIO(curproc);
 
     if ((err = unix_addr_check(addr)))
         return err;
 
-    /* already bound or connected */
+    /* it is bound or connected already */
     if (file->socket->domain != AF_UNIX || file->socket->p)
         return -EINVAL;
 
@@ -145,16 +176,15 @@ static int socket_unix_bind(struct file *file, const struct sockaddr *addr, sock
         if (vnode)
             vfs_close(vnode);
 
-        /* the path is taken, as POSIX says for bind() */
+        /* the path is taken: POSIX says bind() fails then */
         return -EADDRINUSE;
     }
 
-    /* Create socket */
-    /* like Linux: 0777 less the umask */
+    /* make the socket node, as Linux does: 0777 less the umask */
     if ((err = vfs_mknod(addr_un->sun_path, S_IFSOCK | 0777, 0, &uio, NULL)))
         return err;
 
-    /* Get vnode -- FIXME */
+    /* look up the node just made, for a reference to it */
     if ((err = vfs_lookup(addr_un->sun_path, &uio, &vnode)))
         return err;
 
@@ -169,11 +199,13 @@ static int socket_unix_bind(struct file *file, const struct sockaddr *addr, sock
     return 0;
 }
 
+/** Connects to the socket bound to a path: the request waits on the
+ * listening socket until it is accepted, or refused because the listener
+ * closed (`-ECONNREFUSED`). */
 static int socket_unix_connect(struct file *file, const struct sockaddr *addr, socklen_t len)
 {
     struct sockaddr_un *addr_un = (struct sockaddr_un *) addr;
 
-    /* Get path vnode */
     int err = 0;
     struct vnode *vnode = NULL;
     struct uio uio = PROC_UIO(curproc);
@@ -184,7 +216,7 @@ static int socket_unix_connect(struct file *file, const struct sockaddr *addr, s
     if (file->socket->domain != AF_UNIX)
         return -EISCONN;
 
-    /* Open socket */
+    /* find the socket bound to the path */
     if ((err = vfs_lookup(addr_un->sun_path, &uio, &vnode))) {
         return err;
     }
@@ -205,7 +237,8 @@ static int socket_unix_connect(struct file *file, const struct sockaddr *addr, s
     /* the bound socket holds its own reference to the vnode */
     vfs_close(vnode);
 
-    /* path is not a bound socket, not listening, or backlog full */
+    /* the path isn't a bound socket, or it isn't listening, or its backlog
+     * is full */
     if (!socket || !socket->listening || socket->requests.count >= socket->backlog)
         return -ECONNREFUSED;
 
@@ -214,10 +247,10 @@ static int socket_unix_connect(struct file *file, const struct sockaddr *addr, s
 
     enqueue(&socket->requests, request);
 
-    /* Wake up server if waiting for connections */
+    /* wake up the server, if it waits in accept() */
     waitq_wakeup(&socket->accept);
 
-    /* Sleep until the connection is established */
+    /* sleep until the connection is accepted */
     while (!request->connected) {
         int err = waitq_sleep(&request->connect);
 
@@ -225,25 +258,26 @@ static int socket_unix_connect(struct file *file, const struct sockaddr *addr, s
             return err;
     }
 
-    /* listening socket was closed before accepting us */
+    /* the listening socket was closed before accepting it */
     if (request->connected < 0) {
         kfree(request);
         return -ECONNREFUSED;
     }
 
-    /* Initialize connection */
+    /* the connection's client side: offset 1 marks it */
     file->socket->domain = AF_UNIX_CONN;
     file->socket->p = request;
-    file->offset    = 1;   /* FIXME */
+    file->offset    = 1;
 
     return 0;
 }
 
+/** Makes a bound socket listen for connections. */
 static int socket_unix_listen(struct file *file, int backlog)
 {
     struct un_socket *socket = (struct un_socket *) file->socket->p;
 
-    /* must be bound (and not a connection) */
+    /* it must be bound (and not a connection) */
     if (file->socket->domain != AF_UNIX || !socket)
         return -EINVAL;
 
@@ -255,10 +289,11 @@ static int socket_unix_listen(struct file *file, int backlog)
 }
 
 /**
- * Between a connection's ring and an iobuf, a chunk at a time through the
- * kernel: copying to or from user memory may sleep (a page brought in
- * from the disk), and the peer may free the ring meanwhile (*ring_p NULL
- * then). How many bytes moved, -EFAULT if a fault came first.
+ * Moves up to `n` bytes from a connection's ring to user memory, a chunk
+ * at a time through the kernel's memory: copying to user memory may sleep
+ * (a page brought in from the disk), and the peer may free the ring
+ * meanwhile (`*ring_p` is NULL then). Returns how many bytes moved, or
+ * `-EFAULT` if a fault came first.
  */
 static ssize_t ring_to_iobuf(struct ringbuf **ring_p, size_t n, struct iobuf *io)
 {
@@ -276,7 +311,7 @@ static ssize_t ring_to_iobuf(struct ringbuf **ring_p, size_t n, struct iobuf *io
         if (r < 0)
             return done ? (ssize_t) done : r;
 
-        /* out: off the ring */
+        /* what was copied out comes off the ring */
         if (*ring_p)
             ringbuf_discard(*ring_p, r);
 
@@ -289,6 +324,9 @@ static ssize_t ring_to_iobuf(struct ringbuf **ring_p, size_t n, struct iobuf *io
     return done;
 }
 
+/** Moves up to `n` bytes from user memory to a connection's ring, as
+ * `ring_to_iobuf()` does the other way. Returns how many bytes moved, or
+ * `-EFAULT` if a fault came first. */
 static ssize_t iobuf_to_ring(struct ringbuf **ring_p, size_t n, struct iobuf *io)
 {
     char chunk[256];
@@ -314,6 +352,10 @@ static ssize_t iobuf_to_ring(struct ringbuf **ring_p, size_t n, struct iobuf *io
     return done;
 }
 
+/** Sends data on a connection: as much as the ring takes, waiting for
+ * room unless the socket doesn't block (with `MSG_WAITALL`, until all is
+ * sent). Returns how much was sent, or a negative errno (`-EPIPE` once
+ * writing is shut down). */
 static ssize_t socket_unix_send(struct file *file, struct iobuf *io, int flags,
                                 const struct sockaddr *to, socklen_t tolen)
 {
@@ -324,8 +366,8 @@ static ssize_t socket_unix_send(struct file *file, struct iobuf *io, int flags,
 
     struct un_conn *conn = file->socket->p;
 
-    /* the ring may be freed by the peer shutting down while we sleep, so
-     * keep a pointer to the conn field and re-read it every iteration */
+    /* the peer may free the ring by shutting down while we sleep, so keep
+     * a pointer to the connection's field and read it again each time */
     struct ringbuf **ring_p = NULL;
 
     struct waitq *recv_queue = NULL;
@@ -341,7 +383,7 @@ static ssize_t socket_unix_send(struct file *file, struct iobuf *io, int flags,
         send_queue = &conn->client_send;
     }
 
-    /* shut for writing */
+    /* writing is shut down */
     if (file->offset == 0 ? conn->soci_end : conn->sico_end)
         return -EPIPE;
 
@@ -351,7 +393,7 @@ static ssize_t socket_unix_send(struct file *file, struct iobuf *io, int flags,
     for (;;) {
         struct ringbuf *ring = *ring_p;
 
-        if (!ring)  /* Connection closed */
+        if (!ring)  /* the connection was closed */
             return retval;
 
         size_t wlen = MIN(len - retval, SOCKBUF - ringbuf_available(ring));
@@ -370,7 +412,7 @@ static ssize_t socket_unix_send(struct file *file, struct iobuf *io, int flags,
         if ((size_t) retval == len || io->fault)
             return retval;
 
-        /* full: don't wait if the descriptor doesn't */
+        /* the ring is full: wait, unless the socket doesn't block */
         if (file->flags & O_NONBLOCK)
             return retval ? retval : -EAGAIN;
 
@@ -381,6 +423,10 @@ static ssize_t socket_unix_send(struct file *file, struct iobuf *io, int flags,
     }
 }
 
+/** Receives data from a connection: what the ring has, waiting for data
+ * unless the socket doesn't block (with `MSG_WAITALL`, until the buffer
+ * is full). Returns how much was received, 0 at the end, or a negative
+ * errno. */
 static ssize_t socket_unix_recv(struct file *file, struct iobuf *io, int flags,
                                 struct sockaddr *from, socklen_t *fromlen)
 {
@@ -389,7 +435,7 @@ static ssize_t socket_unix_recv(struct file *file, struct iobuf *io, int flags,
     if (file->socket->domain != AF_UNIX_CONN)
         return -ENOTCONN;
 
-    /* the peer, unnamed (names aren't kept) */
+    /* the peer is unnamed (names aren't kept) */
     if (from && fromlen) {
         if (*fromlen >= sizeof(sa_family_t))
             from->sa_family = AF_UNIX;
@@ -398,7 +444,7 @@ static ssize_t socket_unix_recv(struct file *file, struct iobuf *io, int flags,
 
     struct un_conn *conn = file->socket->p;
 
-    /* see socket_unix_send */
+    /* see socket_unix_send() */
     struct ringbuf **ring_p = NULL;
 
     struct waitq *recv_queue = NULL;
@@ -424,7 +470,7 @@ static ssize_t socket_unix_recv(struct file *file, struct iobuf *io, int flags,
     for (;;) {
         struct ringbuf *ring = *ring_p;
 
-        if (!ring)  /* Connection closed */
+        if (!ring)  /* the connection was closed */
             return retval;
 
         if ((incr = ring_to_iobuf(ring_p, len - retval, io)) < 0)
@@ -433,7 +479,7 @@ static ssize_t socket_unix_recv(struct file *file, struct iobuf *io, int flags,
         if (incr > 0)
             waitq_wakeup(send_queue);
 
-        /* nothing more will come */
+        /* the peer is done writing: nothing more will come */
         if (!incr && *end_p)
             return retval;
 
@@ -445,7 +491,7 @@ static ssize_t socket_unix_recv(struct file *file, struct iobuf *io, int flags,
         if ((size_t) retval == len || io->fault)
             return retval;
 
-        /* empty: don't wait if the descriptor doesn't */
+        /* the ring is empty: wait, unless the socket doesn't block */
         if (file->flags & O_NONBLOCK)
             return retval ? retval : -EAGAIN;
 
@@ -456,6 +502,8 @@ static ssize_t socket_unix_recv(struct file *file, struct iobuf *io, int flags,
     }
 }
 
+/** Says whether a read (or an accept) wouldn't wait: how many bytes or
+ * connection requests wait, or 1 at the end of the data. */
 static int socket_unix_can_read(struct file *file, size_t len)
 {
     if (!file || !file->socket)
@@ -486,15 +534,15 @@ static int socket_unix_can_read(struct file *file, size_t len)
     }
 
     if (!ring)
-        return -ENOTCONN; /* ??? */
+        return -ENOTCONN;   /* reading was shut down */
 
-    /* the end can be read */
+    /* at the end, a read doesn't wait either: it returns 0 */
     size_t available = ringbuf_available(ring);
     return available ? (int) available : end;
 }
 
-/** a listener's accept waits on accept; a connection's recv and send on
- * the queues of its side (socket_unix_recv, socket_unix_send) */
+/** Returns the wait queue that a socket's readers (or writers) sleep on: a
+ * listener's `accept`, or the queues of a connection's side. */
 static struct waitq *socket_unix_wait_queue(struct file *file, int write)
 {
     if (file->socket->domain == AF_UNIX) {
@@ -513,6 +561,8 @@ static struct waitq *socket_unix_wait_queue(struct file *file, int write)
         return write ? &conn->client_send : &conn->client_recv;
 }
 
+/** Says how much a write could send without waiting: the room in the
+ * ring. */
 static int socket_unix_can_write(struct file *file, size_t len)
 {
     if (file->socket->domain != AF_UNIX_CONN)
@@ -537,9 +587,10 @@ static int socket_unix_can_write(struct file *file, size_t len)
 }
 
 
-/** a connection is shut for reading or writing (or both): the ring read
- * goes (the peer can't write), the ring written ends (the peer reads what
- * is left, then the end) */
+/** Shuts down one side of a connection for reading, writing or both. Shut
+ * for reading, the ring it reads is freed, so the peer can't write
+ * anymore. Shut for writing, the ring it writes ends: the peer reads what
+ * is left, then the end. */
 static void unix_conn_shut(struct file *file, int how)
 {
     struct un_conn *conn = file->socket->p;
@@ -556,11 +607,11 @@ static void unix_conn_shut(struct file *file, int how)
     if (how & SHUT_WR)
         *out_end = 1;
 
-    /* wake up the peer, blocked on a ring that went or ended */
+    /* wake up the peer, which may wait on a ring that went or ended */
     unix_conn_wakeup(conn);
 }
 
-/** shutdown(), of a connection only */
+/** Handles `shutdown()`, which only applies to a connection. */
 static int socket_unix_shut(struct file *file, int how)
 {
     if (!file || !file->socket)
@@ -573,19 +624,21 @@ static int socket_unix_shut(struct file *file, int how)
     return 0;
 }
 
+/** Frees a socket when its last descriptor is closed. A connection's side
+ * is shut down, and the connection is freed once both sides are gone. A
+ * listener refuses the requests that wait, and is unbound. */
 static int socket_unix_shutdown(struct file *file, int how)
 {
     if (!file || !file->socket)
         return -EINVAL;
     
     if (file->socket->domain == AF_UNIX_CONN) {
-        /* Connected socket */
         struct un_conn *conn = file->socket->p;
 
         unix_conn_shut(file, how);
 
-        /* this side is gone; the connection once both are (each frees
-         * the ring it read) */
+        /* this side is gone; the connection goes once both are (each side
+         * frees the ring it read) */
         if (!conn->soci && !conn->sico)
             kfree(conn);
 
@@ -595,7 +648,7 @@ static int socket_unix_shutdown(struct file *file, int how)
         return 0;
     }
 
-    /* Unconnected socket, unbind it if bound */
+    /* not a connection: unbind it, if it is bound */
     struct un_socket *socket = file->socket->p;
 
     if (socket) {
@@ -603,7 +656,7 @@ static int socket_unix_shutdown(struct file *file, int how)
 
         queue_remove(sockets, socket);
 
-        /* refuse pending connections, connect() frees the request */
+        /* refuse the waiting connection requests; connect() frees each */
         while ((request = dequeue(&socket->requests))) {
             request->connected = -1;
             waitq_wakeup(&request->connect);
@@ -619,7 +672,8 @@ static int socket_unix_shutdown(struct file *file, int how)
     return 0;
 }
 
-/** its name or its peer's: unnamed (names aren't kept) */
+/** Gets a socket's name or its peer's: always unnamed, since names aren't
+ * kept. */
 static int socket_unix_getname(struct file *file, struct sockaddr *addr, socklen_t *len, int peer)
 {
     if (*len >= sizeof(sa_family_t))
@@ -629,12 +683,14 @@ static int socket_unix_getname(struct file *file, struct sockaddr *addr, socklen
     return 0;
 }
 
+/** Handles `FIONREAD`: how many bytes a connection has to read. */
 static int socket_unix_ioctl(struct file *file, int request, void *argp)
 {
     if (request == FIONREAD) {
         int n = socket_unix_can_read(file, 0);
 
-        /* a listening socket has connections, not bytes; the end is 0 */
+        /* a listening socket has connection requests, not bytes, and the
+         * end of a connection is 0 bytes */
         n = file->socket->domain == AF_UNIX_CONN && n > 0 ? n : 0;
         return copyout(argp, &n, sizeof(n));
     }

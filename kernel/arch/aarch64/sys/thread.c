@@ -1,11 +1,12 @@
 /** \file
- * aarch64: threads made, started, switched to, killed
+ * aarch64: making threads, starting them, switching to them, and ending
+ * them.
  *
  * A thread stops in the kernel by saving where it is (aarch64_ctx_save():
- * the registers a call keeps, its stack) and calling the scheduler, on
- * its own stack (sys/sched.c); it goes on when that's loaded again
- * (aarch64_ctx_load()). A thread that never ran starts on its kernel
- * stack, from where it drops to user mode (thread_spawn()).
+ * the registers that a call keeps, and its stack pointer) and calling the
+ * scheduler, on its own stack (sys/sched.c). It goes on when that context
+ * is loaded again (aarch64_ctx_load()). A thread that never ran starts on
+ * its kernel stack, and drops to user mode from there (thread_spawn()).
  */
 
 #include <core/system.h>
@@ -21,7 +22,11 @@
 MALLOC_DEFINE(M_AARCH64_THREAD, "aarch64-thread", "aarch64 thread structure");
 MALLOC_DEFINE(M_KERN_STACK, "kern-stack", "kernel stack");
 
-/** a thread's architecture part, with its kernel stack; NULL if no memory */
+/**
+ * Makes a thread's aarch64 state, with its kernel stack.
+ *
+ * @return the state, or NULL if there was no memory for it
+ */
 struct aarch64_thread *aarch64_thread_new(void)
 {
     struct aarch64_thread *arch = kmalloc(sizeof(struct aarch64_thread), &M_AARCH64_THREAD, M_ZERO);
@@ -41,7 +46,8 @@ struct aarch64_thread *aarch64_thread_new(void)
     return arch;
 }
 
-/** a thread's first run: the kernel lock let go of, user mode */
+/** Runs a thread for the first time: lets go of the kernel lock, and
+ * drops to user mode. */
 static void __attribute__((noreturn)) thread_spawn(void)
 {
     struct aarch64_thread *arch = curthread->arch;
@@ -50,6 +56,10 @@ static void __attribute__((noreturn)) thread_spawn(void)
     aarch64_jump_user(arch->pc, arch->sp, arch->x0, arch->x1, arch->x2, arch->kstack);
 }
 
+/*
+ * Starts running a thread for the first time, on its kernel stack. It
+ * doesn't return.
+ */
 void arch_thread_spawn(struct thread *thread)
 {
     struct aarch64_thread *arch = thread->arch;
@@ -59,6 +69,10 @@ void arch_thread_spawn(struct thread *thread)
     aarch64_goto((uintptr_t) thread_spawn, arch->kstack);
 }
 
+/*
+ * Switches to a thread that ran before: it goes on from where it was
+ * switched away from. It doesn't return.
+ */
 void arch_thread_switch(struct thread *thread)
 {
     struct aarch64_thread *arch = thread->arch;
@@ -66,13 +80,15 @@ void arch_thread_switch(struct thread *thread)
     pmap_switch(thread->owner->vm_space.pmap);
     aarch64_fpsimd_switch(thread);
 
-    /* signals are taken on the way back to user mode, not here
-     * (aarch64_return_to_user): the thread goes on where it was */
+    /* signals are taken on the way back to user mode
+     * (aarch64_return_to_user()), not here: the thread goes on from where
+     * it was */
     aarch64_ctx_load(&arch->ctx);
 }
 
-/** the thread starts at `entry' (the C library's start routine) with the
- * user stack `stack', `uentry' and `arg' its arguments: 0, -ENOMEM */
+/*
+ * Sets up a new user thread, for `pthread_create()`.
+ */
 int arch_thread_create(struct thread *thread, uintptr_t stack, uintptr_t entry, uintptr_t uentry, uintptr_t arg)
 {
     struct aarch64_thread *arch = aarch64_thread_new();
@@ -89,8 +105,11 @@ int arch_thread_create(struct thread *thread, uintptr_t stack, uintptr_t entry, 
     return 0;
 }
 
-/** a kernel thread, which starts at `entry' (a function without arguments
- * that never returns) on its kernel stack once it is switched to */
+/*
+ * Sets up a kernel thread, which starts at `entry` on its kernel stack
+ * once it is switched to. If there's no memory, the thread's state stays
+ * NULL.
+ */
 void arch_kthread_create(struct thread *thread, uintptr_t entry)
 {
     struct aarch64_thread *arch = aarch64_thread_new();
@@ -100,18 +119,22 @@ void arch_kthread_create(struct thread *thread, uintptr_t entry)
     if (!arch)
         return;
 
-    /* switched to as if it had stopped at its start: aarch64_ctx_load()
-     * "returns" into it */
+    /* it's switched to as if it had stopped at its start:
+     * aarch64_ctx_load() "returns" into it */
     arch->ctx.lr = entry;
     arch->ctx.sp = arch->kstack;
     arch->ctx.fp = 0;
 }
 
+/*
+ * Frees a thread's aarch64 state and kernel stack. The thread must not be
+ * running on them.
+ */
 void arch_thread_kill(struct thread *thread)
 {
     struct aarch64_thread *arch = thread->arch;
 
-    /* already killed */
+    /* killed already */
     if (!arch)
         return;
 

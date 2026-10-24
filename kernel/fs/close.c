@@ -1,9 +1,19 @@
+/** \file
+ * Closing a vnode: dropping a reference to it.
+ */
+
 #include <core/system.h>
 #include <core/panic.h>
 #include <fs/vfs.h>
 
-/** close a vnode
- * closes a vnode (i.e. decrements reference counts)
+/**
+ * Drops a reference to a vnode. When the last one goes, the filesystem's
+ * close operation releases it. Closing a vnode that has no references
+ * left is a bug, and panics.
+ *
+ * @param vnode  the vnode
+ * @return 0, `-EINVAL` if `vnode` isn't a valid vnode, or what the
+ *         filesystem's close operation returns
  */
 int vfs_close(struct vnode *vnode)
 {

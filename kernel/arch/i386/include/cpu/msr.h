@@ -3,6 +3,9 @@
 
 #include <core/system.h>
 
+/* x86: the model-specific registers (MSRs). */
+
+/* Reads an MSR. */
 static inline uint64_t msr_read(uint32_t msr)
 {
     uint32_t lo, hi;
@@ -10,6 +13,7 @@ static inline uint64_t msr_read(uint32_t msr)
     return ((uint64_t)hi << 32) | lo;
 }
  
+/* Writes an MSR. */
 static inline void msr_write(uint32_t msr, uint64_t val)
 {
     uint32_t lo = val & 0xFFFFFFFF;
@@ -17,6 +21,6 @@ static inline void msr_write(uint32_t msr, uint64_t val)
     asm volatile("wrmsr" : : "a"(lo), "d"(hi), "c"(msr));
 }
 
-#define APIC_BASE   0x1B
+#define APIC_BASE   0x1B    /* the local APIC's base address MSR */
 
 #endif /* ! _X86_MSR_H */

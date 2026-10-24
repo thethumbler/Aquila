@@ -1,9 +1,13 @@
 /** \file
- * The i8042, the PC's keyboard controller: its two PS/2 ports, the
- * keyboard's (the first) and the mouse's (the second, "aux"), each with
- * its interrupt. Their bytes go to the handler their driver registered
- * (dev/kbd/ps2kbd.c, dev/mouse/ps2mouse.c). Where it is, the platform
- * says (dev/platform.h: "i8042", its two interrupts in the ports' order).
+ * The driver for the i8042, the PC's keyboard controller.
+ *
+ * The controller has two PS/2 ports, the keyboard's (the first) and the
+ * mouse's (the second, "aux"), each with its own interrupt. The bytes
+ * each port receives go to the handler that the port's driver registered
+ * (`dev/kbd/ps2kbd.c`, `dev/mouse/ps2mouse.c`). The controller can also
+ * reset the CPU, which is how a PC reboots. The platform says where it is
+ * (`dev/platform.h`: `"i8042"`, with its two interrupts in the ports'
+ * order).
  */
 
 #include <core/system.h>
@@ -19,6 +23,7 @@
 static struct ioaddr i8042_ioaddr;
 static int i8042_found;
 
+/* the handler of each port's bytes */
 static void (*port_handler[2])(int);
 
 #define DATA_PORT        0x00
@@ -32,20 +37,22 @@ static void (*port_handler[2])(int);
 #define STATUS_TOUT      0x40
 #define STATUS_PARITY    0x80
 
+/** Returns the controller's status register. */
 static uint8_t read_status(void)
 {
     return io_in8(&i8042_ioaddr, STATUS_PORT);
 }
 
-/** the controller has a byte for us (its output buffer is full): the
- * interrupt comes when it has, there is nothing to wait for; one with
- * nothing to read is spurious */
+/** Returns whether the controller has a byte for us (its output buffer is
+ * full). The interrupt only comes once it has one, so there is nothing to
+ * wait for; an interrupt with nothing to read is spurious. */
 static int has_byte(void)
 {
     return read_status() & STATUS_OBUF_FULL;
 }
 
-/** a port's interrupt (`arg' is its handler's slot) */
+/** Handles a port's interrupt: its byte goes to the port's handler.
+ * `arg` is the port's slot in `port_handler`. */
 static void i8042_irq(void *arg)
 {
     void (**handler)(int) = arg;
@@ -59,13 +66,20 @@ static void i8042_irq(void *arg)
         (*handler)(byte);
 }
 
+/**
+ * Registers the function that gets each byte a port receives.
+ *
+ * @param port  the port: 1 (the keyboard) or 2 (the mouse)
+ * @param fun   the function, called with each byte, from the interrupt
+ */
 void i8042_handler_register(int port, void (*fun)(int))
 {
     if (port == 1 || port == 2)
         port_handler[port - 1] = fun;
 }
 
-/** the controller takes a byte, -ETIMEDOUT if it doesn't in time */
+/** Waits until the controller can take a byte. Returns 0, or
+ * `-ETIMEDOUT` if it doesn't in time. */
 static int write_wait(void)
 {
     for (int i = 0; i < 100000; ++i)
@@ -75,8 +89,14 @@ static int write_wait(void)
     return -ETIMEDOUT;
 }
 
-/** a byte to the second port's device (the mouse), its replies come as
- * its interrupts */
+/**
+ * Sends a byte to the device on the second port (the mouse). Its replies
+ * come as that port's interrupts.
+ *
+ * @param byte  the byte
+ * @return 0, `-ENODEV` if there is no controller, or `-ETIMEDOUT` if it
+ *         didn't take the byte in time
+ */
 int i8042_aux_write(uint8_t byte)
 {
     if (!i8042_found)
@@ -96,14 +116,18 @@ int i8042_aux_write(uint8_t byte)
     return 0;
 }
 
-/** the CPU reset, through the controller's output line */
+/**
+ * Resets the CPU, through the controller's output line: this reboots the
+ * PC. Without a controller, it does nothing.
+ */
 void i8042_reboot(void)
 {
     if (i8042_found)
         io_out8(&i8042_ioaddr, COMMAND_PORT, 0xFE);
 }
 
-/** the controller's reply to a command, -ETIMEDOUT if none comes in time */
+/** Waits for the controller's reply to a command. Returns the reply, or
+ * `-ETIMEDOUT` if none comes in time. */
 static int read_wait(void)
 {
     for (int i = 0; i < 100000; ++i)
@@ -118,8 +142,9 @@ static int read_wait(void)
 #define CMD_AUX_ENABLE    0xA8
 #define CONFIG_AUX_IRQ    0x02
 
-/** the second port on, and its interrupt (the configuration byte's);
- * polled, before the interrupts are installed */
+/** Turns the second port on, and its interrupt (a bit of the
+ * controller's configuration byte). It polls: the interrupt handlers
+ * aren't installed yet. Returns 0 or a negative errno. */
 static int aux_enable(void)
 {
     int err, config;
@@ -149,6 +174,8 @@ static int aux_enable(void)
     return 0;
 }
 
+/** Finds the platform's i8042, turns the mouse's port on, and installs
+ * the ports' interrupt handlers. */
 static int i8042_init(void)
 {
     const struct platform_device *pd = platform_device_get("i8042", 0);
@@ -161,7 +188,8 @@ static int i8042_init(void)
     if (err)
         return err;
 
-    /* i8042.nocheck: there even if its status says no */
+    /* the controller should say it passed its self-test; with the
+     * i8042.nocheck argument, that isn't checked */
     if (kargs_get("i8042.nocheck", NULL)) {
         if (!(read_status() & STATUS_SYSTEM)) {
             printk("i8042: controller not found\n");
@@ -174,11 +202,11 @@ static int i8042_init(void)
     i8042_found = 1;
     printk("i8042: controller at %p (%s)\n", (void *) pd->io.addr, ioaddr_type_str(&i8042_ioaddr));
 
-    /* the mouse's port, if it has its interrupt */
+    /* the mouse's port, if the platform gives it an interrupt */
     if (pd->nirq > 1 && aux_enable())
         printk("i8042: the second port didn't come on\n");
 
-    /* flush any pending data */
+    /* drop any bytes waiting from before */
     for (int i = 0; i < 10; ++i)
         io_in8(&i8042_ioaddr, DATA_PORT);
 

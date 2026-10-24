@@ -1,3 +1,13 @@
+/** \file
+ * `fork()`: a copy of the calling process.
+ *
+ * The child gets copies of the parent's process structure, descriptors
+ * (referring to the same open files) and address space. The memory isn't
+ * copied: both processes share its pages read-only, and the first one to
+ * write a page gets its own copy (copy on write, `vm_space_fork()`). Only
+ * the calling thread is copied.
+ */
+
 #include <core/system.h>
 #include <core/string.h>
 #include <core/arch.h>
@@ -11,8 +21,9 @@
 
 MALLOC_DECLARE(M_FDS);
 
-/** the child's descriptors refer to the parent's open files: the same
- * files, their offsets shared */
+/** Copies the parent's descriptors to the child. Each refers to the same
+ * open file, so the two processes share its offset. Returns 0 or
+ * `-ENOMEM`. */
 static int copy_fds(struct proc *parent, struct proc *fork)
 {
     fork->fds = kmalloc(FDS_COUNT * sizeof(struct fd), &M_FDS, M_ZERO);
@@ -21,7 +32,8 @@ static int copy_fds(struct proc *parent, struct proc *fork)
         return -ENOMEM;
 
     for (int i = 0; i < FDS_COUNT; ++i) {
-        /* a slot another thread is setting up stays the parent's */
+        /* a descriptor that another thread is still setting up isn't
+         * copied */
         struct file *file = proc_fd_file(parent, i);
 
         if (file)
@@ -31,6 +43,8 @@ static int copy_fds(struct proc *parent, struct proc *fork)
     return 0;
 }
 
+/** Copies what the child inherits from the parent's process structure:
+ * its process group, umask, IDs, signal mask and actions, and heap. */
 static int fork_proc_copy(struct proc *parent, struct proc *fork)
 {
     fork->pgrp = parent->pgrp;
@@ -50,59 +64,70 @@ static int fork_proc_copy(struct proc *parent, struct proc *fork)
     return 0;
 }
 
+/**
+ * Makes a child process, a copy of the process of `thread`. The child's
+ * one thread is a copy of `thread`, which will return 0 from `fork()`; it
+ * isn't made ready to run, the caller does that.
+ *
+ * @param thread  the thread calling `fork()`
+ * @param ref     if not NULL, set to the child
+ * @return 0, or a negative errno: `-ENOMEM`, or `-EAGAIN` if there is no
+ *         free process ID
+ */
 int proc_fork(struct thread *thread, struct proc **ref)
 {
     int err = 0;
     struct proc *fork = NULL;
     struct thread *fork_thread = NULL;
 
-    /* Create new process for fork */
+    /* the new process */
     if ((err = proc_new(&fork)))
         goto error;
 
-    /* New process main thread */
+    /* its main thread */
     fork_thread = (struct thread *) fork->threads.head->value;
 
-    /* Parent process */
+    /* the parent */
     struct proc *proc = thread->owner;
 
-    /* Copy process structure */
+    /* what the child inherits from the parent's structure */
     if ((err = fork_proc_copy(proc, fork)))
         goto error;
 
-    /* Copy process name */
+    /* the parent's name */
     if (!(fork->name = strdup(proc->name))) {
         err = -ENOMEM;
         goto error;
     }
 
-    /* Allocate a new PID */
+    /* a new process ID */
     if ((fork->pid = proc_pid_alloc()) == -1) {
         fork->pid = 0;
         err = -EAGAIN;
         goto error;
     }
 
-    /* Set fork parent */
+    /* the parent, for wait() */
     fork->parent = proc;
 
-    /* Mark the new thread as spawned
-     * fork continues execution from a spawned thread */
+    /* the child's thread starts as if it had been switched away from:
+     * from where fork() returns */
     fork_thread->spawned = 1;
 
     /* the same current directory */
     if ((fork->cwd = proc->cwd))
         fork->cwd->ref++;
 
-    /* copy file descriptors */
+    /* the descriptors */
     if ((err = copy_fds(proc, fork)))
         goto error;
 
-    /* copy virtual memory space */
+    /* the address space, copy on write */
     if ((err = vm_space_fork(&proc->vm_space, &fork->vm_space)))
         goto error;
 
-    /* Fix heap & stack entry pointers -- XXX yes, we are doing this */
+    /* point the child's heap_vm and stack_vm at its copies of the
+     * parent's: the copies are in the same order as the originals */
     struct qnode *pvm_node = proc->vm_space.vm_entries.head;
     struct qnode *fvm_node = fork->vm_space.vm_entries.head;
 
@@ -120,14 +145,15 @@ int proc_fork(struct thread *thread, struct proc **ref)
         fvm_node = fvm_node->next;
     }
 
-    /* Call arch specific fork handler */
+    /* the thread's CPU state, a copy of the caller's */
     err = arch_proc_fork(thread, fork);
 
     if (err)
         goto error;
 
-    /* fork() returns 0 in the child (its registers: it's another thread;
-     * the parent's result is sys_fork()'s, the child's PID) */
+    /* fork() returns 0 in the child, set in its registers since it is
+     * another thread (the parent gets the child's PID: sys_fork()'s
+     * result) */
     arch_syscall_return(fork_thread, 0);
 
     if (ref)
@@ -136,9 +162,9 @@ int proc_fork(struct thread *thread, struct proc **ref)
     return 0;
 
 error:
-    /* the caller returns err to the parent */
+    /* undo what was done; the caller returns err to the parent */
     if (fork) {
-        /* the copied descriptors (drops the references we took) */
+        /* close the copied descriptors (drops the references they took) */
         if (fork->fds) {
             for (int i = 0; i < FDS_COUNT; ++i)
                 proc_fd_close(fork, i);
@@ -154,7 +180,7 @@ error:
         if (fork->cwd)
             vfs_close(fork->cwd);
 
-        /* free main thread (it never ran, no arch data) */
+        /* free the main thread (it never ran) */
         struct thread *_thread = NULL;
         while ((_thread = dequeue(&fork->threads)))
             kfree(_thread);

@@ -1,6 +1,10 @@
 /** \file
- * Virtual terminals on the framebuffer, with the 8x16 font of the early
- * console.
+ * Virtual terminals on the framebuffer.
+ *
+ * Each cell of the terminal is drawn as a character of the early
+ * console's 8x16 font, in the cell's colours, pixel by pixel. Framebuffers
+ * of 16, 24 and 32 bits per pixel are supported. The virtual terminals
+ * (`vt.c`) draw through `vt_fb_display`.
  */
 
 #include <core/system.h>
@@ -11,15 +15,17 @@
 #define FONT_W  8
 #define FONT_H  16
 
-/* code page 437, from the early console */
+/* the font: code page 437, from the early console */
 extern const unsigned char font_8x16[];
 
-/* the framebuffer device, if the kernel has one */
+/* the framebuffer device, if the kernel has a framebuffer driver */
 extern struct fbdev *fbdev_primary(void) __attribute__((weak));
 
 static uint8_t *fb;
 static uint32_t pitch, bytes_pp;
 
+/** Writes one pixel of colour `rgb` (0xRRGGBB) at `p`, in the
+ * framebuffer's pixel format. */
 static inline void put_pixel(uint8_t *p, uint32_t rgb)
 {
     switch (bytes_pp) {
@@ -37,6 +43,8 @@ static inline void put_pixel(uint8_t *p, uint32_t rgb)
     }
 }
 
+/** Draws one cell of the terminal: its character's glyph, in its colours
+ * and attributes (bold, reverse, dim, invisible, underline, cursor). */
 static void fb_draw(int row, int col, struct vt_cell cell)
 {
     uint8_t fg = cell.fg, bg = cell.bg;
@@ -82,6 +90,13 @@ static void fb_draw(int row, int col, struct vt_cell cell)
     }
 }
 
+/**
+ * Sets up the virtual terminals on the framebuffer, if there is one the
+ * terminals can draw on, and clears the screen.
+ *
+ * @return 0, or `-ENODEV` if there is no framebuffer, or not one of 16,
+ *         24 or 32 bits per pixel
+ */
 int vt_fb_probe(void)
 {
     struct fbdev *dev = fbdev_primary ? fbdev_primary() : NULL;
@@ -105,7 +120,8 @@ int vt_fb_probe(void)
     if (!vt_fb_display.rows || !vt_fb_display.cols)
         return -ENODEV;
 
-    /* the margins aren't drawn on, the early console may have been */
+    /* clear the whole screen: the terminals don't draw on the margins,
+     * and the early console may have */
     memset(fb, 0, var->yres * pitch);
 
     return 0;

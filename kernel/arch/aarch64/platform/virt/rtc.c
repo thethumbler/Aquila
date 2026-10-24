@@ -1,5 +1,6 @@
 /** \file
- * The date: the PL031 real time clock, seconds since the epoch
+ * The date and time: the virt machine's PL031 real time clock, which
+ * counts seconds since the epoch.
  */
 
 #include <core/system.h>
@@ -7,8 +8,11 @@
 #include <cpu/io.h>
 #include <platform/virt.h>
 
-#define RTC_DR  0x000   /* data: seconds */
+#define RTC_DR  0x000   /* data: the seconds */
 
+/*
+ * Reads the real time clock.
+ */
 int arch_time_get(struct timespec *ts)
 {
     ts->tv_sec  = mmio_read32(VIRT_REG(VIRT_RTC) + RTC_DR);

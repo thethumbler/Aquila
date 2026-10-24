@@ -1,11 +1,12 @@
-/**********************************************************************
- *              x86-64: from the multiboot entry to long mode
+/** \file
+ * x86_64: from the Multiboot entry point to long mode.
  *
- * The kernel runs at -2 GiB (_VMA). The boot tables map the first GiB of
- * physical memory three times, with 2 MiB pages: where it is (this code
- * runs at its physical address until the jump), at the kernel's addresses
- * and in the direct map (ARCH_DMAP_BASE). They are in the kernel's .bss,
- * reached at their physical addresses here; pmap_init() takes them over.
+ * The kernel runs at -2 GiB (`_VMA`). The boot page tables map the first
+ * GiB of physical memory three times, with 2 MiB pages: where it is (this
+ * code runs at its physical address until the jump), at the kernel's
+ * addresses, and in the direct map (`ARCH_DMAP_BASE`). The tables are in
+ * the kernel's .bss, used at their physical addresses here, and
+ * `pmap_init()` takes them over later.
  */
 
 #include <config.h>
@@ -20,7 +21,7 @@
 .code32
 .global x86_64_bootstrap
 x86_64_bootstrap:
-    /* the page directory: the first GiB, 512 pages of 2 MiB */
+    /* the page directory maps the first GiB, as 512 pages of 2 MiB */
     movl $PHYS(boot_pd), %edi
     movl $(PG_P | PG_W | PG_LARGE), %eax
     xorl %ecx, %ecx
@@ -32,15 +33,16 @@ x86_64_bootstrap:
     cmpl $512, %ecx
     jne 1b
 
-    /* identity (PML4 0) and the direct map (PML4 256) share a PDPT, the
-     * kernel's -2 GiB are the PDPT entry 510 of the PML4 entry 511 */
+    /* The identity map (PML4 entry 0) and the direct map (entry 256)
+     * share a PDPT. The kernel's -2 GiB is PDPT entry 510 of PML4 entry
+     * 511. */
     movl $(PHYS(boot_pd) + PG_P + PG_W), PHYS(boot_pdpt_low)
     movl $(PHYS(boot_pd) + PG_P + PG_W), PHYS(boot_pdpt_high) + 510 * 8
     movl $(PHYS(boot_pdpt_low) + PG_P + PG_W), PHYS(boot_pml4)
     movl $(PHYS(boot_pdpt_low) + PG_P + PG_W), PHYS(boot_pml4) + 256 * 8
     movl $(PHYS(boot_pdpt_high) + PG_P + PG_W), PHYS(boot_pml4) + 511 * 8
 
-    /* PAE and global pages */
+    /* turn on PAE and global pages */
     movl %cr4, %eax
     orl $0xA0, %eax
     movl %eax, %cr4
@@ -48,13 +50,14 @@ x86_64_bootstrap:
     movl $PHYS(boot_pml4), %eax
     movl %eax, %cr3
 
-    /* long mode (EFER.LME) */
+    /* turn on long mode (EFER.LME) */
     movl $0xC0000080, %ecx
     rdmsr
     orl $0x100, %eax
     wrmsr
 
-    /* paging, and write protection in the kernel too (copy-on-write) */
+    /* turn on paging, and write protection for the kernel too, so that
+     * it can't write through a copy-on-write page */
     movl %cr0, %eax
     orl $0x80010000, %eax
     movl %eax, %cr0
@@ -71,7 +74,7 @@ long_mode:
     movw %ax, %gs
     movw %ax, %ss
 
-    /* to the kernel's addresses */
+    /* jump to the kernel's addresses */
     movabsq $x86_64_start, %rax
     jmp *%rax
 
@@ -87,7 +90,8 @@ boot_gdt_pointer:
     .long boot_gdt
 
 /*
- * In the kernel's addresses: its stack, then the 32-bit kernel's next step
+ * Running at the kernel's addresses now: set up the stack, then go on to
+ * x86_cpu_init(), as the 32-bit kernel does.
  */
 .section .text.x86_64_start, "ax"
 .global x86_64_start

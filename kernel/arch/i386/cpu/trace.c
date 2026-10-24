@@ -1,14 +1,18 @@
 /** \file
- * A panic's backtrace: the frame pointers, each frame's saved %ebp/%rbp
- * and return address. Each address is named from the kernel's symbol
- * table when the boot loader passed it (Limine does, QEMU's -kernel
- * doesn't); mk/backtrace.sh names them from the kernel's file otherwise.
+ * x86: a panic's stack trace.
+ *
+ * The trace follows the frame pointers: each frame holds the caller's
+ * saved %ebp (%rbp) and the return address. Each address is named from
+ * the kernel's symbol table when the boot loader passed it (Limine does,
+ * QEMU's `-kernel` doesn't); otherwise, `mk/backtrace.sh` names them from
+ * the kernel's ELF file.
  */
 
 #include <core/system.h>
 #include <core/printk.h>
 #include <boot/boot.h>
 
+/** A stack frame, as the compiler lays it out with frame pointers. */
 struct stack_frame {
     struct stack_frame *bp;
     uintptr_t ip;
@@ -18,7 +22,8 @@ extern struct boot *__kboot;
 
 int __printing_trace = 0;
 
-/** the function `ip' is in, NULL if there are no symbols or none has it */
+/** Returns the symbol of the function that `ip` is in, or NULL if there
+ * are no symbols or no function holds it. */
 static const elf_sym_t *symbol_of(uintptr_t ip)
 {
     if (!__kboot || !__kboot->symtab || !__kboot->strtab)
@@ -34,6 +39,7 @@ static const elf_sym_t *symbol_of(uintptr_t ip)
     return NULL;
 }
 
+/* Prints the stack trace of the running code, up to 20 frames. */
 void arch_stack_trace(void)
 {
     __printing_trace = 1;

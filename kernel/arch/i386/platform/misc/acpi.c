@@ -1,8 +1,14 @@
 /** \file
- * ACPI: its tables (from the RSDT, or the XSDT of ACPI 2.0), mapped once
- * and found by their signature (x86_acpi_table: HPET, ...); and powering
- * off: the S5 sleep state, with the PM1 control registers of the FADT
- * and the sleep type of the \_S5 object of the DSDT, found by its name
+ * x86: ACPI's tables, and powering off.
+ *
+ * The firmware describes the machine in ACPI's tables, which the RSDT (or
+ * ACPI 2.0's XSDT) lists. They are mapped once, and found by their
+ * signature (`x86_acpi_table()`): the APIC code reads the MADT, the HPET
+ * code the HPET table.
+ *
+ * Powering off is entering the S5 sleep state: writing its sleep type to
+ * the PM1 control registers that the FADT gives. The sleep type is in the
+ * `\_S5` object of the DSDT, which is AML code; it is found by its name,
  * without an AML interpreter.
  */
 
@@ -21,13 +27,13 @@
 
 MALLOC_DEFINE(M_ACPI, "acpi", "ACPI table mapping");
 
-/* where tables are mapped */
+/* where the tables are mapped */
 #define ACPI_WINDOW         ARCH_ACPI_BASE
 #define ACPI_WINDOW_SIZE    0x00400000UL
 
 static uintptr_t window_next = ACPI_WINDOW;
 
-/* the FADT fields used here */
+/* the offsets of the FADT's fields used here */
 #define FADT_DSDT           40
 #define FADT_SMI_CMD        48
 #define FADT_ACPI_ENABLE    52
@@ -42,6 +48,7 @@ static uintptr_t window_next = ACPI_WINDOW;
 #define AML_BYTE_PREFIX     0x0A
 #define AML_PACKAGE         0x12
 
+/** Returns the 8-bit sum of `size` bytes, which is 0 for a valid table. */
 static int checksum(const void *p, size_t size)
 {
     uint8_t sum = 0;
@@ -52,7 +59,9 @@ static int checksum(const void *p, size_t size)
     return sum;
 }
 
-/** maps physical memory, NULL if the window is full */
+/** Maps a range of physical memory, read-only, in the tables' window.
+ * Returns its kernel address, or NULL if the window is full or there's no
+ * memory. */
 static void *acpi_map(uintptr_t paddr, size_t size)
 {
     uintptr_t page = PAGE_ALIGN(paddr);
@@ -78,7 +87,8 @@ static void *acpi_map(uintptr_t paddr, size_t size)
     return (void *) (entry->base + (paddr - page));
 }
 
-/** a table, mapped as long as its header says it is, if it checks out */
+/** Maps a table, as long as its header says it is. Returns it, or NULL
+ * if it can't be mapped or its checksum is wrong. */
 static struct acpi_sdt_header *acpi_table(uintptr_t paddr)
 {
     struct acpi_sdt_header *hdr = acpi_map(paddr, sizeof(*hdr));
@@ -91,7 +101,8 @@ static struct acpi_sdt_header *acpi_table(uintptr_t paddr)
     return hdr && !checksum(hdr, hdr->length) ? hdr : NULL;
 }
 
-/** the RSDP is in the first KiB of the EBDA or in the BIOS ROM */
+/** Finds the RSDP, which is in the first KiB of the EBDA or in the BIOS
+ * ROM, on a 16-byte boundary. Returns NULL if there's none. */
 static struct acpi_rsdp *acpi_rsdp(void)
 {
     uintptr_t ebda = (uintptr_t) *(uint16_t *) VMA(0x40E) << 4;
@@ -114,7 +125,8 @@ static struct acpi_rsdp *acpi_rsdp(void)
 static struct acpi_sdt_header *tables[ACPI_TABLES_MAX];
 static int tables_nr = -1;
 
-/** every table the RSDT (or XSDT) lists, mapped */
+/** Maps every table that the XSDT (or the RSDT) lists, and records them
+ * in `tables`. */
 static void acpi_tables(void)
 {
     struct acpi_rsdp *rsdp = acpi_rsdp();
@@ -127,7 +139,7 @@ static void acpi_tables(void)
         return;
     }
 
-    /* the XSDT, if there's one (and we can reach it) */
+    /* the XSDT, if there's one and its address can be reached */
     if (rsdp->rev >= 2 && !checksum(rsdp2, sizeof(*rsdp2)) && rsdp2->xsdt &&
         rsdp2->xsdt < ((uint64_t) 1 << (sizeof(uintptr_t) * 8 - 1))) {
         struct acpi_xsdt *xsdt = (struct acpi_xsdt *) acpi_table((uintptr_t) rsdp2->xsdt);
@@ -161,7 +173,13 @@ static void acpi_tables(void)
     }
 }
 
-/** the table of that signature, NULL if there's none */
+/**
+ * Finds one of ACPI's tables, by its signature. The tables are mapped the
+ * first time.
+ *
+ * @param signature  the table's signature, 4 characters ("APIC", "HPET")
+ * @return the table, or NULL if there's none
+ */
 void *x86_acpi_table(const char *signature)
 {
     if (tables_nr < 0)
@@ -174,7 +192,8 @@ void *x86_acpi_table(const char *signature)
     return NULL;
 }
 
-/** an integer element of a package: BytePrefix n, or ZeroOp and OneOp */
+/** Reads an integer element of an AML package: BytePrefix n, or ZeroOp or
+ * OneOp. Returns it, or -1 for anything else. */
 static int aml_int(const uint8_t **p, const uint8_t *end)
 {
     if (*p >= end)
@@ -192,8 +211,9 @@ static int aml_int(const uint8_t **p, const uint8_t *end)
 }
 
 /**
- * The sleep types of S5: Name (_S5, Package () {a, b, ...}) in the DSDT,
- * -1 if there isn't one.
+ * Finds S5's sleep types in the DSDT: `Name (_S5, Package () {a, b, ...})`.
+ * Returns the first one (for PM1a), sets `*typb` to the second (for
+ * PM1b), or returns -1 if there's no `\_S5` object.
  */
 static int acpi_s5(struct acpi_sdt_header *dsdt, int *typb)
 {
@@ -204,11 +224,12 @@ static int acpi_s5(struct acpi_sdt_header *dsdt, int *typb)
         if (memcmp(p, "_S5_", 4))
             continue;
 
-        /* a Name, \_S5_ or _S5_, of a package */
+        /* a Name of a package, \_S5_ or _S5_ */
         if (!(p[-1] == AML_NAME || (p[-1] == '\\' && p[-2] == AML_NAME)) || p[4] != AML_PACKAGE)
             continue;
 
-        /* the package length takes 1 to 4 bytes, the element count 1 */
+        /* skip the package's length (1 to 4 bytes) and its element count
+         * (1 byte) */
         const uint8_t *q = p + 5;
         q += ((*q >> 6) & 3) + 1;
         q++;
@@ -223,19 +244,24 @@ static int acpi_s5(struct acpi_sdt_header *dsdt, int *typb)
     return -1;
 }
 
+/** Writes a PM1 control register. */
 static void pm1_write(uint32_t port, uint16_t val)
 {
     struct ioaddr io = {.addr = port, .type = IOADDR_PORT};
     io_out16(&io, 0, val);
 }
 
+/** Reads a PM1 control register. */
 static uint16_t pm1_read(uint32_t port)
 {
     struct ioaddr io = {.addr = port, .type = IOADDR_PORT};
     return io_in16(&io, 0);
 }
 
-/** powers off, returns if it can't */
+/**
+ * Powers the machine off, by entering ACPI's S5 sleep state. It returns
+ * only if it couldn't.
+ */
 void x86_acpi_poweroff(void)
 {
     uint8_t *fadt = x86_acpi_table("FACP");
@@ -257,7 +283,7 @@ void x86_acpi_poweroff(void)
         return;
     }
 
-    /* ACPI mode, if the firmware isn't in it */
+    /* switch the firmware to ACPI mode, if it isn't in it */
     if (!(pm1_read(pm1a_cnt) & PM1_SCI_EN) && smi_cmd && enable) {
         struct ioaddr io = {.addr = smi_cmd, .type = IOADDR_PORT};
         io_out8(&io, 0, enable);
@@ -271,7 +297,7 @@ void x86_acpi_poweroff(void)
     if (pm1b_cnt && typb >= 0)
         pm1_write(pm1b_cnt, typb << 10 | PM1_SLP_EN);
 
-    /* it takes a moment */
+    /* the machine takes a moment to power off */
     for (volatile int i = 0; i < 10000000; ++i)
         ;
 

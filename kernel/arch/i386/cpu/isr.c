@@ -1,5 +1,11 @@
-/**********************************************************************
- *              Interrupt Service Routines (ISRs)
+/** \file
+ * x86: exceptions and system calls.
+ *
+ * The stubs in `cpu.S` call `__x86_isr()` for the 32 exception vectors
+ * and for `int $0x80`, the system call. A page fault goes to the memory
+ * code, `#NM` to the FPU code, a system call to `arch_syscall()`. Any
+ * other exception from user mode becomes a signal to the process; from
+ * the kernel, it is a bug, and the kernel panics.
  */
 
 #include <core/system.h>
@@ -47,11 +53,9 @@ extern void __x86_isr30(void);
 extern void __x86_isr31(void);
 extern void __x86_isr128(void);
 
-/* Refer to 
- * - Intel 64 and IA-32 Architectures Software Developer’s Manual
- * - Volume 3: System Programming Guide
- * - Table 6-1. Protected-Mode Exceptions and Interrupts
- */
+/* The exceptions' names: see the Intel 64 and IA-32 Architectures
+ * Software Developer's Manual, Volume 3 (System Programming Guide), Table
+ * 6-1, "Protected-Mode Exceptions and Interrupts". */
 
 static const char *int_msg[32] = {
     /* 0x00 */ "#DE: Divide Error",
@@ -88,7 +92,8 @@ static const char *int_msg[32] = {
     /* 0x1F */ "Reserved"
 };
 
-/* Signal to send to a user thread causing exception, 0 if fatal */
+/* The signal that an exception in user mode sends to the process, or 0
+ * if the exception is the kernel's to handle (or fatal). */
 static const int int_sig[32] = {
     /* 0x00 */ SIGFPE,  /* #DE */
     /* 0x01 */ SIGTRAP, /* #DB */
@@ -112,8 +117,10 @@ static const int int_sig[32] = {
     /* 0x13 */ SIGFPE,  /* #XM */
 };
 
-/** a copy routine's instruction faulted (uaccess.S): it resumes at its
- * fixup, which returns -EFAULT; 0 if `regs' wasn't in one */
+/** Handles a fault in one of the user memory copy routines (`uaccess.S`):
+ * the routine resumes at its fixup, which reports the failure to its
+ * caller. Returns 1 if the faulting instruction was one of them, 0 if it
+ * wasn't. */
 static int uaccess_fixup(struct x86_regs *regs)
 {
     extern uintptr_t x86_uaccess_fixups[], x86_uaccess_fixups_end[];
@@ -137,11 +144,12 @@ static int uaccess_fixup(struct x86_regs *regs)
     return 0;
 }
 
+/** Handles an exception or a system call, by its vector. */
 static void isr_dispatch(struct x86_regs *regs)
 {
     unsigned vec = regs->vec;
 
-    if (vec == 0xE && curthread) { /* Page Fault */
+    if (vec == 0xE && curthread) { /* a page fault */
         uintptr_t addr = read_cr2();
 
         if (!arch_mm_page_fault(addr, regs->err)) {
@@ -149,45 +157,47 @@ static void isr_dispatch(struct x86_regs *regs)
             return;
         }
 
-        /* user mode's: SIGSEGV, on its way back */
+        /* one from user mode that can't be resolved: SIGSEGV, delivered
+         * on the way back */
         if ((regs->cs & 3) == 3) {
             signal_force(curproc, SIGSEGV);
             x86_return_to_user(regs, 0);
             return;
         }
 
-        /* the kernel's, copying from or to user memory: -EFAULT (its own
-         * side of the copy faulting is a bug, as anywhere) */
+        /* one from the kernel, copying from or to user memory: the copy
+         * fails with -EFAULT (a fault on the kernel's side of the copy is
+         * a bug, as anywhere else) */
         if (addr < USER_STACK && uaccess_fixup(regs))
             return;
 
-        /* the kernel's anywhere else, even at a user address: user memory
-         * is only touched through copyin() and copyout(), this is a bug */
+        /* one from the kernel anywhere else, even at a user address, is a
+         * bug: the kernel only touches user memory through copyin() and
+         * copyout() */
         printk("kernel: page fault at %p%s\n", (void *) addr,
                addr < USER_STACK ? " (user memory, outside copyin/copyout)" : "");
         x86_dump_registers(regs);
         panic("page fault in the kernel");
     }
 
-    if (vec == 0x07) {  /* FPU Trap */
+    if (vec == 0x07) {  /* #NM: the thread's first FPU use since its switch */
         x86_fpu_trap();
         x86_return_to_user(regs, 0);
         return;
     }
     
-    if (vec == 0x80) {  /* syscall */
+    if (vec == 0x80) {  /* a system call */
         if (!curthread)
             panic("syscall without a current thread");
 
         struct x86_thread *arch = curthread->arch;
         arch->regs = regs;
-        //asm volatile ("sti");
         arch_syscall(regs);
         return;
     }
 
 
-    /* Exception caused by user code, signal the process instead of panicking */
+    /* an exception caused by user code: a signal to the process */
     if (vec < 32 && (regs->cs & 3) == 3 && curthread
             && int_sig[vec]) {
         struct x86_thread *arch = curthread->arch;
@@ -208,7 +218,7 @@ static void isr_dispatch(struct x86_regs *regs)
         const char *msg = int_msg[vec];
         printk("Recieved interrupt %d [err=%d]: %s\n", vec, (int) regs->err, msg);
 
-        if (vec == 0x0E) { /* Page Fault */
+        if (vec == 0x0E) { /* a page fault */
             printk("CR2 = %p\n", read_cr2());
         }
         x86_dump_registers(regs);
@@ -219,14 +229,19 @@ static void isr_dispatch(struct x86_regs *regs)
     }
 }
 
-/** an exception, or a system call: with the kernel lock, taken if it came
- * from user mode (an exception in the kernel has it already) */
+/**
+ * Handles an exception or a system call, which the stubs in `cpu.S` call.
+ * It takes the kernel lock if it came from user mode (an exception in the
+ * kernel holds it already), and lets go of it on the way back.
+ *
+ * @param regs  the interrupted registers, saved on the kernel stack
+ */
 void __x86_isr(struct x86_regs *regs)
 {
     int took = kernel_enter();
 
-    /* its process was killed while it ran here (on another CPU): it goes,
-     * what it came in for with it */
+    /* its process was killed while it ran (from another CPU): the thread
+     * ends now, and what it came in for is dropped */
     if (took && curthread && curthread->killed)
         sched_thread_killed();
 
@@ -234,6 +249,7 @@ void __x86_isr(struct x86_regs *regs)
     kernel_leave(took);
 }
 
+/** Sets the IDT's gates for the exceptions and the system call vector. */
 void x86_isr_setup(void)
 {   
     x86_idt_gate_set(0x00, (uintptr_t) __x86_isr0);

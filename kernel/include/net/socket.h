@@ -7,58 +7,69 @@
 
 #include <aquila/socket.h>
 
+/*
+ * Sockets (net/socket.c): what every kind of socket provides, and the
+ * operations that the system calls use, whatever the socket's domain.
+ */
+
+/** A socket. */
 struct socket {
     int domain;
     int type;
     int protocol;
 
-    /* Socket handler */
+    /* its domain's operations */
     struct sock_ops *ops;
 
-    /* Private data */
+    /* the domain's own data */
     void *p;
 };
 
+/** A domain's socket operations. */
 struct sock_ops {
     int (*accept) (struct file *socket, struct file *conn, const struct sockaddr *addr, socklen_t *len);
     int (*bind)   (struct file *socket, const struct sockaddr *addr, socklen_t len);
     int (*connect)(struct file *socket, const struct sockaddr *addr, socklen_t len);
     int (*listen) (struct file *socket, int backlog);
 
-    /* recvfrom(), sendto(): io->resid bytes through the iobuf, `from'
-     * and `to' (the kernel's) NULL if the caller doesn't want, or doesn't
-     * give, an address */
+    /* recvfrom() and sendto(): `io->resid` bytes through the iobuf;
+     * `from` and `to` (in kernel memory) are NULL if the caller doesn't
+     * want, or doesn't give, an address */
     ssize_t (*recv)(struct file *socket, struct iobuf *io, int flags,
                     struct sockaddr *from, socklen_t *fromlen);
     ssize_t (*send)(struct file *socket, struct iobuf *io, int flags,
                     const struct sockaddr *to, socklen_t tolen);
 
-    /* its address, or its peer's */
+    /* gets its address, or its peer's */
     int (*getname)(struct file *socket, struct sockaddr *addr, socklen_t *len, int peer);
 
-    /* options of a level other than SOL_SOCKET's own (the protocol's),
-     * and those of SOL_SOCKET the socket layer doesn't answer */
+    /* options of a level other than SOL_SOCKET (the protocol's), and the
+     * SOL_SOCKET options that the socket layer doesn't handle itself */
     int (*getsockopt)(struct file *socket, int level, int name, void *val, socklen_t *len);
     int (*setsockopt)(struct file *socket, int level, int name, const void *val, socklen_t len);
 
-    /* ioctl(): FIONREAD, and the protocol's (the interfaces') */
+    /* ioctl(): FIONREAD, and the protocol's own (the interfaces') */
     int (*ioctl)(struct file *socket, int request, void *argp);
 
+    /* whether a read, or a write, wouldn't wait */
     int (*can_read)(struct file *socket, size_t len);
     int (*can_write)(struct file *socket, size_t len);
 
-    /* what a reader (writer) sleeps on until it can, poll() too */
+    /* the wait queue a reader (or writer) sleeps on until it can; poll()
+     * waits on it too */
     struct waitq *(*wait_queue)(struct file *socket, int write);
 
-    /* the last descriptor is closed */
+    /* the last descriptor was closed */
     int (*shutdown) (struct file *socket, int how);
 
-    /* shutdown(): no more reading or writing (SHUT_*), it stays open */
+    /* shutdown(): no more reading or writing (SHUT_*); it stays open */
     int (*shut) (struct file *socket, int how);
 };
 
+/* An open file's flag: it's a socket. */
 #define FILE_SOCKET     0x80000000
 
+/* The sockets' operations, whatever their domain (net/socket.c). */
 int socket_create(struct file *file, int domain, int type, int protocol);
 int socket_bind(struct file *file, const struct sockaddr *addr, socklen_t len);
 int socket_accept(struct file *file, struct file *conn, const struct sockaddr *addr, socklen_t *len);

@@ -1,3 +1,8 @@
+/** \file
+ * Mounting: a filesystem on a directory, by type (`mount()`), and the
+ * root filesystem from a disk partition. `/proc/mounts` lists the mounts.
+ */
+
 #include <core/system.h>
 #include <core/string.h>
 #include <fs/vfs.h>
@@ -5,15 +10,27 @@
 #include <dev/dev.h>
 #include <ds/queue.h>
 
+/* the mounts, for /proc/mounts */
 struct queue *mounts = QUEUE_NEW();
 
 MALLOC_DEFINE(M_MOUNTPOINT, "mountpoint", "mount point structure");
 
+/**
+ * Mounts a filesystem of a type on a directory, for `mount()`.
+ *
+ * @param type   the filesystem's name (`"ext2"`, `"procfs"`, ...)
+ * @param dir    the directory's path
+ * @param flags  passed on to the filesystem
+ * @param data   the filesystem's arguments (its device, its options)
+ * @param uio    who is asking
+ * @return 0, `-EINVAL` for an unknown type, `-ENOTDIR`, `-EBUSY` if
+ *         something is mounted there already, or the filesystem's error
+ */
 int vfs_mount(const char *type, const char *dir, int flags, void *data, struct uio *uio)
 {
     struct fs *fs = NULL;
 
-    /* Look up filesystem */
+    /* find the filesystem */
     for (struct fs_list *entry = registered_fs; entry; entry = entry->next) {
         if (!strcmp(entry->name, type)) {
             fs = entry->fs;
@@ -49,8 +66,9 @@ int vfs_mount(const char *type, const char *dir, int flags, void *data, struct u
     else
         err = fs->mount(covered, flags, data);
 
-    /* mounted: what /proc/mounts lists (with no memory for it, the
-     * mount stays, unlisted; a name that couldn't be copied is "?") */
+    /* record the mount for /proc/mounts; with no memory for that, the
+     * mount stays but isn't listed, and a name that couldn't be copied
+     * shows as "?" */
     struct mountpoint *mp;
 
     if (err == 0 && (mp = kmalloc(sizeof(struct mountpoint), &M_MOUNTPOINT, 0))) {
@@ -77,7 +95,8 @@ int vfs_mount(const char *type, const char *dir, int flags, void *data, struct u
     return err;
 }
 
-/** the block device of a disk partition, /dev/hda1 to /dev/hdd4 (ATA) */
+/** Gets the device number of an ATA disk partition, by its name
+ * (`/dev/hda1` to `/dev/hdd4`). Returns 0, or `-ENODEV` for another name. */
 static int root_dev(const char *name, dev_t *dev)
 {
     if (strncmp(name, "/dev/hd", 7) || name[7] < 'a' || name[7] > 'd' ||
@@ -89,9 +108,14 @@ static int root_dev(const char *name, dev_t *dev)
 }
 
 /**
- * The root filesystem from a disk partition (root=/dev/hda2), of the type
- * given (rootfstype=, ext2 if NULL). Devices have no nodes yet, the
- * partition's vnode is made here as the ramdisk's is.
+ * Mounts the root filesystem from a disk partition (the `root=/dev/hda2`
+ * kernel argument). There are no device nodes yet at boot, so the
+ * partition's vnode is made here, as the RAM disk's is.
+ *
+ * @param name  the partition's name, `/dev/hda1` to `/dev/hdd4`
+ * @param type  the filesystem's type (`rootfstype=`), or NULL for ext2
+ * @return 0, `-ENODEV` for a bad name, `-EINVAL` for an unknown type, or
+ *         the filesystem's error
  */
 int vfs_mount_root_dev(const char *name, const char *type)
 {

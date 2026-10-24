@@ -1,6 +1,7 @@
 /** \file
- * aarch64: the kernel set up, from head.S's jump to kmain(), in the
- * order booting.md's table gives (as x86's x86_cpu_init())
+ * aarch64: setting up the kernel, from where boot/head.S jumps to, up to
+ * kmain(), in the order that docs/kernel/booting.md's table gives (as
+ * x86's x86_cpu_init() does).
  */
 
 #include <boot/boot.h>
@@ -17,16 +18,22 @@
 
 struct boot *__kboot;
 
-/* the boot CPU's idle loop's */
+/* The boot CPU's idle loop's stack. */
 static char bsp_idle_stack[8192] __aligned(16);
 
-/* user mode's use of the FP/SIMD registers traps (CPACR_EL1.FPEN 0b01),
- * cpu/fpsimd.c switches them; the kernel uses none */
+/* User mode's use of the FP/SIMD registers traps (CPACR_EL1.FPEN = 0b01)
+ * until cpu/fpsimd.c gives them to its thread; the kernel uses none. */
 #define CPACR_FPEN_TRAP     (1UL << 20)
 
+/**
+ * Sets up the CPU, memory and the platform, then calls `kmain()`.
+ * `boot/head.S` jumps here once the MMU is on. It doesn't return.
+ *
+ * @param dtb  the devicetree's physical address, from the boot loader
+ */
 void aarch64_init(uintptr_t dtb)
 {
-    /* the boot CPU's own, first (curcpu(), curthread) */
+    /* the boot CPU's struct cpu first: curcpu() and curthread need it */
     struct cpu *bsp = &cpus[0];
     bsp->self = bsp;
     bsp->id = 0;
@@ -34,7 +41,7 @@ void aarch64_init(uintptr_t dtb)
     cpus_count = 1;
     write_sysreg(tpidr_el1, bsp);
 
-    /* the kernel's, until the first process runs */
+    /* the kernel lock is the kernel's until the first process runs */
     kernel_lock();
 
     earlycon_init();
@@ -42,7 +49,8 @@ void aarch64_init(uintptr_t dtb)
     printk("aarch64: running at EL%d, the devicetree at %p\n",
            (int) (read_sysreg(CurrentEL) >> 2), (void *) dtb);
 
-    /* exceptions reported, not a hang */
+    /* the exception vectors, so that an exception is reported rather than
+     * hanging the CPU */
     extern char aarch64_vectors[];
     write_sysreg(vbar_el1, aarch64_vectors);
     write_sysreg(cpacr_el1, CPACR_FPEN_TRAP);

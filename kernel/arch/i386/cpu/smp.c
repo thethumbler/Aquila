@@ -1,24 +1,25 @@
 /** \file
- *          SMP: the other CPUs, the application processors (APs)
+ * x86: starting the other CPUs, the application processors (APs).
+ *
+ * The local APICs that ACPI's MADT lists are the CPUs (`apic.c`). The
+ * boot CPU sends each other one an INIT IPI, then a startup IPI (twice if
+ * it doesn't answer). The AP starts in real mode at the trampoline's page
+ * (`trampoline.S`), which brings it into the kernel, at `x86_ap_start()`,
+ * on its own idle stack. There it gets its own GDT, TSS and %gs
+ * (`curcpu()`), sets up its local APIC, says that it's there, and idles
+ * until an interrupt gives it something to run.
+ *
+ * The trampoline's page tables map its own page where it is, and the
+ * kernel's half as the kernel's tables do (the kernel's entries of the
+ * top table never change). The AP switches to the kernel's tables right
+ * away, so nothing of the trampoline's stays in a TLB.
+ *
+ * With `smp=off` on the kernel's command line, only the boot CPU runs.
  *
  * References:
  *      [1] - Intel(R) 64 and IA-32 Architectures Software Developer's
  *            Manual, Volume 3, 9.4 (Multiple-Processor Initialization)
  *            and 11.6 (Issuing Interprocessor Interrupts)
- *
- * The MADT's local APICs are the CPUs (apic.c). Each other one is sent an
- * INIT IPI, then a startup IPI (twice if it doesn't answer): it starts in
- * real mode at the trampoline's page (trampoline.S), which brings it to the
- * kernel, x86_ap_start(), on its own idle stack. It has its own GDT, TSS
- * and %gs (curcpu()), and its local APIC; it says it's there, and idles
- * (the TLB's IPIs come).
- *
- * The trampoline's page tables map its page where it is, and the kernel's
- * half as the kernel's tables do (the kernel's entries of the top table
- * never change): the AP leaves them for the kernel's, nothing of them
- * stays in the kernel's tables or in a TLB.
- *
- * smp=off on the command line: the boot CPU only.
  */
 
 #include <core/system.h>
@@ -38,7 +39,8 @@ MALLOC_DEFINE(M_IDLE_STACK, "idle-stack", "a CPU's idle stack");
 
 #define IDLE_STACK_SIZE 8192
 
-/* the IPIs: INIT, and the startup IPI (its vector the page it starts at) */
+/* The IPIs: INIT, and the startup IPI, whose vector is the page where the
+ * AP starts. */
 #define ICR_INIT        0x00000500
 #define ICR_STARTUP     0x00000600
 #define ICR_ASSERT      0x00004000
@@ -46,15 +48,16 @@ MALLOC_DEFINE(M_IDLE_STACK, "idle-stack", "a CPU's idle stack");
 /* trampoline.S */
 extern char x86_trampoline[], x86_trampoline_data[], x86_trampoline_end[];
 
-/** at x86_trampoline_data: what an AP takes (trampoline.S's TR_ offsets) */
+/** What an AP needs to reach the kernel, at `x86_trampoline_data` (the
+ * fields are at trampoline.S's `TR_` offsets). */
 struct trampoline_data {
     uint64_t cr0, cr3, cr4, efer;
-    uint64_t entry;     /* x86_ap_start */
-    uint64_t stack;     /* its idle stack's top */
+    uint64_t entry;     /* where it goes: x86_ap_start() */
+    uint64_t stack;     /* the top of its idle stack */
     uint64_t cpu;       /* its struct cpu */
 };
 
-/* the trampoline's page tables, after its code */
+/* the trampoline's page tables, in the pages after its code */
 #define TABLES          (X86_TRAMPOLINE + 0x1000)
 
 #define PG_PRESENT      0x001
@@ -63,15 +66,17 @@ struct trampoline_data {
 
 #define MSR_EFER        0xC0000080
 
-/* the AP that was started is there */
+/* set by the AP that was started, once it is in the kernel */
 static volatile int ap_started;
 
+/** Where an AP enters the kernel, from the trampoline: it sets up its own
+ * CPU structures, says that it's there, and idles. */
 static void __attribute__((noreturn)) x86_ap_start(struct cpu *cpu)
 {
     x86_gdt_setup(cpu, VMA(0x100000ULL));
     x86_idt_setup();
 
-    /* the kernel's tables, the trampoline's are left */
+    /* switch from the trampoline's page tables to the kernel's */
     pmap_switch(kvm_space.pmap);
 
     x86_lapic_cpu_setup();
@@ -79,20 +84,24 @@ static void __attribute__((noreturn)) x86_ap_start(struct cpu *cpu)
     asm volatile("" ::: "memory");
     ap_started = 1;
 
-    /* idle: interrupts on, the IPIs come */
+    /* idle, with interrupts on, until there's a thread to run */
     cpu->idle = 1;
     arch_idle();
     __builtin_unreachable();
 }
 
-/** `cpu' enters the kernel: the wake IPI */
+/*
+ * Makes another CPU enter the kernel now, with the wake IPI: to run a
+ * thread that just became ready, or to see that its thread was killed.
+ */
 void arch_cpu_kick(struct cpu *cpu)
 {
     x86_lapic_ipi(cpu->arch.apic_id, X86_WAKE_VECTOR | ICR_ASSERT);
 }
 
-/** the trampoline's page tables: its page, where it is, and the kernel's
- * half; the top table's address */
+/** Builds the trampoline's page tables, which map the trampoline's page
+ * where it is and the kernel's half as the kernel's tables do. Returns
+ * the top table's physical address. */
 static paddr_t tables_build(void)
 {
     uintptr_t *top = PHYS2VIRT(TABLES);
@@ -101,7 +110,7 @@ static paddr_t tables_build(void)
     memset(PHYS2VIRT(TABLES), 0, 3 * PAGE_SIZE);
 
 #if ARCH_BITS==32
-    /* the page directory, its table for the first 4 MiB */
+    /* the page directory, and a page table for the first 4 MiB */
     uint32_t *pt = PHYS2VIRT(TABLES + PAGE_SIZE);
 
     for (int i = 768; i < 1024; ++i)
@@ -110,8 +119,9 @@ static paddr_t tables_build(void)
     top[0] = (TABLES + PAGE_SIZE) | PG_PRESENT | PG_WRITE;
     pt[X86_TRAMPOLINE >> 12] = X86_TRAMPOLINE | PG_PRESENT | PG_WRITE;
 #else
-    /* the PML4, a PDPT and a PD for the first 2 MiB, a large page (not a
-     * global one: it goes with these tables) */
+    /* the PML4, a PDPT, and a page directory that maps the first 2 MiB
+     * as one large page (not a global one, so it goes away with these
+     * tables) */
     uint64_t *pdpt = PHYS2VIRT(TABLES + PAGE_SIZE);
     uint64_t *pd = PHYS2VIRT(TABLES + 2 * PAGE_SIZE);
 
@@ -126,8 +136,8 @@ static paddr_t tables_build(void)
     return TABLES;
 }
 
-/** the CPU with the local APIC `id' started, as `cpu': 0, -1 if it didn't
- * come */
+/** Starts the CPU whose local APIC is `id`, as `cpu`. Returns 0, or -1 if
+ * it didn't answer. */
 static int ap_boot(struct cpu *cpu, uint32_t id)
 {
     struct trampoline_data *data = PHYS2VIRT(X86_TRAMPOLINE + (x86_trampoline_data - x86_trampoline));
@@ -139,7 +149,8 @@ static int ap_boot(struct cpu *cpu, uint32_t id)
     ap_started = 0;
     asm volatile("" ::: "memory");
 
-    /* INIT, 10 ms, the startup IPI, 200 us, and again if it isn't there */
+    /* INIT, wait 10 ms, then the startup IPI, wait 200 us, and send it
+     * again if the AP isn't there */
     x86_lapic_ipi(id, ICR_INIT | ICR_ASSERT);
     x86_pit_delay(10000);
 
@@ -148,22 +159,26 @@ static int ap_boot(struct cpu *cpu, uint32_t id)
         x86_pit_delay(200);
     }
 
-    /* up to 100 ms more */
+    /* wait up to 100 ms more */
     for (int ms = 0; ms < 100 && !ap_started; ++ms)
         x86_pit_delay(1000);
 
     if (ap_started)
         return 0;
 
-    /* too late: INIT again, it waits for a startup IPI that won't come.
-     * Coming now, it would run on the stack and the struct cpu that are
-     * about to be freed and reused */
+    /* Too late: send INIT again, so that the AP waits for a startup IPI
+     * that won't come. If it started now, it would run on a stack and a
+     * struct cpu that are about to be freed and reused. */
     x86_lapic_ipi(id, ICR_INIT | ICR_ASSERT);
     x86_pit_delay(10000);
 
     return -1;
 }
 
+/**
+ * Starts the other CPUs, at boot, unless the kernel's command line says
+ * `smp=off`. A CPU that doesn't answer is left out.
+ */
 void x86_smp_init(void)
 {
     const char *arg = NULL;
@@ -178,7 +193,7 @@ void x86_smp_init(void)
         return;
     }
 
-    /* the trampoline, at its page */
+    /* copy the trampoline to its page */
     size_t size = x86_trampoline_end - x86_trampoline;
 
     if (size > PAGE_SIZE) {
@@ -190,8 +205,8 @@ void x86_smp_init(void)
 
     struct trampoline_data *data = PHYS2VIRT(X86_TRAMPOLINE + (x86_trampoline_data - x86_trampoline));
 
-    /* the boot CPU's control registers (the FPU's bits, write protection,
-     * long mode), the trampoline's tables */
+    /* the APs take the boot CPU's control registers (the FPU's bits,
+     * write protection, long mode), and the trampoline's page tables */
     data->cr0 = read_cr0();
     data->cr3 = tables_build();
     data->cr4 = read_cr4();

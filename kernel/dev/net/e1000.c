@@ -1,21 +1,21 @@
 /** \file
- *          Intel 8254x (e1000) and 82574L Ethernet controllers
+ * The driver for Intel's 8254x (e1000) and 82574L Ethernet controllers.
+ *
+ * The 82540EM is QEMU's default network card on x86. The controller
+ * receives frames into the buffers of a ring of descriptors, which it
+ * fills and interrupts for, and sends frames from a second ring. Both
+ * rings and their buffers are pages of memory, which the driver reaches
+ * through the direct map and whose physical addresses it gives the
+ * controller. A received frame is copied into a netbuf and given to the
+ * network stack; a frame to send is copied into a transmit buffer.
+ *
+ * The 82574L (QEMU's e1000e) is driven the same way, with its legacy
+ * descriptors; it interrupts with MSI when there is an APIC to take it.
  *
  * References:
  *      [1] - PCI/PCI-X Family of Gigabit Ethernet Controllers Software
  *            Developer's Manual (8254x), Intel, 317453
  *      [2] - 82574 GbE Controller Family Datasheet, Intel, 317694
- *
- * The 82540EM is QEMU's default NIC on x86. Frames are received into the
- * buffers of a ring of descriptors the controller fills and interrupts
- * for, and are sent from another ring; both rings and their buffers are
- * in pages of memory, reached through the direct map, their physical
- * addresses given to the controller. A received frame is copied into a
- * netbuf and given to the stack, a frame to send is copied into a
- * transmit buffer.
- *
- * The 82574L (QEMU's e1000e) is driven the same (its legacy descriptors);
- * it interrupts with MSI, when there's an APIC to take it.
  */
 
 #include <core/system.h>
@@ -32,7 +32,7 @@
 
 #include <aquila/errno.h>
 
-/* registers */
+/* the controller's registers, from its BAR 0 */
 #define E1000_CTRL      0x0000
 #define E1000_STATUS    0x0008
 #define E1000_EERD      0x0014
@@ -52,7 +52,7 @@
 #define E1000_TDLEN     0x3808
 #define E1000_TDH       0x3810
 #define E1000_TDT       0x3818
-#define E1000_MTA       0x5200  /* 128 registers */
+#define E1000_MTA       0x5200  /* the multicast table: 128 registers */
 #define E1000_RAL       0x5400
 #define E1000_RAH       0x5404
 
@@ -69,12 +69,12 @@
 #define ICR_LSC         (1 << 2)    /* link status change */
 #define ICR_RXDMT0      (1 << 4)    /* receive descriptors running low */
 #define ICR_RXO         (1 << 6)    /* receiver overrun */
-#define ICR_RXT0        (1 << 7)    /* receiver timer: frames came */
+#define ICR_RXT0        (1 << 7)    /* receive timer: frames came */
 
 #define RCTL_EN         (1 << 1)
-#define RCTL_BAM        (1 << 15)   /* broadcasts */
+#define RCTL_BAM        (1 << 15)   /* accept broadcasts */
 #define RCTL_SECRC      (1 << 26)   /* strip the CRC */
-                                    /* BSIZE 0: buffers of 2048 bytes */
+                                    /* BSIZE is 0: buffers of 2048 bytes */
 
 #define TCTL_EN         (1 << 1)
 #define TCTL_PSP        (1 << 3)    /* pad short packets */
@@ -83,6 +83,7 @@
 
 #define RAH_AV          (1U << 31)  /* the address is valid */
 
+/** A receive descriptor: a buffer, and what the controller put in it. */
 struct rx_desc {
     uint64_t addr;
     uint16_t length;
@@ -92,6 +93,7 @@ struct rx_desc {
     uint16_t special;
 } __packed;
 
+/** A transmit descriptor: a frame to send, and whether it was sent. */
 struct tx_desc {
     uint64_t addr;
     uint16_t length;
@@ -113,6 +115,7 @@ struct tx_desc {
 #define TX_DESCS        32
 #define BUF_SIZE        2048
 
+/** The controller: there is one. */
 static struct e1000 {
     struct pci_dev pci;
     struct ioaddr regs;
@@ -122,7 +125,7 @@ static struct e1000 {
     volatile struct tx_desc *tx;
     uint8_t *rx_buf[RX_DESCS], *tx_buf[TX_DESCS];
     unsigned rx_next;       /* the next descriptor the controller fills */
-    unsigned tx_next;       /* the next descriptor to send with */
+    unsigned tx_next;       /* the next descriptor to send a frame with */
 
     struct netif netif;
 } e1000;
@@ -139,19 +142,22 @@ static const uint16_t device_ids[] = {
     0x107C,     /* 82541PI */
 };
 
+/** Reads one of the controller's registers. */
 static inline uint32_t reg_read(uint32_t reg)
 {
     return io_in32(&e1000.regs, reg);
 }
 
+/** Writes one of the controller's registers. */
 static inline void reg_write(uint32_t reg, uint32_t val)
 {
     io_out32(&e1000.regs, reg, val);
 }
 
-/** a page of memory: its physical address, its kernel address in *virt
- * (the rings and buffers, once, at boot: the kernel can't boot without
- * that little memory) */
+/** Allocates a zeroed page for the rings or buffers, once, at boot.
+ * Returns its physical address, and sets `*virt` to its kernel address.
+ * It panics if there is no memory: the kernel can't boot without that
+ * little. */
 static paddr_t page_get(void **virt)
 {
     struct vm_page *vm_page = mm_page_alloc();
@@ -163,7 +169,8 @@ static paddr_t page_get(void **virt)
     return vm_page->paddr;
 }
 
-/** a word of the EEPROM */
+/** Reads a 16-bit word of the EEPROM, or returns 0 if the read doesn't
+ * finish in time. */
 static uint16_t eeprom_read(uint8_t addr)
 {
     reg_write(E1000_EERD, EERD_START | (uint32_t) addr << 8);
@@ -178,6 +185,8 @@ static uint16_t eeprom_read(uint8_t addr)
     return 0;
 }
 
+/** Reads the card's MAC address: from the receive address registers if
+ * they have it, from the EEPROM otherwise (and then tells the receiver). */
 static void mac_read(uint8_t mac[6])
 {
     uint32_t ral = reg_read(E1000_RAL), rah = reg_read(E1000_RAH);
@@ -197,11 +206,13 @@ static void mac_read(uint8_t mac[6])
         mac[2 * i + 1] = w >> 8;
     }
 
-    /* what the receiver takes */
+    /* the address the receiver accepts frames for */
     reg_write(E1000_RAL, mac[0] | mac[1] << 8 | mac[2] << 16 | (uint32_t) mac[3] << 24);
     reg_write(E1000_RAH, mac[4] | mac[5] << 8 | RAH_AV);
 }
 
+/** Sets up the receive ring, every descriptor with its buffer, all of
+ * them the controller's, and turns the receiver on. */
 static void rx_init(void)
 {
     void *ring;
@@ -223,13 +234,15 @@ static void rx_init(void)
     reg_write(E1000_RDBAH, (uint32_t) ((uint64_t) ring_paddr >> 32));
     reg_write(E1000_RDLEN, RX_DESCS * sizeof(struct rx_desc));
     reg_write(E1000_RDH, 0);
-    reg_write(E1000_RDT, RX_DESCS - 1);     /* all of them are the controller's */
+    reg_write(E1000_RDT, RX_DESCS - 1);     /* every descriptor is the controller's */
 
     e1000.rx_next = 0;
 
     reg_write(E1000_RCTL, RCTL_EN | RCTL_BAM | RCTL_SECRC);
 }
 
+/** Sets up the transmit ring, every descriptor with its buffer and free,
+ * and turns the transmitter on. */
 static void tx_init(void)
 {
     void *ring;
@@ -260,6 +273,9 @@ static void tx_init(void)
     reg_write(E1000_TIPG, 10 | 8 << 10 | 6 << 20);
 }
 
+/** Sends a frame: it is copied into the next transmit buffer, and the
+ * controller is told. Returns 0, `-EMSGSIZE` for a frame too big, or
+ * `-ENOBUFS` if the ring is full (the frame is dropped). */
 static int e1000_transmit(struct netif *netif, struct netbuf *nb)
 {
     unsigned i = e1000.tx_next;
@@ -268,7 +284,8 @@ static int e1000_transmit(struct netif *netif, struct netbuf *nb)
     if (nb->len > BUF_SIZE)
         return -EMSGSIZE;
 
-    /* the ring is full: the controller hasn't sent this one yet */
+    /* the ring is full: the controller hasn't sent this descriptor's
+     * frame yet */
     if (!(desc->status & DESC_DD)) {
         netif->stats.tx_dropped++;
         return -ENOBUFS;
@@ -282,14 +299,15 @@ static int e1000_transmit(struct netif *netif, struct netbuf *nb)
 
     e1000.tx_next = (i + 1) % TX_DESCS;
 
-    /* the descriptor written before the controller is told */
+    /* the descriptor must be written before the controller is told */
     asm volatile("" ::: "memory");
     reg_write(E1000_TDT, e1000.tx_next);
 
     return 0;
 }
 
-/** the frames the controller received, to the stack */
+/** Gives the frames the controller received to the network stack, and
+ * their descriptors back to the controller. */
 static void rx_poll(void)
 {
     for (;;) {
@@ -301,7 +319,8 @@ static void rx_poll(void)
 
         size_t len = desc->length;
 
-        /* frames that span buffers (longer than 2048 bytes) aren't taken */
+        /* a frame that spans buffers (longer than 2048 bytes) isn't
+         * taken */
         if ((desc->status & DESC_EOP) && !desc->errors && len <= NETBUF_SIZE - 256) {
             struct netbuf *nb = netbuf_alloc();
 
@@ -324,6 +343,7 @@ static void rx_poll(void)
     }
 }
 
+/** Marks the interface running or not, from whether the link is up. */
 static void link_check(void)
 {
     if (reg_read(E1000_STATUS) & STATUS_LU)
@@ -332,9 +352,11 @@ static void link_check(void)
         e1000.netif.flags &= ~NETIF_RUNNING;
 }
 
+/** Handles the controller's interrupt: a change of the link, or frames
+ * received. */
 static void e1000_irq(void *arg __unused)
 {
-    /* reading it acknowledges them */
+    /* reading the cause register acknowledges the interrupts */
     uint32_t icr = reg_read(E1000_ICR);
 
     if (icr & ICR_LSC)
@@ -344,6 +366,8 @@ static void e1000_irq(void *arg __unused)
         rx_poll();
 }
 
+/** Finds a controller of the family on the PCI bus, sets it up, and
+ * registers its network interface. Without one, it does nothing. */
 static int e1000_probe(void)
 {
     struct pci_bar bar;
@@ -364,12 +388,12 @@ static int e1000_probe(void)
 
     pci_enable(&e1000.pci);
 
-    /* registers at byte offsets (MMIO16 and MMIO32 space them out), read
-     * and written 32 bits at a time */
+    /* the registers are at byte offsets (MMIO16 and MMIO32 would space
+     * them out), read and written 32 bits at a time */
     e1000.regs.type = IOADDR_MMIO8;
     e1000.regs.addr = (uintptr_t) arch_mmio_map(bar.addr, bar.size);
 
-    /* reset, no interrupts until all is set up */
+    /* reset the controller, with no interrupts until all is set up */
     reg_write(E1000_IMC, 0xFFFFFFFF);
     reg_write(E1000_CTRL, reg_read(E1000_CTRL) | CTRL_RST);
 
@@ -381,7 +405,7 @@ static int e1000_probe(void)
 
     mac_read(e1000.netif.mac);
 
-    /* no multicast */
+    /* no multicast addresses */
     for (int m = 0; m < 128; ++m)
         reg_write(E1000_MTA + 4 * m, 0);
 
@@ -394,7 +418,7 @@ static int e1000_probe(void)
 
     netif_register(&e1000.netif);
 
-    /* its interrupts as messages if it can (MSI), else its line */
+    /* its interrupts as messages (MSI) if it can, otherwise on its line */
     int irq = pci_msi_enable(&e1000.pci, e1000_irq, NULL);
     int msi = irq >= 0;
 

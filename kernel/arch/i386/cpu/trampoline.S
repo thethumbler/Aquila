@@ -1,13 +1,15 @@
-/*
- * The trampoline: where an application processor (AP) starts, in real
- * mode, at the page X86_TRAMPOLINE (the startup IPI's vector), copied
- * there by smp.c. It goes to protected mode, and on x86_64 to long mode,
- * with the boot CPU's CR0, CR4 and EFER and the trampoline's page tables
- * (the page identity mapped, the kernel's half), and jumps to the kernel:
- * x86_ap_start(cpu) on the CPU's idle stack.
+/** \file
+ * x86: the trampoline, where an application processor (AP) starts.
  *
- * It runs at X86_TRAMPOLINE, not where it was linked: AT() is where its
- * labels are then.
+ * An AP starts in real mode, at the page X86_TRAMPOLINE (the startup
+ * IPI's vector), where smp.c copied this code. It goes to protected mode,
+ * and on x86_64 to long mode, with the boot CPU's CR0, CR4 and EFER and
+ * the trampoline's page tables (its own page, identity mapped, and the
+ * kernel's half). Then it jumps into the kernel: x86_ap_start(cpu), on
+ * the CPU's idle stack.
+ *
+ * The code runs at X86_TRAMPOLINE, not where it was linked, so AT() gives
+ * the addresses its labels have there.
  */
 
 #include <config.h>
@@ -15,7 +17,8 @@
 
 #define AT(sym)         (X86_TRAMPOLINE + ((sym) - x86_trampoline))
 
-/* x86_trampoline_data, struct trampoline_data (smp.c) */
+/* the offsets of struct trampoline_data's fields (smp.c), at
+ * x86_trampoline_data */
 #define TR_CR0      0
 #define TR_CR3      8
 #define TR_CR4      16
@@ -41,7 +44,7 @@ x86_trampoline:
     lgdtl AT(tr_gdtr)
 
     movl %cr0, %eax
-    orl $1, %eax                /* protected mode */
+    orl $1, %eax                /* turn on protected mode */
     movl %eax, %cr0
     ljmpl $CODE32, $AT(tr_protected)
 
@@ -62,19 +65,19 @@ tr_protected:
     movl %eax, %cr3
 
 #if ARCH_BITS==64
-    movl $0xC0000080, %ecx      /* EFER: long mode, as the boot CPU has it */
+    movl $0xC0000080, %ecx      /* EFER: long mode, as the boot CPU has */
     movl TR_EFER(%ebx), %eax
     movl TR_EFER + 4(%ebx), %edx
     wrmsr
 #endif
 
-    movl TR_CR0(%ebx), %eax     /* paging */
+    movl TR_CR0(%ebx), %eax     /* turn on paging */
     movl %eax, %cr0
 
 #if ARCH_BITS==32
     movl TR_STACK(%ebx), %esp
     pushl TR_CPU(%ebx)
-    pushl $0                    /* as if it was called */
+    pushl $0                    /* a return address, as if it was called */
     jmp *TR_ENTRY(%ebx)
 #else
     ljmp $0x08, $AT(tr_long)
@@ -84,7 +87,7 @@ tr_long:
     movl $AT(x86_trampoline_data), %ebx
     movq TR_STACK(%rbx), %rsp
     movq TR_CPU(%rbx), %rdi
-    pushq $0                    /* as if it was called */
+    pushq $0                    /* a return address, as if it was called */
     jmpq *TR_ENTRY(%rbx)
 #endif
 
@@ -97,7 +100,7 @@ tr_gdt:
 #else
     .quad 0x00AF9A000000FFFF    /* 0x08: 64-bit code (the kernel's) */
     .quad 0x00CF92000000FFFF    /* 0x10: data */
-    .quad 0x00CF9A000000FFFF    /* 0x18: 32-bit code, on the way */
+    .quad 0x00CF9A000000FFFF    /* 0x18: 32-bit code, used on the way */
 #endif
 tr_gdt_end:
 

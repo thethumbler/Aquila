@@ -1,8 +1,11 @@
 /** \file
- * TCP's output: segments from the send buffer, as the window (the
- * peer's, and the congestion window) lets them go; retransmission (RFC
- * 6298) and the zero window's probes, from the same timer; ACKs, delayed
- * (RFC 1122: every second segment, or after DACK_DELAY)
+ * TCP output.
+ *
+ * Segments are made from the send buffer as the windows allow: the
+ * peer's receive window and the congestion window. One timer handles both
+ * retransmission (RFC 6298) and the probes of a zero window. ACKs are
+ * delayed (RFC 1122): sent for every second segment, or after
+ * `DACK_DELAY`.
  */
 
 #include <core/system.h>
@@ -17,16 +20,16 @@
 
 #define RTO_MIN         1000000000ULL       /* RFC 6298: 1 s */
 #define RTO_MAX         60000000000ULL
-#define RTT_GRANULARITY 2000000ULL          /* the clock's: a tick */
+#define RTT_GRANULARITY 2000000ULL          /* the clock's granularity: a tick */
 #define DACK_DELAY      100000000ULL        /* 100 ms */
 
-#define SYN_RETRIES     5                   /* 1 + 2 + 4 + 8 + 16 + 32 s: 63 s */
-#define DATA_RETRIES    8                   /* about 2 minutes, RTO_MAX past 32 s */
+#define SYN_RETRIES     5                   /* 1 + 2 + 4 + 8 + 16 + 32 s: 63 s in all */
+#define DATA_RETRIES    8                   /* about 2 minutes (RTO_MAX caps the backoff) */
 
 static void rexmt_timeout(void *arg);
 
-/** the most data a segment of ours has: the interface's MTU, less the
- * headers */
+/** Returns the most data a segment we send may carry: the interface's MTU,
+ * less the headers. */
 static uint16_t our_mss(struct tcp_pcb *pcb)
 {
     struct netif *netif = ipv4_route(pcb->raddr);
@@ -34,10 +37,14 @@ static uint16_t our_mss(struct tcp_pcb *pcb)
 }
 
 /**
- * The window advertised: the room in rcvbuf. Its right edge doesn't move
- * by less than a segment (or half the buffer): no small windows (RFC 9293
+ * Computes the window to advertise: the room in the receive buffer. Its
+ * right edge only moves forward by at least a segment (or half the
+ * buffer), so that the peer isn't offered small windows (RFC 9293
  * 3.8.6.2.2, the receiver's silly window avoidance), and it never moves
  * back.
+ *
+ * @param pcb  the connection
+ * @return the window, at most 65535 (window scaling isn't supported)
  */
 uint16_t tcp_rcv_window(struct tcp_pcb *pcb)
 {
@@ -51,8 +58,10 @@ uint16_t tcp_rcv_window(struct tcp_pcb *pcb)
     return room > 0xffff ? 0xffff : room;
 }
 
-/** a segment of `len' bytes of sndbuf from `off', at `seq'; the ACK is
- * rcv_nxt's if TH_ACK */
+/** Sends a segment with sequence number `seq`, carrying `len` bytes of the
+ * send buffer from offset `off`, and acknowledging `rcv_nxt` if `flags`
+ * has `TH_ACK`. A SYN carries our MSS option. Returns 0 or a negative
+ * errno. */
 static int segment(struct tcp_pcb *pcb, uint32_t seq, int flags, size_t off, size_t len)
 {
     struct netif *netif = ipv4_route(pcb->raddr);
@@ -68,7 +77,7 @@ static int segment(struct tcp_pcb *pcb, uint32_t seq, int flags, size_t off, siz
     if (len)
         ringbuf_read_noconsume(pcb->sndbuf, off, len, netbuf_put(nb, len));
 
-    /* a SYN says the MSS */
+    /* a SYN carries the MSS option */
     size_t hlen = sizeof(struct tcp_hdr) + (flags & TH_SYN ? 4 : 0);
     struct tcp_hdr *th = netbuf_push(nb, hlen);
     uint16_t win = tcp_rcv_window(pcb);
@@ -95,7 +104,7 @@ static int segment(struct tcp_pcb *pcb, uint32_t seq, int flags, size_t off, siz
 
     th->checksum = inet_checksum_pseudo(pcb->laddr, pcb->raddr, IP_PROTO_TCP, th, nb->len);
 
-    /* what it acks is acked */
+    /* this ACK covers what was waiting to be acknowledged */
     if (flags & TH_ACK) {
         pcb->rcv_adv = pcb->rcv_nxt + win;
         pcb->ack_pending = 0;
@@ -105,18 +114,29 @@ static int segment(struct tcp_pcb *pcb, uint32_t seq, int flags, size_t off, siz
     return ipv4_output(netif, pcb->laddr, pcb->raddr, IP_PROTO_TCP, nb);
 }
 
+/**
+ * Starts the retransmission timer, if it isn't running.
+ *
+ * @param pcb  the connection
+ */
 void tcp_rexmt_start(struct tcp_pcb *pcb)
 {
     if (!pcb->rexmt.pending)
         net_callout_set(&pcb->rexmt, pcb->rto, rexmt_timeout, pcb);
 }
 
-/** SYN, or SYN and ACK (SYN_RECEIVED), its retransmission too */
+/**
+ * Sends the SYN (or, in `SYN_RECEIVED`, the SYN and ACK), the first time
+ * or again, and starts the retransmission timer. The first one is timed,
+ * to measure the round trip.
+ *
+ * @param pcb  the connection
+ */
 void tcp_send_syn(struct tcp_pcb *pcb)
 {
     int flags = TH_SYN | (pcb->state == TCP_SYN_RECEIVED ? TH_ACK : 0);
 
-    /* the first one is timed */
+    /* only the first one is timed */
     if (!pcb->retries) {
         pcb->rtt_timing = 1;
         pcb->rtt_seq = pcb->iss;
@@ -129,23 +149,46 @@ void tcp_send_syn(struct tcp_pcb *pcb)
     tcp_rexmt_start(pcb);
 }
 
+/**
+ * Sends an ACK, now.
+ *
+ * @param pcb  the connection
+ */
 void tcp_send_ack(struct tcp_pcb *pcb)
 {
     segment(pcb, pcb->snd_nxt, TH_ACK, 0, 0);
 }
 
-/** a keepalive probe: a byte already acked (none of it), for an ACK */
+/**
+ * Sends a keepalive probe: a segment one byte before what the peer has
+ * acknowledged (with no data), which the peer answers with an ACK.
+ *
+ * @param pcb  the connection
+ */
 void tcp_send_keepalive(struct tcp_pcb *pcb)
 {
     segment(pcb, pcb->snd_una - 1, TH_ACK, 0, 0);
 }
 
+/**
+ * Sends a reset on a connection.
+ *
+ * @param pcb  the connection
+ */
 void tcp_send_rst(struct tcp_pcb *pcb)
 {
     segment(pcb, pcb->snd_nxt, TH_RST | TH_ACK, 0, 0);
 }
 
-/** a segment for no connection: RST (RFC 9293 3.10.7.1) */
+/**
+ * Answers a segment that is for no connection with a reset (RFC 9293
+ * 3.10.7.1). A reset itself isn't answered.
+ *
+ * @param netif  the interface it came in on
+ * @param ih     its IPv4 header
+ * @param th     its TCP header
+ * @param len    the length of its data
+ */
 void tcp_reply_rst(struct netif *netif, const struct ipv4_hdr *ih, const struct tcp_hdr *th, size_t len)
 {
     if (th->flags & TH_RST)
@@ -177,7 +220,8 @@ void tcp_reply_rst(struct netif *netif, const struct ipv4_hdr *ih, const struct 
     ipv4_output(netif, ih->dst, ih->src, IP_PROTO_TCP, nb);
 }
 
-/** the states the data and FIN are sent in */
+/** Returns whether data and the FIN may be sent in the connection's
+ * state. */
 static int sending(struct tcp_pcb *pcb)
 {
     switch (pcb->state) {
@@ -193,11 +237,14 @@ static int sending(struct tcp_pcb *pcb)
 }
 
 /**
- * As much as the windows let go: segments of at most mss bytes; a small
- * one only if it's the last of the data and nothing is unacked (Nagle,
- * unless TCP_NODELAY), and not because the peer's window is small (the
+ * Sends as much of the send buffer as the windows allow, in segments of
+ * at most `mss` bytes. A smaller segment goes only if it has the last of
+ * the data and nothing is unacknowledged (Nagle's algorithm, unless
+ * `TCP_NODELAY`), and never just because the peer's window is small (the
  * sender's silly window avoidance). The FIN goes with the last of the
- * data.
+ * data. If the peer's window is zero, the persist timer probes it.
+ *
+ * @param pcb  the connection
  */
 void tcp_output(struct tcp_pcb *pcb)
 {
@@ -231,8 +278,8 @@ void tcp_output(struct tcp_pcb *pcb)
         if (segment(pcb, seq, flags, seq - pcb->snd_una, len))
             break;
 
-        /* new data is timed, one segment at a time (Karn: not what is
-         * retransmitted) */
+        /* time new data, one segment at a time; never time a
+         * retransmission (Karn's algorithm) */
         if (!pcb->rtt_timing && len && seq == pcb->snd_max) {
             pcb->rtt_timing = 1;
             pcb->rtt_seq = seq;
@@ -250,7 +297,7 @@ void tcp_output(struct tcp_pcb *pcb)
             break;
     }
 
-    /* a zero window, nothing out: probe it (persist) */
+    /* the window is zero and nothing is in flight: probe it (persist) */
     uint32_t buffered = ringbuf_available(pcb->sndbuf);
 
     if (!pcb->snd_wnd && buffered && pcb->snd_nxt == pcb->snd_una && !pcb->rexmt.pending) {
@@ -259,7 +306,13 @@ void tcp_output(struct tcp_pcb *pcb)
     }
 }
 
-/** RFC 6298 */
+/**
+ * Updates the round trip estimates with a new measurement, and the
+ * retransmission timeout from them (RFC 6298).
+ *
+ * @param pcb  the connection
+ * @param rtt  the round trip measured, in ns
+ */
 void tcp_rtt_update(struct tcp_pcb *pcb, uint64_t rtt)
 {
     if (!pcb->srtt) {
@@ -276,12 +329,18 @@ void tcp_rtt_update(struct tcp_pcb *pcb, uint64_t rtt)
     pcb->rto = MIN(MAX(pcb->rto, RTO_MIN), RTO_MAX);
 }
 
+/** Sends the delayed ACK, when its delay is over. */
 static void dack_timeout(void *arg)
 {
     tcp_send_ack(arg);
 }
 
-/** a segment to ack: now if it's the second, else in DACK_DELAY */
+/**
+ * Acknowledges a received segment: at once if it's the second one not
+ * acknowledged yet, or else after `DACK_DELAY`.
+ *
+ * @param pcb  the connection
+ */
 void tcp_dack(struct tcp_pcb *pcb)
 {
     if (++pcb->ack_pending >= 2)
@@ -290,11 +349,17 @@ void tcp_dack(struct tcp_pcb *pcb)
         net_callout_set(&pcb->dack, DACK_DELAY, dack_timeout, pcb);
 }
 
+/**
+ * Handles the retransmission timer. It probes a zero window, or
+ * retransmits from the first unacknowledged byte (backing off, and
+ * starting the congestion window over), or gives up on the connection
+ * (`ETIMEDOUT`) after too many tries.
+ */
 static void rexmt_timeout(void *arg)
 {
     struct tcp_pcb *pcb = arg;
 
-    /* the zero window: a byte past it, to see if it opened; backing off,
+    /* a zero window: send a byte past it, to see if it opened, backing off
      * for as long as the peer answers */
     if (pcb->persist) {
         if (pcb->snd_wnd || !ringbuf_available(pcb->sndbuf)) {
@@ -317,7 +382,7 @@ static void rexmt_timeout(void *arg)
 
     int syn = pcb->state == TCP_SYN_SENT || pcb->state == TCP_SYN_RECEIVED;
 
-    /* everything acked */
+    /* everything was acknowledged */
     if (!syn && pcb->snd_una == pcb->snd_max)
         return;
 
@@ -326,7 +391,8 @@ static void rexmt_timeout(void *arg)
         return;
     }
 
-    /* backing off; a loss: from one segment again (RFC 5681) */
+    /* back off; a loss also starts the congestion window over from one
+     * segment (RFC 5681) */
     uint32_t flight = pcb->snd_max - pcb->snd_una;
 
     pcb->rto = MIN(pcb->rto * 2, RTO_MAX);

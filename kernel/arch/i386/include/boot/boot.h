@@ -10,14 +10,20 @@
 #include <video/vesa.h>
 #endif
 
+/*
+ * x86: what a Multiboot boot loader passed, turned into the kernel's
+ * struct boot (boot/boot.h): the memory map, the modules (the RAM disk),
+ * the command line, the kernel's symbols, and the framebuffer.
+ */
+
 #define MULTIBOOT_MMAP_MAX      32
 #define MULTIBOOT_MODULES_MAX   32
 
 /*
- * Convert the multiboot memory map into the generic mmap_t array, storing
- * at most `max' entries and returning the number of entries stored.
- * Regions starting above 4 GiB are skipped and regions crossing the 4 GiB
- * boundary are clamped, since we can't address them anyway.
+ * Converts the Multiboot memory map into the kernel's mmap_t array,
+ * storing at most `max` entries, and returns how many it stored. On i386,
+ * regions starting above 4 GiB are skipped, and regions crossing 4 GiB are
+ * cut there, since the kernel can't address them anyway.
  */
 static inline int
 build_multiboot_mmap(multiboot_info_t *info, mmap_t *boot_mmap, int max)
@@ -53,6 +59,8 @@ build_multiboot_mmap(multiboot_info_t *info, mmap_t *boot_mmap, int max)
     return count;
 }
 
+/* Converts the Multiboot modules into the kernel's module_t array, storing
+ * at most `max` of them, and returns how many it stored. */
 static inline int
 build_multiboot_modules(multiboot_info_t *info, module_t *modules, int max)
 {
@@ -71,6 +79,8 @@ build_multiboot_modules(multiboot_info_t *info, module_t *modules, int max)
     return count;
 }
 
+/* Reads the Multiboot information that the boot loader passed into the
+ * kernel's struct boot, and returns it. */
 static inline struct boot *process_multiboot_info(multiboot_info_t *info)
 {
     static struct boot boot;
@@ -83,7 +93,7 @@ static inline struct boot *process_multiboot_info(multiboot_info_t *info)
     if (info->flags & MULTIBOOT_INFO_MEMORY)
         boot.total_mem = info->mem_lower + info->mem_upper;
 
-    /* the kernel's section headers, if they're its ELF class's */
+    /* the kernel's section headers, if they're of its own ELF class */
     if ((info->flags & MULTIBOOT_INFO_ELF_SHDR) && info->u.elf_sec.size == sizeof(elf_shdr_t)) {
         boot.shdr = (elf_shdr_t *) VMA((uintptr_t) info->u.elf_sec.addr);
         boot.shdr_num = info->u.elf_sec.num;
@@ -96,8 +106,8 @@ static inline struct boot *process_multiboot_info(multiboot_info_t *info)
                 boot.symtab = shdr;
                 boot.symnum = shdr->sh_size / sizeof(elf_sym_t);
 
-                /* The symbol names live in the string table linked to the
-                 * symbol table, which isn't necessarily the first one */
+                /* the symbols' names are in the string table that the
+                 * symbol table links to, not necessarily the first one */
                 if (shdr->sh_link && shdr->sh_link < boot.shdr_num) {
                     elf_shdr_t *strtab = &boot.shdr[shdr->sh_link];
                     strtab->sh_addr = VMA((uintptr_t) strtab->sh_addr);
@@ -106,14 +116,14 @@ static inline struct boot *process_multiboot_info(multiboot_info_t *info)
             }
         }
 
-        /* Symbols are useless without their string table */
+        /* the symbols are useless without their string table */
         if (!boot.strtab) {
             boot.symtab = NULL;
             boot.symnum = 0;
         }
     }
 
-    /* One extra entry for the framebuffer region */
+    /* one more entry, for the framebuffer's region */
     static mmap_t mmap[MULTIBOOT_MMAP_MAX + 1];
     boot.mmap = mmap;
     boot.mmap_count = 0;
@@ -123,11 +133,11 @@ static inline struct boot *process_multiboot_info(multiboot_info_t *info)
 
 #ifdef MULTIBOOT_GFX
     /*
-     * Linear framebuffer: VBE mode info (GRUB), or the standard multiboot
-     * framebuffer fields (e.g. Limine), both only if a mode was set.
+     * The linear framebuffer, from the VBE mode information (GRUB) or from
+     * Multiboot's framebuffer fields (Limine), if a mode was set. minfo is
+     * read here, through the identity mapping; the fbdev uses the kernel's
+     * mapping of the structures later.
      */
-    /* minfo is read here (through the identity mapping), the fbdev uses
-     * the kernel mapping of the structures later */
     struct mode_info_block *minfo = NULL;
     static struct fbdev_vesa data;
 
@@ -138,7 +148,7 @@ static inline struct boot *process_multiboot_info(multiboot_info_t *info)
     } else if ((info->flags & MULTIBOOT_INFO_FRAMEBUFFER_INFO) &&
                info->framebuffer_type == MULTIBOOT_FRAMEBUFFER_TYPE_RGB &&
                !(info->framebuffer_addr >> 32)) {
-        /* describe it as a VBE mode for the vesa fbdev */
+        /* describe it as a VBE mode, for the vesa fbdev */
         static struct mode_info_block fb_minfo;
 
         fb_minfo.phys_base_ptr          = info->framebuffer_addr;
@@ -169,7 +179,7 @@ static inline struct boot *process_multiboot_info(multiboot_info_t *info)
         uint32_t  xres     = minfo->x_resolution;
         uint32_t  depth    = minfo->bits_per_pixel;
 
-        /* We report video memory as mmap region */
+        /* the framebuffer's memory is a reserved region of the map */
         boot.mmap[boot.mmap_count] = (mmap_t) {
             .type  = MMAP_RESERVED,
             .start = paddr,
@@ -181,7 +191,7 @@ static inline struct boot *process_multiboot_info(multiboot_info_t *info)
         extern void earlycon_fb_register(uintptr_t, uint32_t, uint32_t, uint32_t, uint32_t);
         earlycon_fb_register(paddr, scanline, yres, xres, depth);
 
-        /* And register fbdev of type `vesa' */
+        /* and it is a vesa fbdev, /dev/fb0 */
         fbdev_register(FBDEV_TYPE_VESA, &data);
     }
 #endif

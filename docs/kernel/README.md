@@ -120,8 +120,15 @@ A few conventions help:
   paddr_t buddy_alloc(int zone, size_t size)
   ```
 
-  Older parts of the kernel still have terser comments; they're
-  rewritten this way as they're worked on.
+  A function that each architecture implements (`arch_*()`,
+  `pmap_*()`, `irq_install()`) is documented once, with its tags, where
+  the kernel declares it (`kernel/include/`): that's the interface every
+  architecture follows. Each architecture's definition says only what is
+  particular to it.
+
+  Doxygen ends a comment's first sentence (its summary) at a `.`, `?` or
+  `!` followed by a space, even inside backticks: names such as `` `.` ``
+  or `` `CSI ? n h` `` go in a later sentence.
 - **Errors are negative `errno` values**: a function returns 0 or a
   positive value on success, `-EINVAL`, `-ENOMEM`, ... on failure. System
   calls hand them back to user space as they are. The exceptions return

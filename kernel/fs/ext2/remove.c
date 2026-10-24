@@ -1,9 +1,10 @@
 /** \file
- * Removing, linking and renaming entries, and freeing what a file used.
+ * ext2: removing, linking and renaming entries, and freeing what a file
+ * used.
  *
- * Unlinking drops the link count, the inode and its blocks are freed when
- * the vnode is closed for the last time (ext2_close), so a file that is
- * still open stays readable.
+ * Unlinking only drops the file's link count. The inode and its blocks
+ * are freed when the vnode is closed for the last time (`ext2_close()`),
+ * so a file that is still open stays readable.
  */
 
 #include <ext2.h>
@@ -11,9 +12,12 @@
 #include <ds/bitmap.h>
 #include <fs/vcache.h>
 
-/** free the blocks of the tree at `block' (a data block at depth 0, else
- * an indirect block `depth' levels above the data), from data block
- * `from' of the tree on; returns the block, 0 if it was freed */
+/**
+ * Frees the blocks of the tree at `block` (a data block at depth 0, or an
+ * indirect block `depth` levels above the data), from data block `from`
+ * of the tree on, and counts them out of the inode's `blocks`. Returns
+ * the block, or 0 if it was freed.
+ */
 static uint32_t free_tree(struct ext2 *desc, struct ext2_inode *inode, uint32_t block, int depth, size_t from)
 {
     size_t bs = desc->bs, p = bs / 4, span = 1;
@@ -27,8 +31,8 @@ static uint32_t free_tree(struct ext2 *desc, struct ext2_inode *inode, uint32_t 
         for (int i = 1; i < depth; ++i)
             span *= p;
 
-        /* a table that can't be read stays, what's under it with it (its
-         * pointers aren't known: nothing is freed for them) */
+        /* a table that can't be read stays, and what's under it too (its
+         * pointers aren't known, so nothing under it can be freed) */
         if (!table || ext2_block_read(desc, block, table)) {
             kfree(table);
             return block;
@@ -37,7 +41,7 @@ static uint32_t free_tree(struct ext2 *desc, struct ext2_inode *inode, uint32_t 
         for (size_t i = from / span; i < p; ++i)
             table[i] = free_tree(desc, inode, table[i], depth - 1, i == from / span ? from % span : 0);
 
-        /* part of the tree stays */
+        /* the first part of the tree stays */
         if (from) {
             ext2_block_write(desc, block, table);
             kfree(table);
@@ -54,13 +58,20 @@ static uint32_t free_tree(struct ext2 *desc, struct ext2_inode *inode, uint32_t 
     return 0;
 }
 
-/** free the blocks of `inode' from data block `from' on */
+/**
+ * Frees a file's blocks, from a block on, when the file is truncated or
+ * removed.
+ *
+ * @param desc   the mounted filesystem
+ * @param inode  the file's inode, its block pointers cleared here
+ * @param from   the index of the first block to free
+ */
 void ext2_blocks_free(struct ext2 *desc, struct ext2_inode *inode, size_t from)
 {
     size_t p = desc->bs / 4, base = EXT2_DIRECT_POINTERS;
 
-    /* a fast symbolic link keeps its target in the block pointers, a
-     * device node its number: no blocks */
+    /* a fast symbolic link keeps its target in the block pointers, and a
+     * device node its number: they have no blocks */
     if ((S_ISLNK(inode->mode) && !inode->blocks) ||
         S_ISCHR(inode->mode) || S_ISBLK(inode->mode))
         return;
@@ -78,8 +89,8 @@ void ext2_blocks_free(struct ext2 *desc, struct ext2_inode *inode, size_t from)
         free_tree(desc, inode, inode->triply_indirect_pointer, 3, from > base ? from - base : 0);
 }
 
-/** mark inode `ino' free (a bitmap that can't be read isn't written back:
- * it stays used) */
+/** Marks an inode free in its group's inode bitmap, and counts it as free.
+ * If the bitmap can't be read, the inode stays used. */
 static void ext2_inode_free(struct ext2 *desc, ino_t ino, int dir)
 {
     uint32_t group = (ino - 1) / desc->superblock->ginodes;
@@ -111,7 +122,12 @@ static void ext2_inode_free(struct ext2 *desc, ino_t ino, int dir)
     ext2_superblock_rewrite(desc);
 }
 
-/** free inode `ino' and everything it uses, it has no links left */
+/**
+ * Frees an inode that has no links left, and the blocks it uses.
+ *
+ * @param desc  the mounted filesystem
+ * @param ino   the inode number
+ */
 void ext2_inode_discard(struct ext2 *desc, ino_t ino)
 {
     struct ext2_inode inode;
@@ -127,17 +143,23 @@ void ext2_inode_discard(struct ext2 *desc, ino_t ino)
     inode.size  = 0;
     inode.dtime = ts.tv_sec;
 
-    /* written as freed, or it stays used */
+    /* unless the inode could be written as deleted, it stays used */
     if (!ext2_inode_write(desc, ino, &inode))
         ext2_inode_free(desc, ino, S_ISDIR(inode.mode));
 }
 
-/** the last reference to a vnode is gone */
+/**
+ * Releases a vnode when its last reference goes. A file that was
+ * unlinked while it was open is freed now, with its inode and blocks.
+ *
+ * @param vnode  the vnode
+ * @return 0
+ */
 int ext2_close(struct vnode *vnode)
 {
     struct ext2 *desc = vnode->p;
 
-    /* unlinked while it was open */
+    /* it was unlinked while it was open */
     if (!vnode->nlink) {
         ext2_inode_discard(desc, vnode->ino);
         vcache_remove(desc->vcache, vnode);
@@ -148,9 +170,12 @@ int ext2_close(struct vnode *vnode)
     return 0;
 }
 
-/* call fn on the entry `name' of directory `dir' and write the block back,
- * prev is the entry before it in its block (NULL if first); the entry's
- * inode into `*ino': 0, -ENOENT, or an error */
+/**
+ * Finds the entry `name` of directory `dir`, calls `fn` on it, and writes
+ * its block back. `fn` gets the entry, the entry before it in its block
+ * (NULL if it's the first), and `arg`. The entry's inode number goes in
+ * `*ino`. Returns 0, `-ENOENT`, or a negative errno.
+ */
 static int dentry_update(struct vnode *dir, const char *name,
                          void (*fn)(struct ext2_dentry *d, struct ext2_dentry *prev, void *arg),
                          void *arg, ino_t *ino)
@@ -196,21 +221,31 @@ static int dentry_update(struct vnode *dir, const char *name,
     return err;
 }
 
+/** Removes an entry: the previous entry takes its space, or, for the first
+ * entry of a block, it's marked unused. */
 static void dentry_remove(struct ext2_dentry *d, struct ext2_dentry *prev, void *arg)
 {
-    /* the previous entry takes its space, the first one of a block is
-     * marked unused */
     if (prev)
         prev->size += d->size;
     else
         d->ino = 0;
 }
 
+/** Points an entry to another inode, the one `arg` points to. */
 static void dentry_set_ino(struct ext2_dentry *d, struct ext2_dentry *prev, void *arg)
 {
     d->ino = *(ino_t *) arg;
 }
 
+/**
+ * Removes an entry from a directory, and drops a link to its file. The
+ * file is freed when it has no links and nothing has it open.
+ *
+ * @param dir  the directory
+ * @param fn   the entry's name
+ * @param uio  who is asking
+ * @return 0, `-ENOENT`, or a negative errno
+ */
 int ext2_vunlink(struct vnode *dir, const char *fn, struct uio *uio)
 {
     struct ext2 *desc = dir->p;
@@ -228,7 +263,8 @@ int ext2_vunlink(struct vnode *dir, const char *fn, struct uio *uio)
     gettime(&ts);
 
     if (S_ISDIR(vnode->mode)) {
-        /* its . and the parent's link through its .. */
+        /* a directory loses its . link, and the parent the link of its
+         * .. */
         vnode->nlink = 0;
         dir->nlink--;
     } else {
@@ -241,7 +277,7 @@ int ext2_vunlink(struct vnode *dir, const char *fn, struct uio *uio)
     vnode->ctime = ts;
     ext2_inode_sync(vnode);
 
-    /* nothing has it open */
+    /* if nothing has it open, release it now */
     if (!vnode->ref) {
         vnode->ref = 1;
         vfs_close(vnode);
@@ -250,6 +286,15 @@ int ext2_vunlink(struct vnode *dir, const char *fn, struct uio *uio)
     return 0;
 }
 
+/**
+ * Adds an entry for an existing file (a hard link) to a directory.
+ *
+ * @param dir    the directory
+ * @param fn     the new name
+ * @param vnode  the file
+ * @param uio    who is asking
+ * @return 0, `-EEXIST`, or a negative errno
+ */
 int ext2_vlink(struct vnode *dir, const char *fn, struct vnode *vnode, struct uio *uio)
 {
     struct ext2 *desc = dir->p;
@@ -277,6 +322,18 @@ int ext2_vlink(struct vnode *dir, const char *fn, struct vnode *vnode, struct ui
     return ext2_inode_sync(vnode);
 }
 
+/**
+ * Renames an entry, possibly to another directory, replacing an entry at
+ * the new name (the VFS checked its type already). A directory that moves
+ * gets its `..` pointed to its new parent.
+ *
+ * @param odir  the directory the entry is in
+ * @param ofn   its name
+ * @param ndir  the directory it goes to
+ * @param nfn   its new name
+ * @param uio   who is asking
+ * @return 0, `-ENOENT`, or a negative errno
+ */
 int ext2_vrename(struct vnode *odir, const char *ofn, struct vnode *ndir, const char *nfn, struct uio *uio)
 {
     struct ext2 *desc = odir->p;
@@ -296,7 +353,8 @@ int ext2_vrename(struct vnode *odir, const char *ofn, struct vnode *ndir, const 
     if ((err = ext2_inode_build(desc, ino, &vnode)))
         return err;
 
-    /* the entry it replaces (the vfs checked its type) */
+    /* remove the entry it replaces, if there's one (the VFS checked its
+     * type) */
     if ((err = ext2_inode_read(desc, ndir->ino, &inode)))
         return err;
 
@@ -314,7 +372,7 @@ int ext2_vrename(struct vnode *odir, const char *ofn, struct vnode *ndir, const 
 
     gettime(&ts);
 
-    /* a directory's .. now links to the new parent */
+    /* a directory's .. now points to its new parent */
     if (S_ISDIR(vnode->mode) && odir != ndir) {
         ino_t parent = ndir->ino;
 

@@ -1,6 +1,10 @@
 #ifndef _X86_STRING_H
 #define _X86_STRING_H
 
+/* x86 string functions in assembly. Nothing includes this file any more
+ * (the kernel's are in include/core/string.h), and it no longer compiles:
+ * its kmalloc() calls are the old API's. */
+
 #include <core/system.h>
 #include <mm/mm.h>
 
@@ -53,10 +57,9 @@ static inline int strncmp(const char *s1, const char *s2, size_t n)
         "repe cmpsb;"
         "jnz 2f;"
         "1:"
-            /* Before you start blaming me for this awful solution, I tried
-             * setting direction flag and scanning the string backwards but
-             * for some reason it does not work, if you know why please elaborate!
-             */
+            /* go back to the 4 bytes that differed, and compare them one
+             * by one (scanning backwards with the direction flag set
+             * didn't work) */
             "mov $4, %%ecx;"
             "sub $4, %%esi;"
             "sub $4, %%edi;"
@@ -102,7 +105,7 @@ static inline char *strcpy(char *dst, const char *src)
     
     while (*src)
         *dst++ = *src++;
-    *dst = *src;    /* NULL terminator */
+    *dst = *src;    /* the NUL */
 
     return retval;
 }

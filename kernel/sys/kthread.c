@@ -1,8 +1,11 @@
 /** \file
- * Kernel threads: the threads of process 0, "[kernel]", as the BSDs have
- * it. They run kernel functions on their kernel stacks, on the kernel's
- * address space, and are scheduled as the others are. Process 0 has no
- * parent, its own session and process group, and takes no signals.
+ * Kernel threads.
+ *
+ * Kernel threads are the threads of process 0, "[kernel]", as on the
+ * BSDs. They run kernel functions on their kernel stacks, in the kernel's
+ * address space, and are scheduled like any other thread. Process 0 has
+ * no parent, has its own session and process group, and takes no
+ * signals.
  */
 
 #include <core/system.h>
@@ -19,6 +22,8 @@ MALLOC_DECLARE(M_PROC);
 
 struct proc *kproc;
 
+/** Makes process 0, the kernel threads' process, the first time a kernel
+ * thread is made. Returns 0, or `-ENOMEM`. */
 static int kproc_init(void)
 {
     struct proc *proc = kmalloc(sizeof(struct proc), &M_PROC, M_ZERO);
@@ -43,13 +48,23 @@ static int kproc_init(void)
     return 0;
 }
 
-/** where a kernel thread starts, on its stack (arch_kthread_create) */
+/** Runs a kernel thread's function: every kernel thread starts here, on
+ * its own stack (`arch_kthread_create()`). The function must not return. */
 static void kthread_start(void)
 {
     curthread->kentry(curthread->karg);
     panic("a kernel thread returned");
 }
 
+/**
+ * Makes a kernel thread, and makes it ready to run.
+ *
+ * @param name  the thread's name, as `ps` shows it ("[net]")
+ * @param fn    the function it runs, which must never return
+ * @param arg   the argument `fn` is called with
+ * @param ref   if not NULL, set to the new thread
+ * @return 0, or `-ENOMEM` if there was no memory for the thread
+ */
 int kthread_create(const char *name, void (*fn)(void *), void *arg, struct thread **ref)
 {
     int err;
@@ -73,7 +88,8 @@ int kthread_create(const char *name, void (*fn)(void *), void *arg, struct threa
         return -ENOMEM;
     }
 
-    /* switched to as a thread that was switched away from, at its start */
+    /* the scheduler switches to it as to any thread that was switched
+     * away from: its saved context is its start */
     thread->spawned = 1;
     thread->state = RUNNABLE;
     sched_thread_ready(thread);

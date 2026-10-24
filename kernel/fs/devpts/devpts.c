@@ -1,3 +1,9 @@
+/** \file
+ * devpts: the filesystem of the pseudo-terminals' slave devices, usually
+ * mounted on `/dev/pts`. Like devfs, it is a tmpfs with one root of its
+ * own, where opening `/dev/ptmx` makes `/dev/pts/<n>`.
+ */
+
 #include <core/system.h>
 #include <core/module.h>
 #include <core/time.h>
@@ -6,14 +12,19 @@
 #include <fs/tmpfs.h>
 #include <fs/devpts.h>
 
-/* devpts root directory (usually mounted on /dev/pts) */
+/* devpts's root directory, usually mounted on /dev/pts */
 struct vnode *devpts_root = NULL;
 
+/**
+ * Sets devpts up at boot: tmpfs's operations, and its root directory.
+ *
+ * @return 0, or a negative errno
+ */
 int devpts_init()
 {
     int err = 0;
 
-    /* devpts is really just tmpfs */
+    /* devpts is a tmpfs */
     devpts.vops = tmpfs.vops;
     devpts.fops = tmpfs.fops;
 
@@ -43,6 +54,14 @@ int devpts_init()
     return 0;
 }
 
+/**
+ * Mounts devpts on a directory: its one root directory is bound there.
+ *
+ * @param dir    the directory to mount it on
+ * @param flags  not used
+ * @param data   not used
+ * @return 0, `-EINVAL` if devpts wasn't set up, or a negative errno
+ */
 int devpts_mount(struct vnode *dir, int flags, void *data)
 {
     if (!devpts_root)

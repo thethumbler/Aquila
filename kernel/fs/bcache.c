@@ -1,19 +1,24 @@
+/** \file
+ * The block cache: a filesystem's blocks kept in memory, by a number the
+ * filesystem chooses (minix uses the block number), so that a block read
+ * again and again is read once. minix keeps its indirect zones there.
+ */
+
 #include <core/system.h>
 #include <fs/bcache.h>
 
 MALLOC_DEFINE(M_BCACHE, "bcache", "block cache structure");
 MALLOC_DEFINE(M_CACHE_BLOCK, "cache block", "cached block structure");
 
-/**
- * cacehed block
- */
+/** A cached block. */
 struct cache_block {
-    off_t off;
-    void *data;
+    off_t off;      /* its number */
+    void *data;     /* its contents */
 
-    int dirty;
+    int dirty;      /* changed since it was read (not written back yet) */
 };
 
+/** Says whether a cached block is the one whose number `_b` points to. */
 static int bcache_eq(void *_a, void *_b)
 {
     struct cache_block *a = (struct cache_block *) _a;
@@ -22,11 +27,24 @@ static int bcache_eq(void *_a, void *_b)
     return a->off == *b;
 }
 
+/**
+ * Sets up an empty block cache.
+ *
+ * @param bcache  the cache
+ */
 void bcache_init(struct bcache *bcache)
 {
     bcache->hashmap = hashmap_new(0, bcache_eq);
 }
 
+/**
+ * Adds a block to a cache, which keeps its memory from now on.
+ *
+ * @param bcache  the cache, set up on first use
+ * @param off     the block's number
+ * @param data    its contents
+ * @return 0, `-EINVAL` if `bcache` is NULL, or `-ENOMEM`
+ */
 int bcache_insert(struct bcache *bcache, uint64_t off, void *data)
 {
     if (!bcache)
@@ -45,6 +63,13 @@ int bcache_insert(struct bcache *bcache, uint64_t off, void *data)
     return hashmap_insert(bcache->hashmap, hash, block);
 }
 
+/**
+ * Takes a block out of a cache.
+ *
+ * @param bcache  the cache
+ * @param off     the block's number
+ * @return 0, or -1 if the block wasn't cached
+ */
 int bcache_remove(struct bcache *bcache, uint64_t off)
 {
     if (!bcache || !bcache->hashmap)
@@ -65,6 +90,13 @@ int bcache_remove(struct bcache *bcache, uint64_t off)
     return -1;
 }
 
+/**
+ * Finds a cached block.
+ *
+ * @param bcache  the cache
+ * @param off     the block's number
+ * @return its contents, or NULL if it isn't cached
+ */
 void *bcache_find(struct bcache *bcache, uint64_t off)
 {
     if (!bcache || !bcache->hashmap)
@@ -82,6 +114,13 @@ void *bcache_find(struct bcache *bcache, uint64_t off)
     return NULL;
 }
 
+/**
+ * Marks a cached block as changed. Nothing writes dirty blocks back yet:
+ * the filesystems write their changes through at once.
+ *
+ * @param bcache  the cache
+ * @param off     the block's number
+ */
 void bcache_dirty(struct bcache *bcache, uint64_t off)
 {
     if (!bcache || !bcache->hashmap)

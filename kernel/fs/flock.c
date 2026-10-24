@@ -1,7 +1,8 @@
 /** \file
- * Advisory locks on whole files (flock): shared or exclusive, held by an
- * open file (which the descriptors dup() and fork() copied share). They
- * go away with LOCK_UN, or when the open file is closed.
+ * Advisory locks on whole files, for `flock()`. A lock is shared or
+ * exclusive, and an open file holds it, so the descriptors that `dup()`
+ * and `fork()` copied share it. It goes with `LOCK_UN`, or when the open
+ * file is closed.
  */
 
 #include <core/system.h>
@@ -15,16 +16,18 @@
 
 MALLOC_DEFINE(M_FILE_LOCK, "file-lock", "flock() lock");
 
+/** An open file's lock. */
 struct file_lock {
-    struct vnode *vnode;
-    int type;   /* LOCK_SH, LOCK_EX, or 0 while not locked */
+    struct vnode *vnode;    /* the file it locks */
+    int type;               /* LOCK_SH, LOCK_EX, or 0 while not locked */
 };
 
-/* locks held, and the threads waiting for one to be released */
+/* the locks held, and the threads waiting for one to be released */
 static struct queue locks = {0};
 static struct waitq waiters = {0};
 
-/** whether a lock of the type conflicts with one another file holds */
+/** Says whether taking a lock of `type` conflicts with a lock that another
+ * open file holds on the same file. */
 static int lock_conflicts(struct file_lock *lock, int type)
 {
     queue_for (node, &locks) {
@@ -38,6 +41,7 @@ static int lock_conflicts(struct file_lock *lock, int type)
     return 0;
 }
 
+/** Releases a lock, and wakes up the threads waiting for one. */
 static void lock_unlock(struct file_lock *lock)
 {
     if (!lock->type)
@@ -48,6 +52,18 @@ static void lock_unlock(struct file_lock *lock)
     waitq_wakeup(&waiters);
 }
 
+/**
+ * Takes, changes or releases an open file's lock. Taking a lock waits
+ * until no other open file holds a conflicting one, unless `LOCK_NB` is
+ * set.
+ *
+ * @param file  the open file
+ * @param op    `LOCK_SH` (shared), `LOCK_EX` (exclusive) or `LOCK_UN`
+ *              (release), with `LOCK_NB` not to wait
+ * @return 0, `-EWOULDBLOCK` if `LOCK_NB` is set and it would wait,
+ *         `-EINVAL`, `-ENOMEM`, or `-ERESTARTSYS` if a signal came while
+ *         it waited
+ */
 int vfs_file_flock(struct file *file, int op)
 {
     int type = op & ~LOCK_NB;
@@ -87,7 +103,7 @@ int vfs_file_flock(struct file *file, int op)
     if (!lock->type)
         enqueue(&locks, lock);
 
-    /* a shared lock instead of an exclusive one may let others in */
+    /* changing an exclusive lock to a shared one may let others in */
     if (lock->type == LOCK_EX && type == LOCK_SH)
         waitq_wakeup(&waiters);
 
@@ -95,7 +111,11 @@ int vfs_file_flock(struct file *file, int op)
     return 0;
 }
 
-/** the open file is closed: its lock goes */
+/**
+ * Releases an open file's lock when the file is closed.
+ *
+ * @param file  the open file
+ */
 void vfs_file_lock_release(struct file *file)
 {
     struct file_lock *lock = file->lock;

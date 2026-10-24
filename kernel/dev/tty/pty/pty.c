@@ -1,3 +1,16 @@
+/** \file
+ * Pseudo-terminals: `/dev/ptmx` and `/dev/pts/N`.
+ *
+ * A pseudo-terminal is a terminal with a program on both sides. Opening
+ * `/dev/ptmx` (character device 5, 2) makes a new one and gives its
+ * master side: what the program there (a terminal emulator, `script`, an
+ * SSH server) writes is the terminal's input, and it reads the terminal's
+ * output. The slave side, `/dev/pts/N` in devpts, is the terminal that a
+ * shell runs on. The terminal layer (`generic.c`) does the line editing
+ * in between. There is a ring each way. Closing the master's last
+ * descriptor ends the pseudo-terminal.
+ */
+
 #include <core/system.h>
 #include <sys/uaccess.h>
 #include <core/module.h>
@@ -12,9 +25,7 @@
 
 MALLOC_DEFINE(M_PTY, "pseudo-terminal", "pseudo-terminal structure");
 
-/**
- * psuedo-terminal
- */
+/** A pseudo-terminal. */
 struct pty {
     size_t id;
     struct tty *tty;
@@ -22,16 +33,17 @@ struct pty {
     struct vnode *master;
     struct vnode *slave;
 
-    /** master input, slave output */
+    /** what the master writes, after line editing, for the slave to read */
     struct ringbuf *in;
 
-    /** slave input, master output */
+    /** what the slave writes, after output processing, for the master to
+     *  read */
     struct ringbuf *out;
 
-    /** slave read, master write wait queue */
+    /** where the slave's readers and the master's writers sleep */
     struct waitq pts_read_queue;
 
-    /** slave write, master read wait queue */
+    /** where the slave's writers and the master's readers sleep */
     struct waitq pts_write_queue;
 };
 
@@ -40,23 +52,34 @@ struct pty {
 
 static struct pty *ptys[PTY_MAX] = {0};
 
-/** reserved pty ids (allocated, possibly not yet fully initialized) */
+/* which pseudo-terminal numbers are taken (a pseudo-terminal may not be
+ * fully set up yet) */
 static char pty_ids[PTY_MAX] = {0};
 
 struct dev ptmdev;
 struct dev ptsdev;
 
-/** lookup the pty associated with a master (major 2) or slave (major 136) device */
+/** Returns the pseudo-terminal of a master (major 2) or slave (major 136)
+ * device, or NULL if there is none. */
 static struct pty *pty_get(struct devid *dd)
 {
     if (dd->major != 2 && dd->major != 136)
         return NULL;
 
-    /* minor is devid_t (uint8_t), always < PTY_MAX */
+    /* the minor is a devid_t (8 bits), so it is always below PTY_MAX */
     return ptys[dd->minor];
 }
 
-/** TTY Interface */
+/**
+ * Takes the terminal's output, for the master to read. It waits while
+ * the ring is full, until all of it is taken or a signal comes.
+ *
+ * @param tty   the terminal
+ * @param size  the output's size, in bytes
+ * @param buf   the output
+ * @return how much was taken, or `-ERESTARTSYS` if a signal came before
+ *         any was
+ */
 ssize_t pty_master_write(struct tty *tty, size_t size, void *buf)
 {
     struct pty *pty = (struct pty *) tty->p;
@@ -66,7 +89,7 @@ ssize_t pty_master_write(struct tty *tty, size_t size, void *buf)
         written += ringbuf_write(pty->out, size - written, (char *) buf + written);
 
         if (written != size) {
-            /* writes must always complete, but for a signal */
+            /* a write always completes, unless a signal comes */
             int err = waitq_sleep(&pty->pts_read_queue);
 
             if (err)
@@ -77,6 +100,17 @@ ssize_t pty_master_write(struct tty *tty, size_t size, void *buf)
     return written;
 }
 
+/**
+ * Takes the terminal's input, after its line editing, for the slave to
+ * read. It waits while the ring is full, until all of it is taken or a
+ * signal comes.
+ *
+ * @param tty   the terminal
+ * @param size  the input's size, in bytes
+ * @param buf   the input
+ * @return how much was taken, or `-ERESTARTSYS` if a signal came before
+ *         any was
+ */
 ssize_t pty_slave_write(struct tty *tty, size_t size, void *buf)
 {
     struct pty *pty = (struct pty *) tty->p;
@@ -86,7 +120,7 @@ ssize_t pty_slave_write(struct tty *tty, size_t size, void *buf)
         written += ringbuf_write(pty->in, size - written, (char *) buf + written);
 
         if (written != size) {
-            /* writes must always complete, but for a signal */
+            /* a write always completes, unless a signal comes */
             int err = waitq_sleep(&pty->pts_read_queue);
 
             if (err)
@@ -97,7 +131,7 @@ ssize_t pty_slave_write(struct tty *tty, size_t size, void *buf)
     return written;
 }
 
-/** discard what the slave hasn't read */
+/** Drops the input that the slave hasn't read (`tcflush()`). */
 static void pty_input_flush(struct tty *tty)
 {
     struct pty *pty = (struct pty *) tty->p;
@@ -107,15 +141,14 @@ static void pty_input_flush(struct tty *tty)
         ;
 }
 
-/*************************************
- *
- * Pseudo Terminal Master Helpers
- *
- *************************************/
+/*
+ * The master side
+ */
 
+/** Makes the master's vnode: an anonymous file, in no filesystem.
+ * Returns 0, or `-ENOMEM`. */
 static int ptm_new(struct pty *pty, struct vnode **ref)
 {
-    /* anonymous file, not populated */
     struct vnode *ptm = NULL;
     
     ptm = kmalloc(sizeof(struct vnode), &M_VNODE, M_ZERO);
@@ -123,7 +156,7 @@ static int ptm_new(struct pty *pty, struct vnode **ref)
 
     ptm->rdev        = DEV(2, pty->id);
     ptm->mode        = S_IFCHR;
-    ptm->ref         = 1;   /* the descriptor ptmx was opened with */
+    ptm->ref         = 1;   /* the descriptor /dev/ptmx was opened with */
     ptm->read_queue  = &pty->pts_read_queue;
     ptm->write_queue = &pty->pts_write_queue;
     ptm->p           = pty;
@@ -134,6 +167,7 @@ static int ptm_new(struct pty *pty, struct vnode **ref)
     return 0;
 }
 
+/** Reads the terminal's output, and wakes up the writers waiting for room. */
 static ssize_t ptm_read(struct devid *dd, off_t offset __unused, struct iobuf *io)
 {
     struct pty *pty = pty_get(dd);
@@ -146,6 +180,7 @@ static ssize_t ptm_read(struct devid *dd, off_t offset __unused, struct iobuf *i
     return ret;
 }
 
+/** Writes to the terminal, as typed input. */
 static ssize_t ptm_write(struct devid *dd, off_t offset __unused, struct iobuf *io)
 {
     struct pty *pty = pty_get(dd);
@@ -154,6 +189,8 @@ static ssize_t ptm_write(struct devid *dd, off_t offset __unused, struct iobuf *
     return tty_write_iobuf(pty->tty, io, tty_master_write);
 }
 
+/** Handles a pseudo-terminal's `ioctl()`s: its number (`TIOCGPTN`), its
+ * lock (`TIOCSPTLCK`), and the terminal's own. */
 static int pty_ioctl(struct devid *dd, int request, void *argp)
 {
     struct pty *pty = pty_get(dd);
@@ -163,7 +200,7 @@ static int pty_ioctl(struct devid *dd, int request, void *argp)
         case TIOCGPTN:
             return copyout(argp, &pty->id, sizeof(int));
         case TIOCSPTLCK: {
-            /* locking isn't kept: the slave is always unlocked */
+            /* the lock isn't kept: the slave is always unlocked */
             int lock;
             return copyin(&lock, argp, sizeof(lock));
         }
@@ -172,12 +209,12 @@ static int pty_ioctl(struct devid *dd, int request, void *argp)
     return tty_ioctl(pty->tty, request, argp);  
 }
 
-/*************************************
- *
- * Pseudo Terminal Slave Helpers
- *
- *************************************/
+/*
+ * The slave side
+ */
 
+/** Makes the slave's node, `/dev/pts/N`, owned by the process that opened
+ * the master. Returns 0 or a negative errno. */
 static int pts_new(struct pty *pty, struct vnode **ref)
 {
     char name[12];
@@ -186,7 +223,7 @@ static int pts_new(struct pty *pty, struct vnode **ref)
 
     dev_t dev = DEV(136 + pty->id / 256, pty->id % 256);
 
-    /* the opener's, writable by the group like other terminals */
+    /* the opener's, and writable by the group like other terminals */
     struct uio uio = {.uid = curproc->uid, .gid = curproc->gid};
 
     struct vnode *pts = NULL;
@@ -203,6 +240,15 @@ static int pts_new(struct pty *pty, struct vnode **ref)
     return 0;
 }
 
+/**
+ * Reads the slave's input. A process of a background group gets `SIGTTIN`
+ * instead.
+ *
+ * @param dd      the device's number
+ * @param offset  not used: a terminal has no offset
+ * @param io      where to put what is read
+ * @return how much was read, or a negative errno
+ */
 ssize_t pts_read(struct devid *dd, off_t offset __unused, struct iobuf *io)
 {
     struct pty *pty = pty_get(dd);
@@ -214,6 +260,15 @@ ssize_t pts_read(struct devid *dd, off_t offset __unused, struct iobuf *io)
     return ringbuf_read_iobuf(pty->in, io->resid, io);
 }
 
+/**
+ * Writes to the slave: the terminal's output. With `TOSTOP` set, a process
+ * of a background group gets `SIGTTOU` instead.
+ *
+ * @param dd      the device's number
+ * @param offset  not used: a terminal has no offset
+ * @param io      what to write
+ * @return how much was written, or a negative errno
+ */
 ssize_t pts_write(struct devid *dd, off_t offset __unused, struct iobuf *io)
 {
     struct pty *pty = pty_get(dd);
@@ -229,42 +284,51 @@ ssize_t pts_write(struct devid *dd, off_t offset __unused, struct iobuf *io)
     return tty_write_iobuf(pty->tty, io, tty_slave_write);
 }
 
-/** a read found no data */
+/** Returns whether a read of the slave that found no data is at the end
+ * of the file (the terminal says, from its mode). */
 static int pts_eof(struct file *file)
 {
     struct pty *pty = pty_get(&VNODE_DEV(file->vnode));
     return !pty || tty_eof(pty->tty);
 }
 
+/**
+ * Says whether a read of the slave wouldn't have to wait.
+ *
+ * @param file  the open slave
+ * @param size  how much would be read
+ * @return whether it can be read
+ */
 int pts_can_read(struct file *file, size_t size)
 {
     struct devid *dd = &VNODE_DEV(file->vnode);
     struct pty *pty = pty_get(dd);
-    if (!pty) return 1; /* let read report the error */
+    if (!pty) return 1; /* let the read report the error */
 
     return tty_can_read(pty->tty, ringbuf_available(pty->in));
 }
 
-/** the master can be read when the terminal wrote something */
+/** Returns whether the master can be read: the terminal output something. */
 static int ptm_can_read(struct file *file, size_t size)
 {
     struct pty *pty = pty_get(&VNODE_DEV(file->vnode));
     return !pty || ringbuf_available(pty->out);
 }
 
+/** Returns how long a read of the slave may wait, from the terminal's
+ * mode (`VTIME`), or 0 for no limit. */
 static uint64_t pts_read_timeout(struct file *file)
 {
     struct pty *pty = pty_get(&VNODE_DEV(file->vnode));
     return pty ? tty_read_timeout(pty->tty) : 0;
 }
 
-/*************************************
- *
- * Pseudo Terminal Helpers
- *
- *************************************/
+/*
+ * Pseudo-terminals
+ */
 
-/** reserve the first free pty id, returns -ENOSPC if all are in use */
+/** Takes the first free pseudo-terminal number. Returns it, or `-ENOSPC`
+ * if every one is taken. */
 static inline int pty_id_get(void)
 {
     for (int id = 0; id < PTY_MAX; ++id) {
@@ -277,6 +341,14 @@ static inline int pty_id_get(void)
     return -ENOSPC;
 }
 
+/**
+ * Makes a new pseudo-terminal: its rings, its terminal, its master and its
+ * slave, `/dev/pts/N`.
+ *
+ * @param proc    the process making it
+ * @param master  set to the master's vnode
+ * @return 0, or a negative errno (`-ENOSPC` if every number is taken)
+ */
 int pty_new(struct proc *proc, struct vnode **master)
 {
     int err = 0, id = -1;
@@ -341,7 +413,8 @@ error:
     return err;
 }
 
-/** the master was closed: the pty, its /dev/pts entry and its id go */
+/** Ends a pseudo-terminal, once its master is closed: the terminal, its
+ * `/dev/pts` node and its number go. */
 static void pty_free(struct pty *pty)
 {
     char name[12] = {0};
@@ -349,10 +422,11 @@ static void pty_free(struct pty *pty)
 
     ptys[pty->id] = NULL;
 
-    /* the session it controls is hung up */
+    /* hang up the session it controls */
     tty_free(pty->tty);
 
-    /* slaves still open fail with ENXIO, wake up those waiting on them */
+    /* the slaves still open fail with ENXIO from now on: wake up those
+     * waiting on them */
     waitq_wakeup(&pty->pts_read_queue);
     waitq_wakeup(&pty->pts_write_queue);
     pty->slave->read_queue  = NULL;
@@ -368,19 +442,27 @@ static void pty_free(struct pty *pty)
     kfree(pty);
 }
 
+/**
+ * Opens `/dev/ptmx`: a new pseudo-terminal is made, and the file is its
+ * master instead.
+ *
+ * @param file  the file being opened
+ * @return 0, or a negative errno
+ */
 int ptmx_open(struct file *file)
 {
     struct vnode *ptmx = file->vnode;
     int err = pty_new(curproc, &file->vnode);
 
-    /* the descriptor now refers to the new master */
+    /* the file is the new master now */
     if (!err)
         vfs_close(ptmx);
 
     return err;
 }
 
-/** the master has no filesystem, its references are counted here */
+/** Closes the master. It is in no filesystem, so its references are
+ * counted here; the last close ends the pseudo-terminal. */
 static int ptm_close(struct file *file)
 {
     struct vnode *ptm = file->vnode;
@@ -393,6 +475,7 @@ static int ptm_close(struct file *file)
     return 0;
 }
 
+/** Opens the slave, which may become the process's controlling terminal. */
 static int pts_open(struct file *file)
 {
     struct pty *pty = pty_get(&VNODE_DEV(file->vnode));
@@ -404,6 +487,12 @@ static int pts_open(struct file *file)
     return posix_file_open(file);
 }
 
+/**
+ * Registers the pseudo-terminals' devices: the masters (major 2) and the
+ * slaves (majors 136 to 143).
+ *
+ * @return 0
+ */
 int pty_init()
 {
     kdev_chrdev_register(2, &ptmdev);

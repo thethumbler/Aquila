@@ -1,5 +1,9 @@
-/**********************************************************************
- *                  Device Filesystem (devfs) handler
+/** \file
+ * devfs: the filesystem of device nodes, usually mounted on `/dev`.
+ *
+ * It is a tmpfs with one root of its own: every mount of devfs shows the
+ * same directory, so the nodes made at boot (rootfs's runit stage 1, or
+ * a test program) are there for whoever mounts it.
  */
 
 #include <core/system.h>
@@ -13,12 +17,13 @@
 
 #include <aquila/errno.h>
 
-/* devfs root directory (usually mounted on '/dev') */
+/* devfs's root directory, usually mounted on /dev */
 struct vnode *devfs_root = NULL;
 
+/** Sets devfs up at boot: tmpfs's operations, and its root directory. */
 static int devfs_init()
 {
-    /* devfs is really just tmpfs */
+    /* devfs is a tmpfs */
     devfs.vops = tmpfs.vops;
     devfs.fops = tmpfs.fops;
 
@@ -43,6 +48,7 @@ static int devfs_init()
     return 0;
 }
 
+/** Mounts devfs on a directory: its one root directory is bound there. */
 static int devfs_mount(struct vnode *dir, int flags, void *data)
 {
     if (!devfs_root)

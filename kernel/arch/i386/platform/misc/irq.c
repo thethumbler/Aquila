@@ -1,19 +1,22 @@
 /** \file
- * IRQs: devices' interrupts, whichever controller brings them (the 8259,
- * or the APIC: an x86_irq_chip)
+ * x86: devices' interrupts (IRQs), whichever controller brings them: the
+ * 8259s or the APIC, each an `x86_irq_chip`.
  *
- * IRQ n is vector 32 + n: the 8259's 16 (ISA's numbers), or what the I/O
- * APIC routes from its pins (ISA's numbers too, from the pins the MADT
- * says, PCI's from the line in its configuration space). The local APIC's
- * timer is vector 240, an IRQ of its own here (X86_IRQ_TIMER).
+ * IRQ n is vector 32 + n. With the 8259s, the IRQs are the ISA bus's 16.
+ * With the APIC, they are what the I/O APICs route from their pins: the
+ * ISA IRQs too (on the pins the MADT says), and PCI devices' lines (from
+ * their configuration space). The local APIC's timer, vector 240, is an
+ * IRQ of its own here (`X86_IRQ_TIMER`).
  *
- * An IRQ may have several handlers (a PCI line is shared): each is
- * called, each looks at its device. An IRQ may have a controller of its
- * own: an MSI's is the device's (x86_irq_alloc gives them, above the I/O
- * APIC's pins). Then the controller is told it's
- * done (EOI: a level-triggered line would come again before); then what
- * the interrupt woke up may run (an urgent thread, the scheduler's tick):
- * a thread switch, once the controller is done with the interrupt.
+ * An IRQ may have several handlers, because a PCI line can be shared:
+ * each is called, and each looks at its own device. An IRQ may also have
+ * a controller of its own: an MSI's is the device itself
+ * (`x86_irq_alloc()` gives those IRQs, above the I/O APICs' pins).
+ *
+ * After the handlers, the controller is told that the interrupt is done
+ * (the EOI; a level-triggered line would raise it again before). Only
+ * then may what the interrupt woke up run (an urgent thread, or the
+ * thread switch the tick asked for).
  */
 
 #include <core/system.h>
@@ -30,45 +33,69 @@
 
 MALLOC_DEFINE(M_IRQ, "irq", "IRQ handler");
 
+/** A handler installed for an IRQ. */
 struct handler {
     irq_handler_t fn;
     void *arg;
     struct handler *next;
 };
 
+/* each IRQ's handlers, how many times it came, and its own controller */
 static struct {
     struct handler *handlers;
     uint64_t count;
-    struct x86_irq_chip *chip;      /* its own (MSI), else the system's */
+    struct x86_irq_chip *chip;      /* its own controller (MSI), else NULL */
 } irqs[X86_IRQ_NR];
 
+/* the system's interrupt controller: the 8259s or the APIC */
 static struct x86_irq_chip *chip;
 
-/* the first IRQ x86_irq_alloc() may give: none until the APIC says */
+/* the first IRQ x86_irq_alloc() may give; none until the APIC sets it */
 static unsigned alloc_first = X86_IRQ_TIMER;
 
+/** Returns the controller of an IRQ: its own, or the system's. */
 static struct x86_irq_chip *chip_of(unsigned irq)
 {
     return irqs[irq].chip ? irqs[irq].chip : chip;
 }
 
+/**
+ * Sets the system's interrupt controller.
+ *
+ * @param c  the controller: the 8259s or the APIC
+ */
 void x86_irq_chip_set(struct x86_irq_chip *c)
 {
     chip = c;
 }
 
+/**
+ * Returns the name of the system's interrupt controller.
+ *
+ * @return its name, or "none"
+ */
 const char *x86_irq_chip_name(void)
 {
     return chip ? chip->name : "none";
 }
 
-/** IRQs from `first' on may be allocated (the I/O APIC's pins end there) */
+/**
+ * Sets the first IRQ that `x86_irq_alloc()` may give: past the I/O APICs'
+ * last pin.
+ *
+ * @param first  the first IRQ
+ */
 void x86_irq_alloc_from(unsigned first)
 {
     alloc_first = first;
 }
 
-/** a free IRQ with a controller of its own (MSI), -1 if there's none */
+/**
+ * Gives a free IRQ with a controller of its own, for an MSI.
+ *
+ * @param c  the IRQ's controller
+ * @return the IRQ, or -1 if there's no free one
+ */
 int x86_irq_alloc(struct x86_irq_chip *c)
 {
     for (unsigned irq = alloc_first; irq < X86_IRQ_TIMER; ++irq) {
@@ -81,6 +108,10 @@ int x86_irq_alloc(struct x86_irq_chip *c)
     return -1;
 }
 
+/*
+ * Installs a handler for an IRQ. The first handler unmasks the IRQ at its
+ * controller.
+ */
 int irq_install(unsigned irq, irq_handler_t fn, void *arg)
 {
     if (irq >= X86_IRQ_NR)
@@ -94,7 +125,7 @@ int irq_install(unsigned irq, irq_handler_t fn, void *arg)
     h->fn  = fn;
     h->arg = arg;
 
-    /* the first: the controller lets it through */
+    /* the first handler: the controller lets the IRQ through */
     int first = !irqs[irq].handlers;
     struct handler **p = &irqs[irq].handlers;
 
@@ -109,6 +140,10 @@ int irq_install(unsigned irq, irq_handler_t fn, void *arg)
     return 0;
 }
 
+/*
+ * Removes a handler of an IRQ. The last one gone masks the IRQ at its
+ * controller.
+ */
 void irq_uninstall(unsigned irq, irq_handler_t fn, void *arg)
 {
     if (irq >= X86_IRQ_NR)
@@ -124,18 +159,20 @@ void irq_uninstall(unsigned irq, irq_handler_t fn, void *arg)
         }
     }
 
-    /* the last: the controller keeps it out */
+    /* the last handler is gone: the controller keeps the IRQ out */
     if (!irqs[irq].handlers && chip_of(irq) && irq != X86_IRQ_TIMER)
         chip_of(irq)->mask(irq);
 }
 
-/** the tick: switch to the next thread once the interrupt is done */
+/** Asks for a thread switch once the current interrupt is done: the tick
+ * calls it. */
 void x86_irq_tick_switch(void)
 {
     curcpu()->arch.tick_switch = 1;
 }
 
-/** the IRQ's handlers, and the controller done with it */
+/** Runs an interrupt's handlers, then tells its controller that it is
+ * done. */
 static void irq_handle(struct x86_regs *r)
 {
     uint32_t vec = r->vec;
@@ -155,12 +192,14 @@ static void irq_handle(struct x86_regs *r)
         c->eoi(irq);
 }
 
+/** Handles an interrupt, then switches threads if the tick asked for it
+ * or an urgent thread was woken, and returns to what was interrupted. */
 static void irq_dispatch(struct x86_regs *r)
 {
     irq_handle(r);
 
-    /* the tick: the running thread back to the queue, the next one runs
-     * (the CPU was idle: it runs) */
+    /* the tick asked for a switch: the running thread goes back to the
+     * ready list, and the next one runs (if the CPU was idle, it runs) */
     if (curcpu()->arch.tick_switch) {
         curcpu()->arch.tick_switch = 0;
 
@@ -174,23 +213,26 @@ static void irq_dispatch(struct x86_regs *r)
 
     sched_idle_wakeup();
 
-    /* an urgent thread was woken (the network's): it runs now, not at the
-     * next tick; the interrupted thread is ready again */
+    /* an urgent thread (the network's) was woken: it runs now, not at the
+     * next tick, and the interrupted thread is ready again */
     if (sched_urgent && (r->cs & 3) == 3 && curthread) {
         extern void x86_preempt(void);
         x86_preempt();
     }
 
-    /* back to user mode (maybe after other threads ran): the signals
-     * that came meanwhile */
+    /* return to user mode (maybe after other threads ran), delivering the
+     * signals that came meanwhile */
     x86_return_to_user(r, 0);
 }
 
 /**
- * An interrupt: with the kernel lock, which it takes if it came from user
- * mode or the idle loop (an exception in the kernel has it already), and
- * lets go of before going back there. The TLB's IPI is done without it:
- * the CPU that sent it has it, waiting.
+ * Handles an interrupt: a device's, the tick, or an IPI. The stubs in
+ * cpu.S call it. It takes the kernel lock if it came from user mode or the
+ * idle loop (in the kernel, the lock is held already), and lets go of it
+ * on the way back. The TLB IPI is handled without the lock, because the
+ * CPU that sent it holds it, waiting.
+ *
+ * @param r  the interrupted registers, saved on the kernel stack
  */
 void __x86_irq_handler(struct x86_regs *r)
 {
@@ -202,12 +244,14 @@ void __x86_irq_handler(struct x86_regs *r)
 
     int took = kernel_enter();
 
-    /* woken: its tick runs, now that the scheduler does */
+    /* a CPU woken up for the first time starts its tick, now that the
+     * scheduler runs */
     if (r->vec == X86_WAKE_VECTOR && !curcpu()->arch.ticking)
         x86_lapic_timer_cpu_start();
 
-    /* its process was killed while it ran here (on another CPU): the
-     * interrupt handled (a device's, the controller's EOI), it goes */
+    /* its process was killed while it ran (from another CPU): handle the
+     * interrupt (the device's, and the controller's EOI), then the thread
+     * ends */
     if (took && curthread && curthread->killed) {
         irq_handle(r);
         sched_thread_killed();
@@ -217,8 +261,8 @@ void __x86_irq_handler(struct x86_regs *r)
     kernel_leave(took);
 }
 
-/** the vectors: 32 to 32 + 47, the local APIC's timer, the TLB's and the
- * wake IPIs, and its spurious interrupt */
+/** Sets the IDT's gates for the interrupts: vectors 32 to 79, the local
+ * APIC's timer, the TLB and wake IPIs, and its spurious interrupt. */
 void x86_irq_gates_setup(void)
 {
     extern void __x86_irq0(void), __x86_irq1(void), __x86_irq2(void), __x86_irq3(void),
@@ -255,7 +299,14 @@ void x86_irq_gates_setup(void)
     x86_idt_gate_set(X86_SPURIOUS_VECTOR, (uintptr_t) __x86_spurious);
 }
 
-/** /proc/interrupts: the controller, then each IRQ with handlers */
+/**
+ * Writes /proc/interrupts: the controller, then how many times each IRQ
+ * with handlers came, and how many TLB flushes each CPU did for another.
+ *
+ * @param buf   where to write it
+ * @param size  the buffer's size
+ * @return the length of the text
+ */
 int arch_interrupts_info(char *buf, size_t size)
 {
     int n = snprintf(buf, size, "controller: %s\n", x86_irq_chip_name());
@@ -276,7 +327,7 @@ int arch_interrupts_info(char *buf, size_t size)
         n += snprintf(buf + n, size - n, "%s", line);
     }
 
-    /* the TLB flushes the CPUs did for another (mm/tlb.c), each CPU's */
+    /* how many TLB flushes each CPU did for another (mm/tlb.c) */
     if (cpus_count > 1 && (size_t) n < size) {
         n += snprintf(buf + n, size - n, "tlb:");
 

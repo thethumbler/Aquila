@@ -3,6 +3,7 @@
 
 #include <config.h>
 
+/* x86's page size, and the size that one page table maps */
 #define PAGE_SIZE   (0x1000)
 #define PAGE_MASK   (PAGE_SIZE - 1)
 #define PAGE_SHIFT  (12)
@@ -15,6 +16,7 @@
 #define TABLE_MASK  (TABLE_SIZE - 1)
 #endif
 
+/* where the kernel's half starts, on i386 */
 #define KERNEL_BREAK 0xC0000000
 
 #include_next <core/system.h>

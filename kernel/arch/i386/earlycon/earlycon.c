@@ -1,3 +1,13 @@
+/** \file
+ * x86: the early console, where `printk()` writes before the kernel's
+ * terminals exist.
+ *
+ * It starts on the first serial port, and once the kernel's command line
+ * is read (`earlycon_reinit()`), moves to the boot loader's framebuffer
+ * if there is one. `earlycon=ttyS0`, `earlycon=vga` or `earlycon=fb`
+ * chooses it explicitly.
+ */
+
 #include <core/kargs.h>
 #include <core/string.h>
 #include <console/earlycon.h>
@@ -10,32 +20,45 @@ extern struct earlycon earlycon_fb;
 
 extern int earlycon_fb_available(void);
 
+/*
+ * Writes a string on the early console.
+ */
 int earlycon_puts(char *s)
 {
     return earlycon->puts(s);
 }
 
+/*
+ * Writes a character on the early console.
+ */
 int earlycon_putc(char c)
 {
     return earlycon->putc(c);
 }
 
-/** whether it shows messages on the screen, not the serial port */
+/*
+ * Says whether the early console writes on the screen rather than on the
+ * serial port.
+ */
 int earlycon_on_screen(void)
 {
     return earlycon != &earlycon_uart;
 }
 
+/* Starts the early console, on the first serial port, at boot. */
 void earlycon_init()
 {
     earlycon = &earlycon_uart;
     earlycon->init();
 }
 
+/* Chooses the early console again once the kernel's command line is
+ * read: the framebuffer if there is one, unless `earlycon=` says
+ * otherwise. */
 void earlycon_reinit()
 {
     const char *arg_earlycon = NULL;
-    /* default to framebuffer if we have one, otherwise stay on uart */
+    /* the framebuffer if there is one, else the serial port */
     earlycon = earlycon_fb_available() ? &earlycon_fb : &earlycon_uart;
 
     if (!kargs_get("earlycon", &arg_earlycon) && arg_earlycon) {

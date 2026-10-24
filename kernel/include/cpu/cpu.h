@@ -1,6 +1,6 @@
 #ifndef _CPU_H
 #define _CPU_H
 
-/* Override with arch specific CPU header */
+/* Empty: each architecture has its own cpu/cpu.h, found first. */
 
 #endif /* _CPU_H */

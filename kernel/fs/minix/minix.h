@@ -1,6 +1,15 @@
 #ifndef _MINIX_H
 #define _MINIX_H
 
+/*
+ * The minix filesystem, version 1 (with 14 or 30 character names): what
+ * Linux started on. A disk has a superblock, a bitmap of the inodes in
+ * use, a bitmap of the zones (data blocks) in use, the inode table, then
+ * the data. An inode has 7 direct zones, then a singly and a doubly
+ * indirect one; a directory is a file of fixed-size entries, an inode
+ * number and a name each. Versions 2 and 3 aren't supported.
+ */
+
 #include <core/system.h>
 #include <ds/bitmap.h>
 #include <ds/hashmap.h>
@@ -19,9 +28,7 @@
 
 #define MINIX_DIRECT_ZONES  7
 
-/**
- * minix v1/v2 superblock
- */
+/** The superblock of minix v1 and v2, as it is on the disk. */
 struct minix_superblock {
     uint16_t    ninodes;
     uint16_t    nzones;
@@ -36,9 +43,7 @@ struct minix_superblock {
     uint16_t    state;
 };
 
-/**
- * minix v3 superblock
- */
+/** The superblock of minix v3, as it is on the disk (not supported). */
 struct minix3_superblock {
 	uint32_t    ninodes;
 	uint16_t    pad0;
@@ -55,9 +60,7 @@ struct minix3_superblock {
 	uint8_t     disk_version;
 };
 
-/**
- * minix on-disk inode
- */
+/** A minix v1 inode, as it is on the disk. */
 struct minix_inode {
     uint16_t    mode;
     uint16_t    uid;
@@ -65,43 +68,40 @@ struct minix_inode {
     uint32_t    mtime;
     uint8_t     gid;
     uint8_t     nlinks;
-    uint16_t    zones[9];
+    uint16_t    zones[9];   /* 7 direct zones, a singly and a doubly indirect one */
 };
 
-/**
- * minix directory entry
- */
+/** A directory entry, as it is on the disk: 0 as the inode number is an
+ * unused entry. */
 struct minix_dentry {
     uint16_t    ino;
-    uint8_t     name[0];    // Name will be here
+    uint8_t     name[0];    /* the name follows, up to name_len bytes */
 };
 
-/**
- * minix filesystem
- */
+/** A mounted minix filesystem. */
 struct minix {
-    struct vnode *supernode;
+    struct vnode *supernode;    /* the device it's on */
     struct minix_superblock *superblock;
 
-    size_t   inode_size;
-    size_t   dentry_size;
-    size_t   name_len;
+    size_t   inode_size;        /* an inode's size on the disk */
+    size_t   dentry_size;       /* a directory entry's size */
+    size_t   name_len;          /* the longest name (14 or 30) */
 
-    uint32_t imap_off;
-    uint32_t zmap_off;
+    uint32_t imap_off;          /* where the inode bitmap is, in bytes */
+    uint32_t zmap_off;          /* where the zone bitmap is, in bytes */
 
-    struct bitmap imap;
-    struct bitmap zmap;
+    struct bitmap imap;         /* the inode bitmap, in memory */
+    struct bitmap zmap;         /* the zone bitmap, in memory */
 
     int imap_dirty;
     int zmap_dirty;
 
-    uint32_t inode_table;
+    uint32_t inode_table;       /* where the inode table is, in bytes */
     uint32_t data_zone;
-    size_t bs;
+    size_t bs;                  /* the block size */
 
-    struct vcache *vcache;
-    struct bcache *bcache;
+    struct vcache *vcache;      /* its vnodes in use, by inode number */
+    struct bcache *bcache;      /* its cached blocks (indirect zones) */
 };
 
 extern struct fs minixfs;
@@ -109,6 +109,7 @@ extern struct fs minixfs;
 /* super.c */
 void minix_superblock_rewrite(struct minix *desc);
 
+/* a block (zone) number */
 typedef uint32_t blk_t;
 
 /* block.c */
@@ -131,7 +132,7 @@ void minix_zones_free(struct minix *desc, struct minix_inode *inode, size_t from
 uint32_t minix_dentry_find(struct minix *desc, struct minix_inode *m_inode, const char *name);
 int minix_dentry_create(struct vnode *dir, const char *name, ino_t ino, mode_t mode);
 
-/* iops.c */
+/* vops.c: the vnode operations */
 ssize_t minix_read(struct vnode *inode, off_t offset, struct iobuf *io);
 ssize_t minix_write(struct vnode *inode, off_t offset, struct iobuf *io);
 
@@ -142,6 +143,7 @@ int minix_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, stru
 int minix_vget(struct vnode *super, ino_t ino, struct vnode **ref);
 int minix_trunc(struct vnode *inode, off_t len);
 
+/* minix.c: an inode's vnode, and writing a vnode back to its inode */
 int minix_inode_build(struct minix *desc, ino_t ino, struct vnode **ref);
 int minix_inode_sync(struct vnode *inode);
 

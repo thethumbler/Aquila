@@ -1,26 +1,28 @@
 /** \file
- * Path lookup: vnode by vnode, a component at a time
+ * Path lookup: walking a path one component at a time, from vnode to
+ * vnode.
  *
- * A path is walked from the root (an absolute path) or from the uio's
- * current directory (a relative one; a dirfd's for the *at() calls):
+ * An absolute path is walked from the root, and a relative one from the
+ * uio's current directory (or a directory descriptor's, for the `*at()`
+ * calls). Each component is one of:
  *
- *   .      the directory itself
+ *   .      the directory itself;
  *   ..     its parent, the filesystem's own ".." entry; at the root of a
  *          mounted filesystem, the parent of the directory it's mounted
- *          on; at the root, the root
- *   name   the directory's entry (finddir, vget), the directory
- *          searchable (x) by the uio's user; if a filesystem is mounted
- *          on it, that filesystem's root
+ *          on; at the root, the root itself;
+ *   name   the directory's entry (finddir, then vget), if the uio's user
+ *          may search the directory (x); if a filesystem is mounted on
+ *          the entry, that filesystem's root.
  *
- * A symbolic link is followed where it's found (the last component not
- * with O_NOFOLLOW, unless a slash follows it): the walk goes on from the
- * link's directory, with its target, then what was left of the path. A
- * trailing slash wants a directory.
+ * A symbolic link is followed where it's found (the last component isn't
+ * followed with O_NOFOLLOW, unless a slash comes after it): the walk goes
+ * on from the link's directory, with the link's target, then what was
+ * left of the path. A trailing slash asks for a directory.
  *
- * Nothing is a string but the path itself: a directory renamed is still
- * the process's current directory, ".." after a symbolic link is the
- * parent of where the link went, and a path is computed only when one
- * is asked for (vfs_vnode_path: getcwd, /proc/mounts).
+ * Only the path itself is a string: a renamed directory is still a
+ * process's current directory, ".." after a symbolic link is the parent
+ * of where the link went, and a path is only computed when one is asked
+ * for (vfs_vnode_path(), for getcwd() and /proc/mounts).
  */
 
 #include <core/system.h>
@@ -34,23 +36,27 @@
 /* the longest component (POSIX NAME_MAX) */
 #define NAME_MAX    255
 
-/* stop at the last component: its directory, and its name */
+/* a walk() flag: stop at the last component, with its directory and its
+ * name */
 #define WALK_PARENT 1
 
+/** Adds a reference to a vnode, and returns it. */
 static struct vnode *vref(struct vnode *vnode)
 {
     vnode->ref++;
     return vnode;
 }
 
-/** where absolute paths start */
+/** Returns where absolute paths start: the process's root directory, or
+ * the system's. */
 static struct vnode *walk_root(struct uio *uio)
 {
     return uio->root ? uio->root : vfs_root;
 }
 
-/** what's mounted on `vnode', all the way down, or itself (the reference
- * passes along) */
+/** Returns the root of what's mounted on `vnode` (all the way down, if a
+ * mount is mounted on too), or `vnode` itself. The caller's reference
+ * moves to the vnode returned. */
 static struct vnode *cross_down(struct vnode *vnode)
 {
     while (vnode->mounted) {
@@ -62,7 +68,15 @@ static struct vnode *cross_down(struct vnode *vnode)
     return vnode;
 }
 
-/** `dir''s parent in its filesystem (a reference), NULL at its root */
+/**
+ * Finds a directory's parent in its own filesystem, through its `..`
+ * entry.
+ *
+ * @param dir  the directory
+ * @param ref  set to the parent, with a reference for the caller, or to
+ *             NULL at the filesystem's root
+ * @return 0, or a negative errno
+ */
 int vfs_parent(struct vnode *dir, struct vnode **ref)
 {
     struct dirent dirent;
@@ -71,7 +85,7 @@ int vfs_parent(struct vnode *dir, struct vnode **ref)
 
     *ref = NULL;
 
-    /* a filesystem that doesn't have one: a root */
+    /* no .. entry: it's a root */
     if (vfs_finddir(dir, "..", &dirent))
         return 0;
 
@@ -88,14 +102,14 @@ int vfs_parent(struct vnode *dir, struct vnode **ref)
     return 0;
 }
 
-/** `dir''s .. for the walk (a reference): up through mounts, the walk's
- * root's is itself */
+/** Finds where `..` goes from `dir` during a walk, up through mounts; the
+ * walk's root's `..` is itself. The result in `*ref` has a reference. */
 static int dotdot(struct vnode *dir, struct uio *uio, struct vnode **ref)
 {
     struct vnode *root = walk_root(uio), *d = dir, *parent;
     int err;
 
-    /* the root of a mounted filesystem: where it's mounted */
+    /* from the root of a mounted filesystem, go to where it's mounted */
     while (d != root && d->covered)
         d = d->covered;
 
@@ -107,13 +121,13 @@ static int dotdot(struct vnode *dir, struct uio *uio, struct vnode **ref)
     if ((err = vfs_parent(d, &parent)))
         return err;
 
-    /* a filesystem's root, mounted nowhere: as far as it goes */
+    /* a filesystem's root that is mounted nowhere: go no further */
     *ref = parent ? cross_down(parent) : vref(dir);
     return 0;
 }
 
-/** the entry `name' (len bytes) of `dir' (a reference), crossed into what
- * is mounted on it */
+/** Finds the entry `name` (`len` bytes) of `dir`, and crosses into what is
+ * mounted on it. The result in `*ref` has a reference. */
 static int lookup_name(struct vnode *dir, const char *name, size_t len, struct vnode **ref)
 {
     char buf[NAME_MAX + 1];
@@ -137,8 +151,10 @@ static int lookup_name(struct vnode *dir, const char *name, size_t len, struct v
     return 0;
 }
 
-/** where the symbolic link `link' goes: its target, then `rest' (what's
- * left of the path, its slash first) */
+/** Returns the path a walk goes on with at a symbolic link: the link's
+ * target, then `rest` (what's left of the path, starting with its slash).
+ * The caller frees it. On failure it returns NULL, with the error in
+ * `*err`. */
 static char *link_path(struct vnode *link, const char *rest, int *err)
 {
     char *path = kmalloc(1024 + strlen(rest), &M_BUFFER, 0);
@@ -161,23 +177,29 @@ static char *link_path(struct vnode *link, const char *rest, int *err)
     return path;
 }
 
+/** Says whether a path component of `len` bytes is a single dot, the
+ * name of a directory itself. */
 static int is_dot(const char *c, size_t len)
 {
     return len == 1 && c[0] == '.';
 }
 
+/** Says whether a component (`len` bytes) is `..`. */
 static int is_dotdot(const char *c, size_t len)
 {
     return len == 2 && c[0] == '.' && c[1] == '.';
 }
 
-/*
- * Walk `path' from `dir' (a reference, the walk's now): what it names (a
- * reference), and in *where (if not NULL) the directory its last
- * component was found in (a reference, NULL if it has none); WALK_PARENT,
- * the directory of its last component (a reference) and the component
- * (*name, the caller's to free), -EBUSY if it has none (/), -EINVAL if
- * it's . or ..
+/**
+ * Walks `path` from `dir`, whose reference the walk takes. It returns
+ * what the path names in `*ref` (with a reference) and, if `where` isn't
+ * NULL, the directory its last component was found in (with a reference,
+ * or NULL if there's none).
+ *
+ * With `WALK_PARENT`, it stops at the last component instead: `*ref` is
+ * that component's directory, and `*name` the component (the caller frees
+ * it). Then a path with no last component (`/`) is `-EBUSY`, and a last
+ * component of `.` or `..` is `-EINVAL`.
  */
 static int walk(struct vnode *dir, const char *path, struct uio *uio, int flags, int *links,
                 struct vnode **ref, char **name, struct vnode **where)
@@ -197,8 +219,8 @@ static int walk(struct vnode *dir, const char *path, struct uio *uio, int flags,
         if (!*p)
             break;
 
-        /* the component, c (len bytes); whether it's the last, and a
-         * slash after it */
+        /* the component c (len bytes); whether it's the last one, and
+         * whether a slash comes after it */
         const char *c = p;
         size_t len = 0;
 
@@ -241,7 +263,7 @@ static int walk(struct vnode *dir, const char *path, struct uio *uio, int flags,
             return 0;
         }
 
-        /* searching it: its x */
+        /* searching the directory needs its x permission */
         if ((err = vfs_access(dir, uio, VFS_X)))
             break;
 
@@ -270,13 +292,14 @@ static int walk(struct vnode *dir, const char *path, struct uio *uio, int flags,
             if (!target)
                 break;
 
-            /* on from the link's directory (the root: an absolute one) */
+            /* go on from the link's directory (or from the root, for an
+             * absolute target) */
             err = walk(dir, target, uio, flags, links, ref, name, where);
             kfree(target);
             return err;
         }
 
-        /* the last one's directory, kept for the caller */
+        /* keep the last component's directory for the caller */
         if (last && where) {
             if (*where)
                 vfs_close(*where);
@@ -305,15 +328,23 @@ static int walk(struct vnode *dir, const char *path, struct uio *uio, int flags,
     return 0;
 }
 
-/** where a relative path starts (a reference) */
+/** Returns where a relative path starts (with a reference): the current
+ * directory. */
 static struct vnode *walk_start(struct uio *uio)
 {
     return vref(uio->cwd ? uio->cwd : walk_root(uio));
 }
 
 /**
- * the vnode `path' names (a reference, *ref only set on success);
- * a final symbolic link is followed unless uio has O_NOFOLLOW
+ * Finds the vnode a path names. A symbolic link at the end is followed,
+ * unless the uio has `O_NOFOLLOW`.
+ *
+ * @param path  the path
+ * @param uio   who is asking, and where relative paths start
+ * @param ref   if not NULL, set to the vnode (with a reference for the
+ *              caller), on success only
+ * @return 0, `-ENOENT`, `-ENOTDIR`, `-EACCES`, `-ELOOP`, or another
+ *         negative errno
  */
 int vfs_lookup(const char *path, struct uio *uio, struct vnode **ref)
 {
@@ -337,8 +368,15 @@ int vfs_lookup(const char *path, struct uio *uio, struct vnode **ref)
 }
 
 /**
- * as vfs_lookup(), and the directory it was found in (a reference,
- * *dir; the vnode itself, referenced again, if the path ends in no name)
+ * Finds the vnode a path names, as `vfs_lookup()` does, and the directory
+ * it was found in.
+ *
+ * @param path  the path
+ * @param uio   who is asking, and where relative paths start
+ * @param ref   set to the vnode (with a reference for the caller)
+ * @param dir   set to its directory (with a reference), or to the vnode
+ *              again if the path ends with no name (`/`)
+ * @return 0, or a negative errno
  */
 int vfs_lookup_dir(const char *path, struct uio *uio, struct vnode **ref, struct vnode **dir)
 {
@@ -363,9 +401,15 @@ int vfs_lookup_dir(const char *path, struct uio *uio, struct vnode **ref, struct
 }
 
 /**
- * the directory (a reference) that has the last component of
- * `path', and that component's name (the caller frees it); -EBUSY if it
- * names a mount point (it has no entry in its directory's filesystem)
+ * Finds the directory of a path's last component, and the component's
+ * name, to make or remove an entry there.
+ *
+ * @param path  the path
+ * @param uio   who is asking, and where relative paths start
+ * @param dir   set to the directory (with a reference for the caller)
+ * @param name  set to the last component's name (the caller frees it)
+ * @return 0, `-EBUSY` if the path names a mount point (or `/`), `-EINVAL`
+ *         if it ends with `.` or `..`, or another negative errno
  */
 int vfs_lookup_parent(const char *path, struct uio *uio, struct vnode **dir, char **name)
 {
@@ -379,7 +423,7 @@ int vfs_lookup_parent(const char *path, struct uio *uio, struct vnode **dir, cha
     if ((err = walk(walk_start(uio), path, uio, WALK_PARENT, &links, &vnode, &last, NULL)))
         return err;
 
-    /* a mount point: its entry is covered */
+    /* a mount point: its entry is covered by the mounted filesystem */
     struct dirent dirent;
     struct vnode *entry;
 
@@ -399,8 +443,12 @@ int vfs_lookup_parent(const char *path, struct uio *uio, struct vnode **dir, cha
     return 0;
 }
 
-/** the root of the mounted filesystem `vnode' is in (not a reference:
- * mounts keep theirs) */
+/**
+ * Finds the root of the mounted filesystem a vnode is in.
+ *
+ * @param vnode  the vnode
+ * @return the root (without a reference: the mount keeps one)
+ */
 struct vnode *vfs_mount_root_of(struct vnode *vnode)
 {
     struct vnode *cur = vref(vnode), *parent;
@@ -414,7 +462,14 @@ struct vnode *vfs_mount_root_of(struct vnode *vnode)
     return cur;
 }
 
-/** 1 if `vnode' is `dir' or under it, in the same filesystem */
+/**
+ * Says whether a vnode is a directory or under it, in the same
+ * filesystem: `rename()` can't move a directory under itself.
+ *
+ * @param vnode  the vnode
+ * @param dir    the directory
+ * @return 1 if `vnode` is `dir` or under it, 0 otherwise
+ */
 int vfs_under(struct vnode *vnode, struct vnode *dir)
 {
     struct vnode *cur = vref(vnode), *parent;
@@ -437,8 +492,9 @@ int vfs_under(struct vnode *vnode, struct vnode *dir)
     return under;
 }
 
-/** the name `child' has in `parent' (NAME_MAX + 1 bytes in name), -ENOENT
- * if it has none (it was removed) */
+/** Finds the name `child` has in `parent` (into `name`, `NAME_MAX` + 1
+ * bytes). Returns 0, `-ENOENT` if it has none (it was removed), or a
+ * negative errno. */
 static int entry_name(struct vnode *parent, struct vnode *child, char *name)
 {
     struct dirent dirent, found;
@@ -451,7 +507,8 @@ static int entry_name(struct vnode *parent, struct vnode *child, char *name)
         if (!strcmp(dirent.d_name, ".") || !strcmp(dirent.d_name, ".."))
             continue;
 
-        /* by its number, as finddir has it (readdir may not say) */
+        /* compare the entry's inode number as finddir has it (readdir
+         * may not fill it in) */
         if (!vfs_finddir(parent, dirent.d_name, &found) && found.d_ino == child->ino) {
             strcpy(name, dirent.d_name);
             return 0;
@@ -462,10 +519,15 @@ static int entry_name(struct vnode *parent, struct vnode *child, char *name)
 }
 
 /**
- * the path of `vnode' from `root' (NULL: vfs_root), into buf
- * (size bytes): up through .., each directory's name found in its parent;
- * -ENOENT if a directory on the way was removed, -ERANGE if it doesn't
- * fit
+ * Computes a vnode's path, for `getcwd()` and `/proc/mounts`: it goes up
+ * through `..`, and finds each directory's name in its parent.
+ *
+ * @param vnode  the vnode
+ * @param root   where the path starts, or NULL for the system's root
+ * @param buf    where the path goes
+ * @param size   the buffer's size
+ * @return 0, `-ENOENT` if a directory on the way was removed, `-ERANGE`
+ *         if the path doesn't fit, or another negative errno
  */
 int vfs_vnode_path(struct vnode *vnode, struct vnode *root, char *buf, size_t size)
 {
@@ -483,7 +545,8 @@ int vfs_vnode_path(struct vnode *vnode, struct vnode *root, char *buf, size_t si
     buf[--pos] = '\0';
 
     for (;;) {
-        /* the root of a mounted filesystem: the directory it's on */
+        /* from the root of a mounted filesystem, go to the directory it's
+         * mounted on */
         while (cur != root && cur->covered) {
             struct vnode *covered = vref(cur->covered);
             vfs_close(cur);
@@ -496,7 +559,7 @@ int vfs_vnode_path(struct vnode *vnode, struct vnode *root, char *buf, size_t si
         if ((err = vfs_parent(cur, &parent)))
             break;
 
-        /* a filesystem's root, mounted nowhere */
+        /* a filesystem's root that is mounted nowhere: stop */
         if (!parent)
             break;
 
@@ -526,7 +589,7 @@ int vfs_vnode_path(struct vnode *vnode, struct vnode *root, char *buf, size_t si
     if (err)
         return err;
 
-    /* the root itself */
+    /* the root itself is "/" */
     if (!buf[pos]) {
         if (!pos)
             return -ERANGE;

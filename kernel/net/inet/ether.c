@@ -1,6 +1,9 @@
 /** \file
- * Ethernet: frames to the protocols by their type, and the header of
- * what is sent
+ * Ethernet, and the Internet checksum.
+ *
+ * A frame that arrives goes to the protocol its type says (ARP or IPv4);
+ * a frame to send gets its Ethernet header here. The Internet checksum,
+ * which IPv4, ICMP, UDP and TCP use, is here too.
  */
 
 #include <core/system.h>
@@ -8,6 +11,13 @@
 #include <net/byteorder.h>
 #include <net/inet.h>
 
+/**
+ * Takes in a frame that an interface received, and passes it to ARP or
+ * IPv4. A frame of another type, or too short, is dropped.
+ *
+ * @param netif  the interface it came in on
+ * @param nb     the frame; it is freed or passed on
+ */
 void ether_input(struct netif *netif, struct netbuf *nb)
 {
     struct ether_hdr *eh = netbuf_pull(nb, sizeof(*eh));
@@ -31,7 +41,16 @@ void ether_input(struct netif *netif, struct netbuf *nb)
     netbuf_free(nb);
 }
 
-/** the frame goes, the netbuf is freed */
+/**
+ * Sends a frame: adds its Ethernet header and gives it to the interface.
+ * The netbuf is freed in every case.
+ *
+ * @param netif  the interface to send it on
+ * @param dst    the destination MAC address
+ * @param type   the frame's type (`ETHER_TYPE_*`)
+ * @param nb     the frame's data, with room for the header before it
+ * @return 0, or a negative errno from the interface
+ */
 int ether_output(struct netif *netif, const uint8_t dst[6], uint16_t type, struct netbuf *nb)
 {
     struct ether_hdr *eh = netbuf_push(nb, sizeof(*eh));
@@ -45,8 +64,15 @@ int ether_output(struct netif *netif, const uint8_t dst[6], uint16_t type, struc
     return err;
 }
 
-/** the Internet checksum (RFC 1071): the ones' complement of the ones'
- * complement sum of the 16-bit words */
+/**
+ * Computes the Internet checksum (RFC 1071): the ones' complement of the
+ * ones' complement sum of the data's 16-bit words.
+ *
+ * @param data  the data
+ * @param len   its length, in bytes
+ * @return the checksum, in network byte order (0 if the data includes a
+ *         correct checksum)
+ */
 uint16_t inet_checksum(const void *data, size_t len)
 {
     const uint8_t *p = data;
@@ -64,8 +90,19 @@ uint16_t inet_checksum(const void *data, size_t len)
     return htons(~sum & 0xffff);
 }
 
-/** over the pseudo-header too: the addresses, the protocol and the length
- * (UDP's and TCP's checksums) */
+/**
+ * Computes the Internet checksum of data with the IPv4 pseudo-header
+ * before it (the addresses, the protocol and the length), as UDP and TCP
+ * do.
+ *
+ * @param src    the source address
+ * @param dst    the destination address
+ * @param proto  the protocol (`IP_PROTO_*`)
+ * @param data   the UDP or TCP header and data
+ * @param len    their length, in bytes
+ * @return the checksum, in network byte order (0 if the data includes a
+ *         correct checksum)
+ */
 uint16_t inet_checksum_pseudo(uint32_t src, uint32_t dst, uint8_t proto, const void *data, size_t len)
 {
     struct {

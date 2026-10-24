@@ -3,6 +3,14 @@
 
 #include <stdint.h>
 
+/*
+ * x86: devices' registers, as I/O ports or memory. Drivers use the
+ * io_in*() and io_out*() functions below with a struct ioaddr, which says
+ * which of the two a device's registers are, and how far apart they are.
+ * The __in* and __out* macros are the port instructions themselves.
+ */
+
+/* read a port */
 #define __inb(port) \
 ({ \
     uint8_t ret; \
@@ -24,7 +32,9 @@
     ret; \
 })
 
-/* rep insw and rep outsw move EDI/ESI and ECX, outputs for the compiler */
+/* Read or write `count` 16-bit words through a port. rep insw and rep
+ * outsw change EDI (ESI) and ECX, so those are outputs for the
+ * compiler. */
 #define __insw(port, count, buf) \
 ({ \
     void *__buf = (buf); \
@@ -39,6 +49,7 @@
     asm volatile ("rep outsw":"+S"(__buf), "+c"(__count):"d"(port):"memory"); \
 })
 
+/* write a port */
 #define __outb(port, value) \
 ({ \
     asm volatile ("outb %%al, %%dx"::"d"((port)),"a"((value))); \
@@ -54,6 +65,7 @@
     asm volatile ("outl %%eax, %%dx"::"d"(port),"a"(value)); \
 })
 
+/* a short delay, for old devices that need time between accesses */
 #define __io_wait() \
 ({ \
     asm volatile ( "jmp 1f\n\t" \
@@ -61,6 +73,7 @@
                    "2:" ); \
 })
 
+/* read or write a memory-mapped register */
 #define __mmio_inb(addr) (*((volatile uint8_t *)(addr)))
 #define __mmio_inw(addr) (*((volatile uint16_t *)(addr)))
 #define __mmio_inl(addr) (*((volatile uint32_t *)(addr)))
@@ -71,16 +84,20 @@
 #define __mmio_outl(addr, v) (*((volatile uint32_t *)(addr)) = v)
 #define __mmio_outq(addr, v) (*((volatile uint64_t *)(addr)) = v)
 
+/* What a device's registers are: I/O ports, or memory with registers 1,
+ * 2 or 4 bytes apart. */
 #define IOADDR_PORT    1
 #define IOADDR_MMIO8   2
 #define IOADDR_MMIO16  3
 #define IOADDR_MMIO32  4
 
+/** Where a device's registers are. */
 struct ioaddr {
-    char type;
-    uintptr_t addr;
+    char type;          /* IOADDR_* */
+    uintptr_t addr;     /* the first port, or the kernel address of the first register */
 };
 
+/* Returns the name of an ioaddr's type, for messages. */
 static inline char *ioaddr_type_str(struct ioaddr *io)
 {
     switch (io->type) {
@@ -97,6 +114,8 @@ static inline char *ioaddr_type_str(struct ioaddr *io)
     return NULL;
 }
 
+/* Read or write register number `off` of a device, 8, 16 or 32 bits at
+ * a time. */
 static inline uint8_t io_in8(struct ioaddr *io, uintptr_t off)
 {
     switch (io->type) {

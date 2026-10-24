@@ -1,11 +1,17 @@
 /** \file
- * System calls: select() and poll(): waiting for any of several
- * descriptors
+ * System calls that wait for any of several descriptors: `select()` (and
+ * `pselect()`) and `poll()`.
+ *
+ * Both look at each descriptor, registering the wait queue its readers
+ * (or writers) sleep on. If none is ready, the thread sleeps on its own
+ * queue (`thread->poll_wait`), which a wakeup of any registered queue
+ * also wakes, and then looks at them all again. See `sys/waitq.c`.
  */
 
 #include "syscalls.h"
 
-/** the same, not held: only until the call sleeps (select, poll) */
+/** Returns the open file a descriptor refers to, without holding it (as
+ * `fd_file()` does): it is only used until the call sleeps. */
 static struct file *fd_peek(int fd)
 {
     return proc_fd_file(curproc, fd);
@@ -14,30 +20,32 @@ static struct file *fd_peek(int fd)
 typedef unsigned long fd_mask;
 
 #define  FD_SETSIZE  64
-#define   NFDBITS (sizeof (fd_mask) * 8)  /* bits per mask */
+#define   NFDBITS (sizeof (fd_mask) * 8)  /* the bits in an fd_mask */
 #define  _howmany(x,y)   (((x)+((y)-1))/(y))
 
+/* the C library's fd_set: one bit per descriptor */
 typedef struct {
     fd_mask fds_bits[_howmany(FD_SETSIZE, NFDBITS)];
 } fd_set;
 
-/** whether `file' can be read (or written) without waiting; a file
- * that can't tell is ready, the read or write reports the error */
+/** Returns whether `file` can be read (or written) without waiting. A file
+ * that can't tell counts as ready: the read or write reports the error. */
 static int fd_ready(struct file *file, int write)
 {
     int ret = write ? vfs_file_can_write(file, 1) : vfs_file_can_read(file, 1);
     return ret != 0;
 }
 
-/** select() and poll() wait for `file' (to be read, or written): on the
- * queue its reader (writer) sleeps on, NULL if it can't tell */
+/** Registers the wait queue that `file`'s readers (or writers) sleep on,
+ * or NULL (any wakeup) if the file can't tell. Returns 0 or `-ENOMEM`. */
 static int fd_watch(struct file *file, int write)
 {
     return poll_register(vfs_file_wait_queue(file, write));
 }
 
-/** deadline of a select()/poll() timeout of `ns' nanoseconds, -1 for
- * none; 0 means don't wait. Restarted after a stop: the deadline it had */
+/** Returns the deadline of a timeout of `ns` ns: 0 for none (`ns` < 0). A
+ * timeout of 0 means not to wait at all. A call restarted after a stop
+ * keeps the deadline it had. */
 static uint64_t poll_deadline(int64_t ns)
 {
     uint64_t until = ns < 0 ? 0 : curthread->restarting ? curthread->restart_until :
@@ -47,6 +55,16 @@ static uint64_t poll_deadline(int64_t ns)
     return until;
 }
 
+/**
+ * Implements `select()` and `pselect()`: waits until a descriptor of the
+ * sets can be read or written, or the timeout passes, and says which can.
+ * Exceptional conditions are never reported.
+ *
+ * @param args  the arguments, in user memory: `nfds`, the read, write and
+ *              except sets, the timeout, and `pselect()`'s signal mask
+ * @return how many descriptors are ready (0 on timeout), or a negative
+ *         errno: `-EBADF`, `-EINVAL`, `-EFAULT`, or `-EINTR`
+ */
 long sys_select(struct aquila_select_args *args)
 {
     syscall_log(LOG_DEBUG, "select(args=%p)\n", args);
@@ -67,8 +85,8 @@ long sys_select(struct aquila_select_args *args)
         return -EINVAL;
     }
 
-    /* what was asked (the sets are overwritten with the result), the
-     * kernel's copies */
+    /* the kernel's copies of what was asked (the user's sets are
+     * overwritten with the result) */
     fd_set want_read = {0}, want_write = {0}, out_read, out_write;
     struct timeval timeout;
     sigset_t mask;
@@ -84,8 +102,9 @@ long sys_select(struct aquila_select_args *args)
         return -EINVAL;
     }
 
-    /* pselect(): the mask while waiting; the old one is back when this
-     * returns, or in the handler's frame (as in sigsuspend) */
+    /* pselect(): the signal mask while waiting; the old mask comes back
+     * when this returns, or goes in the handler's frame (as in
+     * sigsuspend()) */
     if (sigmask) {
         curthread->sig_oldmask = curproc->sigmask;
         curthread->sig_oldmask_set = 1;
@@ -135,9 +154,9 @@ long sys_select(struct aquila_select_args *args)
             break;
         }
 
-        /* a wakeup of what one of them waits on makes us look again; a
-         * signal ends the wait: EINTR (POSIX: not restarted, but after a
-         * stop) */
+        /* a wakeup of a queue that one of them waits on makes us look
+         * again; a signal ends the wait with EINTR (POSIX: it isn't
+         * restarted, except after a stop) */
         timed_out = sched_wait(&curthread->poll_wait, until);
         poll_unregister(curthread);
 
@@ -165,6 +184,17 @@ long sys_select(struct aquila_select_args *args)
     return count;
 }
 
+/**
+ * Implements `poll()`: waits until one of the descriptors can be read or
+ * written, or the timeout passes, and says which can.
+ *
+ * @param fds         the descriptors and the events wanted, in user
+ *                    memory; their `revents` are set
+ * @param nfds        how many there are
+ * @param timeout_ms  the timeout in ms, or -1 for none
+ * @return how many descriptors have events (0 on timeout), or a negative
+ *         errno: `-EINVAL`, `-ENOMEM`, `-EFAULT`, or `-EINTR`
+ */
 long sys_poll(struct pollfd *fds, nfds_t nfds, int timeout_ms)
 {
     syscall_log(LOG_DEBUG, "poll(fds=%p, nfds=%d, timeout=%d)\n", fds, nfds, timeout_ms);
@@ -173,7 +203,7 @@ long sys_poll(struct pollfd *fds, nfds_t nfds, int timeout_ms)
         return -EINVAL;
     }
 
-    /* the kernel's copy, the events in it, the results out at the end */
+    /* work on the kernel's copy, and copy the results out at the end */
     size_t size = nfds * sizeof(struct pollfd);
     struct pollfd *kfds = nfds ? kmalloc(size, &M_BUFFER, 0) : NULL;
 
@@ -200,7 +230,7 @@ long sys_poll(struct pollfd *fds, nfds_t nfds, int timeout_ms)
 
             p->revents = 0;
 
-            /* negative descriptors are skipped */
+            /* a negative descriptor is skipped */
             if (p->fd < 0)
                 continue;
 
@@ -228,8 +258,8 @@ long sys_poll(struct pollfd *fds, nfds_t nfds, int timeout_ms)
             break;
         }
 
-        /* a wakeup of what one of them waits on makes us look again; a
-         * signal ends the wait: EINTR (but after a stop) */
+        /* a wakeup of a queue that one of them waits on makes us look
+         * again; a signal ends the wait with EINTR (except after a stop) */
         timed_out = sched_wait(&curthread->poll_wait, until);
         poll_unregister(curthread);
 

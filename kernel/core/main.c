@@ -1,5 +1,10 @@
 /** \file
- * core system components
+ * The kernel's generic entry point, `kmain()`.
+ *
+ * The architecture's boot code sets up the CPU and memory, then calls
+ * `kmain()`, which sets up the devices and filesystems, mounts the root
+ * filesystem, and starts the first process, `/init`. See
+ * docs/kernel/booting.md.
  */
 
 #include <core/printk.h>
@@ -9,7 +14,7 @@
 #include <core/kargs.h>
 #include <core/arch.h>
 #include <mm/mm.h>
-#include <mm/pmap.h> /* XXX */
+#include <mm/pmap.h>
 #include <mm/vm.h>
 #include <dev/dev.h>
 #include <fs/vfs.h>
@@ -22,17 +27,17 @@
 
 #include <ds/hashmap.h>
 
-/** 
- * entry point of the kernel
+/**
+ * Starts the kernel's generic part, once the architecture has set up the
+ * CPU, memory and the platform. It mounts the root filesystem and runs
+ * `/init`, and doesn't return.
  *
- * This is the function that gets executed after the bootstrapping and
- * platform initialization is completed.
- *
- * \param boot structure representing system state after bootstrapping
+ * @param boot  what the boot loader passed: the memory map, the modules,
+ *              the command line
  */
 void kmain(struct boot *boot)
 {
-    /* the kernel's allocator checked, on request (tests/kvmem) */
+    /* check the kernel's allocator, if asked to (tests/kvmem) */
     if (!kargs_get("kvmem.test", NULL))
         kvmem_selftest();
 
@@ -43,8 +48,8 @@ void kmain(struct boot *boot)
     vfs_init();
     modules_init();
 
-    /* the root filesystem: a disk partition (root=/dev/hda2), or the
-     * ramdisk the bootloader loaded */
+    /* mount the root filesystem: a disk partition (root=/dev/hda2), or
+     * the RAM disk that the boot loader loaded */
     const char *root = NULL, *rootfstype = NULL;
     int err;
 
@@ -61,7 +66,8 @@ void kmain(struct boot *boot)
         panic("No modules loaded: unable to load ramdisk");
     }
 
-    /* devfs on /dev with /dev/console, init may write to it right away */
+    /* mount devfs on /dev, with /dev/console, so that init can write to
+     * the console right away */
     struct uio uio = {.mask = 022};
 
     if (!vfs_mount("devfs", "/dev", 0, NULL, &uio))
@@ -91,7 +97,8 @@ void kmain(struct boot *boot)
 
     arch_proc_init(init);
 
-    /* init's argument, the module's command line (none from a disk) */
+    /* init's argument is the module's command line (none when booting
+     * from a disk) */
     char *cmdline = boot->modules_count ? boot->modules[0].cmdline : "";
     char *argp[] = {cmdline, 0};
     char *envp[] = {0};

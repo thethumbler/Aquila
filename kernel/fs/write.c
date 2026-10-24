@@ -1,3 +1,7 @@
+/** \file
+ * Writing to a vnode: to its device, or through its filesystem.
+ */
+
 #include <core/system.h>
 #include <fs/vfs.h>
 #include <fs/iobuf.h>
@@ -5,31 +9,39 @@
 #include <mm/vm.h>
 
 /**
- * write data to a vnode, through an iobuf
+ * Writes to a vnode from an iobuf (user or kernel memory). The file's
+ * pages in the page cache, if it's mapped, are refreshed.
+ *
+ * @param vnode  the vnode
+ * @param off    where to write
+ * @param io     the data, and how much of it
+ * @return the number of bytes written, `-EINVAL` for an invalid vnode,
+ *         `-ENOSYS` if its filesystem can't write, or another negative
+ *         errno
  */
 ssize_t vfs_write_io(struct vnode *vnode, off_t off, struct iobuf *io)
 {
     vfs_log(LOG_DEBUG, "vfs_write_io(vnode=%p, off=%d, size=%d)\n", vnode, off, io->resid);
 
-    /* Invalid request */
+    /* invalid request */
     if (!vnode)
         return -EINVAL;
 
-    /* Device node */
+    /* a device node: the driver writes it */
     if (ISDEV(vnode))
         return kdev_write(&VNODE_DEV(vnode), off, io);
 
-    /* Invalid request */
+    /* invalid request */
     if (!vnode->fs)
         return -EINVAL;
 
-    /* Operation not supported */
+    /* the filesystem doesn't support it */
     if (!vnode->fs->vops.write)
         return -ENOSYS;
 
     ssize_t ret = vnode->fs->vops.write(vnode, off, io);
 
-    /* the file's pages in the page cache, if it's mapped */
+    /* refresh the file's pages in the page cache, if it's mapped */
     if (ret > 0)
         vnode_pages_update(vnode, off, off + ret);
 
@@ -37,7 +49,13 @@ ssize_t vfs_write_io(struct vnode *vnode, off_t off, struct iobuf *io)
 }
 
 /**
- * write data to a vnode from a kernel buffer
+ * Writes to a vnode from a kernel buffer.
+ *
+ * @param vnode  the vnode
+ * @param off    where to write
+ * @param size   how many bytes to write
+ * @param buf    the buffer
+ * @return the number of bytes written, or a negative errno
  */
 ssize_t vfs_write(struct vnode *vnode, off_t off, size_t size, void *buf)
 {

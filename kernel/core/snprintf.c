@@ -1,5 +1,13 @@
+/** \file
+ * `snprintf()` and `vsnprintf()`: formatting into a buffer, with a small
+ * set of formats: `%c`, `%s`, `%d`, `%x`, `%lx`, `%ld` and `%b` (binary).
+ * Each helper below writes at most `n` characters to `s`, and returns how
+ * many it wrote.
+ */
+
 #include <core/system.h>
 
+/** Writes one character, if there is room. */
 static int snputc(char *s, size_t n, char c)
 {
     if (n) {
@@ -10,9 +18,10 @@ static int snputc(char *s, size_t n, char c)
     return 0;
 }
 
+/** Writes a string, as much of it as fits. */
 static int snputs(char *s, size_t n, char *str)
 {
-    /* a NULL string is a bug, printing it shouldn't make another one */
+    /* a NULL string is a bug, but printing it shouldn't cause another */
     if (!str)
         str = "(null)";
 
@@ -22,6 +31,7 @@ static int snputs(char *s, size_t n, char *str)
     return i;
 }
 
+/** Writes a 32-bit number in hexadecimal, all 8 digits. */
 static int snputx(char *s, size_t n, uint32_t val)
 {
     char *enc = "0123456789ABCDEF";
@@ -37,6 +47,7 @@ static int snputx(char *s, size_t n, uint32_t val)
     return snputs(s, n, buf);
 }
 
+/** Writes a 64-bit number in hexadecimal, all 16 digits. */
 static int snputlx(char *s, size_t n, uint64_t val)
 {
     char *enc = "0123456789ABCDEF";
@@ -50,6 +61,7 @@ static int snputlx(char *s, size_t n, uint64_t val)
     return snputs(s, n, buf);
 }
 
+/** Writes an unsigned 32-bit number in decimal. */
 static int snputud(char *s, size_t n, uint32_t val)
 {
     char buf[11];
@@ -68,6 +80,7 @@ static int snputud(char *s, size_t n, uint32_t val)
     return snputs(s, n, buf+i);
 }
 
+/** Writes an unsigned 64-bit number in decimal. */
 static int snputul(char *s, size_t n, uint64_t val)
 {
     char buf[21];
@@ -85,6 +98,7 @@ static int snputul(char *s, size_t n, uint64_t val)
     return snputs(s, n, buf+i);
 }
 
+/** Writes a byte in binary, all 8 digits. */
 static int snputb(char *s, size_t n, uint8_t val)
 {
     char buf[9];
@@ -100,16 +114,21 @@ static int snputb(char *s, size_t n, uint8_t val)
 }
 
 /**
- * Formats at most n - 1 characters into s and always NUL terminates it
- * (when n > 0), returns the number of characters written to s excluding
- * the terminating NUL.
+ * Formats a string into a buffer, with its arguments in a `va_list`.
+ *
+ * @param s     the buffer
+ * @param n     its size: at most `n - 1` characters are written, and a
+ *              NUL after them (nothing at all if `n` is 0)
+ * @param fmt   the format (see the top of this file for what it supports)
+ * @param args  the arguments
+ * @return how many characters were written, not counting the NUL
  */
 int vsnprintf(char *s, size_t n, const char *fmt, va_list args)
 {
     if (!n)
         return 0;
 
-    /* Reserve space for the NUL terminator */
+    /* keep room for the NUL at the end */
     n -= 1;
 
     size_t ret = 0;
@@ -119,18 +138,18 @@ int vsnprintf(char *s, size_t n, const char *fmt, va_list args)
             case '%':
                 ++fmt;
                 switch (*fmt) {
-                    case 'c':   /* char */
+                    case 'c':   /* a character */
                         ret += snputc(s + ret, n - ret, (char)va_arg(args, int));
                         break;
-                    case 's':   /* char * */
+                    case 's':   /* a string */
                         ret += snputs(s + ret, n - ret, (char*)va_arg(args, char*));
                         break;
-                    case 'd': /* decimal */
+                    case 'd':   /* a decimal, printed unsigned */
                         ret += snputud(s + ret, n - ret, (uint32_t)va_arg(args, uint32_t));
                         break;
-                    case 'l':   /* long */
+                    case 'l':   /* a 64-bit number */
                         switch (*++fmt) {
-                            case 'x':   /* long hex */
+                            case 'x':   /* in hexadecimal */
                                 ret += snputlx(s + ret, n - ret, (uint64_t)va_arg(args, uint64_t));
                                 break;
                             case 'd':
@@ -141,10 +160,10 @@ int vsnprintf(char *s, size_t n, const char *fmt, va_list args)
                         }
                         break;
                     
-                    case 'b': /* binary */
+                    case 'b':   /* a byte in binary */
                         ret += snputb(s + ret, n - ret, (uint8_t)(uint32_t)va_arg(args, uint32_t));
                         break;
-                    case 'x': /* Hexadecimal */
+                    case 'x':   /* hexadecimal */
                         ret += snputx(s + ret, n - ret, (uint32_t)va_arg(args, uint32_t));
                         break;
                     default:
@@ -163,6 +182,15 @@ int vsnprintf(char *s, size_t n, const char *fmt, va_list args)
     return ret;
 }
 
+/**
+ * Formats a string into a buffer.
+ *
+ * @param s    the buffer
+ * @param n    its size: at most `n - 1` characters are written, and a NUL
+ *             after them (nothing at all if `n` is 0)
+ * @param fmt  the format (see the top of this file for what it supports)
+ * @return how many characters were written, not counting the NUL
+ */
 int snprintf(char *s, size_t n, const char *fmt, ...)
 {
     va_list args;

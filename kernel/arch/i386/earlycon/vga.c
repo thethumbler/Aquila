@@ -1,3 +1,8 @@
+/** \file
+ * x86: the early console in VGA text mode, written straight into the
+ * text buffer at 0xB8000 (through its i386 kernel address).
+ */
+
 #include <core/system.h>
 #include <core/string.h>
 #include <console/earlycon.h>
@@ -15,6 +20,8 @@ struct ioaddr vga_ioaddr = {
 #define VGA_ROWS    25
 #define VGA_SIZE    (2 * VGA_COLS * VGA_ROWS)
 
+/** Scrolls the screen up by `n` lines, clearing the lines at the
+ * bottom. */
 static void earlycon_vga_scroll(int n)
 {
     memmove(vga_start, vga_start + 160 * n, 160 * (VGA_ROWS - n));
@@ -27,6 +34,8 @@ static void earlycon_vga_scroll(int n)
     }
 }
 
+/** Writes a character at the cursor, scrolling when it goes past the last
+ * line. Returns 1, or 0 for a NUL. */
 static int earlycon_vga_putc(char c)
 {
     if (c) {
@@ -47,6 +56,7 @@ static int earlycon_vga_putc(char c)
     return 0;
 }
 
+/** Writes a string, and returns how many characters it wrote. */
 static int earlycon_vga_puts(char *s)
 {
     char *_s = s;
@@ -57,6 +67,7 @@ static int earlycon_vga_puts(char *s)
     return (int)(s - _s);
 }
 
+/** Hides the hardware cursor, and clears the screen. */
 static void earlycon_vga_init()
 {
     io_out8(&vga_ioaddr, 0x00, 0x0F);

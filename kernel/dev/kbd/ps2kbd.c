@@ -1,7 +1,10 @@
 /** \file
- *          PS/2 Keyboard driver
+ * The PS/2 keyboard driver.
  *
- * Key presses go to the virtual terminals.
+ * The keyboard is on the first port of the i8042 controller
+ * (`dev/input/i8042.c`). Each byte it sends, a scancode, goes to the
+ * virtual terminals (`vt_scancode()`), which turn it into keys and
+ * characters.
  */
 
 #include <core/system.h>
@@ -12,6 +15,7 @@
 
 #include <dev/vt.h>
 
+/** Sends the keyboard's scancodes to the virtual terminals. */
 static int ps2kbd_probe(void)
 {
     i8042_handler_register(1, vt_scancode);

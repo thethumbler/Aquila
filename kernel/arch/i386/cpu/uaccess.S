@@ -1,11 +1,12 @@
-/*
- * Copying to and from user memory (sys/uaccess.h: copyin, copyout,
- * copyinstr)
+/** \file
+ * x86: copying to and from user memory, under copyin(), copyout() and
+ * copyinstr() (sys/uaccess.h).
  *
- * The instructions that touch user memory are listed in a table
- * (x86_uaccess_fixups): a page fault on one that the fault handler can't
- * resolve (the address isn't mapped, or not so) resumes at its fixup,
- * which returns -EFAULT. A fault anywhere else in the kernel is a bug.
+ * The instructions that touch user memory are listed in a table,
+ * x86_uaccess_fixups. If one of them faults and the page fault handler
+ * can't resolve the fault (the address isn't mapped, or not with that
+ * permission), it resumes at its fixup, which makes the routine report
+ * the failure. A fault anywhere else in the kernel is a bug.
  */
 
 #include <config.h>
@@ -14,8 +15,12 @@
 
 .text
 
-/* size_t arch_copy_user(void *dst, const void *src, size_t n): what wasn't
- * copied (0: all of it; a fault leaves rep movsb's count of what's left) */
+/*
+ * size_t arch_copy_user(void *dst, const void *src, size_t n)
+ *
+ * Copies n bytes, and returns how many weren't copied: 0 if all were, or
+ * after a fault, the count of what rep movsb had left.
+ */
 .global arch_copy_user
 arch_copy_user:
 #if ARCH_BITS==32
@@ -47,9 +52,11 @@ arch_copy_user:
 #endif
 
 /*
- * long arch_copy_user_str(char *dst, const char *src, size_t max): the
- * string's length (its NUL copied), max if there's no NUL in max bytes,
- * -EFAULT
+ * long arch_copy_user_str(char *dst, const char *src, size_t max)
+ *
+ * Copies a string, with its NUL, and returns its length. Returns max if
+ * there's no NUL in the first max bytes, or -EFAULT if src is a bad
+ * address.
  */
 .global arch_copy_user_str
 arch_copy_user_str:
@@ -98,7 +105,7 @@ arch_copy_user_str:
     ret
 #endif
 
-/* the instructions that may fault, and where they resume then */
+/* the instructions that may fault, and the fixup where each resumes */
 .section .rodata
 .global x86_uaccess_fixups, x86_uaccess_fixups_end
 #if ARCH_BITS==32

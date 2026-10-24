@@ -1,12 +1,16 @@
 /** \file
- * The keyboard of the virtual terminals: PS/2 scancodes (set 1, what the
- * i8042 translates to) to what the Linux console sends for the keys, with
- * the US layout. Alt sends ESC before the key, Alt+F1 to Alt+F6 switch
- * terminals, Ctrl+Alt+Del restarts (or tells init, see sys/reboot.c).
+ * The keyboard of the virtual terminals.
  *
- * Or, if the terminal's program asked for them (KDSKBMODE), the scancodes
- * as they come (K_RAW), or Linux key codes, with 0x80 for releases
- * (K_MEDIUMRAW); the program handles every key then, switching too.
+ * The keyboard sends PS/2 scancodes (set 1, which the i8042 translates
+ * to). This file turns them into what the Linux console sends for each
+ * key, with the US layout, and gives that to the foreground terminal. Alt
+ * sends ESC before the key, Alt+F1 to Alt+F6 switch terminals, and
+ * Ctrl+Alt+Del restarts the machine (or tells init: see `sys/reboot.c`).
+ *
+ * A program can ask for raw input instead (`KDSKBMODE`): the scancodes as
+ * they come (`K_RAW`), or Linux key codes, with 0x80 added for a release
+ * (`K_MEDIUMRAW`). The program then handles every key itself, switching
+ * terminals too.
  */
 
 #include <core/system.h>
@@ -15,7 +19,7 @@
 #include <sys/reboot.h>
 #include <aquila/keyboard.h>
 
-/* scancodes */
+/* scancodes (set 1) */
 #define SC_ESC      0x01
 #define SC_BS       0x0E
 #define SC_TAB      0x0F
@@ -34,6 +38,7 @@
 #define SC_F11      0x57
 #define SC_F12      0x58
 
+/* the characters of the keys, by scancode: without Shift, then with it */
 static const char keys[128] = {
     [0x02] = '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=',
     [0x10] = 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']',
@@ -52,14 +57,15 @@ static const char shifted[128] = {
     [0x56] = '>',
 };
 
-/* function keys, F1 to F12 */
+/* what the function keys send, F1 to F12 */
 static const char *fkeys[12] = {
     "\033[[A", "\033[[B", "\033[[C", "\033[[D", "\033[[E", "\033[17~",
     "\033[18~", "\033[19~", "\033[20~", "\033[21~", "\033[23~", "\033[24~",
 };
 
-/* keypad 7 to ., without num lock: the keys of the editing block, NULL
- * for - and + which are the same either way */
+/* what the keypad's keys, 7 to ., send without Num Lock: those of the
+ * editing block (one letter: a cursor key). NULL for - and +, which are
+ * the same either way. */
 static const char *keypad_keys[13] = {
     "\033[1~", "A", "\033[5~", NULL, "D", "\033[G", "C", NULL,
     "\033[4~", "B", "\033[6~", "\033[2~", "\033[3~",
@@ -67,8 +73,8 @@ static const char *keypad_keys[13] = {
 
 static const char keypad_digits[] = "789-456+1230.";
 
-/* Linux key codes of the keys with an E0 prefix, the others' are their
- * scancodes */
+/* the Linux key codes of the keys with an E0 prefix, by scancode; the
+ * other keys' key codes are their scancodes */
 static const uint8_t e0_keycodes[128] = {
     [0x1C] = 96,    /* keypad Enter */
     [0x1D] = 97,    /* right Ctrl */
@@ -94,14 +100,17 @@ static const uint8_t e0_keycodes[128] = {
 
 static int shift, ctrl, alt, caps, num;
 
-/* a prefix (E0) for the next scancode, bytes of Pause (E1) to skip */
+/* whether an E0 prefix came for the next scancode, and how many bytes
+ * of the Pause key's sequence (E1 ...) are left to skip */
 static int extended, skip;
 
+/** Sends a string to the foreground terminal, as typed input. */
 static void send(const char *s)
 {
     vt_input(s, strlen(s));
 }
 
+/** Sends one byte to the foreground terminal, as typed input. */
 static void send_byte(int c)
 {
     char b = c;
@@ -109,9 +118,14 @@ static void send_byte(int c)
 }
 
 /**
- * KDGKBENT: what a key (its Linux key code) is, in the table of Shift and
- * AltGr (the same as without: the US layout has no AltGr), for programs
- * that read key codes (K_MEDIUMRAW)
+ * Says what a key is, for `KDGKBENT`: programs that read key codes
+ * (`K_MEDIUMRAW`) use it to know what each key means.
+ *
+ * @param table    the table: none, Shift, AltGr, or both (AltGr is the
+ *                 same as without: the US layout has no AltGr)
+ * @param keycode  the key's Linux key code
+ * @return the key's meaning (`K(type, value)`), or `K_HOLE` if the key
+ *         isn't in that table
  */
 int vt_keymap(int table, int keycode)
 {
@@ -135,7 +149,7 @@ int vt_keymap(int table, int keycode)
         case SC_F11: return K(KT_FN, 10);
         case SC_F12: return K(KT_FN, 11);
 
-        /* the keys with an E0 prefix (e0_keycodes) */
+        /* the keys with an E0 prefix (see e0_keycodes) */
         case 96: return K_PENTER;
         case 97: return K_CTRL;
         case 98: return K_PSLASH;
@@ -178,13 +192,15 @@ int vt_keymap(int table, int keycode)
     return K(KT_LATIN, (unsigned char) c);
 }
 
-/** a sequence was cut by a change of mode */
+/**
+ * Forgets a prefix or a sequence that a change of mode cut in the middle.
+ */
 void vt_keyboard_reset(void)
 {
     extended = skip = 0;
 }
 
-/** with Alt, ESC before what the key sends */
+/** Sends what a key sends, with ESC before it if Alt is held. */
 static void send_key(const char *s)
 {
     if (alt)
@@ -192,12 +208,13 @@ static void send_key(const char *s)
     send(s);
 }
 
+/** Sends one character, with ESC before it if Alt is held. */
 static void send_char(char c)
 {
     char buf[] = {c, '\0'};
 
     if (!c) {
-        /* ^@ */
+        /* NUL (^@), which a string can't hold */
         if (alt)
             send("\033");
         vt_input(buf, 1);
@@ -207,7 +224,8 @@ static void send_char(char c)
     send_key(buf);
 }
 
-/** the cursor keys, ESC O x in the application mode (DECCKM) */
+/** Sends a cursor key: ESC [ x, or ESC O x in the terminal's application
+ * cursor key mode (DECCKM). */
 static void cursor_key(char dir)
 {
     struct vt *vt = vt_foreground();
@@ -216,6 +234,8 @@ static void cursor_key(char dir)
     send_key(buf);
 }
 
+/** Sends a key of the editing block: its sequence, or a cursor key if it
+ * is one letter. */
 static void editing_key(const char *s)
 {
     if (s[1])
@@ -224,7 +244,8 @@ static void editing_key(const char *s)
         cursor_key(s[0]);
 }
 
-/** control characters for Ctrl with a key */
+/** Returns the control character that Ctrl with a key sends, as the Linux
+ * console does (Ctrl+A is 1, Ctrl+[ is ESC, ...). */
 static int control(char c)
 {
     if (c >= 'a' && c <= 'z')
@@ -253,13 +274,15 @@ static int control(char c)
     return c;
 }
 
-/** Shift, Ctrl and Alt, in every mode: they may be held while it changes */
+/** Keeps track of Shift, Ctrl and Alt, in every mode, since they may be
+ * held while the mode changes. Returns whether the key was one of them. */
 static int modifier(int code, int release, int ext)
 {
     switch (code) {
         case SC_LSHIFT:
         case SC_RSHIFT:
-            /* E0 2A and E0 36 come with other keys, as if shift was used */
+            /* E0 2A and E0 36 come around some keys, as if Shift was
+             * used: they aren't the Shift keys */
             if (!ext)
                 shift = !release;
             return 1;
@@ -274,9 +297,16 @@ static int modifier(int code, int release, int ext)
     return 0;
 }
 
+/**
+ * Takes a scancode from the keyboard, and sends what the key means to the
+ * foreground terminal, in its keyboard mode. The PS/2 keyboard driver
+ * calls it from the keyboard's interrupt.
+ *
+ * @param scancode  the scancode (set 1)
+ */
 void vt_scancode(int scancode)
 {
-    /* the modes of a program that is gone are undone first */
+    /* first undo the modes that a program which is gone had set */
     vt_keypress();
 
     struct vt *vt = vt_foreground();
@@ -295,7 +325,7 @@ void vt_scancode(int scancode)
         return;
     }
 
-    /* Pause, E1 1D 45 E1 9D C5: pressed and released at once */
+    /* Pause sends E1 1D 45 E1 9D C5: it is pressed and released at once */
     if (scancode == 0xE1) {
         skip = 5;
 
@@ -312,7 +342,7 @@ void vt_scancode(int scancode)
     if (mode != K_XLATE && mode != K_UNICODE) {
         modifier(code, release, ext);
 
-        /* the fake shifts aren't keys */
+        /* the fake Shift codes (E0 2A, E0 36) aren't keys */
         if (mode != K_MEDIUMRAW || (ext && (code == SC_LSHIFT || code == SC_RSHIFT)))
             return;
 
@@ -340,13 +370,13 @@ void vt_scancode(int scancode)
     if (release)
         return;
 
-    /* Ctrl+Alt+Del, also with the keypad's Del */
+    /* Ctrl+Alt+Del, with either Del key */
     if (ctrl && alt && code == SC_KP_DEL) {
         kernel_ctrlaltdel();
         return;
     }
 
-    /* function keys, or switching terminals */
+    /* the function keys, which switch terminals with Alt */
     int fkey = code >= SC_F1 && code <= SC_F10 ? code - SC_F1 :
                code == SC_F11 ? 10 : code == SC_F12 ? 11 : -1;
 

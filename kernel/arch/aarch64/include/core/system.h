@@ -3,7 +3,7 @@
 
 #include <config.h>
 
-/* 4 KiB pages (the translation granule, TCR_EL1.TG0/TG1) */
+/* aarch64 uses 4 KiB pages (the translation granule, TCR_EL1.TG0/TG1). */
 #define PAGE_SIZE   (0x1000)
 #define PAGE_MASK   (PAGE_SIZE - 1)
 #define PAGE_SHIFT  (12)

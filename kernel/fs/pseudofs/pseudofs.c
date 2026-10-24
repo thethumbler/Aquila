@@ -1,3 +1,10 @@
+/** \file
+ * pseudofs: the directories of the filesystems that live in memory
+ * (tmpfs, and so devfs and devpts). A directory is a list of its entries,
+ * each a name and the entry's vnode, which is also its inode (its inode
+ * number is its address).
+ */
+
 #include <core/system.h>
 #include <core/time.h>
 
@@ -6,15 +13,16 @@
 MALLOC_DEFINE(M_PSEUDOFS_DENT, "pseudofs-dirent", "pseudofs directory entry");
 
 /*
- * A directory is a list of its entries (vnode->p). Its ".." is one of
- * them, as on a disk: the parent's vnode (not a reference, the parent
- * can't go while it has the directory), which finddir finds as any other
- * and rename moves; readdir makes up "." and ".." itself, it skips it. A
- * filesystem's root has none: it's a root.
+ * A directory is the list of its entries (vnode->p). Its ".." is one of
+ * them, as on a disk: it points to the parent's vnode (without a
+ * reference, since the parent can't go while it has the directory).
+ * finddir finds it like any other entry, and rename moves it; readdir
+ * skips it, and makes up "." and ".." itself. A filesystem's root has no
+ * "..".
  */
 static const char dotdot[] = "..";
 
-/** bounded copy of an entry name into a struct dirent */
+/** Copies an entry's name into a `struct dirent`, cut to fit. */
 static void pseudofs_dirent_name(struct dirent *dirent, const char *name)
 {
     size_t len = strlen(name);
@@ -26,6 +34,18 @@ static void pseudofs_dirent_name(struct dirent *dirent, const char *name)
     dirent->d_name[len] = '\0';
 }
 
+/**
+ * Makes a node in a directory: a new vnode, owned by the caller, and an
+ * entry for it. A new directory gets its `..` entry.
+ *
+ * @param dir   the directory
+ * @param fn    the new node's name
+ * @param mode  its type (`S_IF*`) and permissions
+ * @param dev   its device number, for a device node
+ * @param uio   who is asking (the owner)
+ * @param ref   if not NULL, set to the new vnode
+ * @return 0, `-EEXIST`, `-ENAMETOOLONG`, or `-ENOMEM`
+ */
 int pseudofs_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, struct uio *uio, struct vnode **ref)
 {
     int err = 0;
@@ -59,7 +79,7 @@ int pseudofs_vmknod(struct vnode *dir, const char *fn, mode_t mode, dev_t dev, s
     vnode->atime = ts;
     vnode->mtime = ts;
 
-    vnode->fs = dir->fs;    /* Copy filesystem from directory */
+    vnode->fs = dir->fs;    /* the directory's filesystem */
 
     struct pseudofs_dirent *cur_dir = (struct pseudofs_dirent *) dir->p;
 
@@ -109,7 +129,8 @@ error:
     return err;
 }
 
-/** the entry `fn' of directory `dir', and the entry before it (NULL if first) */
+/** Finds the entry `fn` of directory `dir`, and the entry before it in
+ * `*prev` (NULL if it's the first). Returns NULL if there's none. */
 static struct pseudofs_dirent *entry_find(struct vnode *dir, const char *fn, struct pseudofs_dirent **prev)
 {
     *prev = NULL;
@@ -124,7 +145,8 @@ static struct pseudofs_dirent *entry_find(struct vnode *dir, const char *fn, str
     return NULL;
 }
 
-/** remove `entry' (after `prev') from directory `dir' and drop a link to its vnode */
+/** Removes `entry` (which comes after `prev`) from directory `dir`, and
+ * drops a link to its vnode, which is freed if nothing references it. */
 static void entry_remove(struct vnode *dir, struct pseudofs_dirent *entry, struct pseudofs_dirent *prev)
 {
     struct vnode *vnode = entry->d_ino;
@@ -138,7 +160,8 @@ static void entry_remove(struct vnode *dir, struct pseudofs_dirent *entry, struc
     kfree(entry);
 
     if (S_ISDIR(vnode->mode)) {
-        /* its . and the parent's link through its .. */
+        /* a directory loses its . link, and the parent the link of its
+         * .. */
         vnode->nlink = 0;
         dir->nlink--;
     } else {
@@ -147,11 +170,19 @@ static void entry_remove(struct vnode *dir, struct pseudofs_dirent *entry, struc
 
     /* free it if nothing references it anymore */
     if (!vnode->nlink && !vnode->ref) {
-        vnode->ref = 1; /* vfs_close will decrement ref */
+        vnode->ref = 1; /* vfs_close() drops this one */
         vfs_close(vnode);
     }
 }
 
+/**
+ * Removes an entry from a directory.
+ *
+ * @param vnode  the directory
+ * @param fn     the entry's name
+ * @param uio    who is asking
+ * @return 0, `-ENOTDIR`, or `-ENOENT`
+ */
 int pseudofs_vunlink(struct vnode *vnode, const char *fn, struct uio *uio)
 {
     struct pseudofs_dirent *prev;
@@ -168,6 +199,15 @@ int pseudofs_vunlink(struct vnode *vnode, const char *fn, struct uio *uio)
     return 0;
 }
 
+/**
+ * Adds an entry for an existing vnode (a hard link) to a directory.
+ *
+ * @param dir    the directory
+ * @param fn     the new name
+ * @param vnode  the vnode
+ * @param uio    who is asking
+ * @return 0, `-EEXIST`, `-ENAMETOOLONG`, or `-ENOMEM`
+ */
 int pseudofs_vlink(struct vnode *dir, const char *fn, struct vnode *vnode, struct uio *uio)
 {
     struct pseudofs_dirent *prev;
@@ -195,7 +235,18 @@ int pseudofs_vlink(struct vnode *dir, const char *fn, struct vnode *vnode, struc
     return 0;
 }
 
-/** the checks of the new entry (type, empty directory) are done by the vfs */
+/**
+ * Renames an entry, possibly to another directory, replacing an entry at
+ * the new name. The VFS has checked the replaced entry already (its type,
+ * that a directory is empty).
+ *
+ * @param odir  the directory the entry is in
+ * @param ofn   its name
+ * @param ndir  the directory it goes to
+ * @param nfn   its new name
+ * @param uio   who is asking
+ * @return 0, `-ENOENT`, `-ENAMETOOLONG`, or `-ENOMEM`
+ */
 int pseudofs_vrename(struct vnode *odir, const char *ofn, struct vnode *ndir, const char *nfn, struct uio *uio)
 {
     struct pseudofs_dirent *oprev, *nprev;
@@ -211,12 +262,13 @@ int pseudofs_vrename(struct vnode *odir, const char *ofn, struct vnode *ndir, co
     if (!name)
         return -ENOMEM;
 
-    /* replace an existing entry */
+    /* replace the entry at the new name, if there's one */
     struct pseudofs_dirent *old = entry_find(ndir, nfn, &nprev);
     if (old) {
         entry_remove(ndir, old, nprev);
 
-        /* removing it may have unlinked the entry before ours */
+        /* removing it may have removed the entry before ours: find it
+         * again */
         entry_find(odir, ofn, &oprev);
     }
 
@@ -230,7 +282,7 @@ int pseudofs_vrename(struct vnode *odir, const char *ofn, struct vnode *ndir, co
     entry->next   = ndir->p;
     ndir->p       = entry;
 
-    /* a directory's .. now links to the new parent */
+    /* a directory's .. now points to its new parent */
     if (S_ISDIR(entry->d_ino->mode)) {
         struct pseudofs_dirent *prev, *up = entry_find(entry->d_ino, dotdot, &prev);
 
@@ -244,12 +296,27 @@ int pseudofs_vrename(struct vnode *odir, const char *ofn, struct vnode *ndir, co
     return 0;
 }
 
-/** attributes only live in the vnode */
+/**
+ * Stores a vnode's attributes: there's nothing to do, since they only
+ * live in the vnode.
+ *
+ * @param vnode  the vnode
+ * @return 0
+ */
 int pseudofs_setattr(struct vnode *vnode)
 {
     return 0;
 }
 
+/**
+ * Reads a directory's entry at an offset. The entries are `.` and `..`
+ * first, then the list's entries (except its own `..`).
+ *
+ * @param dir     the directory
+ * @param offset  which entry
+ * @param dirent  the entry, filled in
+ * @return 1 if an entry was read, or 0 past the last one
+ */
 ssize_t pseudofs_readdir(struct vnode *dir, off_t offset, struct dirent *dirent)
 {
     if (offset == 0) {
@@ -273,7 +340,7 @@ ssize_t pseudofs_readdir(struct vnode *dir, off_t offset, struct dirent *dirent)
 
     int i = 0;
     for (struct pseudofs_dirent *e = _dirent; e; e = e->next) {
-        /* made up above */
+        /* .. was made up above */
         if (e->d_name == dotdot)
             continue;
 
@@ -289,6 +356,14 @@ ssize_t pseudofs_readdir(struct vnode *dir, off_t offset, struct dirent *dirent)
     return found;
 }
 
+/**
+ * Finds the entry of a directory that has a name.
+ *
+ * @param dir     the directory
+ * @param name    the name
+ * @param dirent  the entry, filled in
+ * @return 0, `-ENOENT`, `-ENOTDIR`, or `-EINVAL`
+ */
 int pseudofs_finddir(struct vnode *dir, const char *name, struct dirent *dirent)
 {
     if (!dir || !name || !dirent)
@@ -311,7 +386,14 @@ int pseudofs_finddir(struct vnode *dir, const char *name, struct dirent *dirent)
     return -ENOENT;
 }
 
-/** the names are the entries', freed when they go (pseudofs_vunlink) */
+/**
+ * Frees a vnode that has no names or references left, and its cached
+ * pages. Its names belong to the directory entries, which were freed when
+ * they were removed.
+ *
+ * @param vnode  the vnode
+ * @return 0
+ */
 int pseudofs_close(struct vnode *vnode)
 {
     vnode_pages_free(vnode);

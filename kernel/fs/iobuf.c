@@ -1,6 +1,6 @@
 /** \file
- * iobuf: moving bytes into and out of a read's or a write's buffer
- * (fs/iobuf.h)
+ * iobufs: moving bytes into and out of the buffer of a read or a write,
+ * which may be in user memory (see `fs/iobuf.h`).
  */
 
 #include <core/system.h>
@@ -8,6 +8,14 @@
 #include <fs/iobuf.h>
 #include <sys/uaccess.h>
 
+/**
+ * Sets up an iobuf for one buffer.
+ *
+ * @param io    the iobuf
+ * @param buf   the buffer
+ * @param len   its length, in bytes
+ * @param user  whether the buffer is in user memory (copies are checked)
+ */
 void iobuf_init(struct iobuf *io, void *buf, size_t len, int user)
 {
     io->one   = (struct iobuf_seg) {.base = buf, .len = len};
@@ -19,10 +27,11 @@ void iobuf_init(struct iobuf *io, void *buf, size_t len, int user)
 }
 
 /**
- * Up to n bytes between the buffer and the kernel's kbuf (out: into the
- * buffer), from where the buffer is, segment by segment: how many (fewer:
- * a fault stopped it), -EFAULT if a fault came first. The buffer isn't
- * moved past them.
+ * Copies up to `n` bytes between the iobuf's buffer, from where it is,
+ * and `kbuf`: into the buffer if `out` is set, out of it otherwise, one
+ * segment at a time. It doesn't move the iobuf past them. Returns how many
+ * bytes were copied (fewer if a fault stopped it), or `-EFAULT` if a fault
+ * came first.
  */
 static ssize_t iobuf_copy(struct iobuf *io, char *kbuf, size_t n, int out)
 {
@@ -48,7 +57,7 @@ static ssize_t iobuf_copy(struct iobuf *io, char *kbuf, size_t n, int out)
         } else {
             size_t n = out ? copyout_upto(p, kbuf + done, len) : copyin_upto(kbuf + done, p, len);
 
-            /* what went before the fault counts */
+            /* what was copied before the fault counts */
             if (n < len) {
                 io->fault = 1;
                 done += n;
@@ -62,6 +71,13 @@ static ssize_t iobuf_copy(struct iobuf *io, char *kbuf, size_t n, int out)
     return done;
 }
 
+/**
+ * Moves an iobuf past bytes, without copying them.
+ *
+ * @param io  the iobuf
+ * @param n   how many bytes (no more than are left)
+ * @return how many it moved past
+ */
 size_t iobuf_skip(struct iobuf *io, size_t n)
 {
     size_t done = 0;
@@ -75,7 +91,7 @@ size_t iobuf_skip(struct iobuf *io, size_t n)
         io->seg->len  -= len;
         done += len;
 
-        /* the next segment */
+        /* on to the next segment */
         if (!io->seg->len && io->nseg > 1) {
             io->seg++;
             io->nseg--;
@@ -86,6 +102,16 @@ size_t iobuf_skip(struct iobuf *io, size_t n)
     return done;
 }
 
+/**
+ * Copies bytes from the kernel into the iobuf's buffer, and moves past
+ * them.
+ *
+ * @param io   the iobuf
+ * @param src  the bytes
+ * @param n    how many
+ * @return how many were copied (fewer if a fault stopped it), or
+ *         `-EFAULT` if a fault came first
+ */
 ssize_t iobuf_out(struct iobuf *io, const void *src, size_t n)
 {
     ssize_t r = iobuf_copy(io, (char *) src, n, 1);
@@ -96,6 +122,16 @@ ssize_t iobuf_out(struct iobuf *io, const void *src, size_t n)
     return r;
 }
 
+/**
+ * Copies bytes from the iobuf's buffer into the kernel, and moves past
+ * them.
+ *
+ * @param io   the iobuf
+ * @param dst  where they go
+ * @param n    how many
+ * @return how many were copied (fewer if a fault stopped it), or
+ *         `-EFAULT` if a fault came first
+ */
 ssize_t iobuf_in(struct iobuf *io, void *dst, size_t n)
 {
     ssize_t r = iobuf_copy(io, dst, n, 0);
@@ -106,11 +142,28 @@ ssize_t iobuf_in(struct iobuf *io, void *dst, size_t n)
     return r;
 }
 
+/**
+ * Copies bytes from the iobuf's buffer into the kernel, without moving
+ * past them.
+ *
+ * @param io   the iobuf
+ * @param dst  where they go
+ * @param n    how many
+ * @return how many were copied, or `-EFAULT`
+ */
 ssize_t iobuf_peek(struct iobuf *io, void *dst, size_t n)
 {
     return iobuf_copy(io, dst, n, 0);
 }
 
+/**
+ * Fills bytes of the iobuf's buffer with zeros, and moves past them.
+ *
+ * @param io  the iobuf
+ * @param n   how many
+ * @return how many were zeroed (fewer if a fault stopped it), or
+ *         `-EFAULT` if a fault came first
+ */
 ssize_t iobuf_zero(struct iobuf *io, size_t n)
 {
     static const char zero[256];

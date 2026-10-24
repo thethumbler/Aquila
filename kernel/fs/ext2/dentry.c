@@ -1,7 +1,22 @@
+/** \file
+ * ext2: directory entries. A directory's blocks hold entries of different
+ * sizes, each saying where the next one is (its `size`); an entry with no
+ * inode is unused, and a new entry takes an unused one, the room left at
+ * the end of another, or a new block.
+ */
+
 #include <ext2.h>
 
-/** the inode of `name' in directory `inode', into `*ino': 0, -ENOENT, or an
- * error */
+/**
+ * Finds the inode number of a name in a directory.
+ *
+ * @param desc   the mounted filesystem
+ * @param inode  the directory's inode
+ * @param name   the name
+ * @param ino    set to the inode number
+ * @return 0, `-ENOENT` if there's no such name, `-ENOTDIR`, `-ENOMEM`, or
+ *         an I/O error
+ */
 int ext2_dentry_find(struct ext2 *desc, struct ext2_inode *inode, const char *name, ino_t *ino)
 {
     if ((inode->mode & S_IFMT) != S_IFDIR)
@@ -30,7 +45,7 @@ int ext2_dentry_find(struct ext2 *desc, struct ext2_inode *inode, const char *na
         while ((char *) d < (char *) buf + bs && d->size) {
             /* entries with no inode are unused */
             if (d->ino && d->length == length && !memcmp(d->name, name, length)) {
-                /* read before the buffer is freed */
+                /* read it before the buffer is freed */
                 *ino = d->ino;
                 err = 0;
                 break;
@@ -43,6 +58,7 @@ int ext2_dentry_find(struct ext2 *desc, struct ext2_inode *inode, const char *na
     return err;
 }
 
+/** Returns the directory entry type of a file's mode. */
 static inline uint8_t ext2_dentry_type(mode_t mode)
 {
     switch (mode & S_IFMT) {
@@ -57,6 +73,17 @@ static inline uint8_t ext2_dentry_type(mode_t mode)
     }
 }
 
+/**
+ * Adds an entry to a directory. It takes an unused entry big enough, or
+ * splits an entry that has room after its name, or else gets a new block
+ * at the end of the directory.
+ *
+ * @param dir   the directory
+ * @param name  the new entry's name
+ * @param ino   its inode number
+ * @param mode  its file's mode (for the entry's type)
+ * @return 0, `-ENOTDIR`, `-ENOMEM`, or an I/O error
+ */
 int ext2_dentry_create(struct vnode *dir, const char *name, ino_t ino, mode_t mode)
 {
     int err = 0;
@@ -70,9 +97,9 @@ int ext2_dentry_create(struct vnode *dir, const char *name, ino_t ino, mode_t mo
     uint8_t type = desc->filetype ? ext2_dentry_type(mode) : 0;
     size_t length = strlen(name);
     size_t size = length + sizeof(struct ext2_dentry);
-    size = (size + 3) & ~3; /* Align to 4 bytes */
+    size = (size + 3) & ~3; /* entries are aligned to 4 bytes */
 
-    /* look for a candidate entry */
+    /* look for room for the entry */
     struct ext2_inode dir_inode;
 
     if ((err = ext2_inode_read(desc, dir->ino, &dir_inode)))
@@ -86,7 +113,7 @@ int ext2_dentry_create(struct vnode *dir, const char *name, ino_t ino, mode_t mo
 
     size_t bs = desc->bs;
     size_t blocks_nr = dir_inode.size / bs;
-    size_t flag = 0;    /* 0 => allocate, 1 => replace, 2 => split */
+    size_t flag = 0;    /* 0: a new block, 1: an unused entry, 2: a split */
     size_t block = 0;
 
     for (block = 0; block < blocks_nr; ++block) {
@@ -97,13 +124,15 @@ int ext2_dentry_create(struct vnode *dir, const char *name, ino_t ino, mode_t mo
         cur = (struct ext2_dentry *) buf;
 
         while ((char *) cur < (char *) buf + bs && cur->size) {
-            if ((!cur->ino) && cur->size >= size) {   /* unused entry */
-                flag = 1;   /* Replace */
+            /* an unused entry big enough */
+            if ((!cur->ino) && cur->size >= size) {
+                flag = 1;
                 goto done;
             }
 
+            /* an entry with room for the new one after its name */
             if ((((cur->length + sizeof(struct ext2_dentry) + 3) & ~3) + size) <= cur->size) {
-                flag = 2;   /* Split */
+                flag = 2;
                 goto done;
             }
 
@@ -113,16 +142,15 @@ int ext2_dentry_create(struct vnode *dir, const char *name, ino_t ino, mode_t mo
 
 done:
     if (flag == 1) {
-        /* replace */
+        /* take the unused entry */
         memcpy(cur->name, name, length);
         cur->ino    = ino;
         cur->length = length;
         cur->type   = type;
 
-        /* Update block */
         err = ext2_inode_block_write(desc, &dir_inode, dir->ino, block, buf);
     } else if (flag == 2) {
-        /* split */
+        /* split the entry: the new one takes the room after its name */
         size_t new_size = (cur->length + sizeof(struct ext2_dentry) + 3) & ~3;
         struct ext2_dentry *next = (struct ext2_dentry *) ((char *) cur + new_size);
 
@@ -134,7 +162,6 @@ done:
 
         cur->size = new_size;
 
-        /* Update block */
         err = ext2_inode_block_write(desc, &dir_inode, dir->ino, block, buf);
     } else {
         /* no room left: the entry gets a new block of its own */

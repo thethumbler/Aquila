@@ -3,45 +3,47 @@
 
 #include <core/system.h>
 
-/**
- * a function called later, the caller's structure: arming it
- * doesn't allocate
+/*
+ * Callouts (sys/callout.c): functions called later, at a given time. The
+ * caller owns the structure, so arming one allocates nothing and can't
+ * fail.
  */
+
+/** A function to call later, with its argument. */
 struct callout {
-    uint64_t when;              /* arch_rtime_ns() */
+    uint64_t when;              /* when to call it, in arch_rtime_ns() time */
     void (*fn)(void *arg);
     void *arg;
     struct callout *next;
-    struct callout_list *list;  /* the one it's on, while pending */
+    struct callout_list *list;  /* the list it's on, while it's pending */
     int pending;
 };
 
-/**
- * callouts called from one context: the timer's interrupt
- * (callout_set), or a thread that runs its own (the network's)
- */
+/** A list of callouts called from one context: the timer's interrupt
+ * (callout_set()), or a thread that runs its own list (the network's). */
 struct callout_list {
     struct callout *head;
 };
 
-/* fn(arg) in `ns' nanoseconds (again, if it was armed: it moves), from
- * the timer's interrupt */
+/* Calls fn(arg) in `ns` nanoseconds, from the timer's interrupt. A
+ * callout that was armed already moves to the new time. */
 void callout_set(struct callout *c, uint64_t ns, void (*fn)(void *), void *arg);
 
-/* the same, from whoever runs `list' (callout_list_run) */
+/* The same, but called from whoever runs `list` (callout_list_run()). */
 void callout_set_on(struct callout_list *list, struct callout *c, uint64_t ns,
                     void (*fn)(void *), void *arg);
 
-/* not called, if it wasn't yet */
+/* Disarms a callout, if it wasn't called yet. */
 void callout_stop(struct callout *c);
 
-/* those of `list' due at `now' are called */
+/* Calls the callouts of `list` that are due at `now`. */
 void callout_list_run(struct callout_list *list, uint64_t now);
 
-/* when the first of `list' is due, 0 if none is */
+/* Returns when the first callout of `list` is due, or 0 if none is
+ * armed. */
 uint64_t callout_list_next(struct callout_list *list);
 
-/* the timer's tick: its callouts due are called */
+/* Calls the timer's callouts that are due, on each tick. */
 void callout_run(uint64_t now);
 
 #endif /* ! _SYS_CALLOUT_H */

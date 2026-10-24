@@ -3,8 +3,12 @@
 
 #include <core/system.h>
 
+/* The kernel's own string and memory functions, as the C library's. */
+
+/* Formats a string into a buffer (core/snprintf.c). */
 int snprintf(char *s, size_t n, const char *fmt, ...);
 
+/** Copies `n` bytes from `src` to `dest`; the two may overlap. */
 static inline void *memmove(void *dest, const void *src, size_t n)
 {
     void *_dest = dest;
@@ -22,6 +26,7 @@ static inline void *memmove(void *dest, const void *src, size_t n)
     return _dest;
 }
 
+/** Copies `n` bytes from `src` to `dest`, which must not overlap. */
 static inline void *memcpy(void *dest, const void *src, size_t n)
 {
     void *_dest = dest;
@@ -31,6 +36,7 @@ static inline void *memcpy(void *dest, const void *src, size_t n)
     return _dest;
 }
 
+/** Sets `n` bytes at `s` to `c`. */
 static inline void *memset(void *s, int c, size_t n)
 {
     void *_s = s;
@@ -42,6 +48,8 @@ static inline void *memset(void *s, int c, size_t n)
     return _s;
 }
 
+/** Compares `n` bytes: 0 if they're the same, else the difference of the
+ * first bytes that differ. */
 static inline int memcmp(const void *s1, const void *s2, size_t n)
 {
     const unsigned char *a = s1, *b = s2;
@@ -53,7 +61,8 @@ static inline int memcmp(const void *s1, const void *s2, size_t n)
     return 0;
 }
 
-/** as the C library's: a NULL is a caller's bug (it faults), not "equal" */
+/** Compares two strings, as the C library's `strcmp()`. A NULL string is
+ * the caller's bug: it faults, rather than comparing "equal". */
 static inline int strcmp(const char *s1, const char *s2)
 {
     while (*s1 != '\0' && *s2 != '\0' && *s1 == *s2) {s1++; s2++;}
@@ -61,6 +70,7 @@ static inline int strcmp(const char *s1, const char *s2)
     return (int)(*s1 - *s2);
 }
 
+/** Compares at most `n` characters of two strings. */
 static inline int strncmp(const char *s1, const char *s2, size_t n)
 {
     for (; n != 0; --n, ++s1, ++s2) {
@@ -74,6 +84,7 @@ static inline int strncmp(const char *s1, const char *s2, size_t n)
     return 0;
 }
 
+/** Returns the length of a string. */
 static inline int strlen(const char *s)
 {
     const char *_s = s;
@@ -81,7 +92,8 @@ static inline int strlen(const char *s)
     return _s - s;
 }
 
-/** the length of s, at most max (no NUL in max bytes) */
+/** Returns the length of a string, or `max` if there is no NUL in its
+ * first `max` bytes. */
 static inline size_t strnlen(const char *s, size_t max)
 {
     size_t n = 0;
@@ -89,6 +101,7 @@ static inline size_t strnlen(const char *s, size_t max)
     return n;
 }
 
+/** Returns a copy of a string, from `kmalloc()`. */
 static inline char *strdup(const char *s)
 {
     int len = strlen(s);
@@ -97,6 +110,7 @@ static inline char *strdup(const char *s)
     return ret;
 }
 
+/** Copies a string, with its NUL, and returns `dst`. */
 static inline char *strcpy(char *dst, const char *src)
 {
     char *retval = dst;
@@ -104,12 +118,13 @@ static inline char *strcpy(char *dst, const char *src)
     while (*src != '\0')
         *dst++ = *src++;
 
-    *dst = *src;    /* NULL terminator */
+    *dst = *src;    /* the NUL */
 
     return retval;
 }
 
-/** strcpy() returning the end of dst (its NUL terminator) */
+/** Copies a string, as `strcpy()`, but returns the end of `dst` (its
+ * NUL). */
 static inline char *stpcpy(char *dst, const char *src)
 {
     while ((*dst = *src++))
@@ -118,6 +133,11 @@ static inline char *stpcpy(char *dst, const char *src)
     return dst;
 }
 
+/**
+ * Splits a string at each `c`, leading ones skipped. Returns an array of
+ * the pieces, ended by NULL, which `free_tokens()` frees, or NULL if `s`
+ * is NULL or empty. The pieces all live in one copy of `s`.
+ */
 static inline char **tokenize(const char *s, char c)
 {
     if (s == NULL || *s == '\0')
@@ -164,6 +184,7 @@ static inline char **tokenize(const char *s, char c)
     return ret;
 }
 
+/** Frees what `tokenize()` returned. */
 static inline void free_tokens(char **ptr)
 {
     if (!ptr) return;

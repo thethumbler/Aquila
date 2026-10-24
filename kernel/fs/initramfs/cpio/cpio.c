@@ -1,3 +1,13 @@
+/** \file
+ * cpiofs: the RAM disk as a filesystem, read straight from an archive in
+ * the old binary cpio format.
+ *
+ * Loading the archive walks its members once and builds a tree of
+ * vnodes in memory, one for each member, linked into its directory; a
+ * file's data stays in the archive, where its vnode says it starts. The
+ * filesystem is read-only.
+ */
+
 #include <core/system.h>
 #include <core/module.h>
 #include <core/panic.h>
@@ -13,7 +23,7 @@
 
 MALLOC_DEFINE(M_CPIO, "cpio", "CPIO structure");
 
-/** bounded copy of an entry name into a struct dirent */
+/** Copies an entry's name into a `struct dirent`, cut to fit. */
 static void cpio_dirent_name(struct dirent *dirent, const char *name)
 {
     size_t len = strlen(name);
@@ -25,6 +35,8 @@ static void cpio_dirent_name(struct dirent *dirent, const char *name)
     dirent->d_name[len] = '\0';
 }
 
+/** Makes the root directory's vnode, for the archive on device `super`.
+ * Returns 0 or `-ENOMEM`. */
 static int cpio_root_node(struct vnode *super, struct vnode **ref)
 {
     int err = 0;
@@ -81,6 +93,8 @@ error:
     return err;
 }
 
+/** Makes the vnode of an archive member: its name, its header, its data's
+ * size and where the data starts in the archive. Returns 0 or `-ENOMEM`. */
 static int cpio_new_node(const char *name, struct cpio_hdr *hdr, size_t sz, size_t data, struct vnode *sp, struct vnode **ref)
 {
     int err = 0;
@@ -132,12 +146,14 @@ error:
     return err;
 }
 
+/** Adds a vnode to a directory's entries. Returns the vnode, or NULL if
+ * either is missing or `parent` isn't a directory. */
 static struct vnode *cpio_new_child_node(struct vnode *parent, struct vnode *child)
 {
-    if (!parent || !child)  /* invalid vnode */
+    if (!parent || !child)
         return NULL;
 
-    if (!S_ISDIR(parent->mode)) /* Adding child to non directory parent */
+    if (!S_ISDIR(parent->mode))
         return NULL;
 
     struct cpio *pp = (struct cpio *) parent->p;
@@ -154,17 +170,19 @@ static struct vnode *cpio_new_child_node(struct vnode *parent, struct vnode *chi
     return child;
 }
 
+/** Finds the vnode at a path from the root, while the archive is loaded.
+ * Returns NULL if there's none. */
 static struct vnode *cpio_find(struct vnode *root, const char *path)
 {
     char **tokens = tokenize(path, '/');
 
-    if (!S_ISDIR(root->mode))   /* Not even a directory */
+    if (!S_ISDIR(root->mode))
         return NULL;
 
     struct vnode *cur = root;
     struct vnode *dir = ((struct cpio *) cur->p)->dir;
 
-    if (!dir) { /* Directory has no children */
+    if (!dir) { /* the root has no entries yet */
         if (*tokens == NULL)
             return root;
         else
@@ -188,7 +206,7 @@ static struct vnode *cpio_find(struct vnode *root, const char *path)
 
         next:
 
-        if (!flag)  /* No such file or directory */
+        if (!flag)  /* no such entry */
             return NULL;
 
         continue;
@@ -199,12 +217,14 @@ static struct vnode *cpio_find(struct vnode *root, const char *path)
     return cur;
 }
 
+/** Finds the entry of a directory that has a name; `..` is the directory's
+ * parent. Returns 0, `-ENOENT`, or `-ENOTDIR`. */
 static int cpio_finddir(struct vnode *root, const char *name, struct dirent *dirent)
 {
-    if (!S_ISDIR(root->mode))   /* Not even a directory */
+    if (!S_ISDIR(root->mode))
         return -ENOTDIR;
 
-    /* its parent (the root has none: it's the root) */
+    /* its parent (the root has none) */
     if (!strcmp(name, "..")) {
         struct vnode *parent = ((struct cpio *) root->p)->parent;
 
@@ -221,7 +241,7 @@ static int cpio_finddir(struct vnode *root, const char *name, struct dirent *dir
 
     struct vnode *dir = ((struct cpio *) root->p)->dir;
 
-    if (!dir)   /* Directory has no children */
+    if (!dir)   /* the directory is empty */
         return -ENOENT;
 
     for (struct vnode *e = dir; e; e = ((struct cpio *) e->p)->next) {
@@ -239,6 +259,7 @@ static int cpio_finddir(struct vnode *root, const char *name, struct dirent *dir
     return -ENOENT;
 }
 
+/** Gets a vnode by its inode number, which is its address. */
 static int cpio_vget(struct vnode *super, ino_t ino, struct vnode **vnode)
 {
     *vnode = (struct vnode *) ino;
@@ -247,9 +268,13 @@ static int cpio_vget(struct vnode *super, ino_t ino, struct vnode **vnode)
 
 #define MAX_NAMESIZE    1024
 
+/** Loads the archive on a device: the root directory, then a vnode for
+ * each member, linked into its directory, until the archive's trailer. A
+ * member that isn't in the old binary format panics: the kernel has no
+ * root without it. Returns 0. */
 static int cpio_load(struct vnode *dev, struct vnode **super)
 {
-    /* Allocate the root node */
+    /* the root directory */
     struct vnode *rootfs = NULL;
     cpio_root_node(dev, &rootfs);
 
@@ -263,16 +288,15 @@ static int cpio_load(struct vnode *dev, struct vnode **super)
         size_t data_offset = offset;
         vfs_read(dev, data_offset, sizeof(struct cpio_hdr), &hdr);
 
-        if (hdr.magic != CPIO_BIN_MAGIC) { /* Invalid CPIO archive */
+        if (hdr.magic != CPIO_BIN_MAGIC) {
             panic("Invalid CPIO archive\n");
-            //return -EINVAL;
         }
 
         size = hdr.filesize[0] * 0x10000 + hdr.filesize[1];
         
         data_offset += sizeof(struct cpio_hdr);
         
-        /* namesize comes from the archive, don't trust it */
+        /* namesize comes from the archive: don't trust it */
         size_t namesize = MIN(hdr.namesize, MAX_NAMESIZE - 1);
 
         char path[MAX_NAMESIZE];
@@ -280,12 +304,12 @@ static int cpio_load(struct vnode *dev, struct vnode **super)
         path[namesize] = '\0';
 
         if (!strcmp(path, ".")) continue;
-        if (!strcmp(path, "TRAILER!!!")) break; /* End of archive */
+        if (!strcmp(path, "TRAILER!!!")) break; /* the end of the archive */
 
         char *dir  = NULL;
         char *name = NULL;
 
-        /* TODO implement strrchr */
+        /* split the path at its last '/': the directory, and the name */
         for (int i = (int) namesize - 1; i >= 0; --i) {
             if (path[i] == '/') {
                 path[i] = '\0';
@@ -315,6 +339,7 @@ static int cpio_load(struct vnode *dev, struct vnode **super)
     return 0;
 }
 
+/** Reads a file's data, from the archive. */
 static ssize_t cpio_read(struct vnode *vnode, off_t offset, struct iobuf *io)
 {
     if ((size_t) offset >= vnode->size)
@@ -323,7 +348,7 @@ static ssize_t cpio_read(struct vnode *vnode, off_t offset, struct iobuf *io)
     struct cpio *p = vnode->p;
     struct vnode *super = p->super;
 
-    /* no further than the file's end */
+    /* read no further than the file's end */
     size_t cut = iobuf_limit(io, vnode->size - offset);
     ssize_t ret = vfs_read_io(super, p->data + offset, io);
     iobuf_unlimit(io, cut);
@@ -331,6 +356,9 @@ static ssize_t cpio_read(struct vnode *vnode, off_t offset, struct iobuf *io)
     return ret;
 }
 
+/** Reads a directory's entry at an offset. The entries are `.` and `..`
+ * first, then its members. Returns 1 if an entry was read, or 0 past the
+ * last one. */
 static ssize_t cpio_readdir(struct vnode *node, off_t offset, struct dirent *dirent)
 {
     if (offset == 0) {
@@ -365,11 +393,13 @@ static ssize_t cpio_readdir(struct vnode *node, off_t offset, struct dirent *dir
     return i == offset;
 }
 
+/** Releases a vnode: nothing to do, the tree stays in memory. */
 static int cpio_close(struct vnode *vnode)
 {
     return 0;
 }
 
+/** Says whether an open file (or directory) is at its end. */
 static int cpio_eof(struct file *file)
 {
     if (S_ISDIR(file->vnode->mode)) {
@@ -379,6 +409,7 @@ static int cpio_eof(struct file *file)
     }
 }
 
+/** Registers cpiofs as an archiver for the RAM disk, at boot. */
 static int cpio_init()
 {
     return initramfs_archiver_register(&cpiofs);

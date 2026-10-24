@@ -1,7 +1,7 @@
 /** \file
- * aarch64: a new program's start, its arguments on its stack (as x86's:
- * the strings, then envp's and argp's arrays), and in x0 to x2: main()'s
- * argc, argv, envp
+ * aarch64: where a new program starts. Its arguments go on its stack, as
+ * on x86 (the strings, then the envp and argp arrays), and main()'s argc,
+ * argv and envp go in x0 to x2.
  */
 
 #include <core/system.h>
@@ -9,6 +9,10 @@
 #include <core/arch.h>
 #include <sys/proc.h>
 
+/*
+ * Sets up the user stack and registers of a process's thread for the
+ * program that `execve()` loaded.
+ */
 void arch_sys_execve(struct proc *proc, int argc, char * const _argp[], int envc, char * const _envp[])
 {
     struct thread *thread = (struct thread *) proc->threads.head->value;
@@ -17,7 +21,7 @@ void arch_sys_execve(struct proc *proc, int argc, char * const _argp[], int envc
     char **argp = (char **) _argp;
     char **envp = (char **) _envp;
 
-    /* argc and envc include the terminating NULL entry */
+    /* argc and envc count the NULL at the end too */
     size_t strings_size = 0;
 
     for (int i = 0; i < argc - 1; ++i)
@@ -27,7 +31,7 @@ void arch_sys_execve(struct proc *proc, int argc, char * const _argp[], int envc
         strings_size += strlen(envp[i]) + 1;
 
     /* from the top of the new user stack (the process's address space is
-     * the current one: its pages come in as they're written) */
+     * the current one, so its pages come in as they're written) */
     char *str = (char *) (USER_STACK - strings_size);
     uintptr_t stack = (uintptr_t) str & ~(sizeof(uintptr_t) - 1);
 
@@ -52,11 +56,11 @@ void arch_sys_execve(struct proc *proc, int argc, char * const _argp[], int envc
 
     u_envp[envc - 1] = NULL;
 
-    /* the new program's FP/SIMD registers: zeros, at their first use */
+    /* the new program's FP/SIMD registers are zeros, at their first use */
     aarch64_fpsimd_drop(thread);
 
     arch->pc = proc->entry;
-    arch->sp = stack & ~(uintptr_t) 15;     /* the AAPCS64's alignment */
+    arch->sp = stack & ~(uintptr_t) 15;     /* AAPCS64's 16-byte alignment */
     arch->x0 = argc - 1;
     arch->x1 = (uintptr_t) u_argp;
     arch->x2 = (uintptr_t) u_envp;

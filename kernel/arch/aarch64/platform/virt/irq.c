@@ -1,7 +1,8 @@
 /** \file
- * Interrupts' handlers, installed by their drivers (dev/irq.h): an
- * interrupt may have several (a shared line), each is called. The GIC
- * says which came; the first handler enables it, the last one gone
+ * The interrupts' handlers on the virt machine, installed by their
+ * drivers (see `dev/irq.h`). An interrupt may have several handlers (a
+ * shared line), and each is called. The GIC says which interrupt came;
+ * the first handler installed enables it, and the last one uninstalled
  * disables it.
  */
 
@@ -14,15 +15,20 @@
 
 MALLOC_DEFINE(M_IRQ, "irq", "IRQ handler");
 
+/** An installed handler, on its interrupt's list. */
 struct handler {
     irq_handler_t fn;
     void *arg;
     struct handler *next;
 };
 
+/* Each interrupt's handlers, and how many times it came. */
 static struct handler *handlers[IRQ_NR];
 static uint64_t counts[IRQ_NR];
 
+/*
+ * Installs a handler for an interrupt.
+ */
 int irq_install(unsigned irq, irq_handler_t fn, void *arg)
 {
     if (irq >= IRQ_NR)
@@ -50,6 +56,9 @@ int irq_install(unsigned irq, irq_handler_t fn, void *arg)
     return 0;
 }
 
+/*
+ * Uninstalls a handler that irq_install() installed.
+ */
 void irq_uninstall(unsigned irq, irq_handler_t fn, void *arg)
 {
     if (irq >= IRQ_NR)
@@ -69,13 +78,14 @@ void irq_uninstall(unsigned irq, irq_handler_t fn, void *arg)
         gic_disable(irq);
 }
 
-/** the interrupt that came: its handlers, then the GIC told it's done
- * (before a thread switch: the next ones keep coming) */
+/** Runs the handlers of the interrupt that came, then tells the GIC it's
+ * done, before any thread switch, so that the next interrupts keep
+ * coming. */
 void irq_handle(void)
 {
     unsigned irq = gic_ack();
 
-    if (irq >= 1020)    /* spurious: none */
+    if (irq >= 1020)    /* a spurious interrupt: there's none */
         return;
 
     if (irq < IRQ_NR) {
@@ -88,7 +98,10 @@ void irq_handle(void)
     gic_eoi(irq);
 }
 
-/** /proc/interrupts */
+/*
+ * Writes `/proc/interrupts`: the controller, and how many times each
+ * interrupt came.
+ */
 int arch_interrupts_info(char *buf, size_t size)
 {
     int sz = snprintf(buf, size, "controller: gicv2\n");

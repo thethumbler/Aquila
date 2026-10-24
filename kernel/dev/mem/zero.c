@@ -1,3 +1,8 @@
+/** \file
+ * `/dev/zero` (character device 1, 5): reading it gives as many zero
+ * bytes as asked for, and what is written to it is thrown away.
+ */
+
 #include <core/system.h>
 #include <dev/dev.h>
 #include <fs/posix.h>
@@ -7,12 +12,13 @@
 
 struct dev zerodev;
 
+/** Fills the reader's buffer with zeros. */
 static ssize_t zerodev_read(struct devid *dd __unused, off_t offset __unused, struct iobuf *io)
 {
     return iobuf_zero(io, io->resid);
 }
 
-/** taken, unread */
+/** Takes all that is written, and throws it away. */
 static ssize_t zerodev_write(struct devid *dd __unused, off_t offset __unused, struct iobuf *io)
 {
     return iobuf_skip(io, io->resid);

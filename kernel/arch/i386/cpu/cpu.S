@@ -1,10 +1,22 @@
+/** \file
+ * x86: the kernel's entries from interrupts and exceptions, and the
+ * low-level pieces of thread switching.
+ *
+ * Every vector has a small stub that pushes the same frame, a
+ * `struct x86_regs`, and calls the C handler: `__x86_isr()` for
+ * exceptions and system calls, `__x86_irq_handler()` for device
+ * interrupts and IPIs. The way back pops the frame and returns with
+ * `iret`. See docs/kernel/interrupts.md.
+ */
+
 #include <config.h>
 
 /*
- * ISRs -- Interrupt Service Routines
+ * ISRs (interrupt service routines), for the exceptions and int $0x80.
  *
- * Each stub pushes the error code (0 if the CPU pushed none) and the
- * vector, struct x86_regs' vec and err, and jumps to the common code.
+ * Each stub pushes an error code (0 if the CPU didn't push one) and the
+ * vector number, which are struct x86_regs' err and vec, and jumps to
+ * the common code.
  */
 
 .macro ISR_NOERR v
@@ -25,10 +37,10 @@ __x86_isr\v:
 .endm
 
 /*
- * x86_64: %gs is the kernel's (its GS base, curcpu()) while in the kernel,
- * user mode's in user mode; swapgs exchanges them when the interrupt came
- * from user mode, and when going back to it. `cs' is where the
- * interrupted CS is on the stack.
+ * x86_64: while in the kernel, the GS base is the kernel's (curcpu()
+ * reads it); in user mode it is user mode's. swapgs exchanges them, when
+ * an interrupt came from user mode and when going back to it. The macro's
+ * `cs` argument is where the interrupted CS is on the stack.
  */
 .macro swapgs_if_user cs
 #if ARCH_BITS==64
@@ -104,11 +116,12 @@ __x86_isr\v:
 .endm
 
 /*
- * Prepare the kernel environment on entry from an interrupt/exception:
- * user code may have left any data segment selectors loaded (or set the
- * direction flag), so load the kernel data segments (and on i386 %gs, the
- * CPU's) and clear DF. The interrupted context's selectors are saved by
- * push_context and restored by pop_context.
+ * Prepares the kernel's environment on entry from an interrupt or an
+ * exception. User code may have left any data segment selectors loaded,
+ * or set the direction flag, so this loads the kernel's data segments
+ * (and on i386 %gs, the CPU's own segment) and clears DF. push_context
+ * saves the interrupted context's selectors, and pop_context restores
+ * them.
  */
 .macro kernel_entry
     cld
@@ -122,11 +135,9 @@ __x86_isr\v:
 #endif
 .endm
 
-/* Refer to 
- * - Intel 64 and IA-32 Architectures Software Developer’s Manual
- * - Volume 3: System Programming Guide
- * - Table 6-1. Protected-Mode Exceptions and Interrupts
- */
+/* Which exceptions push an error code: see the Intel 64 and IA-32
+ * Architectures Software Developer's Manual, Volume 3 (System Programming
+ * Guide), Table 6-1, "Protected-Mode Exceptions and Interrupts". */
 
 ISR_NOERR 0
 ISR_NOERR 1
@@ -172,7 +183,7 @@ isr_handler:
     call __x86_isr
     pop %eax
     pop_context
-    add $8, %esp        /* vec, err */
+    add $8, %esp        /* drop vec and err */
     iret
 #else
     swapgs_if_user 24
@@ -182,12 +193,13 @@ isr_handler:
     call __x86_isr
     pop_context
     swapgs_if_user 24
-    add $16, %rsp       /* vec, err */
+    add $16, %rsp       /* drop vec and err */
     iretq
 #endif
 
 /*
- * IRQs: external interrupts (the 8259's or the APIC's), irq.c handles them
+ * IRQs: external interrupts, from the 8259 or the APIC. Each stub pushes
+ * a 0 error code and its vector; irq.c handles them.
  */
 .macro IRQ n, i
 .global __x86_irq\n
@@ -198,8 +210,8 @@ __x86_irq\n:
     jmp irq_stub
 .endm
 
-/* IRQs 0 to 47: vectors 32 to 79 (the I/O APIC's pins, ISA's 16 under
- * the 8259) */
+/* IRQs 0 to 47 are vectors 32 to 79: the I/O APIC's pins, or the ISA
+ * bus's 16 under the 8259. */
 IRQ 0, 32
 IRQ 1, 33
 IRQ 2, 34
@@ -249,12 +261,13 @@ IRQ 45, 77
 IRQ 46, 78
 IRQ 47, 79
 
-/* the local APIC's timer, the TLB's and the wake IPIs */
+/* the local APIC's timer, and the TLB and wake IPIs */
 IRQ 240, 240
 IRQ 241, 241
 IRQ 242, 242
 
-/* the local APIC's spurious interrupt: nothing to do, no EOI */
+/* The local APIC's spurious interrupt: there is nothing to do, and it
+ * takes no EOI. */
 .global __x86_spurious
 __x86_spurious:
 #if ARCH_BITS==32
@@ -273,7 +286,7 @@ irq_stub:
     call __x86_irq_handler
     pop %eax
     pop_context
-    add $8, %esp        /* vec, err */
+    add $8, %esp        /* drop vec and err */
     iret
 #else
     swapgs_if_user 24
@@ -283,33 +296,39 @@ irq_stub:
     call __x86_irq_handler
     pop_context
     swapgs_if_user 24
-    add $16, %rsp       /* vec, err */
+    add $16, %rsp       /* drop vec and err */
     iretq
 #endif
 
+/*
+ * Starts running in user mode, for a new thread: the arguments are the
+ * value for eax (rax), then eip, cs, eflags, esp and ss, as iret takes
+ * them. It doesn't return.
+ */
 .global x86_jump_user
-x86_jump_user:  /* eax, eip, cs, eflags, esp, ss */
+x86_jump_user:
 #if ARCH_BITS==32
-    pop  %eax   /* Caller return address */
+    pop  %eax   /* the caller's return address, not needed */
     mov  $0x20 | 0x3, %ax
     movw %ax, %ds
     movw %ax, %es
     movw %ax, %fs
     movw %ax, %gs
-    pop  %eax   /* eax for sys_fork return */
+    pop  %eax   /* eax: a new thread's result, 0 for a fork() child */
     iret
 #else
-    pop  %rax   /* Caller return address */
-    /* user mode's GS base (the kernel's kept), before loading %gs sets it */
+    pop  %rax   /* the caller's return address, not needed */
+    /* switch to user mode's GS base (keeping the kernel's) before loading
+     * %gs sets it */
     swapgs
-    /* set segments */
+    /* the user data segments */
     mov  $0x20 | 0x3, %ax
     movw %ax, %ds
     movw %ax, %es
     movw %ax, %fs
     movw %ax, %gs
-    mov  %rdi, %rax   /* rax for sys_fork return */
-    /* push registers */
+    mov  %rdi, %rax   /* rax: a new thread's result, 0 for a fork() child */
+    /* the iretq frame */
     pushq %r9    /* ss */
     pushq %r8    /* rsp */
     pushq %rcx   /* rflags */
@@ -318,31 +337,38 @@ x86_jump_user:  /* eax, eip, cs, eflags, esp, ss */
     iretq
 #endif
 
+/*
+ * Jumps to an address with a given frame pointer and stack: to where a
+ * thread was saved (SWITCH_OUT below), or to a function on another stack
+ * (the idle loop, on the CPU's idle stack). The arguments are ip, bp and
+ * sp. It doesn't return.
+ */
 .global x86_goto
 x86_goto:
 #if ARCH_BITS==32
-    pop %ebx    /* Caller return address */
-    pop %ebx    /* eip */
+    pop %ebx    /* the caller's return address, not needed */
+    pop %ebx    /* ip */
     pop %ebp
     pop %esp
-    mov $-1, %eax /* Return -1 -> Done switching */
+    mov $-1, %eax
     jmp *%ebx
 #else
-    pop %rbx        /* Caller return address */
-    mov %rdi, %rbx  /* rip */
+    pop %rbx        /* the caller's return address, not needed */
+    mov %rdi, %rbx  /* ip */
     mov %rsi, %rbp
     mov %rdx, %rsp
-    mov $-1, %rax /* Return -1 -> Done switching */
+    mov $-1, %rax
     jmp *%rbx
 #endif
 
 
 /*
- * Switching away from the current thread, to kernel_idle (it sleeps) or
- * schedule (another one may run): its registers are pushed, and where it
- * resumes is kept (x86_thread_saved), a label here with the stack as it
- * is. x86_goto() jumps back to it, the registers are popped and this
- * returns.
+ * Switches away from the current thread, to kernel_idle (it sleeps) or to
+ * schedule (another thread may run). The thread's registers are pushed,
+ * and where it resumes is recorded (x86_thread_saved): the label 1 below,
+ * with the stack as it is. When the thread runs again, x86_goto() jumps
+ * back to that label, the registers are popped, and the macro's function
+ * returns to its caller.
  */
 .macro SWITCH_OUT next
 #if ARCH_BITS==32
@@ -375,26 +401,33 @@ x86_goto:
 
 .extern x86_thread_saved, kernel_idle, schedule
 
+/* The current thread sleeps: the next ready one runs, or the CPU idles. */
 .global x86_sleep
 x86_sleep:
     SWITCH_OUT kernel_idle
 
+/* The current thread goes back to the ready list, and the next one runs. */
 .global x86_preempt
 x86_preempt:
     SWITCH_OUT schedule
 
 .extern kernel_unlock
+/*
+ * Where a fork() child starts: it lets go of the kernel lock and returns
+ * to user mode through the system call's frame, which the fork copied
+ * onto its stack.
+ */
 .global x86_fork_return
-x86_fork_return:    /* to user mode, the system call's frame, on its stack */
+x86_fork_return:
     call kernel_unlock
 #if ARCH_BITS==32
     pop_context
-    add $8, %esp        /* vec, err */
+    add $8, %esp        /* drop vec and err */
     iret
 #else
     pop_context
     swapgs
-    add $16, %rsp       /* vec, err */
+    add $16, %rsp       /* drop vec and err */
     iretq
 #endif
 
@@ -407,6 +440,8 @@ gdt_pointer:
     .quad 0
 #endif
 
+/* Loads a GDT (its limit and base), and reloads the segment registers
+ * with the kernel's selectors. */
 .global x86_lgdt
 x86_lgdt:
 #if ARCH_BITS==32
@@ -430,6 +465,7 @@ x86_lgdt:
     movl %eax, %ss
     ret
 
+/* Loads the IDT from a pointer to its descriptor (limit and base). */
 .global x86_lidt
 x86_lidt:
 #if ARCH_BITS==32
@@ -440,6 +476,7 @@ x86_lidt:
 #endif
     ret
 
+/* Loads the task register with a TSS selector. */
 .global x86_ltr
 x86_ltr:
 #if ARCH_BITS==32

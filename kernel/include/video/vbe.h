@@ -3,7 +3,13 @@
 
 #include <core/system.h>
 
-/** VBE Information Block */
+/*
+ * VESA BIOS Extensions (VBE): the structures that the video BIOS fills,
+ * which the boot loader passes when it sets a graphics mode, as the VBE
+ * specification names them.
+ */
+
+/** The VBE controller information block. */
 struct vbe_info_block {
     union {
         uint8_t      sig_chr[4];
@@ -23,6 +29,7 @@ struct vbe_info_block {
     uint8_t      oemdata[256];
 } __packed;
 
+/** A VBE mode's information block. */
 struct mode_info_block {
 /* Mandatory information for all VBE revisions */
    uint16_t mode_attributes;

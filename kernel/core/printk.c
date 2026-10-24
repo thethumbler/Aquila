@@ -1,3 +1,14 @@
+/** \file
+ * `printk()`: the kernel's messages.
+ *
+ * A message goes to three places: the kernel's message buffer (`kmsg`,
+ * which `/dev/kmsg` reads, the oldest messages overwritten when it's
+ * full), the console if one has registered (`printk_console()`), and the
+ * early console until it's disabled. `printk()` understands a small set
+ * of formats: `%c`, `%s`, `%d`, `%u`, `%x`, `%lx`, `%ld`, `%b` (binary)
+ * and `%p`.
+ */
+
 #include <core/system.h>
 #include <ds/queue.h>
 #include <sys/waitq.h>
@@ -6,22 +17,38 @@
 #include <console/earlycon.h>
 #include <ds/ringbuf.h>
 
+/* The kernel's message buffer, and the readers of /dev/kmsg waiting for
+ * messages. */
 #define KMSG_SIZE   8192
 struct ringbuf *kmsg = RINGBUF_NEW(KMSG_SIZE);
 struct waitq *kmsg_wait = &(struct waitq){0};
 
 static int use_earlycon = 1;
+
+/**
+ * Stops sending the kernel's messages to the early console, once a real
+ * console has taken over.
+ */
 void earlycon_disable()
 {
     use_earlycon = 0;
 }
 
 static void (*console_write)(const char *s, size_t len);
+
+/**
+ * Registers the console that the kernel's messages are written to, besides
+ * the message buffer.
+ *
+ * @param write  the console's write function
+ */
 void printk_console(void (*write)(const char *s, size_t len))
 {
     console_write = write;
 }
 
+/** Writes one character of a message. Returns what the early console's
+ * write returned, or 0. */
 static int putc(char c)
 {
     ringbuf_write_overwrite(kmsg, 1, &c);
@@ -34,6 +61,7 @@ static int putc(char c)
     return 0;
 }
 
+/** Writes a string of a message ("(null)" for NULL). */
 static int puts(char *s)
 {
     s = s? s : "(null)";
@@ -50,6 +78,7 @@ static int puts(char *s)
     return 0;
 }
 
+/** Writes a 32-bit number in hexadecimal, without leading zeros. */
 static int putx(uint32_t val)
 {
     if (!val)
@@ -68,6 +97,7 @@ static int putx(uint32_t val)
     return puts(&buf[i]);
 }
 
+/** Writes a 64-bit number in hexadecimal, all 16 digits. */
 static int putlx(uint64_t val)
 {
     char *enc = "0123456789ABCDEF";
@@ -81,6 +111,7 @@ static int putlx(uint64_t val)
     return puts(buf);
 }
 
+/** Writes an unsigned 32-bit number in decimal. */
 static int putud(uint32_t val)
 {
     char buf[11];
@@ -94,6 +125,7 @@ static int putud(uint32_t val)
     return puts(buf+i);
 }
 
+/** Writes an unsigned 64-bit number in decimal. */
 static int putul(uint64_t val)
 {
     char buf[21];
@@ -107,6 +139,7 @@ static int putul(uint64_t val)
     return puts(buf+i);
 }
 
+/** Writes a byte in binary, all 8 digits. */
 static int putb(uint8_t val)
 {
     char buf[9];
@@ -119,6 +152,13 @@ static int putb(uint8_t val)
     return puts(buf);
 }
 
+/**
+ * Writes a kernel message, with its arguments in a `va_list`.
+ *
+ * @param fmt   the format (see the top of this file for what it supports)
+ * @param args  the arguments
+ * @return what the early console's writes returned, added up
+ */
 int vprintk(const char *fmt, va_list args)
 {
     int ret = 0;
@@ -127,13 +167,13 @@ int vprintk(const char *fmt, va_list args)
         case '%':
             ++fmt;
             switch (*fmt) {
-                case 'c':   /* char */
+                case 'c':   /* a character */
                     ret += putc((char)va_arg(args, int));
                     break;
-                case 's':   /* char * */
+                case 's':   /* a string */
                     ret += puts((char*)va_arg(args, char*));
                     break;
-                case 'd': /* signed decimal */
+                case 'd':   /* a signed decimal */
                     {
                         int32_t val = va_arg(args, int32_t);
                         if (val < 0) {
@@ -144,12 +184,12 @@ int vprintk(const char *fmt, va_list args)
                         }
                     }
                     break;
-                case 'u': /* unsigned decimal */
+                case 'u':   /* an unsigned decimal */
                     ret += putud((uint32_t)va_arg(args, uint32_t));
                     break;
-                case 'l':   /* long */
+                case 'l':   /* a 64-bit number */
                     switch (*++fmt) {
-                        case 'x':   /* long hex */
+                        case 'x':   /* in hexadecimal */
                             ret += putlx((uint64_t)va_arg(args, uint64_t));
                             break;
                         case 'd':
@@ -160,13 +200,13 @@ int vprintk(const char *fmt, va_list args)
                     }
                     break;
                 
-                case 'b': /* binary */
+                case 'b':   /* a byte in binary */
                     ret += putb((uint8_t)(uint32_t)va_arg(args, uint32_t));
                     break;
-                case 'x': /* Hexadecimal */
+                case 'x':   /* hexadecimal */
                     ret += putx((uint32_t)va_arg(args, uint32_t));
                     break;
-                case 'p': /* Pointer */
+                case 'p':   /* a pointer */
                     ret += puts("0x");
 #if ARCH_BITS==32
                     ret += putx((uint32_t)va_arg(args, uint32_t));
@@ -187,6 +227,12 @@ int vprintk(const char *fmt, va_list args)
     return ret;
 }
 
+/**
+ * Writes a kernel message, to the message buffer and the consoles.
+ *
+ * @param fmt  the format (see the top of this file for what it supports)
+ * @return what the early console's writes returned, added up
+ */
 int printk(const char *fmt, ...)
 {
     va_list args;

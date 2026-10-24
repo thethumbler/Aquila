@@ -6,7 +6,8 @@
 #include <core/types.h>
 #include <aquila/stat.h>
 
-/* struct aquila_stat, S_IF* and S_IS*() are defined in <aquila/stat.h> */
+/* struct aquila_stat, S_IF* and S_IS*() are in <aquila/stat.h>; these are
+ * the older names that the kernel uses too. */
 
 #define S_ENFMT     0002000 /* enforcement-mode locking */
 

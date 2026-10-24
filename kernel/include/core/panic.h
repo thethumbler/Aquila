@@ -7,6 +7,9 @@
 
 #define __PANIC_MSG "Bailing out. You are on your own. Good luck.\n"
 
+/* Stops the kernel for good, when it finds itself in a state it can't
+ * go on from: prints where and why, and a stack trace, then halts the
+ * CPU with its interrupts disabled. */
 #define panic(s) \
 {\
     printk("KERNEL PANIC:\n%s [%d] %s: %s\n" __PANIC_MSG, \

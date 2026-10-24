@@ -1,5 +1,29 @@
 /** \file
- *          The APIC: the local APIC and the I/O APICs
+ * x86: the APIC, the local APICs and the I/O APICs.
+ *
+ * When the CPU has an APIC and ACPI's MADT says where its parts are, the
+ * APIC brings the interrupts (an `x86_irq_chip`, see irq.c); with
+ * `apic=off`, the 8259s do.
+ *
+ * - Each CPU's local APIC is enabled, with the spurious vector 0xFF. Its
+ *   LINT0 input (where the 8259s would come in) is masked, and the NMI
+ *   comes on the LINT input the MADT says. Its timer is the scheduler's
+ *   tick, periodic, calibrated once against the clock. The MADT's local
+ *   APICs are the CPUs; the boot CPU starts the others with IPIs
+ *   (cpu/smp.c).
+ * - The I/O APICs route the device interrupts. IRQ n goes to the pin that
+ *   the MADT's overrides say (for the ISA IRQs: IRQ 0 is pin 2 on most
+ *   machines), edge-triggered and active high unless they say otherwise.
+ *   QEMU's pc overrides the PCI lines (from the devices' configuration
+ *   space) as level-triggered. Every pin goes to the boot CPU with vector
+ *   32 + n, and stays masked until a handler is installed.
+ * - MSI (`arch_msi_alloc()`) gets an IRQ above the I/O APICs' pins. Its
+ *   vector is in the message that the device writes to the local APIC.
+ *
+ * A PCI device's interrupt line, in its configuration space, is an ISA
+ * IRQ: QEMU's chipsets (pc and q35) work that way. A machine whose PCI
+ * interrupts only come on the I/O APIC's pins past 15 would need ACPI's
+ * `_PRT`; a device with MSI doesn't.
  *
  * References:
  *      [1] - Intel(R) 64 and IA-32 Architectures Software Developer's
@@ -7,27 +31,6 @@
  *      [2] - 82093AA I/O Advanced Programmable Interrupt Controller
  *            (IOAPIC), Intel
  *      [3] - ACPI Specification, 5.2.12 (MADT)
- *
- * An x86_irq_chip (irq.c), when the CPU has an APIC and ACPI's MADT says
- * where they are (apic=off keeps the 8259):
- *
- * - the local APIC (each CPU's): enabled (spurious vector 0xFF), its
- *   LINT0 (the 8259's) masked, LINT1 the NMI as the MADT says; the boot
- *   CPU's timer is the scheduler's tick, periodic, calibrated against the
- *   clock, the other CPUs' the same. The MADT's local APICs are the CPUs,
- *   an IPI starts the others (cpu/smp.c)
- * - the I/O APICs: IRQ n goes to the pin the MADT's overrides say (ISA's,
- *   0 is 2 on most machines), edge and active high but as they say; the
- *   PCI lines (from the devices' configuration space) are overridden as
- *   level-triggered on QEMU's pc. Each pin goes to the boot CPU, vector
- *   32 + n, masked until a handler is installed
- * - MSI (arch_msi_alloc): an IRQ above the I/O APICs' pins, its vector in
- *   the message the device writes to the local APIC
- *
- * A PCI device's line is its configuration space's, an ISA IRQ: QEMU's
- * chipsets (pc and q35) drive those. A machine whose PCI lines are only
- * the I/O APIC's pins past 15 would need ACPI's _PRT; a device with MSI
- * doesn't.
  */
 
 #include <core/system.h>
@@ -63,11 +66,12 @@
 
 #define APIC_BASE_ENABLE    0x800
 
-/* the interrupt command register: an IPI's delivery, sent when its low
- * half is written */
+/* the interrupt command register: writing its low half sends the IPI,
+ * and this bit says it is still being delivered */
 #define ICR_PENDING     0x1000
 
-/* the I/O APIC's: a register selected, then read or written */
+/* the I/O APIC's registers: one is selected, then read or written
+ * through the window */
 #define IOAPIC_SEL      0x00
 #define IOAPIC_WIN      0x10
 #define IOAPIC_VER      0x01
@@ -82,20 +86,22 @@
 static volatile uint32_t *lapic;
 static uint32_t lapic_id;
 
-/* the local APICs the MADT has, enabled: the CPUs */
+/* the enabled local APICs that the MADT lists, which are the CPUs */
 static uint32_t cpu_ids[CPUS_MAX];
 static int cpu_ids_nr;
 
-/* the LINT the NMI comes through (the MADT's) */
+/* the LINT input the NMI comes on, as the MADT says */
 static int nmi_lint = 1;
 
+/* the I/O APICs: their registers, and the GSIs of their pins */
 static struct ioapic {
     volatile uint32_t *regs;
     uint32_t address, gsi_base, pins;
 } ioapics[IOAPICS_MAX];
 static int ioapics_nr;
 
-/* ISA IRQs: their GSI, and its flags (0: ISA's, edge and high) */
+/* the ISA IRQs' GSIs, and their flags (0: the ISA bus's, edge-triggered
+ * and active high) */
 static struct {
     uint32_t gsi;
     uint16_t flags;
@@ -109,16 +115,20 @@ static struct {
 
 static uint32_t timer_count;
 
+/** Reads a register of the running CPU's local APIC (every CPU sees its
+ * own local APIC at the same address). */
 static inline uint32_t lapic_read(unsigned reg)
 {
     return lapic[reg / 4];
 }
 
+/** Writes a register of the running CPU's local APIC. */
 static inline void lapic_write(unsigned reg, uint32_t val)
 {
     lapic[reg / 4] = val;
 }
 
+/** Returns the I/O APIC that has the pin of `gsi`, or NULL if none has. */
 static struct ioapic *ioapic_of(uint32_t gsi)
 {
     for (int i = 0; i < ioapics_nr; ++i)
@@ -128,31 +138,37 @@ static struct ioapic *ioapic_of(uint32_t gsi)
     return NULL;
 }
 
+/** Reads an I/O APIC register. */
 static uint32_t ioapic_read(struct ioapic *io, uint32_t reg)
 {
     io->regs[IOAPIC_SEL / 4] = reg;
     return io->regs[IOAPIC_WIN / 4];
 }
 
+/** Writes an I/O APIC register. */
 static void ioapic_write(struct ioapic *io, uint32_t reg, uint32_t val)
 {
     io->regs[IOAPIC_SEL / 4] = reg;
     io->regs[IOAPIC_WIN / 4] = val;
 }
 
-/** IRQ n's pin, and how it's triggered */
+/** Returns the GSI (the pin) that IRQ `irq` comes on, and sets how it is
+ * triggered. */
 static uint32_t irq_gsi(unsigned irq, int *level, int *low)
 {
     uint16_t flags = irq < 16 ? isa[irq].flags : 0;
     uint32_t gsi = irq < 16 ? isa[irq].gsi : irq;
 
-    /* ISA's (conforming): edge, active high; PCI's past 16: level, low */
+    /* the ISA IRQs conform to the bus: edge-triggered, active high; the
+     * PCI ones past 16 are level-triggered, active low */
     *level = (flags & ACPI_MPS_TRIGGER_MASK) ? (flags & ACPI_MPS_TRIGGER_MASK) == ACPI_MPS_TRIGGER_LEVEL : irq >= 16;
     *low = (flags & ACPI_MPS_POLARITY_MASK) ? (flags & ACPI_MPS_POLARITY_MASK) == ACPI_MPS_POLARITY_LOW : irq >= 16;
 
     return gsi;
 }
 
+/** Routes IRQ `irq` to the boot CPU, with vector 32 + `irq`, masked or
+ * not. */
 static void apic_route(unsigned irq, int masked)
 {
     int level, low;
@@ -175,29 +191,34 @@ static void apic_route(unsigned irq, int masked)
     routes[irq].level = level;
 }
 
+/** Masks an IRQ at the I/O APIC. */
 static void apic_mask(unsigned irq)
 {
     if (irq < X86_IRQ_TIMER)
         apic_route(irq, 1);
 }
 
+/** Unmasks an IRQ at the I/O APIC. */
 static void apic_unmask(unsigned irq)
 {
     if (irq < X86_IRQ_TIMER)
         apic_route(irq, 0);
 }
 
+/** Tells the local APIC that the interrupt is handled. */
 static void apic_eoi(unsigned irq)
 {
     lapic_write(LAPIC_EOI, 0);
 }
 
-/** the running CPU's local APIC is done with its interrupt (an IPI) */
+/** Tells the running CPU's local APIC that its interrupt (an IPI) is
+ * handled. */
 void x86_lapic_eoi(void)
 {
     lapic_write(LAPIC_EOI, 0);
 }
 
+/** Describes an IRQ's route, for /proc/interrupts. */
 static const char *apic_describe(unsigned irq)
 {
     static char buf[32];
@@ -216,12 +237,13 @@ static struct x86_irq_chip apic_chip = {
     .timer    = "lapic",
 };
 
-/** MSI: the device's message is the interrupt, its masking the device's
- * (pci.c), the local APIC's EOI */
+/** Does nothing: an MSI is masked at the device (pci.c), not here; its
+ * EOI is the local APIC's. */
 static void msi_nothing(unsigned irq)
 {
 }
 
+/** Describes an MSI's route, for /proc/interrupts. */
 static const char *msi_describe(unsigned irq)
 {
     return "msi";
@@ -235,9 +257,17 @@ static struct x86_irq_chip msi_chip = {
     .describe = msi_describe,
 };
 
-/** an IRQ for a device's MSI, to `handler': the message's address and data
- * (to the boot CPU's local APIC, the IRQ's vector, edge); -ENODEV without
- * the APIC (the 8259 gets no MSI), -ENOSPC without a free IRQ */
+/**
+ * Gets an IRQ for a device's MSI, and installs its handler. The message
+ * goes to the boot CPU's local APIC, with the IRQ's vector, edge-triggered.
+ *
+ * @param handler  the interrupt's handler
+ * @param arg      the argument the handler gets
+ * @param addr     set to the address the device writes the message to
+ * @param data     set to the message
+ * @return the IRQ, `-ENODEV` without the APIC (the 8259s take no MSI), or
+ *         `-ENOSPC` if there's no free IRQ
+ */
 int arch_msi_alloc(irq_handler_t handler, void *arg, uint64_t *addr, uint32_t *data)
 {
     if (!lapic)
@@ -258,7 +288,7 @@ int arch_msi_alloc(irq_handler_t handler, void *arg, uint64_t *addr, uint32_t *d
     return irq;
 }
 
-/** the CPU has a local APIC (CPUID 1, EDX bit 9) */
+/** Returns whether the CPU has a local APIC (CPUID 1, EDX bit 9). */
 static int cpu_has_apic(void)
 {
     uint32_t a, b, c, d;
@@ -267,8 +297,9 @@ static int cpu_has_apic(void)
     return !!(d & (1 << 9));
 }
 
-/** the running CPU's local APIC: enabled (spurious vector 0xFF), its timer
- * off, the NMI's LINT as the MADT says, the other masked (the 8259's) */
+/** Sets up the running CPU's local APIC: enabled, with the spurious vector
+ * 0xFF, its timer off, the NMI on the LINT input the MADT says, and the
+ * other LINT (the 8259s') masked. */
 void x86_lapic_cpu_setup(void)
 {
     msr_write(APIC_BASE, msr_read(APIC_BASE) | APIC_BASE_ENABLE);
@@ -281,8 +312,13 @@ void x86_lapic_cpu_setup(void)
     lapic_write(LAPIC_SVR, SVR_ENABLE | X86_SPURIOUS_VECTOR);
 }
 
-/** the CPUs' local APIC IDs (the boot CPU's among them), into `ids': how
- * many, 0 without the APIC */
+/**
+ * Lists the CPUs' local APIC IDs, the boot CPU's among them.
+ *
+ * @param ids  where to put them
+ * @param max  how many fit
+ * @return how many there are, or 0 without the APIC
+ */
 int x86_apic_cpus(uint32_t *ids, int max)
 {
     if (!lapic)
@@ -296,8 +332,13 @@ int x86_apic_cpus(uint32_t *ids, int max)
     return n;
 }
 
-/** an IPI, `icr' (its delivery mode, vector, ...) to the local APIC `id',
- * once it is sent */
+/**
+ * Sends an IPI to a CPU, and waits until it is delivered.
+ *
+ * @param id   the CPU's local APIC ID
+ * @param icr  the low half of the interrupt command register: the delivery
+ *             mode, the vector, and so on
+ */
 void x86_lapic_ipi(uint32_t id, uint32_t icr)
 {
     lapic_write(LAPIC_ICR_HI, id << 24);
@@ -307,7 +348,12 @@ void x86_lapic_ipi(uint32_t id, uint32_t icr)
         ;
 }
 
-/** 0 if the APIC brings the interrupts from now on */
+/**
+ * Sets up the APIC to bring the interrupts, if the CPU has one, the MADT
+ * describes it, and the kernel's command line doesn't say `apic=off`.
+ *
+ * @return 0 if the APIC brings the interrupts from now on, or `-ENODEV`
+ */
 int x86_apic_setup(void)
 {
     const char *arg = NULL;
@@ -324,7 +370,8 @@ int x86_apic_setup(void)
         return -ENODEV;
     }
 
-    /* the ISA IRQs: the same pins, but as the overrides say */
+    /* the ISA IRQs come on the pins of the same numbers, unless an
+     * override says otherwise */
     for (int i = 0; i < 16; ++i) {
         isa[i].gsi = i;
         isa[i].flags = 0;
@@ -377,23 +424,23 @@ int x86_apic_setup(void)
         return -ENODEV;
     }
 
-    /* the local APIC: where the MADT says, the boot CPU's */
+    /* the boot CPU's local APIC, where the MADT says */
     lapic = arch_mmio_map(madt->local_apic_address, 4096);
     x86_lapic_cpu_setup();
     lapic_id = lapic_read(LAPIC_ID) >> 24;
     cpus[0].arch.apic_id = lapic_id;
 
-    /* every pin masked, until there's a handler */
+    /* mask every pin until it has a handler */
     for (int i = 0; i < ioapics_nr; ++i)
         for (uint32_t pin = 0; pin < ioapics[i].pins; ++pin)
             ioapic_write(&ioapics[i], IOAPIC_REDIR(pin), REDIR_MASKED);
 
-    /* the 8259s, if there are any: masked, they'd come through LINT0 */
+    /* mask the 8259s, if there are any: they would come through LINT0 */
     x86_pic_disable();
 
     x86_irq_chip_set(&apic_chip);
 
-    /* MSIs: the IRQs past the I/O APICs' pins */
+    /* MSIs get the IRQs past the I/O APICs' pins */
     uint32_t gsi_end = 16;
 
     for (int i = 0; i < ioapics_nr; ++i)
@@ -414,8 +461,9 @@ int x86_apic_setup(void)
     return 0;
 }
 
-/** the timer's counts in `ns' (divided by 16): from the clock if it's
- * precise, else from the PIT's channel 2 */
+/** Measures how many counts the local APIC's timer makes in `ns`
+ * nanoseconds (with its clock divided by 16), against the clock if it is
+ * precise, else with the PIT. */
 static uint32_t timer_calibrate(uint32_t ns)
 {
     const uint32_t window_us = 20000;
@@ -439,7 +487,14 @@ static uint32_t timer_calibrate(uint32_t ns)
     return (uint32_t) ((uint64_t) counted * ns / (window_us * 1000ULL));
 }
 
-/** the tick, every `period_ns', to `handler'; the period it is */
+/**
+ * Starts the scheduler's tick with the local APIC's timer, calibrated
+ * first.
+ *
+ * @param period_ns  the tick's period, in ns
+ * @param handler    the tick's handler
+ * @return the period
+ */
 uint32_t x86_lapic_timer_setup(uint32_t period_ns, irq_handler_t handler)
 {
     timer_count = timer_calibrate(period_ns);
@@ -455,8 +510,8 @@ uint32_t x86_lapic_timer_setup(uint32_t period_ns, irq_handler_t handler)
     return period_ns;
 }
 
-/** the running CPU's timer, as the boot CPU's (the scheduler's tick on
- * each, once it was calibrated) */
+/** Starts the running CPU's local APIC timer, with the boot CPU's
+ * calibration, once it has been done. */
 void x86_lapic_timer_cpu_start(void)
 {
     if (!timer_count)

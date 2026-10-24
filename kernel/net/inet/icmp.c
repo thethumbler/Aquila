@@ -1,7 +1,11 @@
 /** \file
- * ICMP: echo requests (ping) are answered, echo replies go to the ping
- * socket whose identifier they have (its port), and "unreachable" to the
- * UDP socket whose datagram couldn't get there
+ * ICMP.
+ *
+ * An echo request (a ping) is answered. An echo reply goes to the ping
+ * socket whose identifier it carries (the socket's port). A "destination
+ * unreachable" goes to the UDP socket whose datagram couldn't get there,
+ * as an error. This file also sends "unreachable" for the datagrams that
+ * arrive for no socket.
  */
 
 #include <core/system.h>
@@ -11,10 +15,12 @@
 
 #include <aquila/errno.h>
 
-/** an "unreachable" for a datagram we sent: the socket that sent it */
+/** Handles a "destination unreachable" about a datagram we sent: the UDP
+ * socket that sent it gets the error. */
 static void icmp_unreachable_input(struct netif *netif, struct icmp_hdr *icmp, size_t len)
 {
-    /* the header of the datagram, and 8 bytes of it (UDP's header) */
+    /* it quotes the datagram's IPv4 header and its first 8 bytes (the UDP
+     * header) */
     struct ipv4_hdr *ih = (struct ipv4_hdr *) (icmp + 1);
 
     if (len < sizeof(*icmp) + sizeof(*ih))
@@ -32,6 +38,15 @@ static void icmp_unreachable_input(struct netif *netif, struct icmp_hdr *icmp, s
         inet_sock_error(sock, icmp->code == ICMP_UNREACH_PORT ? ECONNREFUSED : EHOSTUNREACH);
 }
 
+/**
+ * Takes in an ICMP message that IPv4 received.
+ *
+ * @param netif  the interface it came in on
+ * @param nb     the message, from its ICMP header; it is freed, sent back
+ *               or delivered
+ * @param src    the sender's address
+ * @param dst    the address it was sent to
+ */
 void icmp_input(struct netif *netif, struct netbuf *nb, uint32_t src, uint32_t dst)
 {
     struct icmp_hdr *icmp = (struct icmp_hdr *) nb->data;
@@ -44,8 +59,8 @@ void icmp_input(struct netif *netif, struct netbuf *nb, uint32_t src, uint32_t d
 
     switch (icmp->type) {
         case ICMP_ECHO_REQUEST:
-            /* the request turned into the reply, its data as it is (to
-             * one of our addresses, not to a broadcast) */
+            /* turn the request into the reply, with the same data (only for
+             * a request sent to one of our addresses, not a broadcast) */
             if (!ipv4_is_local(dst))
                 break;
 
@@ -54,13 +69,13 @@ void icmp_input(struct netif *netif, struct netbuf *nb, uint32_t src, uint32_t d
             icmp->checksum = 0;
             icmp->checksum = inet_checksum(nb->data, nb->len);
 
-            /* from the address it was sent to */
+            /* reply from the address it was sent to */
             ipv4_output(netif, dst, src, IP_PROTO_ICMP, nb);
             return;
 
         case ICMP_ECHO_REPLY: {
-            /* to the ping socket of that identifier, the ICMP header with
-             * the data */
+            /* deliver it, ICMP header and data, to the ping socket with
+             * that identifier */
             struct inet_sock *sock = inet_sock_find(netif, IP_PROTO_ICMP, dst, icmp->id, src, 0);
 
             if (!sock)
@@ -80,8 +95,13 @@ void icmp_input(struct netif *netif, struct netbuf *nb, uint32_t src, uint32_t d
     netbuf_free(nb);
 }
 
-/** the datagram of header `ih' (its payload follows it) can't get where it
- * was sent: its sender is told */
+/**
+ * Tells the sender of a datagram that it couldn't get where it was sent.
+ *
+ * @param netif  the interface the datagram came in on
+ * @param ih     the datagram's IPv4 header, with its payload after it
+ * @param code   why (`ICMP_UNREACH_*`)
+ */
 void icmp_unreachable(struct netif *netif, const struct ipv4_hdr *ih, int code)
 {
     struct netbuf *nb = netbuf_alloc();
@@ -89,7 +109,7 @@ void icmp_unreachable(struct netif *netif, const struct ipv4_hdr *ih, int code)
     if (!nb)
         return;
 
-    /* the header, and 8 bytes of what followed it */
+    /* quote the header, and the first 8 bytes after it */
     size_t quote = (ih->ver_ihl & 0xf) * 4 + 8;
 
     if (quote > ntohs(ih->len))

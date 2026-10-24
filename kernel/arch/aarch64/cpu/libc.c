@@ -1,11 +1,13 @@
 /** \file
- * What the compiler calls on its own (a struct's copy, a big array's
- * zeroing): memcpy, memset, memmove, memcmp. The kernel's are static
- * inline (core/string.h), so these have no header of their own.
+ * The functions that the compiler calls on its own, to copy a structure or
+ * zero a big array: memcpy, memset, memmove and memcmp. The kernel's own
+ * are static inline (core/string.h), so these have no header of their
+ * own.
  */
 
 #include <stddef.h>
 
+/** Copies `n` bytes; `dst` and `src` must not overlap. */
 void *memcpy(void *dst, const void *src, size_t n)
 {
     char *d = dst;
@@ -17,6 +19,7 @@ void *memcpy(void *dst, const void *src, size_t n)
     return dst;
 }
 
+/** Sets `n` bytes to `c`. */
 void *memset(void *dst, int c, size_t n)
 {
     char *d = dst;
@@ -27,6 +30,7 @@ void *memset(void *dst, int c, size_t n)
     return dst;
 }
 
+/** Copies `n` bytes; `dst` and `src` may overlap. */
 void *memmove(void *dst, const void *src, size_t n)
 {
     char *d = dst;
@@ -43,6 +47,7 @@ void *memmove(void *dst, const void *src, size_t n)
     return dst;
 }
 
+/** Compares `n` bytes. */
 int memcmp(const void *a, const void *b, size_t n)
 {
     const unsigned char *x = a, *y = b;

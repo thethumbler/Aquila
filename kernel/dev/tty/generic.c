@@ -1,3 +1,19 @@
+/** \file
+ * The terminal layer: the line discipline, and job control.
+ *
+ * Every terminal (a virtual terminal, a serial port, a pseudo-terminal)
+ * has a `struct tty` between its device's two sides. The master side is
+ * the device's (the keyboard, the UART, the program on a pseudo-terminal's
+ * master), the slave side the programs that read and write the terminal.
+ * Input from the master goes through the line discipline: translation,
+ * flow control, signal characters, and in canonical mode line editing,
+ * with what is typed echoed. Output from the programs goes through output
+ * processing (`OPOST`) to the device. The terminal also belongs to a
+ * session, whose foreground process group may read and write it; the
+ * other groups are stopped when they try (`SIGTTIN`, `SIGTTOU`). See
+ * docs/kernel/devices.md.
+ */
+
 #include <core/system.h>
 #include <core/arch.h>
 #include <sys/sched.h>
@@ -9,10 +25,11 @@
 MALLOC_DEFINE(M_TTY, "tty", "tty structure");
 MALLOC_DEFINE(M_TTY_COOK, "tty-cook", "tty cooking buffer");
 
-/* a special character, not disabled (_POSIX_VDISABLE is 0) */
+/* whether `c` is the special character `cc`, which is set (0 disables
+ * it: _POSIX_VDISABLE is 0) */
 #define IS_CC(tty, c, cc) ((tty)->tios.c_cc[cc] && (c) == (tty)->tios.c_cc[cc])
 
-/** echo a character, control characters as ^X */
+/** Echoes a character, a control character as ^X. */
 static void tty_echo(struct tty *tty, char c)
 {
     if ((unsigned char) c < ' ' && c != '\n' && c != '\t') {
@@ -25,7 +42,8 @@ static void tty_echo(struct tty *tty, char c)
     }
 }
 
-/** erase the last character of the line being edited */
+/** Erases the last character of the line being edited, on the screen
+ * too with `ECHOE`. */
 static void tty_erase(struct tty *tty)
 {
     if (!tty->pos)
@@ -34,7 +52,7 @@ static void tty_erase(struct tty *tty)
     char c = tty->cook[--tty->pos];
 
     if ((tty->tios.c_lflag & ECHO) && (tty->tios.c_lflag & ECHOE)) {
-        /* control characters were echoed as two */
+        /* a control character was echoed as two characters */
         int width = ((unsigned char) c < ' ' && c != '\t') || c == 0x7f ? 2 : 1;
 
         while (width--)
@@ -42,7 +60,7 @@ static void tty_erase(struct tty *tty)
     }
 }
 
-/** the line is ready to be read */
+/** Hands the line being edited to the readers. */
 static void tty_deliver(struct tty *tty)
 {
     if (tty->pos)
@@ -51,7 +69,8 @@ static void tty_deliver(struct tty *tty)
     tty->pos = 0;
 }
 
-/** signal characters (ISIG): the foreground group gets the signal */
+/** Handles a signal character (with `ISIG`): the foreground group gets
+ * the signal. Returns whether `c` was one. */
 static int tty_signal(struct tty *tty, char c)
 {
     int sig = IS_CC(tty, c, VINTR) ? SIGINT :
@@ -69,7 +88,8 @@ static int tty_signal(struct tty *tty, char c)
         tty_slave_write(tty, 1, "\n");
     }
 
-    /* only queued: this runs from the driver, maybe in an interrupt */
+    /* the signal is only queued: this runs from the driver, maybe in an
+     * interrupt */
     if (tty->fg)
         signal_pgrp_send(tty->fg, sig);
 
@@ -77,10 +97,16 @@ static int tty_signal(struct tty *tty, char c)
 }
 
 /**
- * Input from the terminal (the keyboard, or the master side of a pty),
- * through the line discipline to what programs read. Canonical mode
- * collects lines with erase (VERASE), kill (VKILL) and end-of-file
- * (VEOF), others get the characters as they come.
+ * Takes input from the terminal's device (the keyboard, a UART, or a
+ * pseudo-terminal's master), and puts it through the line discipline to
+ * what programs read. Canonical mode collects lines, with erase
+ * (`VERASE`), kill (`VKILL`) and end-of-file (`VEOF`); otherwise, the
+ * programs get the characters as they come.
+ *
+ * @param tty   the terminal
+ * @param size  the input's size, in bytes
+ * @param buf   the input
+ * @return `size`: all of it is taken (what doesn't fit in a line is dropped)
  */
 ssize_t tty_master_write(struct tty *tty, size_t size, void *buf)
 {
@@ -90,7 +116,7 @@ ssize_t tty_master_write(struct tty *tty, size_t size, void *buf)
     for (size_t i = 0; i < size; ++i) {
         char c = in[i];
 
-        /* input translation */
+        /* translate CR and NL */
         if (c == '\r') {
             if (tios->c_iflag & IGNCR)
                 continue;
@@ -100,8 +126,8 @@ ssize_t tty_master_write(struct tty *tty, size_t size, void *buf)
             c = '\r';
         }
 
-        /* flow control: VSTOP stops the output, VSTART (with IXANY, any
-         * character) starts it again; neither is input */
+        /* flow control: VSTOP stops the output, and VSTART (or any
+         * character, with IXANY) starts it again; neither is input */
         if (tios->c_iflag & IXON) {
             if (tty->stopped && (IS_CC(tty, c, VSTART) || (tios->c_iflag & IXANY))) {
                 tty->stopped = 0;
@@ -135,8 +161,8 @@ ssize_t tty_master_write(struct tty *tty, size_t size, void *buf)
             while (tty->pos)
                 tty_erase(tty);
         } else if (IS_CC(tty, c, VEOF)) {
-            /* the line so far without a newline, at the start of a line
-             * the next read returns 0 */
+            /* hand over the line so far, without a newline; at the start
+             * of a line, the next read returns 0 */
             if (!tty->pos)
                 tty->eof++;
 
@@ -149,7 +175,7 @@ ssize_t tty_master_write(struct tty *tty, size_t size, void *buf)
 
             tty_deliver(tty);
         } else {
-            /* keep room for the terminating newline, drop what doesn't fit */
+            /* keep room for the line's newline: drop what doesn't fit */
             if (tty->pos + 1 >= tty->size)
                 continue;
 
@@ -164,13 +190,16 @@ ssize_t tty_master_write(struct tty *tty, size_t size, void *buf)
 }
 
 /**
- * A read that found nothing to return: 1 if it returns 0, at an
- * end-of-file (VEOF at the start of a line) or with VMIN 0 in
- * non-canonical mode.
+ * Says whether a read that found nothing to return should return 0 at
+ * once: at an end-of-file (`VEOF` at the start of a line), or with `VMIN`
+ * and `VTIME` both 0 in non-canonical mode. An end-of-file is used up.
+ *
+ * @param tty  the terminal
+ * @return 1 if the read returns 0, 0 if it waits
  */
 int tty_eof(struct tty *tty)
 {
-    /* VMIN 0 with VTIME: the read waits (tty_read_timeout()) */
+    /* with VMIN 0 and VTIME set, the read waits (tty_read_timeout()) */
     if (!(tty->tios.c_lflag & ICANON))
         return !tty->tios.c_cc[VMIN] && !tty->tios.c_cc[VTIME];
 
@@ -182,8 +211,13 @@ int tty_eof(struct tty *tty)
     return 0;
 }
 
-/** how long a read waits for input: VTIME tenths of a second with VMIN 0
- * in non-canonical mode, otherwise until there is some */
+/**
+ * Says how long a read waits for input: `VTIME` tenths of a second with
+ * `VMIN` 0 in non-canonical mode, otherwise until there is some.
+ *
+ * @param tty  the terminal
+ * @return the time, in ns, or 0 for no limit
+ */
 uint64_t tty_read_timeout(struct tty *tty)
 {
     if ((tty->tios.c_lflag & ICANON) || tty->tios.c_cc[VMIN] || !tty->tios.c_cc[VTIME])
@@ -192,7 +226,13 @@ uint64_t tty_read_timeout(struct tty *tty)
     return tty->tios.c_cc[VTIME] * 100000000ULL;
 }
 
-/** whether a read wouldn't wait, given what is buffered */
+/**
+ * Says whether a read wouldn't have to wait, given what is buffered.
+ *
+ * @param tty       the terminal
+ * @param buffered  how many bytes the device holds for readers
+ * @return whether a read can go on at once
+ */
 int tty_can_read(struct tty *tty, size_t buffered)
 {
     return buffered || tty->eof ||
@@ -200,12 +240,18 @@ int tty_can_read(struct tty *tty, size_t buffered)
 }
 
 /**
- * A process of the terminal's session that is not in its foreground
- * group reads it (SIGTTIN) or writes or changes it (SIGTTOU, writes only
- * with TOSTOP): its group is stopped until it is in the foreground.
- * Returns -EIO for a read with SIGTTIN ignored or blocked (a write goes
- * on then); -ERESTARTSYS once it's sent: the call returns, the group stops
- * on the way out, and the call is made again once continued.
+ * Stops a background process that reads the terminal, writes it or
+ * changes it: if the current process is of the terminal's session but
+ * not of its foreground group, its group gets the signal and stops until
+ * it is continued in the foreground. Writes are only stopped with
+ * `TOSTOP`, which the callers check.
+ *
+ * @param tty  the terminal
+ * @param sig  `SIGTTIN` for a read, `SIGTTOU` for a write or a change
+ * @return 0 if the process may go on; `-ERESTARTSYS` once the signal is
+ *         sent (the call returns, the group stops on its way out, and the
+ *         call is made again once it is continued); or `-EIO` for a read
+ *         with `SIGTTIN` ignored or blocked, or from an orphaned group
  */
 int tty_background(struct tty *tty, int sig)
 {
@@ -216,7 +262,7 @@ int tty_background(struct tty *tty, int sig)
         if ((proc->sigmask & (1UL << sig)) || proc->sigaction[sig].sa_handler == SIG_IGN)
             return sig == SIGTTIN ? -EIO : 0;
 
-        /* an orphaned group isn't stopped, no one would continue it */
+        /* an orphaned group isn't stopped: no one would continue it */
         if (pgrp_orphaned(proc->pgrp, NULL))
             return -EIO;
 
@@ -227,17 +273,23 @@ int tty_background(struct tty *tty, int sig)
     return 0;
 }
 
-/** `n' bytes to the device, all of them */
+/** Sends `n` bytes to the device. Returns whether it took all of them. */
 static int tty_out(struct tty *tty, const char *s, size_t n)
 {
     return tty->master_write(tty, n, (void *) s) == (ssize_t) n;
 }
 
 /**
- * What the terminal writes out (OPOST, POSIX's output modes): a NL as CR
- * NL (ONLCR), a CR as NL (OCRNL), no CR in the first column (ONOCR), a NL
- * that returns the carriage too (ONLRET); the column is followed for them.
- * How many of `buf' went, the device may take fewer.
+ * Takes what programs write to the terminal, and sends it to the device
+ * through output processing (`OPOST`, POSIX's output modes): NL as CR NL
+ * (`ONLCR`), CR as NL (`OCRNL`), no CR in the first column (`ONOCR`), and
+ * NL returning the carriage too (`ONLRET`). The column is tracked for
+ * them.
+ *
+ * @param tty    the terminal
+ * @param size   the output's size, in bytes
+ * @param _buf   the output
+ * @return how many bytes of it went (the device may take fewer)
  */
 ssize_t tty_slave_write(struct tty *tty, size_t size, void *_buf)
 {
@@ -254,7 +306,7 @@ ssize_t tty_slave_write(struct tty *tty, size_t size, void *_buf)
 
         if (c == '\n') {
             if (oflag & ONLCR) {
-                /* CR NL; the CR alone went last time: the NL now */
+                /* CR NL; if only the CR went last time, just the NL now */
                 if (tty->nl_owed) {
                     if (!tty_out(tty, "\n", 1))
                         break;
@@ -279,7 +331,7 @@ ssize_t tty_slave_write(struct tty *tty, size_t size, void *_buf)
                     tty->col = 0;
             }
         } else if (c == '\r') {
-            /* nothing to return from in the first column */
+            /* in the first column, there is nothing to return from */
             if ((oflag & ONOCR) && !tty->col)
                 continue;
 
@@ -311,17 +363,12 @@ ssize_t tty_slave_write(struct tty *tty, size_t size, void *_buf)
     return written;
 }
 
-/**
- * A write to the terminal from an iobuf, to either side (`write':
- * tty_master_write or tty_slave_write): a piece at a time through the
- * kernel, the buffer passed over only as far as was taken
- */
 static void tty_release(struct tty *tty);
 
 /**
- * A program's output waits while the terminal is stopped (IXON): 0 once
- * it's started, -ERESTARTSYS for a signal, -EIO if the terminal went
- * meanwhile (its last waiter frees it)
+ * Waits while the terminal's output is stopped (`IXON`). Returns 0 once it
+ * starts again, `-ERESTARTSYS` for a signal, or `-EIO` if the terminal
+ * went away meanwhile (and its last waiter then frees it).
  */
 static int tty_wait_start(struct tty *tty)
 {
@@ -343,12 +390,24 @@ static int tty_wait_start(struct tty *tty)
     return err;
 }
 
+/**
+ * Writes to a terminal from an iobuf (user memory), to either side: a
+ * piece at a time through a kernel buffer, the iobuf moved on only as far
+ * as was taken.
+ *
+ * @param tty    the terminal
+ * @param io     what to write
+ * @param write  the side: `tty_master_write` (input, from a
+ *               pseudo-terminal's master) or `tty_slave_write` (a
+ *               program's output)
+ * @return how many bytes were written, or a negative errno
+ */
 ssize_t tty_write_iobuf(struct tty *tty, struct iobuf *io, ttyio write)
 {
     char buf[256];
     size_t size = io->resid, done = 0;
 
-    /* a program's output, to a stopped terminal: it waits */
+    /* a program's output to a stopped terminal waits */
     if (write == tty_slave_write && tty->stopped) {
         int err = tty_wait_start(tty);
 
@@ -370,7 +429,7 @@ ssize_t tty_write_iobuf(struct tty *tty, struct iobuf *io, ttyio write)
         iobuf_skip(io, r);
         done += r;
 
-        /* it took no more, or a fault stopped the copy */
+        /* the terminal took no more, or a fault stopped the copy */
         if (r < len || io->fault)
             break;
     }
@@ -378,8 +437,18 @@ ssize_t tty_write_iobuf(struct tty *tty, struct iobuf *io, ttyio write)
     return done;
 }
 
-/** argp is user space's: what a request reads comes in with copyin(),
- * what it gives goes out with copyout() */
+/**
+ * Handles a terminal's `ioctl()`s: its modes (`TCGETS`, `TCSETS`, ...),
+ * flushing, its session and foreground group, its window size, and
+ * becoming the controlling terminal (`TIOCSCTTY`).
+ *
+ * @param tty      the terminal
+ * @param request  the request
+ * @param argp     its argument, in user memory (or the value itself, for
+ *                 `TCFLSH`)
+ * @return 0 or what the request returns, or a negative errno (`-ENOTTY`
+ *         for a request terminals don't have)
+ */
 int tty_ioctl(struct tty *tty, int request, void *argp)
 {
     int err;
@@ -403,7 +472,7 @@ int tty_ioctl(struct tty *tty, int request, void *argp)
 
             tty->tios = tios;
 
-            /* no flow control anymore: what was stopped goes */
+            /* no flow control anymore: start what was stopped */
             if (!(tios.c_iflag & IXON) && tty->stopped) {
                 tty->stopped = 0;
                 waitq_wakeup(&tty->start_wait);
@@ -411,7 +480,8 @@ int tty_ioctl(struct tty *tty, int request, void *argp)
             break;
         }
         case TCFLSH:
-            /* the argument is the value: TCIFLUSH, TCOFLUSH, TCIOFLUSH */
+            /* the argument is the value itself: TCIFLUSH, TCOFLUSH or
+             * TCIOFLUSH */
             if ((uintptr_t) argp > TCIOFLUSH)
                 return -EINVAL;
 
@@ -419,7 +489,8 @@ int tty_ioctl(struct tty *tty, int request, void *argp)
             break;
         case TCSBRK:
         case TCXONC:
-            /* no output waits to be sent, there is no flow control */
+            /* no output waits to be sent, and there's no flow control to
+             * apply */
             break;
         case TIOCGSID:
             if (!tty->session)
@@ -427,12 +498,14 @@ int tty_ioctl(struct tty *tty, int request, void *argp)
 
             return copyout(argp, &tty->session->sid, sizeof(pid_t));
         case TIOCGPGRP: {
-            /* without one, a value that is no process group (POSIX) */
+            /* without a foreground group, a value that is no process
+             * group, as POSIX says */
             pid_t pgid = tty->fg ? tty->fg->pgid : 0x7fffffff;
             return copyout(argp, &pgid, sizeof(pgid));
         }
         case TIOCSPGRP: {
-            /* the caller's controlling terminal, a group of its session */
+            /* only on the caller's controlling terminal, and to a group of
+             * its session */
             pid_t pgid;
             struct session *session = curproc->pgrp->session;
             struct pgroup *pgrp = NULL;
@@ -472,8 +545,8 @@ int tty_ioctl(struct tty *tty, int request, void *argp)
             break;
         }
         case TIOCSCTTY: {
-            /* a session leader without one takes a terminal no other
-             * session has */
+            /* a session leader without a controlling terminal takes one
+             * that no other session has */
             struct session *session = curproc->pgrp->session;
 
             if (session->leader != curproc || session->ctty || tty->session)
@@ -485,7 +558,8 @@ int tty_ioctl(struct tty *tty, int request, void *argp)
             break;
         }
         default:
-            /* a request terminals don't have, as POSIX and Linux say */
+            /* a request that terminals don't have, as POSIX and Linux
+             * say */
             return -ENOTTY;
     }
     
@@ -493,7 +567,16 @@ int tty_ioctl(struct tty *tty, int request, void *argp)
 }
 
 /**
- * create a new generic tty interface
+ * Makes a new terminal, with the default modes (canonical, echo, signals,
+ * `ICRNL`, `IXON`, `OPOST` with `ONLCR`) and the usual special characters.
+ *
+ * @param proc      the process making it (not used)
+ * @param buf_size  the size of its line buffer, or 0 for `TTY_BUF_SIZE`
+ * @param master    how the terminal sends output to its device
+ * @param slave     how the terminal hands input to its readers
+ * @param p         the device's own data, for those two
+ * @param ref       set to the new terminal
+ * @return 0, or `-ENOMEM`
  */
 int tty_new(struct proc *proc, size_t buf_size, ttyio master,
         ttyio slave, void *p, struct tty **ref)
@@ -518,11 +601,10 @@ int tty_new(struct proc *proc, size_t buf_size, ttyio master,
     tty->col  = 0;
     tty->nl_owed = 0;
 
-    /* Defaults */
+    /* the defaults */
     tty->tios.c_iflag = ICRNL | IXON;
     tty->tios.c_oflag = OPOST | ONLCR;
     tty->tios.c_lflag = ISIG | ICANON | ECHO | ECHOE | ECHOK;
-    //tty->tios.c_cc[VEOL]   = ;
     tty->tios.c_cc[VERASE] = 0x7f;  /* DEL, what backspace sends */
     tty->tios.c_cc[VEOF]   = 0x04;  /* ^D */
     tty->tios.c_cc[VMIN]   = 1;
@@ -536,7 +618,7 @@ int tty_new(struct proc *proc, size_t buf_size, ttyio master,
     tty->ws.ws_row = 24;
     tty->ws.ws_col = 80;
 
-    /* Interface */
+    /* the device's side */
     tty->master_write = master;
     tty->slave_write  = slave;
     tty->p = p;
@@ -548,11 +630,15 @@ int tty_new(struct proc *proc, size_t buf_size, ttyio master,
 }
 
 /**
- * A terminal device was opened: it becomes the controlling terminal of a
- * session leader that has none (unless O_NOCTTY), if no session has it.
- * Not through /dev/console (as Linux): init writes there, and would take
- * the terminal that is also the console (the first virtual terminal, or
- * the uart) from the session a getty starts on it.
+ * Handles a terminal device being opened: it becomes the controlling
+ * terminal of a session leader that has none (unless `O_NOCTTY`), if no
+ * session has it already. Opening `/dev/console` doesn't do it, as on
+ * Linux: init writes there, and would otherwise take the terminal that is
+ * also the console (the first virtual terminal, or the UART) from the
+ * session that a getty starts on it.
+ *
+ * @param tty   the terminal
+ * @param file  the file being opened
  */
 void tty_open(struct tty *tty, struct file *file)
 {
@@ -569,9 +655,12 @@ void tty_open(struct tty *tty, struct file *file)
 }
 
 /**
- * The session of a controlling terminal ends (its leader exited) or the
- * terminal goes away: its foreground group gets SIGHUP, and the terminal
- * belongs to no session.
+ * Hangs up a controlling terminal, when its session ends (its leader
+ * exited) or the terminal goes away: its foreground group gets `SIGHUP`
+ * (and `SIGCONT`, in case it was stopped), and the terminal belongs to no
+ * session anymore.
+ *
+ * @param tty  the terminal
  */
 void tty_hangup(struct tty *tty)
 {
@@ -588,8 +677,14 @@ void tty_hangup(struct tty *tty)
     tty->fg = NULL;
 }
 
-/** discard input (TCIFLUSH, TCIOFLUSH): the line being edited, what the
- * driver holds for readers, pending end-of-files; output isn't kept */
+/**
+ * Drops a terminal's input (`TCIFLUSH`, `TCIOFLUSH`): the line being
+ * edited, what the device holds for readers, and the pending
+ * end-of-files. Output isn't kept anywhere, so there is none to drop.
+ *
+ * @param tty    the terminal
+ * @param which  `TCIFLUSH`, `TCOFLUSH` or `TCIOFLUSH`
+ */
 void tty_flush(struct tty *tty, int which)
 {
     if (which == TCOFLUSH)
@@ -602,17 +697,26 @@ void tty_flush(struct tty *tty, int which)
         tty->input_flush(tty);
 }
 
+/** Frees a terminal's memory. */
 static void tty_release(struct tty *tty)
 {
     kfree(tty->cook);
     kfree(tty);
 }
 
+/**
+ * Ends a terminal: it is hung up, and freed. If writers are waiting for
+ * its output to start again, they are woken up instead, and the last one
+ * frees it.
+ *
+ * @param tty  the terminal
+ * @return 0
+ */
 int tty_free(struct tty *tty)
 {
     tty_hangup(tty);
 
-    /* writers wait for VSTART: they go, the last frees it */
+    /* writers waiting for VSTART: wake them, and the last one frees it */
     if (tty->start_waiters) {
         tty->gone = 1;
         tty->stopped = 0;

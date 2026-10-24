@@ -1,12 +1,14 @@
 /** \file
- *          Random numbers
+ * Random numbers: `/dev/random` and `/dev/urandom` (character devices 1,
+ * 8 and 1, 9), which are the same, and `random_get()` for the kernel.
  *
- * ChaCha20 as a generator: its key is made from a pool that the cycle
- * counter is stirred into on every timer tick (and at each request), and
- * replaced after each request with keystream nobody saw. There is no
- * hardware source, the randomness is that of the timing of interrupts
- * and requests: unpredictable enough for hash seeds and arc4random(),
- * not a strong key generator. /dev/random and /dev/urandom are the same.
+ * The generator is ChaCha20. Its key is made from a pool that the cycle
+ * counter is stirred into on every timer tick, and at each request. After
+ * each request, the key is replaced with keystream that nobody saw, so
+ * that what was given can't be found again. There is no hardware source:
+ * the randomness comes from the timing of interrupts and requests. That
+ * is unpredictable enough for hash seeds and `arc4random()`, but it isn't
+ * a strong key generator.
  */
 
 #include <core/system.h>
@@ -25,6 +27,7 @@
     a += b, d ^= a, d = ROTL(d, 8),              \
     c += d, b ^= c, b = ROTL(b, 7))
 
+/** Computes one ChaCha20 block (20 rounds) of the state `in`, into `out`. */
 static void chacha20_block(const uint32_t in[16], uint32_t out[16])
 {
     uint32_t x[16];
@@ -47,7 +50,8 @@ static void chacha20_block(const uint32_t in[16], uint32_t out[16])
         out[i] = x[i] + in[i];
 }
 
-/* "expand 32-byte k", the key (4..11), a counter (12, 13), a nonce */
+/* ChaCha20's state: the constant "expand 32-byte k", the key (words 4 to
+ * 11), a counter (12, 13) and a nonce (14, 15) */
 static uint32_t state[16] = {
     0x61707865, 0x3320646e, 0x79622d32, 0x6b206574,
 };
@@ -55,12 +59,18 @@ static uint32_t state[16] = {
 static uint32_t pool[8];
 static unsigned pool_i;
 
+/**
+ * Stirs a value into the pool, which goes into the next key. The timer
+ * tick adds the cycle counter on each tick.
+ *
+ * @param value  the value, which should be hard to predict
+ */
 void random_add(uint32_t value)
 {
     pool[pool_i++ % 8] ^= value;
 }
 
-/** the pool and the time into the key */
+/** Mixes the pool, and the time, into the key, and empties the pool. */
 static void random_stir(void)
 {
     random_add((uint32_t) arch_cycles());
@@ -74,6 +84,12 @@ static void random_stir(void)
     state[14] ^= (uint32_t) (arch_cycles() >> 8);
 }
 
+/**
+ * Fills a buffer with random bytes.
+ *
+ * @param _buf  the buffer
+ * @param len   its size, in bytes
+ */
 void random_get(void *_buf, size_t len)
 {
     uint8_t *buf = _buf;
@@ -93,7 +109,8 @@ void random_get(void *_buf, size_t len)
         len -= n;
     }
 
-    /* a new key, so what was given can't be found again from the state */
+    /* a new key, so that what was given can't be found again from the
+     * state */
     chacha20_block(state, block);
 
     if (!++state[12])
@@ -105,6 +122,7 @@ void random_get(void *_buf, size_t len)
     memset(block, 0, sizeof(block));
 }
 
+/** Reads random bytes, a buffer at a time; the buffer is wiped after. */
 static ssize_t randomdev_read(struct devid *dd __unused, off_t offset __unused, struct iobuf *io)
 {
     uint8_t buf[256];
@@ -131,7 +149,7 @@ static ssize_t randomdev_read(struct devid *dd __unused, off_t offset __unused, 
     return done;
 }
 
-/** what is written is stirred in */
+/** Stirs what is written into the pool. */
 static ssize_t randomdev_write(struct devid *dd __unused, off_t offset __unused, struct iobuf *io)
 {
     uint8_t buf[256];

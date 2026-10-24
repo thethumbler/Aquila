@@ -1,6 +1,10 @@
 /** \file
- * Packet buffers (net/netbuf.h): NETBUF_SIZE bytes each, two to a page
- * of memory, kept on a free list once used
+ * Packet buffers (see `net/netbuf.h`).
+ *
+ * A netbuf holds one packet: `NETBUF_SIZE` bytes, two to a page of
+ * memory. Freed netbufs are kept on a free list, ready for the next
+ * packets, and a page goes back to the page allocator only when all its
+ * netbufs are free and the list has enough without them.
  */
 
 #include <core/system.h>
@@ -8,15 +12,17 @@
 #include <mm/mm.h>
 #include <net/netbuf.h>
 
-/* the free netbufs, and how many; past NETBUF_KEEP free, a page whose
- * netbufs are all free goes back to the page allocator (fewer, and the
- * next packets would take a page again at once) */
+/* The free netbufs, and how many there are. Once more than NETBUF_KEEP
+ * are free, a page whose netbufs are all free goes back to the page
+ * allocator (keeping fewer would only make the next packets take a page
+ * again at once). */
 #define NETBUF_KEEP     64
 #define NETBUF_PER_PAGE (PAGE_SIZE / NETBUF_SIZE)
 
 static struct netbuf *free_netbufs;
 static size_t free_count;
 
+/** Puts a netbuf on the free list. */
 static void free_push(struct netbuf *nb)
 {
     nb->free_prev = NULL;
@@ -29,6 +35,7 @@ static void free_push(struct netbuf *nb)
     free_count++;
 }
 
+/** Takes a netbuf off the free list. */
 static void free_remove(struct netbuf *nb)
 {
     if (nb->free_prev)
@@ -42,6 +49,12 @@ static void free_remove(struct netbuf *nb)
     free_count--;
 }
 
+/**
+ * Allocates a netbuf, empty, with room for the headers that will be put
+ * in front of its data.
+ *
+ * @return the netbuf, or NULL if there was no memory for it
+ */
 struct netbuf *netbuf_alloc(void)
 {
     if (!free_netbufs) {
@@ -67,7 +80,7 @@ struct netbuf *netbuf_alloc(void)
     struct netbuf *nb = free_netbufs;
     free_remove(nb);
 
-    /* its page's netbufs in use: the page's reference count */
+    /* the page's reference count is how many of its netbufs are in use */
     mm_page_incref(nb->page);
 
     nb->next  = NULL;
@@ -78,6 +91,11 @@ struct netbuf *netbuf_alloc(void)
     return nb;
 }
 
+/**
+ * Frees a netbuf.
+ *
+ * @param nb  the netbuf
+ */
 void netbuf_free(struct netbuf *nb)
 {
     free_push(nb);
@@ -86,7 +104,8 @@ void netbuf_free(struct netbuf *nb)
     if (mm_page_ref(nb->page) || free_count <= NETBUF_KEEP)
         return;
 
-    /* the page's netbufs are all free: off the list, the page back */
+    /* all the page's netbufs are free: take them off the list, and give
+     * the page back */
     uint8_t *page = (uint8_t *) ((uintptr_t) nb & ~(uintptr_t) PAGE_MASK);
 
     for (size_t i = 0; i < NETBUF_PER_PAGE; ++i)

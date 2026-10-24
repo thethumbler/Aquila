@@ -3,8 +3,9 @@
 
 #include_next <boot/boot.h>
 
-/* platform: the boot loader's devicetree (its physical address, x0 at
- * the entry) to the kernel's struct boot */
+/* Reads the boot loader's devicetree into the kernel's struct boot (the
+ * platform's, platform/virt/fdt.c). `dtb` is the devicetree's physical
+ * address, which the boot loader passes in x0. */
 struct boot *fdt_boot(uintptr_t dtb);
 
 #endif /* ! _AARCH64_BOOT_H */

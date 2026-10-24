@@ -1,3 +1,8 @@
+/** \file
+ * x86: the early console on the first serial port (COM1, port 0x3F8),
+ * polled: each character waits until the UART can take it.
+ */
+
 #include <core/system.h>
 #include <core/string.h>
 #include <console/earlycon.h>
@@ -26,25 +31,29 @@ static struct ioaddr earlycon_uart_ioaddr = {
 #define UART_DLH    1
 #define UART_LCR_DLAB    0x80
 
+/** Sets the UART up: no interrupts, no FIFO, 38400 baud, 8 bits, no
+ * parity, one stop bit. */
 static void serial_init(void)
 {
-    io_out8(&earlycon_uart_ioaddr, UART_IER, 0x00);    /* Disable all interrupts */
-    io_out8(&earlycon_uart_ioaddr, UART_FCR, 0x00);    /* Disable FIFO */
+    io_out8(&earlycon_uart_ioaddr, UART_IER, 0x00);    /* no interrupts */
+    io_out8(&earlycon_uart_ioaddr, UART_FCR, 0x00);    /* no FIFO */
     io_out8(&earlycon_uart_ioaddr, UART_LCR, 0x03);    /* 8 bits, no parity, one stop bit */
-    io_out8(&earlycon_uart_ioaddr, UART_MCR, 0x03);    /* RTS + DTR */
+    io_out8(&earlycon_uart_ioaddr, UART_MCR, 0x03);    /* RTS and DTR */
 
     uint8_t lcr = io_in8(&earlycon_uart_ioaddr, UART_LCR);
-    io_out8(&earlycon_uart_ioaddr, UART_LCR, lcr | UART_LCR_DLAB);  /* Enable DLAB */
-    io_out8(&earlycon_uart_ioaddr, UART_DLL, 0x03);    /* Set divisor to 3 (lo byte) 38400 baud */
-    io_out8(&earlycon_uart_ioaddr, UART_DLH, 0x00);    /*                  (hi byte)            */
-    io_out8(&earlycon_uart_ioaddr, UART_LCR, lcr & ~UART_LCR_DLAB); /* Disable DLAB */
+    io_out8(&earlycon_uart_ioaddr, UART_LCR, lcr | UART_LCR_DLAB);  /* the divisor's registers */
+    io_out8(&earlycon_uart_ioaddr, UART_DLL, 0x03);    /* divisor 3: 38400 baud (low byte) */
+    io_out8(&earlycon_uart_ioaddr, UART_DLH, 0x00);    /* (high byte) */
+    io_out8(&earlycon_uart_ioaddr, UART_LCR, lcr & ~UART_LCR_DLAB); /* back to the data registers */
 }
 
+/** Returns whether the UART's transmit holding register is empty. */
 static int serial_tx_empty(void)
 {
     return io_in8(&earlycon_uart_ioaddr, 5) & 0x20;
 }
 
+/** Writes a character, a newline as CR LF. Returns 1. */
 static int serial_chr(char chr)
 {
     if (chr == '\n')
@@ -57,6 +66,7 @@ static int serial_chr(char chr)
     return 1;
 }
 
+/** Writes a string, and returns a count of what it wrote. */
 static int serial_str(char *str)
 {
     int ret = 0;
@@ -86,7 +96,7 @@ static void earlycon_uart_init(void)
 #endif
     serial_init();
 
-    /* Assume a terminal, clear formatting */
+    /* there's probably a terminal at the other end: reset its attributes */
     serial_str("\033[0m");
 }
 

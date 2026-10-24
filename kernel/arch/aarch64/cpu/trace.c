@@ -1,6 +1,8 @@
 /** \file
- * A panic's backtrace: the frame records (x29 points to the caller's x29
- * and its return address, AAPCS64), while they're in the kernel's half
+ * aarch64: a panic's stack trace, from the frame records (AAPCS64): x29
+ * points to the caller's x29 and its return address. The walk stops when
+ * a record isn't in the kernel's half. mk/backtrace.sh names the
+ * addresses.
  */
 
 #include <core/system.h>
@@ -8,6 +10,7 @@
 
 int __printing_trace = 0;
 
+/* Prints the current stack trace, the return address of each frame. */
 void arch_stack_trace(void)
 {
     __printing_trace = 1;

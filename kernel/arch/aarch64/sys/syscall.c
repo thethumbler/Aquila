@@ -15,12 +15,10 @@
 
 void aarch64_preempt(void);
 
-/**
+/*
  * Runs a system call: the exception handler calls it for an `svc`
  * instruction from user mode. It returns to user mode when the call is
  * done, delivering the signals that came meanwhile.
- *
- * @param r  the registers user mode had, saved on the kernel stack
  */
 void arch_syscall(struct aarch64_regs *r)
 {
@@ -37,13 +35,10 @@ void arch_syscall(struct aarch64_regs *r)
     aarch64_return_to_user(r, curthread->syscall_nr != SYS_sigreturn);
 }
 
-/**
+/*
  * Sets the result of a thread's system call: x0 when it returns to user
  * mode. That's in its saved registers, or, for a thread that has never
  * run (a child of `fork()`), where it will start from.
- *
- * @param thread  the thread
- * @param val     the result
  */
 void arch_syscall_return(struct thread *thread, uintptr_t val)
 {

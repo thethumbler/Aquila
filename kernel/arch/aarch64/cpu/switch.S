@@ -1,14 +1,16 @@
-/**********************************************************************
- *       aarch64: where threads stop and go on, and user mode
+/*
+ * aarch64: where threads stop and go on in the kernel, and going to user
+ * mode.
  */
 
-/* struct aarch64_ctx (core/arch.h) */
+/* The offsets of struct aarch64_ctx's fields (core/arch.h). */
 #define CTX_X19     0
 #define CTX_FP      80
 #define CTX_SP      96
 
-/* int aarch64_ctx_save(struct aarch64_ctx *ctx): the registers a call
- * keeps, and the stack; 0, and 1 when aarch64_ctx_load() comes back */
+/* int aarch64_ctx_save(struct aarch64_ctx *ctx): saves the registers that
+ * a call keeps, and the stack pointer. Returns 0, and returns again with 1
+ * when aarch64_ctx_load() switches back to it. */
 .global aarch64_ctx_save
 aarch64_ctx_save:
     stp     x19, x20, [x0, #CTX_X19]
@@ -22,8 +24,8 @@ aarch64_ctx_save:
     mov     x0, #0
     ret
 
-/* void aarch64_ctx_load(struct aarch64_ctx *ctx): back where it was
- * saved, aarch64_ctx_save() returning 1 */
+/* void aarch64_ctx_load(struct aarch64_ctx *ctx): goes back to where the
+ * context was saved, with aarch64_ctx_save() returning 1. */
 .global aarch64_ctx_load
 aarch64_ctx_load:
     ldp     x19, x20, [x0, #CTX_X19]
@@ -37,9 +39,10 @@ aarch64_ctx_load:
     mov     x0, #1
     ret
 
-/* void aarch64_jump_user(pc, sp, x0, x1, x2, kstack): user mode (EL0, its
- * interrupts unmasked), the kernel stack left at `kstack' for the next
- * exception from it; nothing of the kernel's in the other registers */
+/* void aarch64_jump_user(pc, sp, x0, x1, x2, kstack): goes to user mode
+ * (EL0, with its interrupts unmasked), leaving the kernel stack at
+ * `kstack` for the next exception from it. The other registers are
+ * cleared, so that nothing of the kernel's leaks to user mode. */
 .global aarch64_jump_user
 aarch64_jump_user:
     mov     sp, x5
@@ -79,8 +82,8 @@ aarch64_jump_user:
     mov     x30, xzr
     eret
 
-/* void aarch64_goto(fn, sp): `fn' on the stack `sp', as if called by
- * nothing (it doesn't return) */
+/* void aarch64_goto(fn, sp): runs `fn` on the stack `sp`, as if nothing
+ * called it (it doesn't return). */
 .global aarch64_goto
 aarch64_goto:
     mov     sp, x1

@@ -1,5 +1,10 @@
 /** \file
- * temporary filesystem (tmpfs) handler
+ * tmpfs: a filesystem in memory, gone when the system stops.
+ *
+ * Its vnodes are its inodes: each lives in memory as long as it has a
+ * name or a reference, and its inode number is its address. A file's
+ * data is one buffer of its size. The directories are pseudofs's
+ * (`fs/pseudofs/`), which devfs and devpts share.
  */
 
 #include <core/system.h>
@@ -19,21 +24,20 @@
 #include <aquila/errno.h>
 #include <aquila/dirent.h>
 
+/** Gets a vnode by its inode number, which is its address. */
 static int tmpfs_vget(struct vnode *super, ino_t ino, struct vnode **vnode)
 {
-    /* vnode is always present in memory */
+    /* the vnode is always in memory */
     struct vnode *node = (struct vnode *) ino;
     if (vnode) *vnode = node;
 
     return 0;
 }
 
+/** Frees a vnode that has neither references nor names left. */
 static int tmpfs_close(struct vnode *vnode)
 {
-    /* Inode is always present in memory */
-
     if (!vnode->ref && !vnode->nlink) {
-        /* vnode is no longer referenced */
         kfree(vnode->p);
         pseudofs_close(vnode);
     }
@@ -41,6 +45,7 @@ static int tmpfs_close(struct vnode *vnode)
     return 0;
 }
 
+/** Reads a file's data from its buffer. */
 static ssize_t tmpfs_read(struct vnode *node, off_t offset, struct iobuf *io)
 {
     if (offset < 0)
@@ -52,6 +57,7 @@ static ssize_t tmpfs_read(struct vnode *node, off_t offset, struct iobuf *io)
     return iobuf_out(io, (char *) node->p + offset, node->size - offset);
 }
 
+/** Writes a file's data into its buffer, which grows to hold it. */
 static ssize_t tmpfs_write(struct vnode *node, off_t offset, struct iobuf *io)
 {
     size_t size = io->resid, old_size = node->size;
@@ -59,10 +65,11 @@ static ssize_t tmpfs_write(struct vnode *node, off_t offset, struct iobuf *io)
     if (offset < 0)
         return -EINVAL;
 
-    if (((size_t) offset + size) > node->size) {    /* Reallocate */
+    if (((size_t) offset + size) > node->size) {    /* a bigger buffer */
         size_t sz = (size_t) offset + size;
 
-        /* zeroed, so a gap between old size and offset reads as zeros */
+        /* zeroed, so that a gap between the old size and the offset
+         * reads as zeros */
         void *new = kmalloc(sz, &M_BUFFER, M_ZERO);
         if (!new)
             return -ENOMEM;
@@ -77,13 +84,14 @@ static ssize_t tmpfs_write(struct vnode *node, off_t offset, struct iobuf *io)
     ssize_t r = iobuf_in(io, (char *) node->p + offset, size);
     size_t done = r > 0 ? r : 0;
 
-    /* a fault stopped it: the file ends where the data does */
+    /* if a fault stopped the copy, the file ends where the data does */
     if (done < size)
         node->size = MAX(old_size, (size_t) offset + done);
 
     return r;
 }
 
+/** Changes a file's length: its buffer is cut, or grows with zeros. */
 static int tmpfs_trunc(struct vnode *vnode, off_t len)
 {
     if (!vnode || len < 0)
@@ -102,7 +110,7 @@ static int tmpfs_trunc(struct vnode *vnode, off_t len)
     size_t sz = MIN((size_t) len, vnode->size);
     char *buf = kmalloc(len, &M_BUFFER, 0);
 
-    /* the file stays as it was */
+    /* with no memory, the file stays as it was */
     if (!buf)
         return -ENOMEM;
 
@@ -117,8 +125,9 @@ static int tmpfs_trunc(struct vnode *vnode, off_t len)
     return 0;
 }
 
-/* ================ File Operations ================ */
+/* File operations */
 
+/** Says whether `size` bytes can be read from the file's offset. */
 static int tmpfs_file_can_read(struct file *file, size_t size)
 {
     if ((size_t) file->offset + size < file->vnode->size)
@@ -127,25 +136,29 @@ static int tmpfs_file_can_read(struct file *file, size_t size)
     return 0;
 }
 
+/** Says that a write can always go on: tmpfs has no size limit yet. */
 static int tmpfs_file_can_write(struct file *file __unused, size_t size __unused)
 {
-    /* TODO impose limit */
     return 1;
 }
 
+/** Says whether the file's offset is at its end. */
 static int tmpfs_file_eof(struct file *file)
 {
     return (size_t) file->offset == file->vnode->size;
 }
 
+/** Installs tmpfs at boot. */
 static int tmpfs_init()
 {
     return vfs_install(&tmpfs);
 }
 
+/** Mounts a new, empty tmpfs on a directory. The `mode=` option (octal)
+ * sets its root's permissions, 0777 otherwise. */
 static int tmpfs_mount(struct vnode *dir, int flags __unused, void *data __unused)
 {
-    /* Initalize new */
+    /* a new root directory */
     struct vnode *tmpfs_root = kmalloc(sizeof(struct vnode), &M_VNODE, M_ZERO);
     if (!tmpfs_root) return -ENOMEM;
 
@@ -160,7 +173,7 @@ static int tmpfs_mount(struct vnode *dir, int flags __unused, void *data __unuse
         char **tokens = tokenize(mdata->opt, ',');
         for (char **token_p = tokens; *token_p; ++token_p) {
             char *token = *token_p;
-            if (!strncmp(token, "mode=", 5)) {    /* ??? */
+            if (!strncmp(token, "mode=", 5)) {    /* an octal number */
                 char *t = token + 5;
                 mode = 0;
                 while (*t) {

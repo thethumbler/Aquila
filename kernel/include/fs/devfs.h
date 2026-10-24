@@ -3,6 +3,7 @@
 
 #include <fs/vfs.h>
 
+/* devfs, the filesystem of /dev (fs/devfs/), and its root. */
 extern struct fs devfs;
 extern struct vnode *devfs_root;
 

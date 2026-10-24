@@ -1,10 +1,10 @@
-/**********************************************************************
- *              Programmable Interrupt Controller (PIC)
- *                   (Legacy PIC (8259) support)
+/** \file
+ * x86: the PC's two 8259 programmable interrupt controllers (PICs).
  *
- *  An x86_irq_chip (irq.c): the interrupts when there's no APIC (or
- *  apic=off). With the APIC, they are remapped (vectors 32 to 47) and
- *  masked, they stay so.
+ * The 8259s bring the interrupts when there's no APIC (or with
+ * `apic=off`), as an `x86_irq_chip` (irq.c). With the APIC, they are still
+ * set up (their IRQs remapped to vectors 32 to 47, past the exceptions),
+ * then masked, and they stay masked.
  */
 
 #include <core/system.h>
@@ -22,71 +22,35 @@
 static struct ioaddr master;
 static struct ioaddr slave;
 
-/**
- * \file pic.c
- * ```
- * ICW1 (Sent on COMMAND port of each PIC)
+/*
+ * The 8259s are set up with four initialization command words (ICWs):
  *
- * | A7 | A6 | A5 | 1 | LTIM | ADI | SINGL | IC4 |
- *   |____|____|          |     |     |       |______ 1=ICW4 REQUIRED
- *        |               |     |   1=SINGEL          0=ICW4 NOT REQUIRED
- *  A7:5 OF INTERRUPT     |     |   0=CASCADED
- *   VECTOR ADDRESS       |     |
- * (MCS-80/85 MODE ONLY!) | CALL ADDRESS INTERVAL (IGNORED IN 8086 MODE)
- *                        | 1=INTERVAL OF 4
- *                        | 0=INTERVAL OF 8
- *                        |
- *              1=LEVEL TRIGERED MODE
- *              0= EDGE TRIGERED MODE
- *
- *******************************************************************************
- * ICW2 (Sent on DATA port of each PIC)
- *
- * | A15 | A14 | A13 | A12 | A11 | A10 | A9 | A8 |
- *   |_____|_____|_____|_____|_____|_____|____|
- *                        |
- *     A15:8 OF INTERRUPT VECTOR ADDRESS (MCS-80/85 MODE)
- *     T7:3  OF INTERRUPT VECTOR ADDRESS (8086 MODE)
- *
- *******************************************************************************
- * ICW3 (Sent on DATA port of each PIC)
- *
- * --FOR MASTER:
- * | S7 | S6 | S5 | S4 | S3 | S2 | S1 | S0 |
- *   |____|____|____|____|____|____|____|
- *                  |
- *       1=IR LINE HAS SLAVE (CASCADED)
- *       0=IR LINE DOES NOT HAVE SLAVE (SINGLE)
- *
- * --FOR SLAVE:
- * | 0 | 0 | 0 | 0 | 0 | ID2 | ID1 | ID0 |
- *                       |_____|_____|
- *                             |
- *                         SLAVE ID
- *
- *******************************************************************************
- * ICW4 (Sent on DATA port of each PIC)
- * Well, I am too lazy to write this one XD so I will just tell you that setting
- * the least-significant bit sets the PIC to 8086 MODE
- *```
+ * - ICW1, on each one's command port, starts the setup: edge-triggered,
+ *   cascaded (two 8259s), with an ICW4 to come;
+ * - ICW2, on the data port, is the vector of its first IRQ: 32 for the
+ *   master, 40 for the slave, past the CPU's exceptions;
+ * - ICW3 says how they are cascaded: the master has the slave on its IRQ
+ *   2, and the slave's ID is 2;
+ * - ICW4 sets 8086 mode.
  */
 
-#define ICW1        0x11 /* Both Master and Slave use the same ICW1 */
-#define ICW2_MASTER 0x20 /* Interrupts (from Master) start from offset 32 */
-#define ICW2_SLAVE  0x28 /* Interrupts (from Slave)  start from offset 40 */
-#define ICW3_MASTER 0x04 /* Master has a Slave attached to IR 2 */
-#define ICW3_SLAVE  0x02 /* Slave ID is 2 */
-#define ICW4        0x01 /* Sets PIC to 8086 MODE */
+#define ICW1        0x11 /* the same for the master and the slave */
+#define ICW2_MASTER 0x20 /* the master's IRQs are vectors 32 and up */
+#define ICW2_SLAVE  0x28 /* the slave's are vectors 40 and up */
+#define ICW3_MASTER 0x04 /* the master has the slave on its IRQ 2 */
+#define ICW3_SLAVE  0x02 /* the slave's ID is 2 */
+#define ICW4        0x01 /* 8086 mode */
 
-/* The mask value currently on slave:master */
+/* the masks the 8259s have now: the slave's in the high byte */
 static uint16_t pic_mask = 0xFFFF;
 
+/** Masks an IRQ at its 8259. */
 static void x86_irq_mask(int irq)
 {
-    if (irq < 8) {  /* Master */
+    if (irq < 8) {  /* the master's */
         pic_mask |= 1 << irq;
         io_out8(&master,  PIC_DATA, pic_mask & 0xFF);
-    } else if (irq < 16) {  /* Slave */
+    } else if (irq < 16) {  /* the slave's */
         pic_mask |= 1 << irq;
         io_out8(&slave,  PIC_DATA, (pic_mask >> 8) & 0xFF);
     } else {
@@ -94,14 +58,15 @@ static void x86_irq_mask(int irq)
     }
 }
 
+/** Unmasks an IRQ at its 8259 (for the slave's, the master's IRQ 2 too). */
 static void x86_irq_unmask(int irq)
 {
-    if (irq < 8) {  /* Master */
+    if (irq < 8) {  /* the master's */
         pic_mask &= ~(1 << irq);
         io_out8(&master,  PIC_DATA, pic_mask & 0xFF);
-    } else if (irq < 16) {  /* Slave */
+    } else if (irq < 16) {  /* the slave's */
         pic_mask &= ~(1 << irq);
-        pic_mask &= ~(1 << 2);  /* Unmask slave cascade on master */
+        pic_mask &= ~(1 << 2);  /* and the master's IRQ 2, where the slave is */
         io_out8(&slave,  PIC_DATA, (pic_mask >> 8) & 0xFF);
         io_out8(&master, PIC_DATA, pic_mask & 0xFF);
     } else {
@@ -109,13 +74,10 @@ static void x86_irq_unmask(int irq)
     }
 }
 
+/** Initializes the 8259s, with their IRQs at vectors 32 to 47, so that
+ * they don't collide with the CPU's exceptions. */
 static void x86_irq_remap(void)
 {
-    /*
-     * Initializes PIC & remaps PIC interrupts to different interrupt
-     * numbers so as not to conflict with CPU exceptions
-     */
-
     io_out8(&master, PIC_CMD,  ICW1);
     io_out8(&slave,  PIC_CMD,  ICW1);
     io_out8(&master, PIC_DATA, ICW2_MASTER);
@@ -128,29 +90,34 @@ static void x86_irq_remap(void)
 
 #define IRQ_ACK 0x20
 
+/** Tells the 8259s that an interrupt is handled: the slave too for its
+ * own IRQs. */
 static void pic_chip_eoi(unsigned irq)
 {
     if (irq >= 16)
         return;
 
-    if (irq > 7) /* IRQ fired from the Slave PIC */
+    if (irq > 7) /* the slave's IRQ */
         io_out8(&slave, PIC_CMD, IRQ_ACK);
 
     io_out8(&master, PIC_CMD, IRQ_ACK);
 }
 
+/** Masks an IRQ, for irq.c. */
 static void pic_chip_mask(unsigned irq)
 {
     if (irq < 16)
         x86_irq_mask(irq);
 }
 
+/** Unmasks an IRQ, for irq.c. */
 static void pic_chip_unmask(unsigned irq)
 {
     if (irq < 16)
         x86_irq_unmask(irq);
 }
 
+/** Describes an IRQ's route, for /proc/interrupts. */
 static const char *pic_chip_describe(unsigned irq)
 {
     return irq < 16 ? "8259 edge" : "";
@@ -164,28 +131,37 @@ struct x86_irq_chip x86_pic_chip = {
     .describe = pic_chip_describe,
 };
 
+/** Checks that there is an 8259 at the master's ports: it must keep the
+ * mask that was written. Returns 0, or `-ENODEV`. */
 static int x86_pic_probe(void)
 {
-    /* Mask all slave IRQs */
+    /* mask all of the slave's IRQs */
     io_out8(&slave, PIC_DATA, 0xFF);
 
-    /* Mask all master IRQs -- except slave cascade */
+    /* mask all of the master's IRQs, but IRQ 2, where the slave is */
     io_out8(&master, PIC_DATA, 0xFB);
 
-    /* Check if there is a devices listening to port */
+    /* a device answers if it kept the mask */
     if (io_in8(&master, PIC_DATA) != 0xFB)
         return -ENODEV;
 
     return 0;
 }
 
+/** Masks every IRQ of the 8259s, when the APIC brings the interrupts. */
 void x86_pic_disable(void)
 {
-    /* Done by masking all IRQs */
     io_out8(&slave,  PIC_DATA, 0xFF);
     io_out8(&master, PIC_DATA, 0xFF);
 }
 
+/**
+ * Sets up the 8259s, with every IRQ masked.
+ *
+ * @param _master  the master's ports (0x20)
+ * @param _slave   the slave's ports (0xA0)
+ * @return 0, or `-ENODEV` if there's no 8259
+ */
 int x86_pic_setup(struct ioaddr *_master, struct ioaddr *_slave)
 {
     master = *_master;
@@ -200,10 +176,9 @@ int x86_pic_setup(struct ioaddr *_master, struct ioaddr *_slave)
             master.addr, ioaddr_type_str(&master),
             slave.addr, ioaddr_type_str(&slave));
 
-    /* Initialize */
     x86_irq_remap();
 
-    /* Mask all interrupts */
+    /* every IRQ masked, until it has a handler */
     x86_pic_disable();
     return 0;
 }

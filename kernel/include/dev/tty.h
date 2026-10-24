@@ -10,69 +10,80 @@ struct tty;
 #include <sys/proc.h>
 #include <fs/iobuf.h>
 
+/*
+ * Terminals (dev/tty/generic.c): the line discipline that every terminal
+ * shares, the virtual terminals, the serial ports and the
+ * pseudo-terminals. A terminal has two sides: the master, the device
+ * (keyboard and screen, a serial port, a pty's master), and the slave,
+ * what programs read and write. See docs/kernel/devices.md.
+ */
+
+/* A terminal's write function, for one of its sides. */
 typedef ssize_t (*ttyio)(struct tty *tty, size_t size, void *buf);
 
-/**
- * generic tty interface
- */
+/** A terminal, and its line discipline's state. */
 struct tty {
-    /** cooking buffer */
+    /** the line being edited, in canonical mode */
     char *cook;
 
-    /** size of cooking buffer */
+    /** the size of `cook` */
     size_t size;
 
-    /** current position in cooking buffer */
+    /** how much of `cook` is used */
     size_t pos;
 
-    /** end-of-files (VEOF at the start of a line) reads have to return */
+    /** how many end-of-files (VEOF at the start of a line) reads still
+     *  have to return */
     int eof;
 
-    /** the output's column (OPOST: ONOCR, ONLRET), and an ONLCR newline
-     *  whose CR went but not its NL (the device took no more) */
+    /** the output's column (for OPOST's ONOCR and ONLRET), and whether an
+     *  ONLCR newline's CR was sent but not its NL yet (the device took no
+     *  more) */
     size_t col;
     int nl_owed;
 
     struct termios tios;
     struct winsize ws;
 
-    /** output stopped (IXON: VSTOP came), programs' writes wait for
-     *  VSTART on start_wait; how many wait (tty_free() leaves the tty to
-     *  the last of them, gone) */
+    /** whether output is stopped (IXON: VSTOP came); writes wait on
+     *  `start_wait` for VSTART. `start_waiters` counts them: tty_free()
+     *  marks the terminal `gone` and leaves freeing it to the last one */
     int stopped;
     struct waitq start_wait;
     int start_waiters;
     int gone;
 
-    /** associated device */
+    /** the terminal's device */
     struct dev *dev;
 
-    /** the session it is the controlling terminal of, NULL if none */
+    /** the session it is the controlling terminal of, or NULL */
     struct session *session;
 
-    /** foreground process group, NULL if none */
+    /** the foreground process group, or NULL */
     struct pgroup *fg;
 
-    /** the device's vnode, which /dev/tty opens instead of itself */
+    /** the device's vnode, which /dev/tty opens in its place */
     struct vnode *vnode;
 
-    /* interface */
+    /* the device's side */
 
-    /** specific handler private data */
+    /** the device's own data */
     void *p;
 
-    /** master write handelr */
+    /** writes to the master side: input, as if typed */
     ttyio   master_write;
 
-    /** slave write handler */
+    /** writes to the slave side: output, for the device */
     ttyio   slave_write;
 
-    /** discards the input readers haven't read yet */
+    /** discards the input that readers haven't read yet */
     void    (*input_flush)(struct tty *tty);
 };
 
+/* The size of a terminal's line buffer. */
 #define TTY_BUF_SIZE 512
 
+/* The line discipline's operations (dev/tty/generic.c). */
 int     tty_new(struct proc *proc, size_t buf_size, ttyio master, ttyio slave, void *p, struct tty **ref);
 int     tty_free(struct tty *tty);
 ssize_t tty_master_write(struct tty *tty, size_t size, void *buf);

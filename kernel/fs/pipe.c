@@ -1,3 +1,9 @@
+/** \file
+ * Pipes, and FIFOs: a ring buffer in memory, written at one end and read
+ * at the other. Readers and writers sleep on one wait queue until there
+ * is data or room.
+ */
+
 #include <core/system.h>
 
 #include <ds/ringbuf.h>
@@ -11,24 +17,27 @@
 MALLOC_DEFINE(M_PIPE, "pipe", "pipe structure");
 
 /*
- * A pipe has a vnode for each end, the open files of the end reference
- * it; when the last one is closed the end is gone. Anonymous pipes
- * (pipe()) have both ends from the start, a FIFO creates them as it is
+ * A pipe has a vnode for each end, which the end's open files reference;
+ * when the last one is closed, the end is gone. An anonymous pipe
+ * (pipe()) has both ends from the start. A FIFO makes them as it is
  * opened, and a third one for opening it read-write, which is both.
  */
 
 enum { END_READ, END_WRITE, END_RDWR };
 
+/** Says whether a pipe has an end open for reading. */
 static int has_readers(struct pipe *pipe)
 {
     return pipe->r_node || pipe->rw_node;
 }
 
+/** Says whether a pipe has an end open for writing. */
 static int has_writers(struct pipe *pipe)
 {
     return pipe->w_node || pipe->rw_node;
 }
 
+/** Frees a pipe and its ring buffer. */
 static void pipefs_pfree(struct pipe *pipe)
 {
     if (pipe) {
@@ -38,12 +47,15 @@ static void pipefs_pfree(struct pipe *pipe)
     }
 }
 
+/** Reads what the pipe's ring buffer has, up to what is asked for. */
 static ssize_t pipefs_read(struct vnode *node, off_t offset __unused, struct iobuf *io)
 {
     struct pipe *pipe = node->p;
     return ringbuf_read_iobuf(pipe->ring, io->resid, io);
 }
 
+/** Writes into the pipe's ring buffer, as much as fits. Fails with
+ * `-EPIPE` if no end is open for reading. */
 static ssize_t pipefs_write(struct vnode *node, off_t offset __unused, struct iobuf *io)
 {
     struct pipe *pipe = node->p;
@@ -55,11 +67,13 @@ static ssize_t pipefs_write(struct vnode *node, off_t offset __unused, struct io
     return ringbuf_write_iobuf(pipe->ring, io->resid, io);
 }
 
+/** Closes an end of a pipe, when its last open file is closed. The pipe
+ * goes with its last end; otherwise, the other end is woken up to see the
+ * end of the file, or that writing fails. */
 static int pipefs_close(struct vnode *node)
 {
     struct pipe *pipe = node->p;
 
-    /* called when the last descriptor of one end is closed */
     if (node == pipe->w_node)
         pipe->w_node = NULL;
     else if (node == pipe->rw_node)
@@ -80,46 +94,51 @@ static int pipefs_close(struct vnode *node)
         return 0;
     }
 
-    /* wake up the other end so it can see EOF/EPIPE */
+    /* wake up the other end, so that it sees the end of the file, or
+     * EPIPE */
     waitq_wakeup(&pipe->queue);
     return 0;
 }
 
+/** Says whether a read is at the end of the file: no writers are left,
+ * and the pipe is empty. */
 static int pipefs_eof(struct file *file)
 {
     struct pipe *pipe = file->vnode->p;
 
-    /* end-of-file once all writers are gone and the pipe is drained */
     return !has_writers(pipe) && !ringbuf_available(pipe->ring);
 }
 
+/** Says whether a read of `size` bytes would go on without waiting. */
 static int pipefs_can_read(struct file *file, size_t size)
 {
     struct vnode *node = file->vnode;
     struct pipe *pipe = node->p;
 
-    if (!has_writers(pipe)) /* read will not block, returns EOF */
+    if (!has_writers(pipe)) /* the read won't wait: it returns 0 */
         return 1;
 
     return size <= ringbuf_available(pipe->ring);
 }
 
+/** Says whether a write of `size` bytes would go on without waiting. */
 static int pipefs_can_write(struct file *file, size_t size)
 {
     struct vnode *node = file->vnode;
     struct pipe *pipe = node->p;
     size_t avail = ringbuf_available(pipe->ring);
 
-    if (!has_readers(pipe)) /* write will not block, returns EPIPE */
+    if (!has_readers(pipe)) /* the write won't wait: it fails with EPIPE */
         return 1;
 
-    /* ring buffer holds at most size - 1 bytes */
+    /* the ring buffer holds at most size - 1 bytes */
     if (avail >= pipe->ring->size - 1)
         return 0;
 
     return size <= pipe->ring->size - 1 - avail;
 }
 
+/** Makes a new pipe, with no ends. Returns 0 or `-ENOMEM`. */
 static int pipefs_mkpipe(struct pipe **ref)
 {
     struct pipe *pipe;
@@ -139,7 +158,8 @@ static int pipefs_mkpipe(struct pipe **ref)
     return 0;
 }
 
-/** a new reference to an end of pipe (END_*), created if needed */
+/** Returns a new reference to an end of a pipe (`END_*`), making the end
+ * if it doesn't exist yet, or NULL if there was no memory. */
 static struct vnode *pipefs_end(struct pipe *pipe, int which)
 {
     struct vnode **end = which == END_READ  ? &pipe->r_node :
@@ -154,8 +174,8 @@ static struct vnode *pipefs_end(struct pipe *pipe, int which)
     if (!node)
         return NULL;
 
-    /* readers and writers share a single wait queue: readers sleep on
-     * read_queue and wake write_queue, writers do the opposite */
+    /* readers and writers share one wait queue: readers sleep on the
+     * read queue and wake the write queue, writers the opposite */
     node->read_queue  = &pipe->queue;
     node->write_queue = &pipe->queue;
 
@@ -168,6 +188,14 @@ static struct vnode *pipefs_end(struct pipe *pipe, int which)
     return node;
 }
 
+/**
+ * Makes an anonymous pipe, for `pipe()`: one open file for each end.
+ *
+ * @param read   the open file for the reading end, its vnode set here
+ * @param write  the open file for the writing end, its vnode and flags
+ *               set here
+ * @return 0, `-EINVAL`, or `-ENOMEM`
+ */
 int pipefs_pipe(struct file *read, struct file *write)
 {
     int err = 0;
@@ -197,11 +225,16 @@ int pipefs_pipe(struct file *read, struct file *write)
 }
 
 /**
- * Open the FIFO file->vnode refers to: file->vnode becomes an end of its
- * pipe. Opening for reading waits for a writer and opening for writing
- * for a reader, unless O_NONBLOCK (then a writer without readers fails
- * with ENXIO) or O_RDWR (which is both). On failure file->vnode is left
- * as it was.
+ * Opens a FIFO: the open file's vnode becomes an end of the FIFO's pipe,
+ * made by its first open. Opening for reading waits for a writer, and
+ * opening for writing for a reader, unless the file is non-blocking (then
+ * a writer without readers fails with `ENXIO`) or opened read-write
+ * (which is both).
+ *
+ * @param file  the open file, whose vnode is the FIFO; it's left as it
+ *              was on failure
+ * @return 0, `-ENXIO`, `-ENOMEM`, or `-ERESTARTSYS` if a signal came
+ *         while it waited
  */
 int pipefs_fifo_open(struct file *file)
 {
@@ -239,15 +272,16 @@ int pipefs_fifo_open(struct file *file)
     /* the other end may be waiting for this one */
     waitq_wakeup(&pipe->queue);
 
-    /* until the other side opens, or has: one that opened, wrote and
-     * closed while this one waited to run again counts (POSIX) */
+    /* wait until the other side opens, or has opened: one that opened,
+     * wrote and closed while this one waited to run again counts too
+     * (POSIX) */
     unsigned long r_seen = pipe->r_opens, w_seen = pipe->w_opens;
 
     if (!(file->flags & O_NONBLOCK)) {
         while (which == END_READ ? !has_writers(pipe) && pipe->w_opens == w_seen :
                which == END_WRITE ? !has_readers(pipe) && pipe->r_opens == r_seen : 0) {
             if ((err = waitq_sleep(&pipe->queue))) {
-                /* releases the pipe too if it was the only end */
+                /* this releases the pipe too, if it was its only end */
                 vfs_close(end);
                 return err;
             }
@@ -261,7 +295,7 @@ int pipefs_fifo_open(struct file *file)
 e_nomem:
     err = -ENOMEM;
 error:
-    /* nothing else uses the pipe: drop it */
+    /* if nothing else uses the pipe, it goes */
     if (!has_readers(pipe) && !has_writers(pipe)) {
         fifo->fifo = NULL;
         vfs_close(fifo);

@@ -16,17 +16,17 @@ MALLOC_DECLARE(M_VM_AREF);
 
 #include <ds/queue.h>
 
-/** 
- * virtual memory space
- *
- * This structure holds the entire mapping of a virtual memory 
- * space/view
+/*
+ * Virtual memory: address spaces, their mappings, and where the mappings'
+ * pages come from (anons and vm objects). See docs/kernel/memory.md.
  */
+
+/** An address space: its mappings, and its page tables. */
 struct vm_space {
-    /** physical memory mapper (arch-specific) */
+    /** its page tables (the architecture's) */
     struct pmap  *pmap;
 
-    /** virtual memory regions inside the vm space */
+    /** its mappings (map entries), in address order */
     struct queue  vm_entries;
 };
 
@@ -34,7 +34,7 @@ struct vm_space {
 #include <mm/mm.h>
 #include <ds/hashmap.h>
 
-/* vm entry flags */
+/* A mapping's flags: its permissions, and more. */
 #define VM_KR         0x0001         /**< kernel read */
 #define VM_KW         0x0002         /**< kernel write */
 #define VM_KX         0x0004         /**< kernel execute */
@@ -42,9 +42,9 @@ struct vm_space {
 #define VM_UW         0x0010         /**< user write */
 #define VM_UX         0x0020         /**< user execute */
 #define VM_PERM       0x003F         /**< permissions mask */
-#define VM_NOCACHE    0x0040         /**< disable caching */
-#define VM_SHARED     0x0080         /**< shared mapping */
-#define VM_COPY       0x0100         /**< needs copy */
+#define VM_NOCACHE    0x0040         /**< not cached (device memory) */
+#define VM_SHARED     0x0080         /**< shared: a fork doesn't copy it */
+#define VM_COPY       0x0100         /**< to be copied before it's written to */
 
 #define VM_KRW  (VM_KR|VM_KW)        /**< kernel read/write */
 #define VM_KRX  (VM_KR|VM_KX)        /**< kernel read/execute */
@@ -55,145 +55,138 @@ struct vm_space {
 #define VM_UWX  (VM_UW|VM_UX)        /**< user write/execute */
 #define VM_URWX (VM_UR|VM_UW|VM_UX)  /**< user read/write/execute */
 
-/* object types */
-#define VMOBJ_ZERO    0x0000         /**< zero fill */
-#define VMOBJ_FILE    0x0001         /**< file backed */
+/* The kinds of vm objects. */
+#define VMOBJ_ZERO    0x0000         /**< pages of zeros */
+#define VMOBJ_FILE    0x0001         /**< a file's pages */
 
-/** 
- * virtual memory region
- *
- * This structure represents a region in virtual memory
- * space with access permissions and backening objects
+/**
+ * A mapping (map entry): a range of an address space, its permissions,
+ * and where its pages come from.
  */
 struct vm_entry {
-    /** Physical Address, 0 means anywhere - XXX */
+    /** physical memory to map all at once (vm_map()), or 0 for pages that
+     *  come in on page faults */
     paddr_t  paddr;
 
-    /** address of the vm entry inside the `vm_space` */
+    /** where the mapping starts in its address space */
     vaddr_t base;
 
-    /** size of the vm entry */
+    /** its size */
     size_t size;
 
-    /** permissions flags */
+    /** its permissions and flags (VM_*) */
     uint32_t flags;
 
-    /** anon layer object */
+    /** its anon: the pages the process wrote to */
     struct vm_anon *vm_anon;
 
-    /** backening object */
+    /** its object: what its other pages come from (a file) */
     struct vm_object *vm_object;
 
-    /** offset inside object */
+    /** where the mapping starts in its object */
     size_t off;
 
-    /** the queue node this vm entry is stored in */
+    /** its node in its address space's list of mappings */
     struct qnode *qnode;
 };
 
-/**
- * pager
- */
+/** A vm object's pager: reads its pages in, and writes them out. */
 struct vm_pager {
-    /** page in */
+    /** reads in the page at `off`, or returns NULL */
     struct vm_page *(*in)(struct vm_object *vm_object, size_t off);
 
-    /** page out */
+    /** writes out the page at `off` */
     int (*out)(struct vm_object *vm_object, size_t off);
 };
 
 /**
- * anonymous memory object reference
- *
- * The `vm_aref` acts as a container of a `vm_page` with reference count
- * of anonymous memory regions (`vm_anon`) referencing/using that page.
+ * An anon's reference to a page (an aref). Anons that a fork shares share
+ * their arefs, and `ref` counts them, so the page is copied before one of
+ * them writes to it.
  */
 struct vm_aref {
-    /** vm page associated with the aref */
+    /** the page */
     struct vm_page *vm_page;
 
-    /** number of references to the aref */
+    /** how many anons have the aref */
     size_t ref;
 
-    /** flags associated with this aref */
+    /** its flags (VM_COPY) */
     uint32_t flags;
 };
 
-/**
- * anonymous memory object
- */
+/** An anon: a mapping's private pages, those the process wrote to. */
 struct vm_anon {
-    /** hashmap of `vm_aref` structures loaded/contained in this anon */
+    /** its arefs, by the offset of their page in the mapping */
     struct hashmap *arefs;
 
-    /** number of `vm_entry` structures referencing this anon */
+    /** how many mappings share the anon */
     size_t ref;
 
-    /** flags associated with the anon */
+    /** its flags (VM_COPY: to be copied before it's written to) */
     int flags;
 };
 
-/**
- * cached object
- */
+/** A vm object: what a mapping's pages come from (a file), and its pages
+ *  that have been read in. */
 struct vm_object {
-    /** `vm_page`s loaded/contained in the vm object */
+    /** its pages that have been read in, by their offset */
     struct hashmap *pages;
 
-    /** type of the object */
+    /** its kind (VMOBJ_*) */
     int type;
 
-    /** number of vm entries referencing this object */
+    /** how many mappings it has */
     size_t ref;
 
-    /** pager for the vm object */
+    /** its pager */
     struct vm_pager *pager;
 
-    /** pager private data */
+    /** the pager's own data (a file's vnode) */
     void *p;
 };
 
-/** 
- * physical page
- */
+/** A page of physical memory (pages[] has one for every page of RAM). */
 struct vm_page {
-    paddr_t  paddr; /**< physical address of the page */
+    paddr_t  paddr; /**< its physical address */
 
-    struct vm_object *vm_object; /**< the object this page belongs to */
+    struct vm_object *vm_object; /**< the object it belongs to, or NULL */
 
-    size_t off; /**< offset of page inside the object */
+    size_t off; /**< its offset in its object or anon */
 
-    size_t ref; /**< number of processes referencing this page */
+    size_t ref; /**< how many references it has */
 };
 
+/* The kernel's address space. */
 extern struct vm_space kvm_space;
 
+/* mm/kvmem.c: sets up kmalloc(); its self-checks */
 void kvmem_setup(void);
 void kvmem_selftest(void);
 void kvmem_guardtest(void);
 
-/* mm/vmm.c XXX */
+/* mm/vmm.c: maps and unmaps a map entry's range */
 int  vm_map(struct vm_space *vm_space, struct vm_entry *vm_entry);
 void vm_unmap_full(struct vm_space *vm_space, struct vm_entry *vm_entry);
 
-/* mm/vm_space.c */
+/* mm/vm_space.c: address spaces */
 int  vm_space_fork(struct vm_space *parent, struct vm_space *child);
 void vm_space_destroy(struct vm_space *vm_space);
 struct vm_entry *vm_space_find(struct vm_space *vm_space, vaddr_t vaddr);
 int  vm_space_insert(struct vm_space *vm_space, struct vm_entry *vm_entry);
 
-/* mm/vm_entry.c */
+/* mm/vm_entry.c: map entries */
 struct vm_entry *vm_entry_new(void);
 void vm_entry_destroy(struct vm_entry *vm_entry);
 
-/* mm/vm_anon.c */
+/* mm/vm_anon.c: anons */
 struct vm_anon *vm_anon_new(void);
 struct vm_anon *vm_anon_copy(struct vm_anon *vm_anon);
 void vm_anon_incref(struct vm_anon *vm_anon);
 void vm_anon_decref(struct vm_anon *vm_anon);
 void vm_anon_destroy(struct vm_anon *vm_anon);
 
-/* mm/vm_object.c */
+/* fs/vm_object.c and mm/vm_object.c: vm objects, and a file's pages */
 struct vm_object *vm_object_vnode(struct vnode *vnode);
 void vnode_pages_update(struct vnode *vnode, off_t start, off_t end);
 void vnode_pages_free(struct vnode *vnode);

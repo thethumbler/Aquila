@@ -1,12 +1,15 @@
 /** \file
- * TCP's input (RFC 9293 3.10.7, "SEGMENT ARRIVES"): a segment goes to
- * its connection's state machine, or to a listener, which makes a
- * connection for a SYN; one for no connection is answered with RST.
+ * TCP input (RFC 9293 3.10.7, "SEGMENT ARRIVES").
  *
- * Acknowledgments drive the congestion window (RFC 5681: slow start,
- * congestion avoidance; three duplicate ACKs retransmit and recover, RFC
- * 6582's NewReno). Data out of order waits in a list, sorted, until what
- * is missing comes; a duplicate ACK tells the peer.
+ * A segment goes to its connection's state machine, or to a listener,
+ * which makes a new connection for a SYN. A segment for no connection is
+ * answered with a reset.
+ *
+ * Acknowledgments drive the congestion window (RFC 5681): slow start,
+ * then congestion avoidance; three duplicate ACKs mean a lost segment,
+ * which is retransmitted at once, with NewReno's recovery (RFC 6582).
+ * Data that arrives out of order waits in a sorted list until what is
+ * missing comes, and a duplicate ACK tells the peer what is missing.
  */
 
 #include <core/system.h>
@@ -19,7 +22,7 @@
 
 #include <aquila/errno.h>
 
-/** a segment, its header in our byte order */
+/** A received segment, with its header in host byte order. */
 struct seg {
     uint32_t seq, ack;
     uint16_t win;
@@ -29,13 +32,14 @@ struct seg {
     uint32_t len;
 };
 
+/** Reads a segment's options; the only one used is the MSS. */
 static void options(const struct tcp_hdr *th, size_t hlen, struct seg *s)
 {
     const uint8_t *o = (const uint8_t *) (th + 1);
     const uint8_t *end = (const uint8_t *) th + hlen;
 
     while (o < end) {
-        if (*o == 0)            /* the end */
+        if (*o == 0)            /* the end of the options */
             break;
 
         if (*o == 1) {          /* no operation */
@@ -53,8 +57,8 @@ static void options(const struct tcp_hdr *th, size_t hlen, struct seg *s)
     }
 }
 
-/** the segments' size: the peer's MSS (536 if it didn't say), not more
- * than ours */
+/** Sets the connection's segment size: the peer's MSS (536 if it didn't
+ * send one), but no more than ours. */
 static void set_mss(struct tcp_pcb *pcb, uint16_t peer)
 {
     struct netif *netif = ipv4_route(pcb->raddr);
@@ -64,6 +68,8 @@ static void set_mss(struct tcp_pcb *pcb, uint16_t peer)
     pcb->mss = MIN(peer ? peer : TCP_MSS_DEFAULT, ours);
 }
 
+/** Takes a round trip measurement, if `ack` acknowledges the segment that
+ * is being timed. */
 static void rtt_sample(struct tcp_pcb *pcb, uint32_t ack)
 {
     if (pcb->rtt_timing && SEQ_GT(ack, pcb->rtt_seq)) {
@@ -72,8 +78,9 @@ static void rtt_sample(struct tcp_pcb *pcb, uint32_t ack)
     }
 }
 
-/* a SYN for a listener: a connection, SYN_RECEIVED, its listener's until
- * accept() takes it */
+/** Handles a segment for a listening socket. A SYN makes a new connection
+ * in `SYN_RECEIVED`, which belongs to the listener until `accept()` takes
+ * it; an ACK is answered with a reset. */
 static void listen_input(struct tcp_pcb *l, const struct ipv4_hdr *ih, const struct tcp_hdr *th,
                          struct seg *s, struct netif *netif)
 {
@@ -85,7 +92,7 @@ static void listen_input(struct tcp_pcb *l, const struct ipv4_hdr *ih, const str
         return;
     }
 
-    /* full: the peer tries again */
+    /* if the backlog is full, the SYN is ignored: the peer tries again */
     if (!(s->flags & TH_SYN) || l->qlen >= l->backlog)
         return;
 
@@ -109,7 +116,7 @@ static void listen_input(struct tcp_pcb *l, const struct ipv4_hdr *ih, const str
     pcb->iss = tcp_iss(pcb);
     pcb->snd_una = pcb->iss;
 
-    /* the listener's options */
+    /* the connection inherits the listener's options */
     pcb->nodelay   = l->nodelay;
     pcb->keepalive = l->keepalive;
 
@@ -124,7 +131,8 @@ static void listen_input(struct tcp_pcb *l, const struct ipv4_hdr *ih, const str
     tcp_send_syn(pcb);
 }
 
-/* RFC 9293 3.10.7.3 */
+/** Handles a segment for a connection in `SYN_SENT` (RFC 9293 3.10.7.3):
+ * the peer's SYN and ACK establish it, a reset refuses it. */
 static void syn_sent_input(struct tcp_pcb *pcb, const struct ipv4_hdr *ih, const struct tcp_hdr *th,
                            struct seg *s, struct netif *netif)
 {
@@ -153,14 +161,15 @@ static void syn_sent_input(struct tcp_pcb *pcb, const struct ipv4_hdr *ih, const
     pcb->snd_wl2 = s->ack;
 
     if (!(s->flags & TH_ACK)) {
-        /* both opened at once: SYN and ACK for theirs */
+        /* both sides opened at once: send SYN and ACK for theirs */
         pcb->state = TCP_SYN_RECEIVED;
         pcb->retries = 0;
         tcp_send_syn(pcb);
         return;
     }
 
-    /* our SYN acked (data with it is left for the peer to send again) */
+    /* our SYN was acknowledged (data that came with it is left for the
+     * peer to send again) */
     if (!pcb->retries)
         rtt_sample(pcb, s->ack);
 
@@ -172,7 +181,8 @@ static void syn_sent_input(struct tcp_pcb *pcb, const struct ipv4_hdr *ih, const
     tcp_send_ack(pcb);
 }
 
-/** RFC 9293 3.10.7.4: within what we said we'd take */
+/** Returns whether a segment is acceptable (RFC 9293 3.10.7.4): it falls
+ * within the window we advertised. */
 static int acceptable(struct tcp_pcb *pcb, struct seg *s, uint32_t wnd)
 {
     uint32_t seglen = s->len + !!(s->flags & TH_SYN) + !!(s->flags & TH_FIN);
@@ -188,7 +198,8 @@ static int acceptable(struct tcp_pcb *pcb, struct seg *s, uint32_t wnd)
 #undef IN_WINDOW
 }
 
-/** the first segment not acked again (fast retransmit, a partial ACK) */
+/** Retransmits the first unacknowledged segment, for a fast retransmit or
+ * a partial ACK. */
 static void retransmit_first(struct tcp_pcb *pcb)
 {
     uint32_t nxt = pcb->snd_nxt;
@@ -199,7 +210,7 @@ static void retransmit_first(struct tcp_pcb *pcb)
     uint32_t cwnd = pcb->cwnd;
     int nodelay = pcb->nodelay;
 
-    /* one segment, whatever the windows and Nagle say */
+    /* send one segment, whatever the windows and Nagle say */
     pcb->cwnd = pcb->mss;
     pcb->nodelay = 1;
     tcp_output(pcb);
@@ -210,11 +221,13 @@ static void retransmit_first(struct tcp_pcb *pcb)
         pcb->snd_nxt = nxt;
 }
 
-/** an ACK for what we sent; 0 if the segment goes on */
+/** Handles a segment's acknowledgment of what we sent: the send buffer, the
+ * congestion window, the timers and the peer's window. Returns 0 if the
+ * segment should be processed further, or -1 if not. */
 static int ack_input(struct tcp_pcb *pcb, struct seg *s)
 {
     if (SEQ_GT(s->ack, pcb->snd_max)) {
-        /* for what we didn't send */
+        /* it acknowledges what we didn't send */
         tcp_send_ack(pcb);
         return -1;
     }
@@ -224,7 +237,7 @@ static int ack_input(struct tcp_pcb *pcb, struct seg *s)
         uint32_t buffered = ringbuf_available(pcb->sndbuf);
         int fin_acked = pcb->fin_queued && acked > buffered;
 
-        /* the data acked goes (the FIN is after it) */
+        /* drop the acknowledged data (the FIN comes after it) */
         ringbuf_discard(pcb->sndbuf, MIN(acked, buffered));
 
         pcb->snd_una = s->ack;
@@ -237,23 +250,24 @@ static int ack_input(struct tcp_pcb *pcb, struct seg *s)
 
         if (pcb->in_recovery) {
             if (SEQ_GEQ(s->ack, pcb->recover)) {
-                /* all that was out when it was lost: recovered */
+                /* everything that was in flight at the loss is
+                 * acknowledged: the recovery is over */
                 pcb->in_recovery = 0;
                 pcb->cwnd = pcb->ssthresh;
             } else {
-                /* a partial ACK: the next hole */
+                /* a partial ACK: retransmit the next hole */
                 retransmit_first(pcb);
                 pcb->cwnd = pcb->cwnd > acked ? pcb->cwnd - acked + pcb->mss : pcb->mss;
             }
         } else if (pcb->cwnd < pcb->ssthresh) {
             pcb->cwnd += MIN(acked, (uint32_t) pcb->mss);   /* slow start */
         } else {
-            pcb->cwnd += MAX(1U, (uint32_t) pcb->mss * pcb->mss / pcb->cwnd);
+            pcb->cwnd += MAX(1U, (uint32_t) pcb->mss * pcb->mss / pcb->cwnd);   /* congestion avoidance */
         }
 
         pcb->dupacks = 0;
 
-        /* the timer for what is still out */
+        /* restart the timer for what is still in flight */
         callout_stop(&pcb->rexmt);
         pcb->persist = 0;
 
@@ -278,7 +292,8 @@ static int ack_input(struct tcp_pcb *pcb, struct seg *s)
         }
     } else if (s->ack == pcb->snd_una && !s->len && !(s->flags & TH_FIN) &&
                s->win == pcb->snd_wnd && pcb->snd_una != pcb->snd_max) {
-        /* a duplicate ACK: something was lost, what follows got there */
+        /* a duplicate ACK: a segment was lost, and those after it got
+         * there */
         if (++pcb->dupacks == 3 && !pcb->in_recovery) {
             uint32_t flight = pcb->snd_max - pcb->snd_una;
 
@@ -294,7 +309,7 @@ static int ack_input(struct tcp_pcb *pcb, struct seg *s)
         }
     }
 
-    /* the peer's window, from its latest segment */
+    /* update the peer's window from its latest segment */
     if (SEQ_LT(pcb->snd_wl1, s->seq) || (pcb->snd_wl1 == s->seq && SEQ_LEQ(pcb->snd_wl2, s->ack))) {
         int opened = !pcb->snd_wnd && s->win;
 
@@ -312,7 +327,8 @@ static int ack_input(struct tcp_pcb *pcb, struct seg *s)
     return 0;
 }
 
-/** a segment ahead of rcv_nxt waits, sorted (it is its netbuf, its data) */
+/** Queues a segment that came ahead of `rcv_nxt`, sorted by sequence
+ * number; its netbuf now holds just its data. */
 static void ooo_insert(struct tcp_pcb *pcb, struct netbuf *nb, struct seg *s, int fin)
 {
     nb->data = s->data;
@@ -325,7 +341,7 @@ static void ooo_insert(struct tcp_pcb *pcb, struct netbuf *nb, struct seg *s, in
     while (*p && SEQ_LT((*p)->seq, s->seq))
         p = &(*p)->next;
 
-    /* the same again */
+    /* the same segment again */
     if (*p && (*p)->seq == s->seq && (*p)->len >= s->len) {
         netbuf_free(nb);
         return;
@@ -335,9 +351,10 @@ static void ooo_insert(struct tcp_pcb *pcb, struct netbuf *nb, struct seg *s, in
     *p = nb;
 }
 
-/** nothing follows the FIN: what still waits goes (it's what came before
- * it, again: the peer resent it cut otherwise), it isn't data no one read
- * (socket_tcp_shutdown) */
+/** Drops the segments that still wait, once the FIN is in: nothing follows
+ * the FIN, so they are only copies of what came before it, cut
+ * differently. (They aren't data no one read, which
+ * `socket_tcp_shutdown()` deals with.) */
 static void ooo_purge(struct tcp_pcb *pcb)
 {
     while (pcb->ooo) {
@@ -347,7 +364,8 @@ static void ooo_purge(struct tcp_pcb *pcb)
     }
 }
 
-/** what waited and now follows rcv_nxt; 1 if the FIN came with it */
+/** Takes the waiting segments that now follow `rcv_nxt` into the receive
+ * buffer. Returns 1 if the FIN came with them, or 0. */
 static int ooo_drain(struct tcp_pcb *pcb)
 {
     int fin = 0;
@@ -381,7 +399,8 @@ static int ooo_drain(struct tcp_pcb *pcb)
     return fin;
 }
 
-/** the peer's FIN, in its place: the end of the data */
+/** Handles the peer's FIN, once all the data before it is in: the end of
+ * its data, and a change of state. */
 static void fin_input(struct tcp_pcb *pcb)
 {
     pcb->rcv_nxt++;
@@ -395,7 +414,7 @@ static void fin_input(struct tcp_pcb *pcb)
             pcb->state = TCP_CLOSE_WAIT;
             break;
         case TCP_FIN_WAIT_1:
-            /* ours not acked yet */
+            /* our FIN isn't acknowledged yet */
             pcb->state = TCP_CLOSING;
             break;
         case TCP_FIN_WAIT_2:
@@ -405,8 +424,9 @@ static void fin_input(struct tcp_pcb *pcb)
     }
 }
 
-/* the synchronized states (RFC 9293 3.10.7.4); the netbuf is freed or
- * kept */
+/** Handles a segment for a connection in a synchronized state (RFC 9293
+ * 3.10.7.4). The netbuf is freed, or kept if the segment waits out of
+ * order. */
 static void segment_input(struct tcp_pcb *pcb, struct netbuf *nb, struct seg *s,
                           const struct ipv4_hdr *ih, const struct tcp_hdr *th, struct netif *netif)
 {
@@ -418,7 +438,8 @@ static void segment_input(struct tcp_pcb *pcb, struct netbuf *nb, struct seg *s,
         goto done;
     }
 
-    /* RFC 5961: a reset only at rcv_nxt, else a challenge ACK */
+    /* RFC 5961: accept a reset only at rcv_nxt, and answer any other with
+     * a challenge ACK */
     if (s->flags & TH_RST) {
         if (s->seq != pcb->rcv_nxt) {
             tcp_send_ack(pcb);
@@ -441,7 +462,7 @@ static void segment_input(struct tcp_pcb *pcb, struct netbuf *nb, struct seg *s,
         goto done;
     }
 
-    /* a SYN in a connection: a challenge ACK (RFC 5961) */
+    /* a SYN in a connection gets a challenge ACK (RFC 5961) */
     if (s->flags & TH_SYN) {
         tcp_send_ack(pcb);
         goto done;
@@ -452,7 +473,7 @@ static void segment_input(struct tcp_pcb *pcb, struct netbuf *nb, struct seg *s,
 
     tcp_keepalive_reset(pcb);
 
-    /* the data to what we take: from rcv_nxt, in the window */
+    /* trim the data to what we take: from rcv_nxt, within the window */
     int fin = !!(s->flags & TH_FIN);
 
     if (SEQ_LT(s->seq, pcb->rcv_nxt)) {
@@ -496,10 +517,10 @@ static void segment_input(struct tcp_pcb *pcb, struct netbuf *nb, struct seg *s,
 
     int fin_now = 0;
 
-    /* the data, in the states it may come in */
+    /* take the data, in the states where it may come */
     if ((s->len || fin) && (pcb->state == TCP_ESTABLISHED || pcb->state == TCP_FIN_WAIT_1 ||
                             pcb->state == TCP_FIN_WAIT_2)) {
-        /* nobody reads it anymore: RST (RFC 2525) */
+        /* no one reads the socket anymore: reset (RFC 2525) */
         if (s->len && pcb->detached) {
             tcp_send_rst(pcb);
             tcp_drop(pcb, 0);
@@ -518,7 +539,8 @@ static void segment_input(struct tcp_pcb *pcb, struct netbuf *nb, struct seg *s,
             else if (fin_now)
                 ooo_purge(pcb);
 
-            /* a hole filled, or the FIN: acked now (fin_input) */
+            /* acknowledge a filled hole now; the FIN is acknowledged by
+             * fin_input() */
             if (n && !fin_now) {
                 if (waiting)
                     tcp_send_ack(pcb);
@@ -529,7 +551,8 @@ static void segment_input(struct tcp_pcb *pcb, struct netbuf *nb, struct seg *s,
             if (n)
                 tcp_wakeup(pcb);
         } else {
-            /* ahead: waits; the duplicate ACK says what's missing */
+            /* ahead of rcv_nxt: it waits, and the duplicate ACK tells
+             * the peer what is missing */
             ooo_insert(pcb, nb, s, fin);
             nb = NULL;
             tcp_send_ack(pcb);
@@ -541,7 +564,7 @@ static void segment_input(struct tcp_pcb *pcb, struct netbuf *nb, struct seg *s,
     if (fin_now)
         fin_input(pcb);
 
-    /* data acked, the window moved: more to send */
+    /* data was acknowledged or the window moved: send more */
     if (pcb->state != TCP_CLOSED)
         tcp_output(pcb);
 
@@ -550,6 +573,15 @@ done:
         netbuf_free(nb);
 }
 
+/**
+ * Takes in a TCP segment that IPv4 received, and passes it to its
+ * connection or listener. A segment with a bad checksum or header, or not
+ * sent to one of our addresses, is dropped.
+ *
+ * @param netif  the interface it came in on
+ * @param nb     the segment, from its TCP header; it is freed or kept
+ * @param ih     its IPv4 header
+ */
 void tcp_input(struct netif *netif, struct netbuf *nb, const struct ipv4_hdr *ih)
 {
     struct tcp_hdr *th = (struct tcp_hdr *) nb->data;
@@ -562,7 +594,7 @@ void tcp_input(struct netif *netif, struct netbuf *nb, const struct ipv4_hdr *ih
         return;
     }
 
-    /* to one of our addresses, not a broadcast */
+    /* only segments to one of our addresses, not to a broadcast */
     if (!ipv4_is_local(ih->dst)) {
         netbuf_free(nb);
         return;

@@ -1,5 +1,7 @@
 /** \file
- * virtual filesystem
+ * The virtual filesystem (VFS): the filesystems that are installed, the
+ * root, mounting one filesystem on a directory of another, and
+ * permissions. See docs/kernel/vfs.md.
  */
 
 #include <core/system.h>
@@ -19,13 +21,19 @@ MALLOC_DEFINE(M_FS_LIST, "fs-list", "filesystems list");
 static int vfs_log_level = LOG_NONE;
 LOGGER_DEFINE(vfs, vfs_log, vfs_log_level)
 
-/** list of registered filesystems */
+/** The installed filesystems. */
 struct fs_list *registered_fs = NULL;
 
-/* ================== Mounts ================== */
+/* Mounts */
 
 struct vnode *vfs_root = NULL;
 
+/**
+ * Makes a vnode the root of the filesystem tree.
+ *
+ * @param vnode  the root directory of a filesystem
+ * @return 0
+ */
 int vfs_mount_root(struct vnode *vnode)
 {
     vfs_root = vnode;
@@ -33,8 +41,14 @@ int vfs_mount_root(struct vnode *vnode)
 }
 
 /**
- * the filesystem whose root is `root' is mounted on directory
- * `dir' (which the mount keeps: a reference); on the root, it is the root
+ * Mounts a filesystem on a directory: a lookup that reaches `dir` goes
+ * on in `root` instead. The mount keeps a reference to `dir`. Mounting
+ * on the root makes `root` the new root.
+ *
+ * @param dir   the directory to mount on
+ * @param root  the root directory of the filesystem to mount
+ * @return 0, `-EINVAL`, or `-EBUSY` if something is mounted on `dir`
+ *         already, or `root` is mounted elsewhere
  */
 int vfs_bind(struct vnode *dir, struct vnode *root)
 {
@@ -54,13 +68,19 @@ int vfs_bind(struct vnode *dir, struct vnode *root)
     return 0;
 }
 
+/**
+ * Sets up the VFS at boot.
+ */
 void vfs_init(void)
 {
     vfs_log(LOG_INFO, "initializing\n");
 }
 
 /**
- * register a new filesystem handler
+ * Installs a filesystem, so that it can be mounted by name.
+ *
+ * @param fs  the filesystem
+ * @return 0, or `-ENOMEM`
  */
 int vfs_install(struct fs *fs)
 {
@@ -78,9 +98,19 @@ int vfs_install(struct fs *fs)
     return 0;
 }
 
-/* ================== VFS high level mappings ================== */
+/* Permissions */
 
-/** check `mode' (VFS_R, VFS_W, VFS_X) access to vnode by the user of uio */
+/**
+ * Checks whether a user may access a vnode in a way: the owner's
+ * permissions apply to its owner, the group's to its group, the others'
+ * to everyone else. Root may do anything, but only execute a file that
+ * has an execute bit.
+ *
+ * @param vnode  the vnode
+ * @param uio    who is asking
+ * @param mode   the access: `VFS_R`, `VFS_W` and `VFS_X`, or'ed
+ * @return 0 if it's allowed, or `-EACCES`
+ */
 int vfs_access(struct vnode *vnode, struct uio *uio, int mode)
 {
     /* root may do anything, but only execute files that have an execute bit */
@@ -98,6 +128,14 @@ int vfs_access(struct vnode *vnode, struct uio *uio, int mode)
     return (mode & ~allowed) ? -EACCES : 0;
 }
 
+/**
+ * Checks whether a user may open a file the way it's being opened (read,
+ * write, execute, as its flags say).
+ *
+ * @param file  the file being opened, its flags set
+ * @param uio   who is opening it
+ * @return 0 if it's allowed, or `-EACCES`
+ */
 int vfs_perms_check(struct file *file, struct uio *uio)
 {
     int mode = 0;

@@ -4,6 +4,9 @@
 #include <core/system.h>
 #include <core/string.h>
 
+/* Sorting an array, as the C library's qsort() does. */
+
+/** Swaps two elements of `size` bytes. */
 static inline void __qsort_swap(char *a, char *b, size_t size)
 {
     char t;
@@ -15,6 +18,8 @@ static inline void __qsort_swap(char *a, char *b, size_t size)
     }
 }
 
+/** Sorts an array of `nmemb` elements of `size` bytes, in the order
+ * `compar` says, with quicksort (the last element as the pivot). */
 static inline void qsort(void *base, size_t nmemb, size_t size, int (*compar)(const void *, const void *))
 {
     if (nmemb <= 1 || size == 0) return;

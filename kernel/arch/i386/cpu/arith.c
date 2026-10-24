@@ -1,13 +1,18 @@
 /** \file
- * https://www.ida.liu.se/~TDIU25/pintos/src/lib/arithmetic.c
+ * i386: 64-bit division, for the code GCC generates.
+ *
+ * A 32-bit CPU has no instruction that divides 64-bit numbers, so GCC
+ * calls these helpers (`__divdi3()` and the others) for `/` and `%` on
+ * 64-bit integers. User programs get them from libgcc; the kernel isn't
+ * linked with it, so it has its own. They come from Pintos
+ * (https://www.ida.liu.se/~TDIU25/pintos/src/lib/arithmetic.c).
  */
 
 #include <stdint.h>
 
-/** Uses x86 DIVL instruction to divide 64-bit N by 32-bit D to
-     yield a 32-bit quotient.  Returns the quotient.
-     Traps with a divide error (`#DE') if the quotient does not fit
-     in 32 bits. */
+/** Divides the 64-bit `n` by the 32-bit `d` with the x86 DIVL
+ * instruction, and returns the 32-bit quotient. It traps with a divide
+ * error (`#DE`) if the quotient doesn't fit in 32 bits. */
 static inline uint32_t divl(uint64_t n, uint32_t d)
 {
     uint32_t n1 = n >> 32;
@@ -21,8 +26,8 @@ static inline uint32_t divl(uint64_t n, uint32_t d)
     return q;
 }
 
-/** Returns the number of leading zero bits in X,
-     which must be nonzero. */
+/** Returns the number of leading zero bits in `x`, which must not be
+ * 0. */
 static int nlz(uint32_t x) 
 {
     int n = 0;
@@ -52,8 +57,8 @@ static int nlz(uint32_t x)
     return n;
 }
 
-/** Divides unsigned 64-bit N by unsigned 64-bit D and returns the
-     quotient. */
+/** Divides the unsigned 64-bit `n` by the unsigned 64-bit `d`, and
+ * returns the quotient. */
 static uint64_t udiv64(uint64_t n, uint64_t d)
 {
     if ((d >> 32) == 0) {
@@ -103,15 +108,15 @@ static uint64_t udiv64(uint64_t n, uint64_t d)
     }
 }
 
-/** Divides unsigned 64-bit N by unsigned 64-bit D and returns the
-     remainder. */
+/** Divides the unsigned 64-bit `n` by the unsigned 64-bit `d`, and
+ * returns the remainder. */
 static uint64_t umod64(uint64_t n, uint64_t d)
 {
     return n - d * udiv64(n, d);
 }
 
-/** Divides signed 64-bit N by signed 64-bit D and returns the
-     quotient. */
+/** Divides the signed 64-bit `n` by the signed 64-bit `d`, and returns
+ * the quotient. */
 static int64_t sdiv64(int64_t n, int64_t d)
 {
     uint64_t n_abs = n >= 0 ? (uint64_t) n : -(uint64_t) n;
@@ -120,14 +125,14 @@ static int64_t sdiv64(int64_t n, int64_t d)
     return (n < 0) == (d < 0) ? (int64_t) q_abs : -(int64_t) q_abs;
 }
 
-/** Divides signed 64-bit N by signed 64-bit D and returns the
-     remainder. */
+/** Divides the signed 64-bit `n` by the signed 64-bit `d`, and returns
+ * the remainder. */
 static int64_t smod64(int64_t n, int64_t d)
 {
     return n - d * sdiv64(n, d);
 }
 
-/* These are the routines that GCC calls. */
+/* The routines that GCC calls. */
 
 long long __divdi3(long long n, long long d);
 long long __moddi3(long long n, long long d);
@@ -135,31 +140,63 @@ unsigned long long __udivdi3(unsigned long long n, unsigned long long d);
 unsigned long long __umoddi3(unsigned long long n, unsigned long long d);
 unsigned long long __udivmoddi4(unsigned long long n, unsigned long long d, unsigned long long *rem);
 
-/** Signed 64-bit division. */
+/**
+ * Divides two signed 64-bit integers.
+ *
+ * @param n  the dividend
+ * @param d  the divisor
+ * @return the quotient
+ */
 long long __divdi3(long long n, long long d) 
 {
     return sdiv64(n, d);
 }
 
-/** Signed 64-bit remainder. */
+/**
+ * Computes the remainder of two signed 64-bit integers.
+ *
+ * @param n  the dividend
+ * @param d  the divisor
+ * @return the remainder
+ */
 long long __moddi3(long long n, long long d) 
 {
     return smod64 (n, d);
 }
 
-/** Unsigned 64-bit division. */
+/**
+ * Divides two unsigned 64-bit integers.
+ *
+ * @param n  the dividend
+ * @param d  the divisor
+ * @return the quotient
+ */
 unsigned long long __udivdi3(unsigned long long n, unsigned long long d) 
 {
     return udiv64 (n, d);
 }
 
-/** Unsigned 64-bit remainder. */
+/**
+ * Computes the remainder of two unsigned 64-bit integers.
+ *
+ * @param n  the dividend
+ * @param d  the divisor
+ * @return the remainder
+ */
 unsigned long long __umoddi3(unsigned long long n, unsigned long long d) 
 {
     return umod64 (n, d);
 }
 
-/** Unsigned 64-bit division and remainder (x / y and x % y together). */
+/**
+ * Divides two unsigned 64-bit integers, giving both the quotient and the
+ * remainder.
+ *
+ * @param n    the dividend
+ * @param d    the divisor
+ * @param rem  if not NULL, set to the remainder
+ * @return the quotient
+ */
 unsigned long long __udivmoddi4(unsigned long long n, unsigned long long d, unsigned long long *rem)
 {
     uint64_t q = udiv64(n, d);

@@ -1,13 +1,14 @@
-/**********************************************************************
- *                            Signals
+/** \file
+ * Signals: sending them, and taking them on the way back to user mode.
  *
- * Sending a signal makes it pending (a bit of proc->sig_pending) and, if
- * the process doesn't block it, wakes its threads that sleep where a
- * signal may end the sleep (waitq_sleep): they return ERESTARTSYS
- * and their system calls unwind. A signal is delivered on the way back to
- * user mode only, the architecture's return path calling signal_take()
- * (stops, default actions) and running the handler it returns: the
- * kernel never leaves anything halfway for a signal.
+ * Sending a signal makes it pending (a bit of `proc->sig_pending`). If the
+ * process doesn't block it, its threads that sleep where a signal may end
+ * the sleep (`waitq_sleep()`) wake up: they return `-ERESTARTSYS`, and
+ * their system calls unwind. A signal is only delivered on the way back
+ * to user mode: the architecture's return path calls `signal_take()`,
+ * which carries out stops and default actions, and runs the handler it
+ * returns. So the kernel never leaves anything halfway for a signal. See
+ * docs/kernel/signals.md.
  */
 
 #include <core/system.h>
@@ -22,6 +23,7 @@
 
 #include <aquila/errno.h>
 
+/* What each signal does when it isn't caught (its default action). */
 int sig_default_action[SIG_MAX+1] = {
     [SIGABRT] = SIGACT_ABORT,
     [SIGALRM] = SIGACT_TERMINATE,
@@ -56,14 +58,22 @@ int sig_default_action[SIG_MAX+1] = {
     [SIGLOST] = SIGACT_TERMINATE,
 };
 
-/** whether delivering `sig' to proc stops it (its default action, not caught) */
+/**
+ * Says whether delivering a signal to a process would stop it: the signal
+ * isn't caught, and its default action is to stop.
+ *
+ * @param proc  the process
+ * @param sig   the signal
+ * @return 1 if it would, 0 if not
+ */
 int signal_stops(struct proc *proc, int sig)
 {
     return proc->sigaction[sig].sa_handler == SIG_DFL &&
            sig_default_action[sig] == SIGACT_STOP;
 }
 
-/** tell the parent a child stopped or continued */
+/** Tells a process's parent that it stopped or continued: its `wait()`
+ * wakes up, and it gets `SIGCHLD` unless it asked not to (`SA_NOCLDSTOP`). */
 static void signal_notify_parent(struct proc *proc)
 {
     struct proc *parent = proc->parent;
@@ -78,9 +88,12 @@ static void signal_notify_parent(struct proc *proc)
 }
 
 /**
- * Stop the current process by `sig', until SIGCONT or SIGKILL. Called by
- * its own thread on its way back to user mode (signal_take), which sleeps
- * here; signals don't end the sleep, continuing (or killing) does.
+ * Stops the current process, until `SIGCONT` or `SIGKILL`. Its thread
+ * calls this on its way back to user mode (`signal_take()`), and sleeps
+ * here; other signals don't end the sleep, only continuing (or killing)
+ * the process does.
+ *
+ * @param sig  the signal that stops it
  */
 void signal_stop(int sig)
 {
@@ -96,13 +109,15 @@ void signal_stop(int sig)
 
 #define STOP_SIGNALS    ((1UL << SIGSTOP) | (1UL << SIGTSTP) | (1UL << SIGTTIN) | (1UL << SIGTTOU))
 
+/** Returns whether `sig` is one of the stop signals. */
 static int is_stop_signal(int sig)
 {
     return !!(STOP_SIGNALS & (1UL << sig));
 }
 
-/** nothing would be done when it's delivered: its handler ignores it, or
- * its default action does (SIGCONT's is done when it's sent) */
+/** Returns whether delivering `sig` would do nothing: the process ignores
+ * it, or its default action is to ignore it. `SIGCONT` counts, since its
+ * action is done when it is sent. */
 static int signal_ignored(struct proc *proc, int sig)
 {
     uintptr_t handler = proc->sigaction[sig].sa_handler;
@@ -114,22 +129,27 @@ static int signal_ignored(struct proc *proc, int sig)
                                   sig_default_action[sig] == SIGACT_CONTINUE);
 }
 
-/** make `signal' pending for proc, its sleeping threads woken if it isn't
- * blocked: it's delivered on the way back to user mode */
+/**
+ * Sends a signal to a process: makes it pending, and if the process
+ * doesn't block it, wakes up its sleeping threads so that one takes it on
+ * its way back to user mode. Returns 0, `-EINVAL` for a bad signal, or
+ * `-EPERM` for process 0.
+ */
 static int signal_to(struct proc *proc, int signal)
 {
     if (signal < 0 || signal > SIG_MAX)
         return -EINVAL;
 
-    /* the kernel's threads (process 0) take none */
+    /* the kernel's threads (process 0) take no signals */
     if (proc == kproc)
         return -EPERM;
 
-    /* signal 0 only checks for existence, zombies can't be signalled */
+    /* signal 0 only checks that the process exists, and zombies can't be
+     * signalled */
     if (!signal || !proc->running)
         return 0;
 
-    /* a stop signal cancels a pending continue and the other way around,
+    /* a stop signal cancels a pending SIGCONT and the other way around;
      * SIGCONT (whatever its action) and SIGKILL resume a stopped process */
     if (is_stop_signal(signal)) {
         proc->sig_pending &= ~(1UL << SIGCONT);
@@ -148,14 +168,15 @@ static int signal_to(struct proc *proc, int signal)
         }
     }
 
-    /* ignored when it's sent: discarded (POSIX lets us, blocked or not) */
+    /* a signal that would be ignored is discarded when it's sent, blocked
+     * or not (POSIX allows it) */
     if (signal_ignored(proc, signal))
         return 0;
 
     proc->sig_pending |= 1UL << signal;
 
-    /* blocked: it waits; else the threads sleeping where a signal may end
-     * the sleep wake up, to return to user mode and take it */
+    /* a blocked signal waits; otherwise the threads sleeping where a
+     * signal may end the sleep wake up, to return to user mode and take it */
     if (proc->sigmask & (1UL << signal))
         return 0;
 
@@ -165,19 +186,32 @@ static int signal_to(struct proc *proc, int signal)
         if (thread->state == ISLEEP && thread->waitq)
             thread_wakeup(thread);
         else
-            sched_thread_kick(thread);  /* running elsewhere: it takes it */
+            sched_thread_kick(thread);  /* one running on another CPU takes it now */
     }
 
     return 0;
 }
 
-/** sigaction() set its action: ignored now, it's no longer pending */
+/**
+ * Discards a pending signal that `sigaction()` just made ignored.
+ *
+ * @param proc  the process
+ * @param sig   the signal whose action changed
+ */
 void signal_action_set(struct proc *proc, int sig)
 {
     if (signal_ignored(proc, sig))
         proc->sig_pending &= ~(1UL << sig);
 }
 
+/**
+ * Says whether a thread has a signal to take, which ends a sleep that a
+ * signal may end.
+ *
+ * @param thread  the thread
+ * @return 1 if its process has a pending signal that it doesn't block, 0
+ *         if not
+ */
 int signal_interrupts(struct thread *thread)
 {
     struct proc *proc = thread->owner;
@@ -185,6 +219,14 @@ int signal_interrupts(struct thread *thread)
     return proc && proc != kproc && (proc->sig_pending & ~proc->sigmask);
 }
 
+/**
+ * Sends a signal that can't be blocked or ignored, such as the `SIGSEGV`
+ * of a fault: if the process blocks or ignores it, it is unblocked and its
+ * action reset to the default.
+ *
+ * @param proc    the process
+ * @param signal  the signal
+ */
 void signal_force(struct proc *proc, int signal)
 {
     if ((proc->sigmask & (1UL << signal)) || proc->sigaction[signal].sa_handler == SIG_IGN) {
@@ -195,6 +237,11 @@ void signal_force(struct proc *proc, int signal)
     signal_to(proc, signal);
 }
 
+/**
+ * Ends the current process because of a signal. It doesn't return.
+ *
+ * @param sig  the signal, which its parent's `wait()` reports
+ */
 void signal_exit(int sig)
 {
     curproc->exit = PROC_EXIT(sig, sig);
@@ -204,6 +251,14 @@ void signal_exit(int sig)
     for (;;);
 }
 
+/**
+ * Takes the current process's pending signals, on the way back to user
+ * mode: ignored ones are dropped, and default actions are carried out
+ * (ending or stopping the process), until one with a handler is found.
+ *
+ * @return a signal whose handler the architecture runs now, or 0 if there
+ *         is none
+ */
 int signal_take(void)
 {
     struct proc *proc = curproc;
@@ -214,7 +269,7 @@ int signal_take(void)
         if (!proc->running || !ready)
             return 0;
 
-        /* SIGKILL first, then the lowest numbered */
+        /* SIGKILL first, then the lowest numbered signal */
         int sig = (ready & (1UL << SIGKILL)) ? SIGKILL : __builtin_ctzl(ready);
         proc->sig_pending &= ~(1UL << sig);
 
@@ -231,8 +286,9 @@ int signal_take(void)
             case SIGACT_TERMINATE:
                 signal_exit(sig);
             case SIGACT_STOP:
-                /* the terminal's stops don't stop an orphaned group: no
-                 * one would continue it (POSIX); SIGSTOP does */
+                /* the terminal's stop signals don't stop an orphaned
+                 * process group, since no one would continue it (POSIX);
+                 * SIGSTOP does */
                 if (sig != SIGSTOP && pgrp_orphaned(proc->pgrp, NULL))
                     break;
 
@@ -244,11 +300,25 @@ int signal_take(void)
     }
 }
 
+/**
+ * Sends a signal to a process.
+ *
+ * @param proc    the process
+ * @param signal  the signal (0 only checks that the process exists)
+ * @return 0, `-EINVAL` for a bad signal, or `-EPERM` for process 0
+ */
 int signal_proc_send(struct proc *proc, int signal)
 {
     return signal_to(proc, signal);
 }
 
+/**
+ * Sends a signal to every process of a process group.
+ *
+ * @param pg      the process group
+ * @param signal  the signal
+ * @return 0
+ */
 int signal_pgrp_send(struct pgroup *pg, int signal)
 {
     queue_for (node, pg->procs)
@@ -258,8 +328,14 @@ int signal_pgrp_send(struct pgroup *pg, int signal)
 }
 
 /**
- * kill(2): pid > 0 a process, 0 the caller's process group, -1 every
- * process except init and the caller, < -1 the process group -pid
+ * Sends a signal as `kill()` does.
+ *
+ * @param pid     whom to: a process if `pid` > 0, the caller's process
+ *                group if 0, every process but init and the caller if -1,
+ *                or process group `-pid` if < -1
+ * @param signal  the signal
+ * @return 0, `-EINVAL` for a bad signal, or `-ESRCH` if no such process
+ *         or group exists
  */
 int signal_send(pid_t pid, int signal)
 {

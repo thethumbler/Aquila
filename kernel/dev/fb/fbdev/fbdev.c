@@ -1,3 +1,14 @@
+/** \file
+ * The framebuffer devices: `/dev/fb0` and up (character device 29, as on
+ * Linux).
+ *
+ * A framebuffer driver registers its framebuffer here, and this layer
+ * gives it its device, with Linux's framebuffer `ioctl()`s to describe
+ * it. Writing to the device writes pixels, and `mmap()` maps the
+ * framebuffer into the process. The only driver is the VESA framebuffer
+ * (`dev/fb/vesa/vesa.c`).
+ */
+
 #include <core/system.h>
 #include <sys/uaccess.h>
 #include <core/module.h>
@@ -14,6 +25,15 @@
 static struct fbdev registered_fbs[MAX_FBDEV];
 static size_t fbdev_cnt = 0;
 
+/**
+ * Registers a framebuffer, which `fbdev_probe()` sets up with its driver.
+ * The first one registered is `/dev/fb0`.
+ *
+ * @param type  its driver (`FBDEV_TYPE_VESA`)
+ * @param data  what the driver needs to set it up (the VESA mode's
+ *              description)
+ * @return 0, or `-ENOSPC` if there are `MAX_FBDEV` already
+ */
 int fbdev_register(int type, void *data)
 {
     if (fbdev_cnt == MAX_FBDEV)
@@ -25,6 +45,7 @@ int fbdev_register(int type, void *data)
     return 0;
 }
 
+/** Returns the framebuffer of a device number, or NULL if there's none. */
 static struct fbdev *fbdev_get(struct devid *dd)
 {
     if (dd->minor >= fbdev_cnt)
@@ -33,7 +54,12 @@ static struct fbdev *fbdev_get(struct devid *dd)
     return &registered_fbs[dd->minor];
 }
 
-/** the first framebuffer, once probed, NULL if there is none */
+/**
+ * Returns the first framebuffer, once it is set up, for the virtual
+ * terminals.
+ *
+ * @return the framebuffer, or NULL if there is none
+ */
 struct fbdev *fbdev_primary(void)
 {
     if (!fbdev_cnt || !registered_fbs[0].fix_screeninfo)
@@ -42,6 +68,7 @@ struct fbdev *fbdev_primary(void)
     return &registered_fbs[0];
 }
 
+/** Reads from a framebuffer, through its driver. */
 static ssize_t fbdev_read(struct devid *dd, off_t offset, struct iobuf *io)
 {
     struct fbdev *fb = fbdev_get(dd);
@@ -52,6 +79,7 @@ static ssize_t fbdev_read(struct devid *dd, off_t offset, struct iobuf *io)
     return fb->read(fb, offset, io);
 }
 
+/** Writes to a framebuffer, through its driver. */
 static ssize_t fbdev_write(struct devid *dd, off_t offset, struct iobuf *io)
 {
     struct fbdev *fb = fbdev_get(dd);
@@ -62,6 +90,8 @@ static ssize_t fbdev_write(struct devid *dd, off_t offset, struct iobuf *io)
     return fb->write(fb, offset, io);
 }
 
+/** Handles Linux's framebuffer `ioctl()`s: the screen information, which
+ * can be read but not changed, and panning, which isn't supported. */
 static int fbdev_ioctl(struct devid *dd, int request, void *argp)
 {
     struct fbdev *fb = fbdev_get(dd);
@@ -79,8 +109,8 @@ static int fbdev_ioctl(struct devid *dd, int request, void *argp)
             return -ENXIO;
         return copyout(argp, fb->var_screeninfo, sizeof(struct fb_var_screeninfo));
     case FBIOPUT_VSCREENINFO: {
-        /* the mode can't be changed: only to the one it is, and the
-         * caller gets what it is */
+        /* the mode can't be changed: only a request for the mode it is
+         * already succeeds, and the caller gets the mode back */
         struct fb_var_screeninfo *var = fb->var_screeninfo, _new, *new = &_new;
 
         if (!var)
@@ -98,7 +128,7 @@ static int fbdev_ioctl(struct devid *dd, int request, void *argp)
         return copyout(argp, var, sizeof(struct fb_var_screeninfo));
     }
     case FBIOPAN_DISPLAY: {
-        /* no panning, the virtual screen is the visible one */
+        /* no panning: the virtual screen is the visible one */
         struct fb_var_screeninfo new;
 
         if (copyin(&new, argp, sizeof(new)))
@@ -111,6 +141,8 @@ static int fbdev_ioctl(struct devid *dd, int request, void *argp)
     return -ENOTTY;
 }
 
+/** Maps a framebuffer into a process's address space, through its
+ * driver. */
 static int fbdev_map(struct devid *dd, struct vm_space *vm_space, struct vm_entry *vm_entry)
 {
     struct fbdev *fb = fbdev_get(dd);
@@ -121,6 +153,12 @@ static int fbdev_map(struct devid *dd, struct vm_space *vm_space, struct vm_entr
     return fb->map(fb, vm_space, vm_entry);
 }
 
+/**
+ * Sets up the registered framebuffers with their drivers, and registers
+ * the framebuffer devices.
+ *
+ * @return 0
+ */
 int fbdev_probe()
 {
     for (size_t i = 0; i < fbdev_cnt; ++i) {

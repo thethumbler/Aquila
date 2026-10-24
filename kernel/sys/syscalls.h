@@ -2,9 +2,10 @@
 #define _SYS_SYSCALLS_H
 
 /*
- * The system calls, each sys_<name>() with its own types and a long
- * result (negative: an errno): what sys/syscall.c's table calls
- * (through SYSCALLn()), by the file they're in. Private to sys/.
+ * Every system call's handler, sys_<name>(), with its own argument types
+ * and a long result (a negative result is an errno), grouped by the file
+ * it is in. sys/syscall.c's table calls them through SYSCALLn(). This
+ * header is private to sys/; the handlers' comments are in their files.
  */
 
 #include <core/system.h>
@@ -49,12 +50,12 @@ LOGGER_DECLARE(syscall_log)
 
 /* syscall.c: what several kinds of calls share */
 struct file *fd_file(int fd);
-/* the longest path (with its NUL) a call takes, as newlib's PATH_MAX */
+/* the longest path a call takes, with its NUL (as newlib's PATH_MAX) */
 #define UPATH_MAX   1024
 int upath_get(const char *upath, char **path);
 
-/* sys_file.c: files: opening, reading and writing them, their names and
- * attributes, directories, mounts, locks */
+/* sys_file.c: files, their names and attributes, directories, mounts and
+ * locks */
 long sys_close(int fildes);
 long sys_fstat(int fildes, struct aquila_stat *buf);
 long sys_isatty(int fildes);
@@ -100,8 +101,8 @@ long sys_flock(int fd, int op);
 long sys_sync(void);
 long sys_fchdir(int fd);
 
-/* sys_proc.c: processes and threads: exit, exec, fork, wait, their IDs and
- * groups, memory (sbrk, mmap), the machine (uname, reboot) */
+/* sys_proc.c: processes and threads, their IDs and groups, memory, and
+ * the machine */
 long sys_exit(int code);
 long sys_execve(const char *path, char * const argp[], char * const envp[]);
 long sys_fork(void);
@@ -129,8 +130,7 @@ long sys_reboot(unsigned cmd);
 long sys_setsid(void);
 long sys_sethostname(const char *name, size_t len);
 
-/* sys_signal.c: signals, timers and the time: kill, sigaction, the masks,
- * sigsuspend and sigreturn, setitimer, sleeping, the clocks */
+/* sys_signal.c: signals, timers, sleeping and the clocks */
 long sys_kill(pid_t pid, int sig);
 long sys_sigaction(int sig, const struct aquila_sigaction *act, struct aquila_sigaction *oact);
 long sys_gettimeofday(struct timeval *tv, struct timezone *tz);
@@ -141,8 +141,7 @@ long sys_setitimer(int which, const struct aquila_itimer *new, struct aquila_iti
 long sys_nanosleep(const struct aquila_timespec *req, struct aquila_timespec *rem);
 long sys_clock_gettime(int clock, struct aquila_timespec *ts);
 
-/* sys_net.c: sockets: making, binding, connecting, sending and receiving,
- * their names and options */
+/* sys_net.c: sockets */
 long sys_socket(int domain, int type, int protocol);
 long sys_accept(int fd, const struct sockaddr *addr, socklen_t *len);
 long sys_bind(int fd, const struct sockaddr *addr, socklen_t len);
@@ -156,7 +155,7 @@ long sys_getsockopt(int fd, int level, int name, void *val, socklen_t *len);
 long sys_setsockopt(int fd, int level, int name, const void *val, socklen_t len);
 long sys_shutdown(int fd, int how);
 
-/* sys_poll.c: select() and poll(): waiting for any of several descriptors */
+/* sys_poll.c: select() and poll(), waiting for any of several descriptors */
 long sys_select(struct aquila_select_args *args);
 long sys_poll(struct pollfd *fds, nfds_t nfds, int timeout_ms);
 

@@ -1,21 +1,26 @@
 /** \file
- * Block cache: what disks read and write, kept in 4 KiB blocks. Writes
- * stay in it (write back) until blkcache_flush(): sync(), restarting or
- * powering off, too much written (DIRTY_MAX), or written a while ago
- * (DIRTY_AGE) at the next use of the cache. Each sector of a block is
- * valid (it has the disk's data, or newer) or not, and dirty (newer than
- * the disk's) or not: a write doesn't read the rest of its block. Once
- * the cache is full, the clean block used least recently makes room.
+ * The block cache: what the disks read and write, kept in 4 KiB blocks.
  *
- * Drivers use it with absolute sector numbers, after partition offsets,
- * so a sector is in it once whatever device node it was read through.
- * Blocks not cached that a read needs are read with one command, adjacent
- * dirty blocks written with one.
+ * Writes stay in the cache (write back) until `blkcache_flush()` writes
+ * them to the disk: for `sync()`, before restarting or powering off, when
+ * too much was written (`DIRTY_MAX`), or at the next use of the cache once
+ * a write is old enough (`DIRTY_AGE`). Each sector of a block is either
+ * valid (it has the disk's data, or newer) or not, and either dirty (newer
+ * than the disk's) or not, so a write doesn't need to read the rest of its
+ * block. When the cache is full, the clean block used least recently
+ * makes room.
  *
- * The device's transfers are to and from buffers of the cache's, never
- * the caller's: that may be a process's, which isn't mapped until it is
- * used, and mapping it may read the disk (a driver waiting for itself).
- * The caller's buffer is used once its pages are mapped.
+ * Drivers use the cache with absolute sector numbers, after adding the
+ * partition's offset, so a sector is cached once, whichever device node
+ * it was read through. The blocks that a read needs and the cache doesn't
+ * have are read with one command, and adjacent dirty blocks are written
+ * with one.
+ *
+ * The device's transfers are always to and from the cache's own buffers,
+ * never the caller's. The caller's buffer may be a process's, which isn't
+ * mapped until it is touched, and mapping it may read the disk: the
+ * driver would wait for itself. The caller's buffer is only used once its
+ * pages are mapped.
  */
 
 #include <core/system.h>
@@ -30,27 +35,29 @@ MALLOC_DEFINE(M_BLKCACHE, "blkcache", "block cache");
 #define SECTOR_SIZE     512
 #define BLK_SECTORS     8
 #define BLK_SIZE        (BLK_SECTORS * SECTOR_SIZE)
-#define BLK_ALL         0xFF    /* the sectors of a block, as a mask */
+#define BLK_ALL         0xFF    /* all the sectors of a block, as a mask */
 
-/* 8 MiB, in one allocation (the kernel heap is a list) */
+/* 8 MiB, in one allocation */
 #define CACHE_BLOCKS    2048
 #define CACHE_BUCKETS   1024
 
-/* blocks a command reads or writes at most */
+/* the most blocks one command reads or writes */
 #define RUN_MAX         16
 
-/* dirty blocks at most before they are written, and how long one may be */
+/* the most dirty blocks before they are written, and how long a block may
+ * stay dirty */
 #define DIRTY_MAX       (CACHE_BLOCKS / 2)
 #define DIRTY_AGE       5000000000ULL   /* ns */
 
+/** A block of the cache. */
 struct blk {
-    void *owner;            /* NULL while the slot is free */
-    uint64_t nr;            /* block number, sector / BLK_SECTORS */
-    uint8_t valid, dirty;   /* sector masks */
+    void *owner;            /* the device it is of; NULL while the slot is free */
+    uint64_t nr;            /* the block's number: its first sector / BLK_SECTORS */
+    uint8_t valid, dirty;   /* which of its sectors are valid, and dirty */
     blkcache_io write;      /* how its dirty sectors get to the disk */
 
-    struct blk *hnext;              /* hash chain */
-    struct blk *newer, *older;      /* LRU list */
+    struct blk *hnext;              /* the next block in its hash chain */
+    struct blk *newer, *older;      /* the list from most to least recently used */
 };
 
 static struct blk blks[CACHE_BLOCKS];
@@ -63,25 +70,29 @@ static size_t used, dirty;
 /* when the oldest dirty block of the cache became dirty */
 static uint64_t dirty_since;
 
-/* writes so far: a read that waited across one doesn't cache what it read,
- * it may be older than the write */
+/* how many writes there were: a read during which a write came doesn't
+ * cache what it read, since that may be older than what was written */
 static uint64_t writes;
 
+/** Returns a block's data. */
 static inline char *blk_data(struct blk *b)
 {
     return arena + (b - blks) * BLK_SIZE;
 }
 
+/** Returns the mask of `n` sectors from sector `first` of a block. */
 static inline uint8_t sector_mask(size_t first, size_t n)
 {
     return ((1U << n) - 1) << first;
 }
 
+/** Returns the hash chain that block `nr` of `owner` is on. */
 static inline struct blk **bucket(void *owner, uint64_t nr)
 {
     return &buckets[(nr ^ ((uintptr_t) owner >> 4)) % CACHE_BUCKETS];
 }
 
+/** Returns block `nr` of `owner`, or NULL if it isn't cached. */
 static struct blk *lookup(void *owner, uint64_t nr)
 {
     for (struct blk *b = *bucket(owner, nr); b; b = b->hnext)
@@ -91,6 +102,7 @@ static struct blk *lookup(void *owner, uint64_t nr)
     return NULL;
 }
 
+/** Takes a block off the list of blocks by use. */
 static void lru_unlink(struct blk *b)
 {
     if (b->newer) b->newer->older = b->older; else newest = b->older;
@@ -98,6 +110,7 @@ static void lru_unlink(struct blk *b)
     b->newer = b->older = NULL;
 }
 
+/** Puts a block at the head of the list: the most recently used. */
 static void lru_push(struct blk *b)
 {
     b->older = newest;
@@ -107,6 +120,7 @@ static void lru_push(struct blk *b)
     newest = b;
 }
 
+/** Marks a block as just used. */
 static void touch(struct blk *b)
 {
     if (b != newest) {
@@ -115,7 +129,7 @@ static void touch(struct blk *b)
     }
 }
 
-/** a clean block leaves the cache */
+/** Takes a clean block out of the cache. */
 static void evict(struct blk *b)
 {
     struct blk **p = bucket(b->owner, b->nr);
@@ -129,6 +143,7 @@ static void evict(struct blk *b)
     --used;
 }
 
+/** Marks sectors of a block dirty, to be written with `write`. */
 static void make_dirty(struct blk *b, uint8_t mask, blkcache_io write)
 {
     if (!b->dirty && !dirty++)
@@ -138,14 +153,16 @@ static void make_dirty(struct blk *b, uint8_t mask, blkcache_io write)
     b->write = write;
 }
 
+/** Marks sectors of a block clean. */
 static void make_clean(struct blk *b, uint8_t mask)
 {
     if (b->dirty && !(b->dirty &= ~mask))
         --dirty;
 }
 
-/** a block for (owner, nr), nothing valid in it; NULL if every block is
- * dirty, or there is no memory */
+/** Takes a block for block `nr` of `owner`, with nothing valid in it: a
+ * free slot, or the clean block used least recently. Returns NULL if
+ * every block is dirty, or there is no memory for the cache. */
 static struct blk *block_new(void *owner, uint64_t nr)
 {
     if (!arena && !(arena = kmalloc(CACHE_BLOCKS * BLK_SIZE, &M_BLKCACHE, 0)))
@@ -158,7 +175,7 @@ static struct blk *block_new(void *owner, uint64_t nr)
             if (!blks[i].owner)
                 b = &blks[i];
     } else {
-        /* the clean block used least recently */
+        /* the clean block that was used least recently */
         for (struct blk *old = oldest; old && !b; old = old->newer)
             if (!old->dirty)
                 b = old;
@@ -180,8 +197,9 @@ static struct blk *block_new(void *owner, uint64_t nr)
     return b;
 }
 
-/** maps the pages of a buffer, a process's isn't until it is used: before
- * the cache is looked at, mapping one may read the disk and change it */
+/** Maps every page of a buffer, by touching them: a process's buffer
+ * isn't mapped until it is used. It is done before the cache is looked
+ * at, because mapping a page may read the disk and change the cache. */
 static void prefault(void *buf, size_t size, int write)
 {
     volatile char *p = buf, *end = (char *) buf + size;
@@ -197,8 +215,9 @@ static void prefault(void *buf, size_t size, int write)
     }
 }
 
-/* the sectors of block `nr' within [sector, sector + count): from `first'
- * in the block, `n' of them, at `off' in the request */
+/** Finds the sectors of block `nr` that are in the request `[sector,
+ * sector + count)`: `n` of them, from sector `first` of the block, at
+ * sector `off` of the request. */
 static void overlap(uint64_t nr, uint64_t sector, size_t count,
                     size_t *first, size_t *n, size_t *off)
 {
@@ -210,13 +229,15 @@ static void overlap(uint64_t nr, uint64_t sector, size_t count,
     *off = start - sector;
 }
 
+/** Returns whether a block exists and all its sectors are dirty. */
 static inline int full_dirty(struct blk *b)
 {
     return b && b->dirty == BLK_ALL;
 }
 
-/** writes the dirty sectors of `b' (with the adjacent wholly dirty blocks
- * after it), and they are clean */
+/** Writes the dirty sectors of `b` to the disk (with the wholly dirty
+ * blocks right after it, in one command), and marks them clean. Returns 0
+ * or a negative errno; sectors whose write failed stay dirty. */
 static int flush_block(struct blk *b)
 {
     void *owner = b->owner;
@@ -228,7 +249,7 @@ static int flush_block(struct blk *b)
     if (!tmp) return -ENOMEM;
 
     if (full_dirty(b)) {
-        /* a run of wholly dirty blocks, with one command */
+        /* a run of wholly dirty blocks, written with one command */
         size_t run = 0;
         struct blk *r;
 
@@ -239,13 +260,13 @@ static int flush_block(struct blk *b)
         }
 
         if ((err = write(owner, nr * BLK_SECTORS, run * BLK_SECTORS, tmp)) < 0) {
-            /* still not on the disk, if the blocks are still cached */
+            /* they aren't on the disk: dirty again, if still cached */
             for (size_t i = 0; i < run; ++i)
                 if ((r = lookup(owner, nr + i)))
                     make_dirty(r, BLK_ALL, write);
         }
     } else {
-        /* each range of dirty sectors */
+        /* write each range of dirty sectors */
         uint8_t mask = b->dirty;
 
         for (size_t s = 0; s < BLK_SECTORS && !err; ) {
@@ -268,7 +289,7 @@ static int flush_block(struct blk *b)
                     make_dirty(r, m, write);
             }
 
-            /* b may have left the cache while writing */
+            /* b may have left the cache while the write slept */
             if (!(b = lookup(owner, nr)))
                 break;
 
@@ -280,19 +301,24 @@ static int flush_block(struct blk *b)
     return err < 0 ? err : 0;
 }
 
+/**
+ * Writes every dirty block of the cache to its disk.
+ *
+ * @return 0, or a negative errno if a write failed
+ */
 int blkcache_flush(void)
 {
     int err = 0;
 
-    /* in slot order; writing sleeps, the cache may change meanwhile, each
-     * block is looked at again */
+    /* go in slot order; writing sleeps, so the cache may change meanwhile,
+     * and each block is looked at again */
     for (size_t i = 0; i < CACHE_BLOCKS && dirty; ++i) {
         struct blk *b = &blks[i];
 
         if (!b->owner || !b->dirty)
             continue;
 
-        /* from the start of its run of wholly dirty blocks */
+        /* start from the first block of its run of wholly dirty blocks */
         if (full_dirty(b)) {
             struct blk *prev;
 
@@ -305,7 +331,7 @@ int blkcache_flush(void)
         if (e)
             err = e;
 
-        /* the block it was at may have more */
+        /* the slot may hold more dirty sectors now: look at it again */
         if (blks[i].owner && blks[i].dirty && !e)
             --i;
     }
@@ -313,7 +339,8 @@ int blkcache_flush(void)
     return err;
 }
 
-/** dirty blocks written a while ago go to the disk */
+/** Writes the dirty blocks to the disk if the oldest one is old enough
+ * (`DIRTY_AGE`). */
 static void flush_old(void)
 {
     static int flushing;
@@ -325,6 +352,18 @@ static void flush_old(void)
     }
 }
 
+/**
+ * Reads sectors of a disk through the cache. The sectors the cache
+ * doesn't have are read with `read`, and cached.
+ *
+ * @param owner     the disk (the driver's, for its sectors)
+ * @param sector    the first sector, absolute on the disk
+ * @param count     how many sectors
+ * @param buf       where to put them
+ * @param nsectors  the disk's size in sectors, or 0 if it isn't known
+ * @param read      how the driver reads sectors
+ * @return 0, or a negative errno (`-EIO` past the disk's end)
+ */
 ssize_t blkcache_read(void *owner, uint64_t sector, size_t count, void *buf,
                       uint64_t nsectors, blkcache_io read)
 {
@@ -351,7 +390,7 @@ ssize_t blkcache_read(void *owner, uint64_t sector, size_t count, void *buf,
             continue;
         }
 
-        /* the blocks from here that miss sectors, at once */
+        /* read the blocks from here on that miss sectors, at once */
         size_t run = 1;
         while (nr + run <= last && run < RUN_MAX) {
             struct blk *r = lookup(owner, nr + run);
@@ -399,9 +438,10 @@ ssize_t blkcache_read(void *owner, uint64_t sector, size_t count, void *buf,
                 return -EIO;
             }
 
-            /* written meanwhile: the cache has newer sectors than the disk
-             * had, the others are filled in; a block that wasn't cached
-             * isn't, unless nothing was written meanwhile */
+            /* if a block was written meanwhile, the cache has newer
+             * sectors than the disk had, and only the others are filled
+             * in. A block that wasn't cached is only cached if nothing
+             * was written meanwhile. */
             struct blk *r = lookup(owner, nr + i);
 
             if (!r && w == writes && (r = block_new(owner, nr + i)))
@@ -429,6 +469,18 @@ ssize_t blkcache_read(void *owner, uint64_t sector, size_t count, void *buf,
     return 0;
 }
 
+/**
+ * Writes sectors of a disk through the cache: they stay dirty in it until
+ * it is flushed. If the cache has no room even after flushing, they go
+ * straight to the disk.
+ *
+ * @param owner   the disk (the driver's, for its sectors)
+ * @param sector  the first sector, absolute on the disk
+ * @param count   how many sectors
+ * @param buf     the sectors' data
+ * @param write   how the driver writes sectors
+ * @return 0, or a negative errno
+ */
 ssize_t blkcache_write(void *owner, uint64_t sector, size_t count, void *buf,
                        blkcache_io write)
 {
@@ -450,12 +502,12 @@ ssize_t blkcache_write(void *owner, uint64_t sector, size_t count, void *buf,
         struct blk *b = lookup(owner, nr);
 
         if (!b && !(b = block_new(owner, nr))) {
-            /* every block is dirty: to the disk, then there is room */
+            /* every block is dirty: write them, and then there is room */
             blkcache_flush();
             b = lookup(owner, nr);
 
             if (!b && !(b = block_new(owner, nr))) {
-                /* no memory: straight to the disk */
+                /* no memory for the cache: write straight to the disk */
                 char *tmp = kmalloc(n * SECTOR_SIZE, &M_BLKCACHE, 0);
 
                 if (!tmp)

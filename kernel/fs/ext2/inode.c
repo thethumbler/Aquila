@@ -1,6 +1,14 @@
+/** \file
+ * ext2: inodes, and the blocks of a file. A file's blocks are found
+ * through its inode's 12 direct pointers, then a singly, a doubly and a
+ * triply indirect one: a tree of blocks of pointers.
+ */
+
 #include <ext2.h>
 #include <ds/bitmap.h>
 
+/** Returns where an inode is on the disk, in bytes, or `-EINVAL` for an
+ * inode number that doesn't exist. */
 static inline off_t ext2_inode_off(struct ext2 *desc, ino_t ino)
 {
     /* invalid inode */
@@ -14,6 +22,14 @@ static inline off_t ext2_inode_off(struct ext2 *desc, ino_t ino)
     return group->inodes * desc->bs + index * desc->inode_size;
 }
 
+/**
+ * Reads an inode from the disk.
+ *
+ * @param desc  the mounted filesystem
+ * @param ino   the inode number
+ * @param ref   where it goes; NULL only checks the number
+ * @return 0, `-EINVAL` for a bad inode number, or an I/O error
+ */
 int ext2_inode_read(struct ext2 *desc, ino_t ino, struct ext2_inode *ref)
 {
     off_t off;
@@ -24,6 +40,14 @@ int ext2_inode_read(struct ext2 *desc, ino_t ino, struct ext2_inode *ref)
     return ref ? ext2_io(desc, 0, off, sizeof(struct ext2_inode), ref) : 0;
 }
 
+/**
+ * Writes an inode to the disk.
+ *
+ * @param desc        the mounted filesystem
+ * @param ino         the inode number
+ * @param ext2_inode  the inode
+ * @return 0, `-EINVAL` for a bad inode number, or an I/O error
+ */
 int ext2_inode_write(struct ext2 *desc, ino_t ino, struct ext2_inode *ext2_inode)
 {
     off_t off = ext2_inode_off(desc, ino);
@@ -34,17 +58,21 @@ int ext2_inode_write(struct ext2 *desc, ino_t ino, struct ext2_inode *ext2_inode
     return ext2_io(desc, 1, off, sizeof(struct ext2_inode), ext2_inode);
 }
 
-/*
- * The tree block `idx' of a file is in: its root's slot in the inode (0 to
- * 11 the direct pointers, 12 to 14 the indirect ones), its depth (0: the
- * slot is the block's, 1 to 3: the levels of indirect blocks above it)
- * and the block's index in it; -EFBIG past them
- */
+/* the inode's slot for its singly indirect pointer (12); the doubly and
+ * triply indirect ones follow */
 #define SLOT_SINGLY     EXT2_DIRECT_POINTERS
 
+/**
+ * Finds where block `idx` of a file is in its tree: the slot of the
+ * inode it hangs from (0 to 11 for the direct pointers, 12 to 14 for the
+ * indirect ones) in `*slot`, and its index under that slot in `*rel`.
+ * Returns the depth: 0 if the slot points to the block itself, 1 to 3
+ * for the levels of indirect blocks above it, or `-EFBIG` past the
+ * largest file.
+ */
 static int block_tree(struct ext2 *desc, size_t idx, int *slot, size_t *rel)
 {
-    size_t p = desc->bs / 4;    /* Pointers per block */
+    size_t p = desc->bs / 4;    /* pointers per block */
 
     if (idx < EXT2_DIRECT_POINTERS) {
         *slot = idx;
@@ -67,8 +95,9 @@ static int block_tree(struct ext2 *desc, size_t idx, int *slot, size_t *rel)
     return -EFBIG;
 }
 
-/** the pointer in slot `slot' of the inode (it's packed: no pointers to
- * its fields) */
+/** Returns the block pointer in a slot of an inode. A switch rather than
+ * an array, because the inode is packed, so its fields can't be pointed
+ * to. */
 static uint32_t slot_get(struct ext2_inode *inode, int slot)
 {
     switch (slot) {
@@ -79,6 +108,7 @@ static uint32_t slot_get(struct ext2_inode *inode, int slot)
     }
 }
 
+/** Sets the block pointer in a slot of an inode. */
 static void slot_set(struct ext2_inode *inode, int slot, uint32_t block)
 {
     switch (slot) {
@@ -89,7 +119,8 @@ static void slot_set(struct ext2_inode *inode, int slot, uint32_t block)
     }
 }
 
-/** the data blocks under an indirect block `depth' levels above them */
+/** Returns how many data blocks are under one pointer of an indirect block
+ * that is `depth` levels above them. */
 static size_t tree_span(struct ext2 *desc, int depth)
 {
     size_t span = 1;
@@ -100,7 +131,16 @@ static size_t tree_span(struct ext2 *desc, int depth)
     return span;
 }
 
-/** block `idx' of a file into `buf' (zeros where it's sparse) */
+/**
+ * Reads a block of a file. A block that was never written (the file is
+ * sparse there) reads as zeros.
+ *
+ * @param desc   the mounted filesystem
+ * @param inode  the file's inode
+ * @param idx    the block's index in the file
+ * @param buf    where it goes, a block's size
+ * @return 0, `-EFBIG` past the largest file, `-ENOMEM`, or an I/O error
+ */
 int ext2_inode_block_read(struct ext2 *desc, struct ext2_inode *inode, size_t idx, void *buf)
 {
     int slot;
@@ -134,7 +174,7 @@ int ext2_inode_block_read(struct ext2 *desc, struct ext2_inode *inode, size_t id
             return err;
     }
 
-    if (!block) {   /* sparse block */
+    if (!block) {   /* a hole in a sparse file */
         memset(buf, 0, desc->bs);
         return 0;
     }
@@ -142,7 +182,8 @@ int ext2_inode_block_read(struct ext2 *desc, struct ext2_inode *inode, size_t id
     return ext2_block_read(desc, block, buf);
 }
 
-/** allocate a block owned by the inode, i_blocks counts 512-byte sectors */
+/** Allocates a block for a file, and counts it in the inode's `blocks`,
+ * which counts 512-byte sectors. */
 static int ext2_inode_block_alloc(struct ext2 *desc, struct ext2_inode *inode, uint32_t *block)
 {
     int err;
@@ -154,7 +195,8 @@ static int ext2_inode_block_alloc(struct ext2 *desc, struct ext2_inode *inode, u
     return 0;
 }
 
-/** get the block at idx of an indirect block, allocating it if needed */
+/** Gets the block pointer at index `idx` of the indirect block `table`,
+ * allocating a block there if there's none yet. */
 static int ext2_indirect_block_get(struct ext2 *desc, struct ext2_inode *inode, uint32_t table, size_t idx, uint32_t *block)
 {
     int err = 0;
@@ -166,7 +208,7 @@ static int ext2_indirect_block_get(struct ext2 *desc, struct ext2_inode *inode, 
     if ((err = ext2_block_read(desc, table, tmp)))
         goto done;
 
-    if (!(*block = tmp[idx])) {    /* Allocate */
+    if (!(*block = tmp[idx])) {    /* none yet: allocate one */
         if (!(err = ext2_inode_block_alloc(desc, inode, block))) {
             tmp[idx] = *block;
             err = ext2_block_write(desc, table, tmp);
@@ -178,7 +220,18 @@ done:
     return err;
 }
 
-/** `buf' as block `idx' of a file, the blocks it needs allocated */
+/**
+ * Writes a block of a file, allocating it and the indirect blocks above
+ * it if they don't exist yet. The inode is written back if blocks were
+ * allocated.
+ *
+ * @param desc      the mounted filesystem
+ * @param inode     the file's inode
+ * @param inode_nr  its inode number
+ * @param idx       the block's index in the file
+ * @param buf       the block's new contents
+ * @return 0, `-EFBIG`, `-ENOSPC`, `-ENOMEM`, or an I/O error
+ */
 int ext2_inode_block_write(struct ext2 *desc, struct ext2_inode *inode, uint32_t inode_nr, size_t idx, void *buf)
 {
     uint32_t nblocks = inode->blocks;
@@ -203,7 +256,7 @@ int ext2_inode_block_write(struct ext2 *desc, struct ext2_inode *inode, uint32_t
         rel %= span;
     }
 
-    /* persist new block pointers and i_blocks */
+    /* write the new block pointers and block count back to the inode */
     if (inode->blocks != nblocks) {
         int werr = ext2_inode_write(desc, inode_nr, inode);
         err = err ? err : werr;
@@ -215,8 +268,16 @@ int ext2_inode_block_write(struct ext2 *desc, struct ext2_inode *inode, uint32_t
     return ext2_block_write(desc, block, buf);
 }
 
-/** a free inode, marked used, into `*ino': 0, -ENOSPC, or an error (a
- * bitmap that couldn't be read isn't written back) */
+/**
+ * Allocates a free inode: its bit is set in its group's inode bitmap, and
+ * the free counts go down. A bitmap that couldn't be read isn't written
+ * back.
+ *
+ * @param desc  the mounted filesystem
+ * @param ino   set to the inode number
+ * @return 0, `-ENOSPC` if there's no free inode, `-ENOMEM`, or an I/O
+ *         error
+ */
 int ext2_inode_alloc(struct ext2 *desc, ino_t *ino)
 {
     vfs_log(LOG_DEBUG, "ext2_inode_alloc(desc=%p)\n", desc);
@@ -254,13 +315,12 @@ int ext2_inode_alloc(struct ext2 *desc, ino_t *ino)
     if (err)
         goto done;
 
-    /* Update bitmap */
     bitmap_set(&bm, idx);
 
     if ((err = ext2_block_write(desc, desc->groups[group].imap, buf)))
         goto done;
 
-    /* Update block group descriptor, and super block */
+    /* one inode fewer free, in the group and the filesystem */
     desc->groups[group].free_inodes--;
     desc->superblock->free_inodes--;
 

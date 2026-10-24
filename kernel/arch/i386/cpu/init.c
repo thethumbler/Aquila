@@ -1,6 +1,10 @@
-/**********************************************************************
- *                  Initalization of the kernel
- *           (Setup CPU structures and memory managment)
+/** \file
+ * x86: setting up the boot CPU and memory, then on to the kernel.
+ *
+ * Once the kernel runs in the higher half, `x86_cpu_init()` sets up the
+ * boot CPU (its GDT, the IDT, the exception handlers, the FPU), reads
+ * what the boot loader passed, sets up memory and the platform, and calls
+ * `kmain()`.
  */
 
 #include <boot/boot.h>
@@ -20,12 +24,16 @@
 
 struct boot *__kboot;
 
-/* the boot CPU's idle loop's */
+/* the stack of the boot CPU's idle loop */
 static char bsp_idle_stack[8192] __aligned(16);
 
+/**
+ * Sets up the boot CPU, memory and the platform, and starts the kernel
+ * (`kmain()`). It doesn't return.
+ */
 void x86_cpu_init(void)
 {
-    /* the boot CPU's own, first (curcpu(), curthread) */
+    /* the boot CPU's own structure, first (curcpu(), curthread) */
     struct cpu *bsp = &cpus[0];
     bsp->id = 0;
     bsp->arch.idle_stack = (uintptr_t) bsp_idle_stack + sizeof(bsp_idle_stack);
@@ -33,7 +41,7 @@ void x86_cpu_init(void)
 
     x86_gdt_setup(bsp, VMA(0x100000ULL));
 
-    /* the kernel's, until the first process runs */
+    /* hold the kernel lock until the first process runs */
     kernel_lock();
 
     earlycon_init();
@@ -54,10 +62,10 @@ void x86_cpu_init(void)
     mm_setup(boot);
     kvmem_setup();
 
-    /* parse command line */
+    /* the kernel's command line */
     kargs_parse(boot->cmdline);
 
-    /* reinit early console */
+    /* the early console again, as the command line says */
     earlycon_reinit();
 
     platform_init();

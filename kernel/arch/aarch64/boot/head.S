@@ -1,36 +1,39 @@
-/**********************************************************************
- *                aarch64: from the boot loader to C
+/*
+ * aarch64: from the boot loader to C.
  *
- * The boot loader (QEMU's -kernel) takes Linux's arm64 Image: the kernel's
- * memory image, flat, with the header below. It is loaded at its physical
- * address (text_offset past the start of RAM: 0x40080000 on the virt
- * machine), and jumped to with the MMU off and x0 the physical address of
- * the devicetree.
+ * The boot loader (QEMU's -kernel) takes the kernel as Linux's arm64
+ * Image: the kernel's memory image, flat, with the header below. It loads
+ * it at its physical address (text_offset past the start of RAM:
+ * 0x40080000 on the virt machine), and jumps to it with the MMU off, and
+ * the physical address of the devicetree in x0.
  *
- * The kernel runs at _VMA plus its physical address (the direct map,
- * TTBR1_EL1's half). The boot tables map the first 4 GiB of physical
- * memory with 1 GiB blocks, twice: where it is (TTBR0_EL1: this code runs
- * at its physical address until the jump) and in the direct map. The
- * first GiB is the virt machine's devices: device memory; the rest
- * normal memory. pmap_init() takes the direct map's over.
+ * The kernel runs at _VMA plus its physical address (in the direct map,
+ * the TTBR1_EL1 half). The boot tables map the first 4 GiB of physical
+ * memory with 1 GiB blocks, twice: at the same addresses (TTBR0_EL1,
+ * because this code runs at its physical address until the jump), and in
+ * the direct map. The first GiB is the virt machine's devices, mapped as
+ * device memory; the rest is normal memory. pmap_init() later takes over
+ * the direct map.
  */
 
 #include <config.h>
 
-/* MAIR_EL1: attribute 0 normal memory (write-back), 1 device (nGnRE) */
+/* MAIR_EL1: attribute 0 is normal memory (write-back), 1 is device
+ * memory (nGnRE). */
 #define MAIR            0x04FF
 
-/* a level 1 block of 1 GiB: normal (attribute 0, inner shareable,
- * accessed), or device (attribute 1, never executed) */
+/* A level 1 block of 1 GiB: normal memory (attribute 0, inner shareable,
+ * accessed), or device memory (attribute 1, never executed). */
 #define BLOCK_NORMAL    0x701
 #define BLOCK_DEVICE    0x0060000000000405
 
-/* TCR_EL1: 48-bit halves (T0SZ, T1SZ 16), 4 KiB granules, tables walked
- * cacheable and inner shareable; the physical address size (IPS) is the
- * CPU's, added below */
+/* TCR_EL1: 48-bit halves (T0SZ and T1SZ are 16), 4 KiB granules, and the
+ * tables walked cacheable and inner shareable. The physical address size
+ * (IPS) is the CPU's, added below. */
 #define TCR             0xB5103510
 
-/* SCTLR_EL1: the MMU (M), the data and instruction caches (C, I) */
+/* SCTLR_EL1's bits: the MMU (M), alignment checks (A), the data and
+ * instruction caches (C, I), write implies never-execute (WXN). */
 #define SCTLR_M         (1 << 0)
 #define SCTLR_A         (1 << 1)
 #define SCTLR_C         (1 << 2)
@@ -39,22 +42,23 @@
 
 .section .text.head, "ax"
 
-/* the Image header (Linux's Documentation/arch/arm64/booting.rst) */
+/* The Image header (Linux's Documentation/arch/arm64/booting.rst). */
 .global _start
 _start:
     b       primary_entry       /* code0 */
     nop                         /* code1 */
     .quad   0x80000             /* text_offset: from a 2 MiB aligned base */
-    .quad   __image_size        /* image_size, its .bss included */
+    .quad   __image_size        /* image_size, with its .bss */
     .quad   0x2                 /* flags: little endian, 4 KiB pages */
     .quad   0, 0, 0
     .ascii  "ARM\x64"           /* magic */
     .long   0
 
 primary_entry:
-    mov     x21, x0             /* the devicetree */
+    mov     x21, x0             /* keep the devicetree's address */
 
-    /* EL2 (QEMU with virtualization=on): down to EL1, its timers ours */
+    /* at EL2 (QEMU with virtualization=on): drop to EL1, and let EL1 use
+     * the timers */
     mrs     x0, CurrentEL
     lsr     x0, x0, #2
     cmp     x0, #2
@@ -62,10 +66,10 @@ primary_entry:
 
     mov     x0, #(1 << 31)      /* HCR_EL2.RW: EL1 is aarch64 */
     msr     hcr_el2, x0
-    mov     x0, #3              /* EL1 reads the counters, sets the timer */
+    mov     x0, #3              /* EL1 may read the counters and set the timer */
     msr     cnthctl_el2, x0
     msr     cntvoff_el2, xzr
-    mov     x0, #0x3c5          /* EL1h, D A I F masked */
+    mov     x0, #0x3c5          /* EL1h, with D, A, I and F masked */
     msr     spsr_el2, x0
     adr     x0, 1f
     msr     elr_el2, x0
@@ -74,8 +78,8 @@ primary_entry:
 1:
     msr     daifset, #0xf
 
-    /* .bss zeroed: adrp is relative to the PC, the physical one now, so
-     * symbols come out as their physical addresses */
+    /* zero the .bss: adrp is relative to the PC, which is physical now,
+     * so the symbols come out as their physical addresses */
     adrp    x0, __bss_start
     add     x0, x0, :lo12:__bss_start
     adrp    x1, __bss_end
@@ -100,11 +104,11 @@ primary_entry:
     cmp     x2, #4
     b.ne    4b
 
-    /* both halves' level 0 tables: their first entry is it (VA 0 and
-     * the direct map's start) */
+    /* both halves' level 0 tables point to it from their first entry
+     * (virtual address 0, and the direct map's start) */
     adrp    x3, boot_l0_lo
     adrp    x4, boot_l0_hi
-    orr     x1, x0, #3          /* a table */
+    orr     x1, x0, #3          /* a table descriptor */
     str     x1, [x3]
     str     x1, [x4]
 
@@ -133,7 +137,7 @@ primary_entry:
     msr     sctlr_el1, x1
     isb
 
-    /* to the kernel's addresses */
+    /* jump to the kernel's own addresses */
     ldr     x1, =high_entry
     br      x1
 

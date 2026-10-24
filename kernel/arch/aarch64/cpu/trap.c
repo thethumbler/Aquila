@@ -1,7 +1,9 @@
 /** \file
- * aarch64: exceptions to the kernel's events (interrupts.md): a system
- * call, a page fault (mm_page_fault()), another fault (a signal, or a
- * panic in the kernel), an interrupt (its handler, the tick's switch)
+ * aarch64: turning exceptions into the kernel's events (see
+ * docs/kernel/interrupts.md). A synchronous exception is a system call, a
+ * page fault (`mm_page_fault()`), or another fault (a signal, or a panic
+ * in the kernel). An interrupt runs its handlers, and the tick may switch
+ * threads.
  *
  * References:
  *      [1] - Arm Architecture Reference Manual for A-profile, D1.10
@@ -18,24 +20,26 @@
 #include <sys/signal.h>
 #include <platform/virt.h>
 
-/* ESR_EL1's exception class */
+/* ESR_EL1's exception class: why a synchronous exception came. */
 #define EC(esr)         (((esr) >> 26) & 0x3F)
 #define EC_UNKNOWN      0x00    /* an undefined instruction */
-#define EC_FP           0x07    /* FP/SIMD, trapped (CPACR_EL1.FPEN) */
+#define EC_FP           0x07    /* an FP/SIMD use that trapped (CPACR_EL1.FPEN) */
 #define EC_SVC64        0x15
-#define EC_IABT_LOW     0x20    /* instruction abort, from EL0 */
+#define EC_IABT_LOW     0x20    /* an instruction abort, from EL0 */
 #define EC_IABT_CUR     0x21
 #define EC_PC_ALIGN     0x22
-#define EC_DABT_LOW     0x24    /* data abort, from EL0 */
+#define EC_DABT_LOW     0x24    /* a data abort, from EL0 */
 #define EC_DABT_CUR     0x25
 #define EC_SP_ALIGN     0x26
 #define EC_BRK          0x3C
 
-/* an abort's ISS: write not read (data aborts), the fault's status code */
+/* An abort's syndrome: whether it was a write (for a data abort), and
+ * the fault's status code. */
 #define ISS_WNR         (1 << 6)
 #define ISS_FSC(esr)    ((esr) & 0x3F)
-#define FSC_PERMISSION  0x0C    /* 0b0011xx: a permission fault, a page there */
+#define FSC_PERMISSION  0x0C    /* 0b0011xx: a permission fault, so a page is mapped there */
 
+/** Prints the saved registers, for a panic. */
 static void dump(struct aarch64_regs *r)
 {
     for (int i = 0; i < 31; i += 2)
@@ -45,8 +49,9 @@ static void dump(struct aarch64_regs *r)
            (void *) r->pc, (void *) r->pstate, (void *) r->esr, (void *) read_sysreg(far_el1));
 }
 
-/** a copy from or to user memory that faulted (cpu/uaccess.S): it goes on
- * at its fixup, which returns what wasn't copied */
+/** Handles a fault in a copy from or to user memory (cpu/uaccess.S): the
+ * copy goes on at its fixup, which returns how much wasn't copied.
+ * Returns 1 if the fault was such a copy's, 0 if not. */
 static int uaccess_fixup(struct aarch64_regs *r)
 {
     extern uintptr_t aarch64_uaccess_fixups[], aarch64_uaccess_fixups_end[];
@@ -61,6 +66,8 @@ static int uaccess_fixup(struct aarch64_regs *r)
     return 0;
 }
 
+/** Handles an instruction or data abort: a page fault in the process's
+ * memory, or else a SIGSEGV, a failed copy, or a panic. */
 static void abort(struct aarch64_regs *r, int ec)
 {
     uintptr_t far = read_sysreg(far_el1);
@@ -75,8 +82,8 @@ static void abort(struct aarch64_regs *r, int ec)
     if ((ISS_FSC(r->esr) & 0x3C) == FSC_PERMISSION)
         flags |= PF_PRESENT;
 
-    /* the process's memory, maybe not there yet (a user address only:
-     * the kernel's own is all mapped) */
+    /* the process's memory, which may not be mapped yet (a user address
+     * only: the kernel's own memory is all mapped) */
     if (far < USER_STACK && curthread && !mm_page_fault(far, flags)) {
         aarch64_return_to_user(r, 0);
         return;
@@ -88,7 +95,8 @@ static void abort(struct aarch64_regs *r, int ec)
         return;
     }
 
-    /* the kernel's, copying from or to user memory: -EFAULT */
+    /* the kernel's fault, while copying from or to user memory: the copy
+     * fails with -EFAULT */
     if (far < USER_STACK && uaccess_fixup(r))
         return;
 
@@ -98,6 +106,7 @@ static void abort(struct aarch64_regs *r, int ec)
     panic("page fault in the kernel");
 }
 
+/** Handles a synchronous exception, by its class. */
 static void sync_dispatch(struct aarch64_regs *r)
 {
     int ec = EC(r->esr);
@@ -119,8 +128,9 @@ static void sync_dispatch(struct aarch64_regs *r)
             return;
 
         case EC_FP:
-            /* user mode's first use since a switch: the registers
-             * made its own (no room for them: it can't go on) */
+            /* user mode's first use since a thread switch: the registers
+             * get its values (if there's no memory for them, it can't go
+             * on) */
             if (REGS_USER(r)) {
                 if (aarch64_fpsimd_trap())
                     signal_force(curproc, SIGKILL);
@@ -132,8 +142,8 @@ static void sync_dispatch(struct aarch64_regs *r)
     }
 
     if (REGS_USER(r)) {
-        /* what it can't do: an undefined instruction, a misaligned PC
-         * or stack, a breakpoint */
+        /* something user mode can't do: an undefined instruction, a
+         * misaligned PC or stack, a breakpoint */
         int sig = ec == EC_PC_ALIGN || ec == EC_SP_ALIGN ? SIGBUS :
                   ec == EC_BRK ? SIGTRAP : SIGILL;
 
@@ -148,13 +158,19 @@ static void sync_dispatch(struct aarch64_regs *r)
     panic("exception in the kernel");
 }
 
-/** a synchronous exception (a system call, a fault): with the kernel
- * lock, taken if it came from user mode */
+/**
+ * Handles a synchronous exception (a system call, a fault), which
+ * `cpu/vectors.S` calls. It runs with the kernel lock, taken if the
+ * exception came from user mode.
+ *
+ * @param r  the registers saved on the kernel stack
+ */
 void aarch64_sync(struct aarch64_regs *r)
 {
     int took = kernel_enter();
 
-    /* its process was killed while it ran (on another CPU): it goes */
+    /* the thread's process was killed while it ran (on another CPU): the
+     * thread goes */
     if (took && curthread && curthread->killed)
         sched_thread_killed();
 
@@ -162,11 +178,13 @@ void aarch64_sync(struct aarch64_regs *r)
     kernel_leave(took);
 }
 
-/* the interrupted context, for the tick's handler (user or kernel) */
+/* The context that the current interrupt interrupted, for the tick's
+ * handler (to tell user time from kernel time). */
 struct aarch64_regs *aarch64_irq_regs;
 
-/** this CPU's thread stops here, ready, and the next one runs: when
- * it's chosen again, it goes on from here */
+/** Switches away from this CPU's running thread, which stays ready, to the
+ * next ready thread. When the thread is chosen again, it goes on from
+ * here. */
 void aarch64_preempt(void)
 {
     struct aarch64_thread *arch = curthread->arch;
@@ -175,8 +193,13 @@ void aarch64_preempt(void)
         schedule();
 }
 
-/** an interrupt: with the kernel lock, taken if it came from user mode
- * or the idle loop, let go of on the way back there */
+/**
+ * Handles an interrupt, which `cpu/vectors.S` calls. It runs with the
+ * kernel lock, taken if the interrupt came from user mode or the idle
+ * loop, and let go of on the way back there.
+ *
+ * @param r  the registers saved on the kernel stack
+ */
 void aarch64_irq(struct aarch64_regs *r)
 {
     int took = kernel_enter();
@@ -190,8 +213,8 @@ void aarch64_irq(struct aarch64_regs *r)
 
     irq_handle();
 
-    /* the tick: the running thread back to the queue, the next one runs
-     * (the CPU was idle: it runs) */
+    /* on the tick, the running thread goes back to the ready list and the
+     * next one runs (if the CPU was idle, that one runs) */
     if (curcpu()->arch.tick_switch) {
         curcpu()->arch.tick_switch = 0;
 
@@ -203,7 +226,7 @@ void aarch64_irq(struct aarch64_regs *r)
 
     sched_idle_wakeup();
 
-    /* an urgent thread was woken (the network's): it runs now */
+    /* if an urgent thread was woken up (the network's), it runs now */
     if (sched_urgent && REGS_USER(r) && curthread)
         aarch64_preempt();
 
@@ -211,6 +234,12 @@ void aarch64_irq(struct aarch64_regs *r)
     kernel_leave(took);
 }
 
+/**
+ * Panics on an exception that the vectors don't handle (an FIQ, an
+ * SError, or one from aarch32).
+ *
+ * @param r  the registers saved on the kernel stack
+ */
 void aarch64_bad(struct aarch64_regs *r)
 {
     printk("kernel: an exception the vectors don't take (FIQ, SError, aarch32)\n");

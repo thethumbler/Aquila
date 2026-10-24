@@ -1,27 +1,28 @@
 /** \file
- * Signals on x86: the way back to user mode, and the handler's frame
+ * x86: signals, on the way back to user mode, and a handler's frame.
  *
- * Every return to user mode (a system call's, an interrupt's, an
- * exception's) goes through x86_return_to_user(): the process takes its
- * signals there (signal_take: stops, default actions), a system call a
- * signal interrupted is restarted or fails with EINTR, and a handler runs
- * by rewriting the user context saved on the kernel stack. The kernel
- * stack is never left halfway: a signal can't come anywhere else.
+ * Every return to user mode (from a system call, an interrupt or an
+ * exception) goes through `x86_return_to_user()`. There the process takes
+ * its signals (`signal_take()`: stops, default actions), a system call
+ * that a signal interrupted is restarted or fails with `EINTR`, and a
+ * handler is made to run by rewriting the user context saved on the
+ * kernel stack. Signals come nowhere else, so the kernel never leaves
+ * anything halfway.
  *
- * The handler's frame, on the user stack: what it returns to (the
- * sigcode page), its arguments (in registers on x86-64), then
- *
- *      struct sigframe: the siginfo, the mask to restore, the
- *      interrupted registers and FPU state
+ * A handler's frame, on the user stack, is what the handler returns to
+ * (the sigcode page) and its arguments (in registers on x86_64), then a
+ * `struct sigframe`: the siginfo, the mask to restore, and the
+ * interrupted registers and FPU state.
  *
  * The handler returns into the sigcode page, mapped in every process
- * (SIGCODE_ADDR, shared, read and execute), which makes the sigreturn
- * system call: the frame is read back, its registers checked (user
- * segments, no privileged flags), the mask and the FPU state restored.
+ * (`SIGCODE_ADDR`, shared, read and execute), which makes the `sigreturn`
+ * system call. It reads the frame back, checks its registers (user
+ * segments, no privileged flags), and restores the mask and the FPU
+ * state.
  *
- * The frame is made in the kernel and goes out with copyout(), and comes
- * back with copyin(): a stack that isn't there is the process's fault
- * (SIGSEGV), not the kernel's.
+ * The frame is made in the kernel and written with `copyout()`, and read
+ * back with `copyin()`: a stack that isn't there is the process's fault
+ * (`SIGSEGV`), not the kernel's.
  */
 
 #include <core/system.h>
@@ -51,25 +52,27 @@
 #define REG_FLAGS(r) ((r)->rflags)
 #endif
 
-/* the flags user code may set: the arithmetic ones, TF, DF, AC, ID (not
- * IF, IOPL, NT, VM, ...) */
+/* the EFLAGS bits that user code may set: the arithmetic ones, TF, DF,
+ * AC and ID (not IF, IOPL, NT, VM, ...) */
 #define USER_FLAGS  0x00240DD5UL
 
+/** A signal handler's frame, on the user stack. */
 struct sigframe {
     struct aquila_siginfo info;
-    sigset_t mask;              /* sigreturn restores it */
-    uint32_t fpu;               /* fxsave below is the thread's state */
+    sigset_t mask;              /* the mask that sigreturn restores */
+    uint32_t fpu;               /* fxsave below has the thread's FPU state */
     struct x86_regs regs;       /* the interrupted context */
     uint8_t fxsave[512] __aligned(16);
 } __aligned(16);
 
-/* below the frame, i386: the return address and the handler's arguments
- * (signal, siginfo, ucontext), padded so the handler is entered as a call
- * would (16-byte aligned stack before the call) */
+/* On i386, below the frame: the return address and the handler's
+ * arguments (signal, siginfo, ucontext), padded so that the handler is
+ * entered as a call would enter it (the stack 16-byte aligned before the
+ * call). */
 #define I386_ARGS   20
 
 /*
- * The sigcode page: mov $SYS_sigreturn, %eax; int $0x80; ud2
+ * The sigcode page's code: mov $SYS_sigreturn, %eax; int $0x80; ud2
  */
 static const uint8_t sigcode[] = {
     0xB8, SYS_sigreturn & 0xff, (SYS_sigreturn >> 8) & 0xff, 0, 0,
@@ -77,12 +80,14 @@ static const uint8_t sigcode[] = {
     0x0F, 0x0B,
 };
 
+/** Compares a page with an offset, for the sigcode object's hashmap. */
 static int vm_page_eq(void *a, void *b)
 {
     return ((struct vm_page *) a)->off == *(size_t *) b;
 }
 
-/** the page, made once: the object keeps it, every process maps it */
+/** Makes the sigcode page, the first time a process touches it. The
+ * object keeps it, and every process maps the same page. */
 static struct vm_page *sigcode_in(struct vm_object *vm_object, size_t off)
 {
     char *buf = kmalloc(PAGE_SIZE, &M_BUFFER, M_ZERO);
@@ -114,7 +119,9 @@ static struct vm_object sigcode_object = {
     .ref   = 1,
 };
 
-/** the sigcode page in proc's (new) address space */
+/*
+ * Maps the sigcode page in a process's new address space.
+ */
 int arch_sigcode_map(struct proc *proc)
 {
     if (!sigcode_object.pages && !(sigcode_object.pages = hashmap_new(0, vm_page_eq)))
@@ -141,7 +148,8 @@ int arch_sigcode_map(struct proc *proc)
     return 0;
 }
 
-/** the handler of `sig' runs when `r' is returned to */
+/** Makes the handler of `sig` run when the context `r` is returned to:
+ * writes its frame on the user stack, and points `r` at the handler. */
 static void deliver(struct x86_regs *r, int sig)
 {
     struct thread *thread = curthread;
@@ -149,15 +157,16 @@ static void deliver(struct x86_regs *r, int sig)
     struct aquila_sigaction *sa = &proc->sigaction[sig];
     uintptr_t handler = sa->sa_handler;
 
-    /* the mask to come back to: sigsuspend's and pselect's is the one
-     * they replaced */
+    /* the mask to restore afterwards; for sigsuspend() and pselect(),
+     * it is the one they replaced */
     sigset_t mask = thread->sig_oldmask_set ? thread->sig_oldmask : proc->sigmask;
     thread->sig_oldmask_set = 0;
 
 #if ARCH_BITS==32
     uintptr_t sp = REG_SP(r);
 #else
-    /* below the red zone (128 bytes the code may use under its stack) */
+    /* below the red zone, the 128 bytes the code may use below its stack
+     * pointer */
     uintptr_t sp = REG_SP(r) - 128;
 #endif
 
@@ -169,7 +178,8 @@ static void deliver(struct x86_regs *r, int sig)
     uintptr_t new_sp = f - sizeof(uintptr_t);
 #endif
 
-    /* the frame, made here (zeroed: nothing of the kernel's goes out) */
+    /* make the frame here, zeroed, so that nothing of the kernel's goes
+     * out */
     struct sigframe frame;
     struct sigframe *uframe = (struct sigframe *) f;
     int fault = sig == SIGSEGV || sig == SIGBUS || sig == SIGILL || sig == SIGFPE;
@@ -192,12 +202,13 @@ static void deliver(struct x86_regs *r, int sig)
     uintptr_t args[1] = {SIGCODE_ADDR};
 #endif
 
-    /* nowhere to put it: as a fault would, it can't go on */
+    /* if there's nowhere to put it, the process can't go on, as after a
+     * fault */
     if (sp < 4096 || copyout(uframe, &frame, sizeof(frame)) ||
         copyout((void *) new_sp, args, sizeof(args)))
         signal_exit(SIGSEGV);
 
-    /* the handler starts with a clean FPU */
+    /* the handler starts with a clean FPU state */
     x86_fpu_reset();
 
 #if ARCH_BITS==64
@@ -210,7 +221,8 @@ static void deliver(struct x86_regs *r, int sig)
     REG_SP(r) = new_sp;
     REG_FLAGS(r) = (REG_FLAGS(r) & USER_FLAGS & ~0x400UL) | X86_EFLAGS;  /* DF clear */
 
-    /* blocked while it runs: its mask, and itself (unless SA_NODEFER) */
+    /* while it runs, its mask is blocked, and the signal itself (unless
+     * SA_NODEFER) */
     sigset_t block = sa->sa_mask | (sa->sa_flags & SA_NODEFER ? 0 : 1UL << sig);
     proc->sigmask = (mask | block) & ~SIG_UNMASKABLE;
 
@@ -218,6 +230,15 @@ static void deliver(struct x86_regs *r, int sig)
         sa->sa_handler = SIG_DFL;
 }
 
+/**
+ * Delivers the current process's pending signals on the way back to user
+ * mode: stops and default actions, a handler, and the restart (or
+ * `EINTR`) of a system call that a signal interrupted.
+ *
+ * @param r        the user context about to be returned to
+ * @param syscall  whether `r` is returning from a system call (one that
+ *                 may need restarting)
+ */
 void x86_return_to_user(struct x86_regs *r, int syscall)
 {
     struct thread *thread = curthread;
@@ -228,8 +249,8 @@ void x86_return_to_user(struct x86_regs *r, int syscall)
     struct proc *proc = thread->owner;
     int sig = signal_take();
 
-    /* a system call a signal interrupted: again (no handler, or one that
-     * says SA_RESTART), else EINTR */
+    /* a system call that a signal interrupted is made again (if no
+     * handler runs, or the handler says SA_RESTART), or fails with EINTR */
     if (syscall) {
         intptr_t ret = (intptr_t) REG_AX(r);
 
@@ -237,13 +258,13 @@ void x86_return_to_user(struct x86_regs *r, int syscall)
             int restart = !sig || (ret == -ERESTARTSYS && (proc->sigaction[sig].sa_flags & SA_RESTART));
 
             if (restart) {
-                /* back to the int $0x80, the number in eax */
+                /* back to the int $0x80, with the number in eax again */
                 REG_IP(r) -= 2;
                 REG_AX(r) = thread->syscall_nr;
 
-                /* straight back into the same call, the same arguments:
-                 * it may go on where it was (a handler runs first
-                 * otherwise, its calls aren't the restart) */
+                /* straight back into the same call, with the same
+                 * arguments: it may go on where it was (if a handler runs
+                 * first, its calls aren't the restart) */
                 thread->restarting = !sig;
             } else {
                 REG_AX(r) = -EINTR;
@@ -254,13 +275,15 @@ void x86_return_to_user(struct x86_regs *r, int syscall)
     if (sig) {
         deliver(r, sig);
     } else if (thread->sig_oldmask_set) {
-        /* sigsuspend restarted: the mask it replaced back */
+        /* sigsuspend() restarted: restore the mask it replaced */
         proc->sigmask = thread->sig_oldmask;
         thread->sig_oldmask_set = 0;
     }
 }
 
-/** sigreturn(): the frame of the handler that returns, back */
+/* Returns from a signal handler (`sigreturn`): restores the interrupted
+ * context, the mask and the FPU state from the handler's frame. A bad
+ * frame raises `SIGSEGV`. */
 void arch_sigreturn(void)
 {
     struct x86_thread *arch = curthread->arch;
@@ -279,8 +302,8 @@ void arch_sigreturn(void)
         return;
     }
 
-    /* its registers, but user mode's segments, and no flags it couldn't
-     * set itself */
+    /* the frame's registers, but with user mode's segments, and no flags
+     * that user mode couldn't set itself */
     uintptr_t flags = (REG_FLAGS(&frame.regs) & USER_FLAGS) | X86_EFLAGS;
 
     *r = frame.regs;

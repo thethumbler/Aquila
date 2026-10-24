@@ -4,11 +4,11 @@
 #include <core/system.h>
 #include <fs/vfs.h>
 
+/* the magic number of the old binary cpio format */
 #define CPIO_BIN_MAGIC    0070707
 
-/**
- * cpio archive header
- */
+/** The header of a member of an old binary cpio archive, as it is in the
+ * archive: its name follows, then its data. */
 struct cpio_hdr {
     uint16_t magic;
     uint16_t dev;
@@ -23,18 +23,16 @@ struct cpio_hdr {
     uint16_t filesize[2];
 } __packed;
 
-/**
- * cpio archive
- */
+/** What cpiofs keeps for each of its vnodes, a member of the archive. */
 struct cpio {
-    struct vnode *super;
-    struct vnode *parent;
-    struct vnode *dir;
-    size_t count;
-    size_t data; /* offset of data in the archive */
+    struct vnode *super;    /* the archive's device */
+    struct vnode *parent;   /* the directory it's in */
+    struct vnode *dir;      /* its first entry, if it's a directory */
+    size_t count;           /* how many entries it has, if a directory */
+    size_t data;            /* where its data starts in the archive */
 
     const char *name;
-    struct vnode *next;  /* For directories */
+    struct vnode *next;     /* the next entry of its directory */
 };
 
 extern struct fs cpiofs;

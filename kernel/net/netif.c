@@ -1,16 +1,17 @@
 /** \file
- * Network interfaces (net/netif.h): drivers register theirs, give them
- * the frames they receive (netif_input) and send the frames given to
- * them (transmit)
+ * Network interfaces (see `net/netif.h`).
  *
- * lo, the loopback interface, is always there (127.0.0.1/8) and first;
- * the others are eth0, eth1, ..., in the order they are registered.
+ * A network driver registers its interface, hands it the frames it
+ * receives (`netif_input()`), and sends the frames the interface gives it
+ * (its `transmit` operation). lo, the loopback interface (127.0.0.1/8),
+ * is always there and comes first; the others are eth0, eth1, ..., in the
+ * order they are registered.
  *
- * The frames received wait for the network's thread ([net], a kernel
- * thread), which takes them up the stack, NET_BUDGET at a time before the
- * others run again, and runs the network's callouts (net_callout_set).
- * It is urgent: woken by a driver's interrupt, it runs as soon as the
- * interrupt returns.
+ * Received frames wait for the network's thread (`[net]`, a kernel
+ * thread), which takes them up the stack, `NET_BUDGET` at a time before
+ * the other threads run again, and runs the network's callouts
+ * (`net_callout_set()`). It is an urgent thread: when a driver's interrupt
+ * wakes it, it runs as soon as the interrupt returns.
  */
 
 #include <core/system.h>
@@ -27,8 +28,8 @@
 #include <sys/kthread.h>
 #include <sys/sched.h>
 
-#define NET_BUDGET      32      /* frames handled before the others run */
-#define NET_BACKLOG     256     /* frames waiting, at most */
+#define NET_BUDGET      32      /* frames handled before other threads run */
+#define NET_BACKLOG     256     /* the most frames that may wait */
 
 struct netif *netifs;
 static int ethers_nr;
@@ -43,8 +44,8 @@ static size_t rx_count;
 
 static struct callout_list net_callouts;
 
-/** "a.b.c.d" at *s, in the network's byte order; *s past it, -1 if it
- * isn't an address */
+/** Parses an address "a.b.c.d" at `*s` into `*ip`, in network byte order,
+ * and moves `*s` past it. Returns 0, or -1 if it isn't an address. */
 static int parse_ipv4(const char **s, uint32_t *ip)
 {
     uint32_t addr = 0;
@@ -67,7 +68,8 @@ static int parse_ipv4(const char **s, uint32_t *ip)
     return 0;
 }
 
-/** `ip=<address>/<prefix length>[:<gateway>]' for the first interface */
+/** Configures the first Ethernet interface from the kernel's command
+ * line: `ip=address/prefix-length[:gateway]`. */
 static void netif_config(struct netif *netif)
 {
     const char *s = NULL;
@@ -108,7 +110,8 @@ bad:
     printk("net: ip=: not <address>/<prefix length>[:<gateway>]\n");
 }
 
-/** "xx:xx:xx:xx:xx:xx" (printk has no field widths) */
+/** Writes a MAC address into `buf` as "xx:xx:xx:xx:xx:xx" (printk() has no
+ * field widths) and returns `buf`. */
 static char *mac_string(const uint8_t mac[6], char buf[18])
 {
     static const char digits[] = "0123456789abcdef";
@@ -122,15 +125,27 @@ static char *mac_string(const uint8_t mac[6], char buf[18])
     return buf;
 }
 
+/**
+ * Sets a callout that the network's thread runs: `fn(arg)` is called
+ * once `ns` ns have passed. TCP's timers use it.
+ *
+ * @param c    the callout
+ * @param ns   the delay, in ns
+ * @param fn   the function to call
+ * @param arg  its argument
+ */
 void net_callout_set(struct callout *c, uint64_t ns, void (*fn)(void *), void *arg)
 {
     callout_set_on(&net_callouts, c, ns, fn, arg);
 
-    /* it may be sleeping until a later one */
+    /* the thread may be sleeping until a later callout */
     if (net_thread)
         thread_wakeup(net_thread);
 }
 
+/** Runs the network's thread: it takes the received frames up the stack
+ * and runs the network's callouts, then sleeps until the next frame or
+ * callout. */
 static void net_main(void *arg __unused)
 {
     for (;;) {
@@ -152,7 +167,7 @@ static void net_main(void *arg __unused)
 
         callout_list_run(&net_callouts, arch_rtime_ns());
 
-        /* more: after the others */
+        /* if more frames wait, let the other threads run first */
         if (rx_head) {
             arch_yield();
             continue;
@@ -162,7 +177,12 @@ static void net_main(void *arg __unused)
     }
 }
 
-/** the interface named `name' (at most 16 characters, IFNAMSIZ) */
+/**
+ * Finds an interface by its name.
+ *
+ * @param name  the name (at most 16 characters, `IFNAMSIZ`)
+ * @return the interface, or NULL
+ */
 struct netif *netif_find(const char *name)
 {
     for (struct netif *netif = netifs; netif; netif = netif->next)
@@ -174,9 +194,18 @@ struct netif *netif_find(const char *name)
 
 static void loopback_init(void);
 
+/**
+ * Registers a network interface. An interface without a name gets the
+ * next "ethN". The first Ethernet interface is configured from the
+ * kernel's `ip=` argument. The network's thread is started with the first
+ * interface.
+ *
+ * @param netif  the interface, with its MAC address and `transmit` set
+ * @return 0
+ */
 int netif_register(struct netif *netif)
 {
-    /* lo first */
+    /* lo comes first */
     if (netif != &loopback && !loopback.transmit)
         loopback_init();
 
@@ -197,7 +226,7 @@ int netif_register(struct netif *netif)
     if (!netif->mtu)
         netif->mtu = 1500;
 
-    /* in the order they come */
+    /* add it at the end, in the order they come */
     struct netif **p = &netifs;
 
     while (*p)
@@ -213,15 +242,16 @@ int netif_register(struct netif *netif)
     else
         printk("net: %s: %s\n", netif->name, mac_string(netif->mac, mac));
 
-    /* ip= is the first Ethernet interface's */
+    /* ip= configures the first Ethernet interface */
     if (n == 0)
         netif_config(netif);
 
     return 0;
 }
 
-/** lo's frames (a broadcast through it, SO_BINDTODEVICE) come back in;
- * packets to 127/8 don't get here, ipv4_output() turns them around */
+/** Sends a frame on lo: a copy of it comes back in. Only frames sent
+ * through lo explicitly get here (a broadcast, `SO_BINDTODEVICE`): packets
+ * to 127.0.0.0/8 are turned around earlier, by ipv4_output(). */
 static int loopback_transmit(struct netif *netif, struct netbuf *nb)
 {
     struct netbuf *copy = netbuf_alloc();
@@ -234,6 +264,7 @@ static int loopback_transmit(struct netif *netif, struct netbuf *nb)
     return 0;
 }
 
+/** Sets up lo, the loopback interface, once. */
 static void loopback_init(void)
 {
     if (loopback.transmit)
@@ -243,13 +274,13 @@ static void loopback_init(void)
     loopback.ip       = htonl(0x7f000001);
     loopback.netmask  = htonl(0xff000000);
     loopback.flags    = NETIF_UP | NETIF_RUNNING | NETIF_LOOPBACK;
-    loopback.mtu      = 1500;     /* a netbuf's room, about */
+    loopback.mtu      = 1500;     /* about what a netbuf holds */
     loopback.transmit = loopback_transmit;
 
     netif_register(&loopback);
 }
 
-/** lo is there without a network card too */
+/** Sets up lo at boot, so that it is there even without a network card. */
 static int loopback_module_init(void)
 {
     loopback_init();
@@ -258,6 +289,8 @@ static int loopback_module_init(void)
 
 MODULE_INIT(loopback, loopback_module_init, NULL)
 
+/** Queues a received frame for the network's thread, and wakes it up. The
+ * frame is dropped if the interface is down or too many frames wait. */
 static void rx_queue(struct netif *netif, struct netbuf *nb)
 {
     if (!(netif->flags & NETIF_UP) || rx_count >= NET_BACKLOG) {
@@ -266,7 +299,7 @@ static void rx_queue(struct netif *netif, struct netbuf *nb)
         return;
     }
 
-    /* for the network's thread */
+    /* add it to the queue of the network's thread */
     nb->next = NULL;
 
     if (rx_tail)
@@ -280,7 +313,13 @@ static void rx_queue(struct netif *netif, struct netbuf *nb)
     thread_wakeup(net_thread);
 }
 
-/** a frame the device received, the netbuf is the stack's from now on */
+/**
+ * Hands the stack a frame that a driver received, possibly from an
+ * interrupt. The netbuf is the stack's from now on.
+ *
+ * @param netif  the interface it came in on
+ * @param nb     the frame
+ */
 void netif_input(struct netif *netif, struct netbuf *nb)
 {
     netif->stats.rx_packets++;
@@ -291,7 +330,13 @@ void netif_input(struct netif *netif, struct netbuf *nb)
     rx_queue(netif, nb);
 }
 
-/** an IPv4 packet to ourselves, received as if it came through `netif' */
+/**
+ * Hands the stack an IPv4 packet sent to one of our own addresses, as if
+ * it had come in through an interface.
+ *
+ * @param netif  the interface it is received on
+ * @param nb     the packet, from its IPv4 header
+ */
 void netif_loopback(struct netif *netif, struct netbuf *nb)
 {
     netif->stats.rx_packets++;
@@ -302,7 +347,14 @@ void netif_loopback(struct netif *netif, struct netbuf *nb)
     rx_queue(netif, nb);
 }
 
-/** send a frame, the netbuf stays the caller's */
+/**
+ * Sends a frame through an interface's driver. The netbuf stays the
+ * caller's.
+ *
+ * @param netif  the interface
+ * @param nb     the frame
+ * @return 0, or the driver's negative errno
+ */
 int netif_output(struct netif *netif, struct netbuf *nb)
 {
     int err = netif->transmit(netif, nb);

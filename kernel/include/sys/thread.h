@@ -9,24 +9,25 @@ struct thread;
 #include <sys/waitq.h>
 #include <ds/list.h>
 
+/* Threads (sys/thread.c). See docs/kernel/processes.md. */
+
+/* A thread's state. */
 typedef enum {
     RUNNABLE,
-    ISLEEP, /* Interruptable SLEEP (I/O) */
-    USLEEP, /* Uninterruptable SLEEP (Waiting for event) */
+    ISLEEP, /* sleeping, and a signal can end the sleep */
+    USLEEP, /* sleeping, whatever signals come */
     ZOMBIE,
 } state_t;
 
-/**
- * thread
- */
+/** A thread. */
 struct thread {
-    /** Thread ID */
+    /** the thread's ID, in its process */
     tid_t tid;
 
-    /** Thread current state */
+    /** its state */
     state_t state;
 
-    /** Thread owner process */
+    /** its process */
     struct proc *owner;
 
     /** A kernel thread's (process 0's): its name, and what it runs */
@@ -34,76 +35,79 @@ struct thread {
     void (*kentry)(void *arg);
     void *karg;
 
-    /** Thread stack */
+    /** its user stack */
     uintptr_t stack;
     uintptr_t stack_base;
     size_t    stack_size;
 
-    /** On the ready list (sched.c) while it's ready to run, or on the
-     *  wait queue it sleeps on (waitq: run_link.list says which) */
+    /** it's on the ready list (sched.c) while it's ready to run, or on
+     *  the wait queue it sleeps on (waitq); run_link.list says which */
     struct list_node run_link;
     struct waitq *waitq;
 
-    /** The system call it's in (the last it made), to restart it */
+    /** the system call it's in (the last one it made), to restart it */
     int syscall_nr;
 
-    /** The call is a restart (a stop interrupted it, no handler ran):
-     *  restart_until is the deadline it had, which a call that sleeps
-     *  until one (nanosleep, poll, select) keeps */
+    /** whether the call is a restart (a stop interrupted it, and no
+     *  handler ran); restart_until is the deadline it had, which a call
+     *  that sleeps until a deadline (nanosleep, poll, select) keeps */
     int restarting;
     uint64_t restart_until;
 
-    /** What the thread exited with (thread_exit), for thread_join */
+    /** what the thread exited with (thread_exit()), for thread_join() */
     void *exit_value;
 
-    /** In sigsuspend() or pselect(): the mask they replaced, which the
-     *  handler's frame keeps (sigreturn restores it), or which is restored
-     *  on the way out (signal_return) */
+    /** in sigsuspend() or pselect(): the signal mask they replaced, which
+     *  the handler's frame keeps (sigreturn() restores it), or which is
+     *  restored on the way out */
     int      sig_oldmask_set;
     sigset_t sig_oldmask;
 
-    /** Waiting with a deadline (sched_wait): when (arch_rtime_ns()) */
+    /** when it waits with a deadline (sched_wait()): the deadline, in
+     *  arch_rtime_ns() time */
     uint64_t sleep_until;
 
-    /** Address of the last fault, the si_addr of the signal it raised */
+    /** the address of its last fault, the si_addr of the signal it
+     *  raised */
     uintptr_t fault_addr;
 
-    /** On the timer's list while waiting with a deadline (sched_wait) */
+    /** it's on the timer's list while it waits with a deadline */
     struct list_node timer_link;
 
-    /** The open files its system call holds (file_hold), let go of when
-     *  it returns, or when the thread is killed */
+    /** the open files its system call holds (file_hold()), let go of
+     *  when the call returns, or when the thread is killed */
 #define THREAD_FILES_HELD   4
     struct file *files[THREAD_FILES_HELD];
     int files_held;
 
-    /** Arch specific data */
+    /** the architecture's own data: its registers, its kernel stack */
     void *arch;
 
-    /** Thread flags */
+    /** whether it has run yet */
     int spawned;
 
-    /** Runs before the others once woken, as soon as the interrupt that
-     *  woke it returns (sched_thread_wake): the network's thread */
+    /** it runs before the others once woken, as soon as the interrupt
+     *  that woke it returns (sched_thread_wake()): the network's thread */
     int urgent;
 
-    /** In select() or poll(): what it waits on (poll_register), and where
-     *  it sleeps meanwhile */
+    /** in select() or poll(): what it waits for (poll_register()), and
+     *  where it sleeps meanwhile */
     struct poll_reg *poll_regs;
     struct waitq poll_wait;
 
-    /** Killed (proc_threads_end) while it ran on another CPU: it frees
-     *  itself there, when that CPU next enters the kernel (its process,
-     *  owner, NULL if it goes too: sched_thread_killed) */
+    /** it was killed (proc_threads_end()) while it ran on another CPU: it
+     *  frees itself there, when that CPU next enters the kernel; its
+     *  owner is NULL if its process goes too (sched_thread_killed()) */
     int killed;
 };
 
-/* sleeping and waking up: sys/waitq.h */
+/* Making and ending threads (sleeping and waking up are in
+ * sys/waitq.h). */
 int thread_new(struct proc *proc, struct thread **rthread);
 int thread_create(struct thread *thread, uintptr_t stack, uintptr_t entry, uintptr_t uentry, uintptr_t arg, uintptr_t attr, struct thread **new_thread);
 int thread_kill(struct thread *thread);
 
-/* the files its system call holds, let go of (fs/file.c) */
+/* Lets go of the files a thread's system call holds (fs/file.c). */
 void thread_files_release(struct thread *thread);
 
 #endif /* ! _SYS_THREAD_H */

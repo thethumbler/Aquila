@@ -1,3 +1,7 @@
+/** \file
+ * x86: the child's thread, for `fork()`.
+ */
+
 #include <core/system.h>
 #include <core/string.h>
 #include <core/arch.h>
@@ -9,6 +13,11 @@
 
 MALLOC_DECLARE(M_X86_FPU);
 
+/*
+ * Sets up the x86 state of a fork's child thread: a copy of the parent's
+ * kernel stack and FPU state, and a start at `x86_fork_return`, which
+ * returns to user mode through the fork system call's frame, in the copy.
+ */
 int arch_proc_fork(struct thread *thread, struct proc *fork)
 {
     int err = 0;
@@ -19,12 +28,12 @@ int arch_proc_fork(struct thread *thread, struct proc *fork)
     ftarch = kmalloc(sizeof(struct x86_thread), &M_X86_THREAD, M_ZERO);
 
     if (ftarch == NULL) {
-        /* Failed to allocate fork thread arch structure */
+        /* no memory for the child thread's x86 state */
         err = -ENOMEM;
         goto free_resources;
     }
 
-    /* Setup kstack */
+    /* the child's kernel stack */
     uintptr_t fkstack_base = (uintptr_t) kmalloc(KERN_STACK_SIZE, &M_KERN_STACK, 0);
 
     if (!fkstack_base) {
@@ -32,13 +41,13 @@ int arch_proc_fork(struct thread *thread, struct proc *fork)
         goto free_resources;
     }
 
-    /* the same stack (in a signal handler, the context it interrupted is
-     * on top, kstack below it) */
+    /* a copy of the parent's kernel stack (in a signal handler, the
+     * context it interrupted is at the top, and kstack below it) */
     ftarch->kstack_base = fkstack_base;
     ftarch->kstack = fkstack_base + (ptarch->kstack - ptarch->kstack_base);
     memcpy((void *) fkstack_base, (void *) ptarch->kstack_base, KERN_STACK_SIZE);
 
-    /* the registers of the fork system call, at the same place */
+    /* the fork system call's registers, at the same place in the copy */
     struct x86_regs *fork_regs = (void *) (fkstack_base + ((uintptr_t) ptarch->regs - ptarch->kstack_base));
     ftarch->regs = fork_regs;
 
@@ -53,8 +62,9 @@ int arch_proc_fork(struct thread *thread, struct proc *fork)
     ftarch->rflags = ptarch->rflags;
 #endif
 
-    /* the FPU as the parent has it (its registers, MXCSR, control word),
-     * if it used it: the child loads it at its first use */
+    /* the FPU's state as the parent has it (its registers, MXCSR, the
+     * control word), if it used the FPU: the child loads it at its first
+     * use */
     ftarch->fpu_enabled = 0;
     ftarch->fpu_context = NULL;
 

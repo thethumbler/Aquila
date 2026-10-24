@@ -1,25 +1,36 @@
 #ifndef _EXT2_H
 #define _EXT2_H
 
+/*
+ * The second extended filesystem, ext2. The disk is cut into block
+ * groups; each has a block bitmap, an inode bitmap and part of the inode
+ * table, and the block group descriptor table (after the superblock)
+ * says where they are. An inode has 12 direct blocks, then a singly, a
+ * doubly and a triply indirect one. A directory's blocks hold entries of
+ * different sizes, which make a list in each block.
+ */
+
 #include <core/system.h>
 #include <fs/vfs.h>
 
 #define EXT2_SIGNATURE  0xEF53
 
-/* revision 1's features: compatible ones may be ignored; an
- * incompatible one the code doesn't know means it can't use the
- * filesystem, a read-only compatible one that it can't write it */
+/* revision 1's features: compatible ones may be ignored; an incompatible
+ * one that the code doesn't know means it can't use the filesystem, and a
+ * read-only compatible one means it can't write to it */
 #define EXT2_INCOMPAT_FILETYPE      0x0002  /* the entries' types */
 #define EXT2_RO_COMPAT_SPARSE_SUPER 0x0001  /* backup superblocks in fewer groups */
 #define EXT2_RO_COMPAT_LARGE_FILE   0x0002  /* sizes past 2 GiB (size_high) */
 
-/* what AquilaOS's ext2 handles: what mke2fs -t ext2 makes */
+/* the features AquilaOS's ext2 handles: those mke2fs -t ext2 uses */
 #define EXT2_INCOMPAT_SUPPORTED     EXT2_INCOMPAT_FILETYPE
 #define EXT2_RO_COMPAT_SUPPORTED    (EXT2_RO_COMPAT_SPARSE_SUPER | EXT2_RO_COMPAT_LARGE_FILE)
 
-/* revision 0 has no inode size or first inode in its superblock */
+/* revision 0's superblock has no inode size or first inode: they are
+ * fixed */
 #define EXT2_GOOD_OLD_INODE_SIZE    128
 
+/** The superblock, as it is on the disk, 1024 bytes into it. */
 struct ext2_superblock {
     /** number of inodes */
     uint32_t    ninodes;
@@ -48,14 +59,14 @@ struct ext2_superblock {
     /** last write time */
     uint32_t    wtime;
 
-    uint16_t    times_mounted;  // after last fsck
+    uint16_t    times_mounted;  /* since the last fsck */
     uint16_t    allowed_times_mounted;
     uint16_t    ext2_signature;
     uint16_t    filesystem_state;
     uint16_t    on_error;
     uint16_t    minor_version;
     uint32_t    last_fsck;
-    uint32_t    time_between_fsck;  // Time allowed between fsck(s)
+    uint32_t    time_between_fsck;  /* the time allowed between two fscks */
     uint32_t    os_id;
     uint32_t    major_version;
     uint16_t    uid;
@@ -77,15 +88,13 @@ struct ext2_superblock {
     uint8_t     blocks_to_preallocate_for_files;
     uint8_t     blocks_to_preallocate_for_directories;
     uint16_t    __unused__;
-    uint8_t     jid[16];    // Journal ID
-    uint32_t    jinode;     // Journal inode
-    uint32_t    jdevice;    // Journal device
-    uint32_t    head_of_orphan_inode_list;  // What the hell is this !?
+    uint8_t     jid[16];    /* the journal's ID (ext3) */
+    uint32_t    jinode;     /* the journal's inode (ext3) */
+    uint32_t    jdevice;    /* the journal's device (ext3) */
+    uint32_t    head_of_orphan_inode_list;  /* inodes deleted while open (ext3) */
 } __packed;
 
-/**
- * block group descriptor
- */
+/** A block group descriptor, as it is on the disk. */
 struct ext2_group {
     /** blocks bitmap */
     uint32_t    bmap;
@@ -101,9 +110,7 @@ struct ext2_group {
     uint8_t     __unused__[14];
 } __packed;
 
-/**
- * ext2 on disk inode
- */
+/** An inode, as it is on the disk. */
 struct ext2_inode {
     uint16_t    mode;
     uint16_t    uid;
@@ -130,9 +137,8 @@ struct ext2_inode {
     uint8_t     os_specific2[12];
 } __packed;
 
-/**
- * ext2 directory entry
- */
+/** A directory entry, as it is on the disk. 0 as the inode number is an
+ * unused entry; `size` is the distance to the next entry. */
 struct ext2_dentry {
     /** inode number */
     uint32_t    ino;
@@ -142,10 +148,11 @@ struct ext2_dentry {
     uint8_t     length;
     /** entry type */
     uint8_t     type;
-    /** name will be here */
+    /** the name follows (not NUL-terminated) */
     uint8_t     name[0];
 } __packed;
 
+/* the entry types, with EXT2_INCOMPAT_FILETYPE */
 #define EXT2_DENTRY_TYPE_BAD   0
 #define EXT2_DENTRY_TYPE_RGL   1
 #define EXT2_DENTRY_TYPE_DIR   2
@@ -157,17 +164,16 @@ struct ext2_dentry {
 
 #define EXT2_DIRECT_POINTERS 12
 
-/**
- * ext2 filesystem
- */
+/** A mounted ext2 filesystem. */
 struct ext2 {
-    struct vnode *supernode;
+    struct vnode *supernode;    /* the device it's on */
     struct ext2_superblock *superblock;
-    struct ext2_group *groups;
+    struct ext2_group *groups;  /* the block group descriptor table */
 
     /** number of block group descriptors */
     size_t ngroups;
 
+    /** the block size */
     size_t bs;
 
     /** an inode's size on the disk (revision 0's, or the superblock's) */
@@ -177,13 +183,14 @@ struct ext2 {
      * without it, the byte is 0 */
     int filetype;
 
+    /** its vnodes in use, by inode number */
     struct vcache *vcache;
 };
 
 extern struct fs ext2fs;
 
-/* the functions that read or write the disk return 0, or an error: -EIO
- * if not all of it was read or written */
+/* the functions that read or write the disk return 0, or a negative
+ * errno: -EIO if not all of it was read or written */
 
 /* super.c */
 int ext2_superblock_rewrite(struct ext2 *desc);
@@ -208,7 +215,7 @@ int ext2_inode_alloc(struct ext2 *desc, ino_t *ino);
 int ext2_dentry_find(struct ext2 *desc, struct ext2_inode *inode, const char *name, ino_t *ino);
 int ext2_dentry_create(struct vnode *dir, const char *name, ino_t ino, mode_t mode);
 
-/* iops.c */
+/* vops.c and remove.c: the vnode operations */
 ssize_t ext2_read(struct vnode *node, off_t offset, struct iobuf *io);
 ssize_t ext2_write(struct vnode *node, off_t offset, struct iobuf *io);
 ssize_t ext2_readdir(struct vnode *dir, off_t offset, struct dirent *dirent);
@@ -226,7 +233,8 @@ int ext2_vrename(struct vnode *odir, const char *ofn, struct vnode *ndir, const 
 void ext2_blocks_free(struct ext2 *desc, struct ext2_inode *inode, size_t from);
 void ext2_inode_discard(struct ext2 *desc, ino_t ino);
 
-/* the vnode of inode `ino' (the cached one, or a new one) */
+/* ext2.c: an inode's vnode (the cached one, or a new one), and writing a
+ * vnode back to its inode */
 int ext2_inode_build(struct ext2 *desc, ino_t ino, struct vnode **ref_inode);
 int ext2_inode_sync(struct vnode *inode);
 

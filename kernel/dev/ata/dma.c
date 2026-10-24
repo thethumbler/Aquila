@@ -1,11 +1,15 @@
 /** \file
- * ATA bus master DMA (IDE controllers, as QEMU's PIIX): the controller
- * moves the data of a command to or from memory itself, and the request
- * waits for the drive's interrupt. PIO moves it a word at a time through
- * an I/O port and polls, which under a hypervisor exits to it every time.
+ * ATA bus master DMA, for IDE controllers that can (such as QEMU's PIIX).
  *
- * Transfers go through a buffer of the channel's, physically contiguous
- * and within 64 KiB as the controller needs, described by one PRD entry.
+ * With DMA, the controller moves a command's data to or from memory
+ * itself, and the request sleeps until the drive's interrupt says it is
+ * done. With PIO (`pio.c`), the CPU moves the data a word at a time
+ * through an I/O port and polls, which under a hypervisor means an exit
+ * to it every time.
+ *
+ * Each channel transfers through a buffer of its own, which is physically
+ * contiguous and doesn't cross a 64 KiB boundary, as the controller
+ * requires. One physical region descriptor (PRD) describes it.
  */
 
 #include <core/system.h>
@@ -17,7 +21,7 @@
 
 #include <ata.h>
 
-/* bus master registers */
+/* the bus master's registers, from its base */
 #define BM_CMD          0
 #define BM_STATUS       2
 #define BM_PRDT         4
@@ -32,7 +36,7 @@
 #define DMA_BUF_SIZE    (64 * 1024)
 #define DMA_MAX_SECTORS (DMA_BUF_SIZE / 512)
 
-/** physical region descriptor */
+/** A physical region descriptor: one piece of memory to transfer. */
 struct prd {
     uint32_t addr;
     uint16_t size;      /* 0 is 64 KiB */
@@ -41,17 +45,19 @@ struct prd {
 
 #define PRD_EOT         0x8000
 
-/* per channel, in the kernel image: its physical address is LMA() */
+/* each channel's descriptor and buffer, in the kernel image, so that their
+ * physical address is LMA() */
 static struct prd prdt[2] __aligned(16);
 static char dma_buf[2][DMA_BUF_SIZE] __aligned(DMA_BUF_SIZE);
 
+/** Returns which channel a drive is on: 0 (primary) or 1 (secondary). */
 static int channel_index(struct ata_drive *drive)
 {
     return drive->id / 2;
 }
 
-/** the transfer is over: what the controller and the drive say, which
- * also acknowledges the interrupt */
+/** Ends a transfer: keeps what the controller and the drive say about it,
+ * which also acknowledges the interrupt, and marks it done. */
 static void dma_complete(struct ata_channel *ch, uint8_t bm_status)
 {
     ch->status = io_in8(&ch->base, ATA_REG_STATUS);
@@ -60,12 +66,18 @@ static void dma_complete(struct ata_channel *ch, uint8_t bm_status)
     ch->done = 1;
 }
 
-/** the channel's interrupt */
+/**
+ * Handles a channel's interrupt. If it ends a DMA transfer, the request
+ * waiting for it wakes up; otherwise (PIO polls) reading the drive's
+ * status acknowledges it.
+ *
+ * @param ch  the channel
+ */
 void dma_irq(struct ata_channel *ch)
 {
     uint8_t bm_status = ch->bm.addr ? io_in8(&ch->bm, BM_STATUS) : 0;
 
-    /* not from a DMA transfer (PIO polls), the status read acknowledges it */
+    /* not from a DMA transfer: reading the status acknowledges it */
     if (!(bm_status & BM_ST_IRQ)) {
         io_in8(&ch->base, ATA_REG_STATUS);
         return;
@@ -75,6 +87,9 @@ void dma_irq(struct ata_channel *ch)
     waitq_wakeup_nopoll(&ch->irq_wait);
 }
 
+/** Transfers up to `DMA_MAX_SECTORS` sectors between the drive and the
+ * channel's buffer, and waits until it is done. Returns 0, or `-EIO` if
+ * the controller or the drive reports an error. */
 static int dma_transfer(struct ata_drive *drive, uint64_t lba, size_t count, int write)
 {
     struct ata_channel *ch = drive->channel;
@@ -84,7 +99,8 @@ static int dma_transfer(struct ata_drive *drive, uint64_t lba, size_t count, int
     prdt[c].size  = (count * 512) & 0xFFFF;
     prdt[c].flags = PRD_EOT;
 
-    /* stopped, the direction, the table, interrupt and error cleared */
+    /* stop the bus master, set the direction and the descriptor table,
+     * and clear its interrupt and error bits */
     io_out8(&ch->bm, BM_CMD, write ? 0 : BM_CMD_READ);
     io_out32(&ch->bm, BM_PRDT, (uint32_t) (uintptr_t) LMA(&prdt[c]));
     io_out8(&ch->bm, BM_STATUS, BM_ST_IRQ | BM_ST_ERROR);
@@ -99,8 +115,8 @@ static int dma_transfer(struct ata_drive *drive, uint64_t lba, size_t count, int
 
     io_out8(&ch->bm, BM_CMD, (write ? 0 : BM_CMD_READ) | BM_CMD_START);
 
-    /* a process sleeps until the interrupt, before there are any (mounting
-     * the root, loading init at boot) the status is polled */
+    /* a process sleeps until the interrupt; before there are processes
+     * (mounting the root, loading init at boot), the status is polled */
     while (!ch->done) {
         if (sched_running && curthread) {
             waitq_sleep_unint(&ch->irq_wait);
@@ -123,6 +139,8 @@ static int dma_transfer(struct ata_drive *drive, uint64_t lba, size_t count, int
     return 0;
 }
 
+/** Reads `count` sectors from `lba` on, through the channel's buffer.
+ * Returns 0 or a negative errno. */
 static ssize_t dma_read(struct ata_drive *drive, uint64_t lba, size_t count, void *buf)
 {
     char *cbuf = buf;
@@ -144,6 +162,8 @@ static ssize_t dma_read(struct ata_drive *drive, uint64_t lba, size_t count, voi
     return 0;
 }
 
+/** Writes `count` sectors from `lba` on, through the channel's buffer.
+ * Returns 0 or a negative errno. */
 static ssize_t dma_write(struct ata_drive *drive, uint64_t lba, size_t count, void *buf)
 {
     char *cbuf = buf;
@@ -165,7 +185,13 @@ static ssize_t dma_write(struct ata_drive *drive, uint64_t lba, size_t count, vo
     return 0;
 }
 
-/** DMA for a drive that can, if its controller can; 0 if it does now */
+/**
+ * Sets a drive up for DMA, if both the drive and its channel's controller
+ * can do it.
+ *
+ * @param drive  the drive
+ * @return 0 if the drive uses DMA now, or `-ENODEV` if it can't
+ */
 int dma_init(struct ata_drive *drive)
 {
     if (!drive->channel->bm.addr || !(drive->capabilities & ATA_CAP_DMA))

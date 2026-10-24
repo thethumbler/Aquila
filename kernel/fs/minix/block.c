@@ -1,8 +1,17 @@
+/** \file
+ * minix: allocating and freeing data blocks (zones), and reading and
+ * writing them, through the block cache for the ones read often.
+ */
+
 #include <ds/bitmap.h>
 #include <minix.h>
 
 /**
- * allocate a new block
+ * Allocates a free zone: its bit is set in the zone bitmap, which is
+ * written back to the disk at once.
+ *
+ * @param desc  the mounted filesystem
+ * @return the zone's block number, or 0 if the filesystem is full
  */
 blk_t minix_block_alloc(struct minix *desc)
 {
@@ -14,36 +23,45 @@ blk_t minix_block_alloc(struct minix *desc)
     if (blk == desc->zmap.max_idx)
         return 0;
 
-    /* update bitmap */
     bitmap_set(&desc->zmap, blk);
 
-    /* sync bitmap -- TODO defer */
+    /* write the bitmap back now (it could be deferred) */
     vfs_write(desc->supernode, desc->zmap_off, desc->superblock->zmap_blocks * desc->bs, desc->zmap.map);
 
     return desc->superblock->firstdatazone + blk - 1;
 }
 
 /**
- * free a block
+ * Frees a zone: its bit is cleared in the zone bitmap, which is written
+ * back at once, and its copy in the block cache goes.
+ *
+ * @param desc  the mounted filesystem
+ * @param blk   the zone's block number
  */
 void minix_block_free(struct minix *desc, blk_t blk)
 {
     blk = blk - desc->superblock->firstdatazone + 1;
 
+    /* not a data zone: nothing to free */
     if (blk >= desc->zmap.max_idx)
-        /* TODO warn */
         return;
 
-    /* update bitmap; a cached copy of it (a table) goes */
+    /* clear its bit; a cached copy of the block (an indirect zone's
+     * table) goes too */
     bitmap_clear(&desc->zmap, blk);
     bcache_remove(desc->bcache, blk + desc->superblock->firstdatazone - 1);
 
-    /* sync bitmap -- TODO defer */
+    /* write the bitmap back now (it could be deferred) */
     vfs_write(desc->supernode, desc->zmap_off, desc->superblock->zmap_blocks * desc->bs, desc->zmap.map);
 }
 
 /**
- * read a block from device
+ * Reads a block from the disk.
+ *
+ * @param desc  the mounted filesystem
+ * @param blk   the block number
+ * @param buf   where it goes, a block's size
+ * @return the number of bytes read, or a negative errno
  */
 ssize_t minix_block_read(struct minix *desc, blk_t blk, void *buf)
 {
@@ -51,7 +69,12 @@ ssize_t minix_block_read(struct minix *desc, blk_t blk, void *buf)
 }
 
 /**
- * write a block to device
+ * Writes a block to the disk.
+ *
+ * @param desc  the mounted filesystem
+ * @param blk   the block number
+ * @param buf   the block's new contents
+ * @return the number of bytes written, or a negative errno
  */
 ssize_t minix_block_write(struct minix *desc, blk_t blk, void *buf)
 {
@@ -59,7 +82,13 @@ ssize_t minix_block_write(struct minix *desc, blk_t blk, void *buf)
 }
 
 /**
- * get a block from block cache, cache in if not found
+ * Gets a block from the block cache, reading it from the disk into the
+ * cache if it isn't there. The cache keeps the block's memory.
+ *
+ * @param desc  the mounted filesystem
+ * @param blk   the block number
+ * @param data  set to the cached block
+ * @return 0, `-ENOMEM`, or a negative errno from the read
  */
 int minix_bcache_get(struct minix *desc, blk_t blk, void **data)
 {

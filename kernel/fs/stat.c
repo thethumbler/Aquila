@@ -1,7 +1,18 @@
+/** \file
+ * `stat()`: a vnode's attributes, in the structure user space gets.
+ */
+
 #include <core/system.h>
 #include <fs/vfs.h>
 #include <fs/stat.h>
 
+/**
+ * Fills a `stat` structure with a vnode's attributes.
+ *
+ * @param vnode  the vnode
+ * @param buf    the structure to fill, in kernel memory
+ * @return 0
+ */
 int vfs_stat(struct vnode *vnode, struct aquila_stat *buf)
 {
     vfs_log(LOG_DEBUG, "vfs_stat(vnode=%p, buf=%p)\n", vnode, buf);
@@ -21,8 +32,8 @@ int vfs_stat(struct vnode *vnode, struct aquila_stat *buf)
     buf->st_ctim.tv_sec  = vnode->ctime.tv_sec;
     buf->st_ctim.tv_nsec = vnode->ctime.tv_nsec;
 
-    /* filesystems don't report their allocation, count the size in
-     * 512-byte blocks */
+    /* filesystems don't report how much they allocated, so the size is
+     * counted in 512-byte blocks */
     buf->st_blksize = 512;
     buf->st_blocks  = (vnode->size + 511) / 512;
 

@@ -1,5 +1,10 @@
-/**********************************************************************
- *              Global Descriptor Table (GDT)
+/** \file
+ * x86: the Global Descriptor Table (GDT) and the TSS.
+ *
+ * Each CPU has its own GDT: the flat kernel and user code and data
+ * segments, which every CPU shares, then its own TSS (the stack that
+ * interrupts from user mode switch to) and, on i386, a segment for its
+ * `struct cpu`, which `curcpu()` reads through %gs.
  */
 
 
@@ -31,28 +36,29 @@
 #define D   0
 #endif
 
-/* the segments every CPU has, the TSS and its own after them */
+/* The segments every CPU has; its TSS and its own segment come after. */
 static const struct x86_gdt_entry gdt_template[X86_GDT_TSS] = {
-    /* Null Segment */
+    /* the null segment */
     {0},
 
-    /* Code Segment - Kernel */
+    /* the kernel's code segment */
     {LIMIT, BASE, BASE, XR_CODE, 1, DPL0, 1, LIMIT, 0, L, D, 1, BASE},
 
-    /* Data Segment - Kernel */
+    /* the kernel's data segment */
     {LIMIT, BASE, BASE, RW_DATA, 1, DPL0, 1, LIMIT, 0, L, D, 1, BASE},
 
-    /* Code Segment - User */
+    /* user mode's code segment */
     {LIMIT, BASE, BASE, XR_CODE, 1, DPL3, 1, LIMIT, 0, L, D, 1, BASE},
 
-    /* Data Segment - User */
+    /* user mode's data segment */
     {LIMIT, BASE, BASE, RW_DATA, 1, DPL3, 1, LIMIT, 0, L, D, 1, BASE},
 };
 
 #define MSR_GS_BASE         0xC0000101
 #define MSR_KERNEL_GS_BASE  0xC0000102
 
-/** a system or data segment's base and limit (byte granular) */
+/** Sets the base and limit of a system or data segment descriptor, with
+ * byte granularity. */
 static void segment_set(struct x86_gdt_entry *e, uintptr_t base, size_t limit)
 {
     e->limit_lo = limit & 0xFFFF;
@@ -63,8 +69,12 @@ static void segment_set(struct x86_gdt_entry *e, uintptr_t base, size_t limit)
 }
 
 /**
- * The running CPU's GDT, `cpu''s: loaded, with its TSS (interrupts from
- * user mode take the stack `sp'), and %gs (curcpu()) set to `cpu'
+ * Sets up and loads the running CPU's GDT and TSS, and points %gs (or the
+ * GS base, on x86_64) at its `struct cpu`, so that `curcpu()` works.
+ *
+ * @param cpu  the running CPU
+ * @param sp   the kernel stack that interrupts from user mode switch to
+ *             (each thread sets its own later, `x86_kernel_stack_set()`)
  */
 void x86_gdt_setup(struct cpu *cpu, uintptr_t sp)
 {
@@ -86,9 +96,10 @@ void x86_gdt_setup(struct cpu *cpu, uintptr_t sp)
     tss->sp = sp;
 
     /*
-     * I/O map base (upper half of the dword at offset 100) must point past
-     * the TSS limit, otherwise the TSS bytes themselves are used as I/O
-     * permission bitmap and ring 3 is granted access to random I/O ports
+     * The I/O map base (the upper half of the dword at offset 100) must
+     * point past the TSS's limit. Otherwise the TSS's own bytes are used
+     * as the I/O permission bitmap, and user mode could use random I/O
+     * ports.
      */
 #if ARCH_BITS==32
     tss->_[22]  = (uint32_t) sizeof(*tss) << 16;
@@ -96,7 +107,7 @@ void x86_gdt_setup(struct cpu *cpu, uintptr_t sp)
     tss->__[22] = (uint32_t) sizeof(*tss) << 16;
 #endif
 
-    /* TSS Segment */
+    /* the TSS's segment */
     struct x86_gdt_entry *e = &arch->gdt[X86_GDT_TSS];
     segment_set(e, (uintptr_t) tss, sizeof(*tss) - 1);
     e->type = TSS_AVL;
@@ -107,7 +118,7 @@ void x86_gdt_setup(struct cpu *cpu, uintptr_t sp)
     uint32_t *base_high = (uint32_t *) &arch->gdt[X86_GDT_TSS + 1];
     *base_high = (uintptr_t) tss >> 32;
 #else
-    /* the CPU's segment: %gs:0 is cpu->self */
+    /* the CPU's own segment: %gs:0 is cpu->self */
     e = &arch->gdt[X86_GDT_CPU];
     segment_set(e, (uintptr_t) cpu, sizeof(*cpu) - 1);
     e->type = RW_DATA;
@@ -125,13 +136,19 @@ void x86_gdt_setup(struct cpu *cpu, uintptr_t sp)
 #if ARCH_BITS==32
     asm volatile("movw %w0, %%gs" :: "r"(X86_SEL_CPU));
 #else
-    /* the kernel's in GS base; user mode's (none yet) swapped in on the
-     * way out */
+    /* the kernel's GS base; user mode's (none yet) is swapped in on the
+     * way out to user mode */
     msr_write(MSR_GS_BASE, (uintptr_t) cpu);
     msr_write(MSR_KERNEL_GS_BASE, 0);
 #endif
 }
 
+/**
+ * Sets the kernel stack that interrupts from user mode switch to, on the
+ * running CPU: the thread that is about to run's.
+ *
+ * @param sp  the top of the stack
+ */
 void x86_kernel_stack_set(uintptr_t sp)
 {
     curcpu()->arch.tss.sp = sp;

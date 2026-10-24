@@ -4,15 +4,19 @@
 #include <core/system.h>
 #include <cpu/cpu.h>
 
+/* x86: the layout of the address space, and the physical and virtual
+ * address types. */
+
 #define NR_PAGE_SIZE           2
 
 #if ARCH_BITS==32
 /*
- * i386: user space is below 3 GiB; above, RAM is mapped from 0xC0000000
- * (the direct map, the kernel at 1 MiB in it: _VMA), 768 MiB of it at most
- * (the rest isn't used), then the kernel's heap, its small objects, the
- * devices, and what is mapped of the memory past the direct map (the boot
- * loader's modules, ACPI's tables, the devices' registers)
+ * i386: user space is below 3 GiB. Above it, RAM is mapped from
+ * 0xC0000000 (the direct map, with the kernel at 1 MiB in it: _VMA), 768
+ * MiB of it at most (the rest isn't used). Then come the kernel's heap,
+ * its small objects, the devices, and a window for the memory past the
+ * direct map that the kernel maps (the boot loader's modules, ACPI's
+ * tables, the devices' registers).
  */
 #define ARCH_DMAP_BASE         (0xC0000000UL)
 #define ARCH_DMAP_SIZE         (0x30000000UL)               /* 768 MiB */
@@ -31,9 +35,10 @@
 #define ARCH_BOOT_MAPPED       ARCH_DMAP_SIZE
 #else
 /*
- * x86-64: user space is the lower half; in the upper half all physical
- * memory is mapped at ARCH_DMAP_BASE (the direct map), then the devices,
- * the kernel's heap, and the kernel at -2 GiB (_VMA)
+ * x86_64: user space is the lower half. In the upper half, all of
+ * physical memory is mapped at ARCH_DMAP_BASE (the direct map); then come
+ * the devices, the kernel's heap, and the kernel itself, at -2 GiB
+ * (_VMA).
  */
 #define ARCH_DMAP_BASE         (0xFFFF800000000000ULL)
 #define ARCH_VESA_BASE         (0xFFFFC00000000000ULL)
@@ -46,20 +51,20 @@
 #define ARCH_SLAB_BASE         (0xFFFFE00000000000ULL)
 #define ARCH_SLAB_SIZE         (16ULL << 30)                /* 16 GiB */
 
-/* the boot code maps the kernel, and what follows it of the first GiB, at
- * -2 GiB (pages[] is 32 bytes a page, mm_setup() puts it there) */
+/* The boot code maps the kernel, and what follows it of the first GiB, at
+ * -2 GiB (mm_setup() puts pages[], 32 bytes a page, there). */
 #define ARCH_BOOT_MAPPED       (1024UL * 1024 * 1024)       /* 1 GiB */
 #endif
 
 /* a physical address in the direct map */
 #define PHYS2VIRT(paddr)       ((void *) (ARCH_DMAP_BASE + (uintptr_t) (paddr)))
 
-extern char _VMA; /* Must be defined in linker script */
+extern char _VMA; /* the kernel's virtual base, from the linker script */
 
-/* the kernel's address of something in the kernel's image (or in the
- * memory below it, mapped with it), and the other way around: a pointer
- * stays a pointer, a narrower integer (a 32-bit physical address) becomes
- * a uintptr_t */
+/* VMA() is the kernel's address of a physical address in the kernel's
+ * image (or in the memory below it, mapped with it), and LMA() the other
+ * way around. A pointer stays a pointer; a narrower integer (a 32-bit
+ * physical address) becomes a uintptr_t. */
 #define __VMA_ADD(obj, op) ((uintptr_t) (obj) op (uintptr_t) &_VMA)
 #define __VMA_TYPED(obj, op)                                              \
     __builtin_choose_expr(sizeof(obj) == sizeof(uintptr_t),               \
@@ -67,6 +72,7 @@ extern char _VMA; /* Must be defined in linker script */
 #define VMA(obj)  __VMA_TYPED(obj, +)
 #define LMA(obj)  __VMA_TYPED(obj, -)
 
+/* Flushes the running CPU's TLB (but its global pages). */
 static inline void tlb_flush(void)
 {
     write_cr3(read_cr3());
@@ -80,6 +86,14 @@ typedef uint64_t paddr_t;
 typedef uint64_t vaddr_t;
 #endif
 
+/**
+ * Handles a page fault: turns the CPU's error code into the kernel's
+ * `PF_*` flags, and calls `mm_page_fault()` (mm/i386.c, mm/x86_64.c).
+ *
+ * @param vaddr  the address that faulted (CR2)
+ * @param err    the CPU's error code
+ * @return 0 if the fault is resolved, or `-EFAULT` if it isn't
+ */
 int  arch_mm_page_fault(vaddr_t vaddr, int err);
 
 #include_next <mm/mm.h>

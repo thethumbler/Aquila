@@ -1,3 +1,14 @@
+/** \file
+ * x86: the FPU and SSE registers, switched lazily between threads.
+ *
+ * Saving and restoring the FPU's 512 bytes on every thread switch would
+ * be costly, and most threads never use it. So the switch only sets
+ * CR0.TS; the first FPU or SSE instruction a thread runs afterwards
+ * raises `#NM`, and `x86_fpu_trap()` saves the previous owner's state and
+ * loads this thread's. A thread that never touches the FPU never pays for
+ * it.
+ */
+
 #include <core/system.h>
 #include <core/panic.h>
 #include <core/assert.h>
@@ -13,25 +24,28 @@ MALLOC_DEFINE(M_X86_FPU, "x86-fpu", "x86 FPU context");
 #define CPUID_EDX_FXSR  _BV(24)
 #define CPUID_EDX_SSE   _BV(25)
 
-/* fxsave/fxrstor require a 16-byte aligned area */
+/* fxsave and fxrstor need a 16-byte aligned area */
 static char fpu_context[512] __aligned(16);
 static int fpu_fxsr = 0;
 
-/* the thread whose state the running CPU's FPU has */
+/* the thread whose state the running CPU's FPU holds */
 #define last_fpu_thread (curcpu()->arch.fpu_thread)
 
-/* MXCSR's bits the CPU takes (fxsave's MXCSR_MASK, 0xFFBF if it says 0),
- * a frame's MXCSR is masked with it: fxrstor would fault in the kernel */
+/* The MXCSR bits the CPU accepts (fxsave's MXCSR_MASK, or 0xFFBF if it
+ * says 0). An MXCSR from a signal frame is masked with it, because
+ * fxrstor would fault in the kernel on a reserved bit. */
 static uint32_t mxcsr_mask = 0xFFBF;
 
-/* the state a thread starts with (fninit's, and MXCSR's default): not the
- * last owner's XMM registers */
+/* The state a thread starts with: fninit's, with MXCSR's default value
+ * and the registers zeroed, so that it never sees the last owner's XMM
+ * registers. */
 static char fpu_clean[512] __aligned(16);
 
 /**
- * Lazy FPU switching is done using CR0.TS, the first FPU/SSE instruction
- * executed while TS is set raises `#NM' (x86_fpu_trap). CR0.EM must stay
- * clear, otherwise SSE instructions raise `#UD' instead.
+ * Sets up the FPU on the running CPU, at boot: CR0.TS set so that the
+ * first FPU or SSE instruction raises `#NM` (`x86_fpu_trap()`), SSE turned
+ * on if the CPU has it, and the clean starting state recorded. CR0.EM
+ * must stay clear, or SSE instructions would raise `#UD` instead.
  */
 void x86_fpu_setup(void)
 {
@@ -49,13 +63,13 @@ void x86_fpu_setup(void)
 
         write_cr4(cr4);
 
-        /* a clean state, and the mask, from the FPU as it is now */
+        /* record a clean state, and the MXCSR mask, from the FPU */
         x86_fpu_enable();
         asm volatile("fninit");
         asm volatile("fxsave (%0)"::"r"(fpu_clean):"memory");
         x86_fpu_disable();
 
-        memset(fpu_clean + 32, 0, sizeof(fpu_clean) - 32);  /* the registers */
+        memset(fpu_clean + 32, 0, sizeof(fpu_clean) - 32);  /* the data registers */
         *(uint32_t *) (fpu_clean + 24) = 0x1F80;            /* MXCSR */
 
         uint32_t mask = *(uint32_t *) (fpu_clean + 28);
@@ -64,16 +78,20 @@ void x86_fpu_setup(void)
     }
 }
 
+/** Lets the running CPU use the FPU without trapping (clears CR0.TS). */
 void x86_fpu_enable(void)
 {
     asm volatile("clts");
 }
 
+/** Makes the next FPU instruction trap (sets CR0.TS). */
 void x86_fpu_disable(void)
 {
     write_cr0(read_cr0() | CR0_TS);
 }
 
+/** Loads the clean starting state into the FPU, for a thread's first use
+ * of it. */
 void x86_fpu_init(void)
 {
     assert_alignof(fpu_context, 16);
@@ -86,6 +104,7 @@ void x86_fpu_init(void)
     }
 }
 
+/** Saves the FPU's state into `fpu_context`. */
 static inline void fpu_save(void)
 {
     if (fpu_fxsr)
@@ -94,6 +113,7 @@ static inline void fpu_save(void)
         asm volatile("fnsave (%0)"::"r"(fpu_context):"memory");
 }
 
+/** Loads the FPU's state from `fpu_context`. */
 static inline void fpu_restore(void)
 {
     if (fpu_fxsr)
@@ -102,6 +122,12 @@ static inline void fpu_restore(void)
         asm volatile("frstor (%0)"::"r"(fpu_context):"memory");
 }
 
+/**
+ * Handles `#NM`, the current thread's first FPU or SSE instruction since
+ * it was switched in: it saves the previous owner's state, and gives the
+ * FPU to this thread, with its own state or a clean one. If there's no
+ * memory for the thread's save area, the process is killed.
+ */
 void x86_fpu_trap(void)
 {
     if (!curthread)
@@ -109,13 +135,13 @@ void x86_fpu_trap(void)
 
     struct x86_thread *arch = curthread->arch;
 
-    /* Allocate the context save area of the thread on its first FPU use,
-     * so saving it when switching away later can never fail */
+    /* Allocate the thread's save area on its first use of the FPU, so
+     * that saving it when switching away later can never fail. */
     if (!arch->fpu_context) {
         arch->fpu_context = kmalloc(512, &M_X86_FPU, 0);
 
         if (!arch->fpu_context) {
-            /* Can't give it the FPU, the thread stays without it */
+            /* it can't have the FPU: the process is killed */
             signal_proc_send(curproc, SIGKILL);
             return;
         }
@@ -123,20 +149,20 @@ void x86_fpu_trap(void)
 
     x86_fpu_enable();
 
-    /* We already own the FPU */
+    /* the FPU has this thread's state already */
     if (curthread == last_fpu_thread)
         return;
 
-    if (last_fpu_thread) {  /* Save context of the previous owner */
+    if (last_fpu_thread) {  /* save the previous owner's state */
         struct x86_thread *_arch = last_fpu_thread->arch;
         fpu_save();
         memcpy(_arch->fpu_context, fpu_context, 512);
     }
 
-    if (arch->fpu_enabled) {    /* Restore context */
+    if (arch->fpu_enabled) {    /* load this thread's state */
         memcpy(fpu_context, arch->fpu_context, 512);
         fpu_restore();
-    } else {                    /* First use */
+    } else {                    /* its first use: a clean state */
         x86_fpu_init();
         arch->fpu_enabled = 1;
     }
@@ -145,8 +171,9 @@ void x86_fpu_trap(void)
 }
 
 /**
- * The current thread is switched out: its state, if the FPU has it, saved
- * now (it may run on another CPU next), the FPU no one's
+ * Saves the current thread's FPU state when it is switched out, if the FPU
+ * holds it, because the thread may run on another CPU next. Afterwards,
+ * the FPU belongs to no thread.
  */
 void x86_fpu_switch_out(void)
 {
@@ -162,8 +189,11 @@ void x86_fpu_switch_out(void)
 }
 
 /**
- * For signal handlers (sys/signal.c): the current thread's FPU state into
- * `buf' (512 bytes, 16-byte aligned), 0 if it never used the FPU
+ * Copies the current thread's FPU state, for a signal handler's frame
+ * (`sys/signal.c`).
+ *
+ * @param buf  where to copy it: 512 bytes, 16-byte aligned
+ * @return 1 if the state was copied, or 0 if the thread never used the FPU
  */
 int x86_fpu_save_to(void *buf)
 {
@@ -183,7 +213,8 @@ int x86_fpu_save_to(void *buf)
     return 1;
 }
 
-/** the current thread starts the FPU afresh at its next use (a handler) */
+/** Makes the current thread start with a clean FPU state at its next use
+ * of the FPU, as a signal handler does. */
 void x86_fpu_reset(void)
 {
     struct x86_thread *arch = curthread->arch;
@@ -196,8 +227,15 @@ void x86_fpu_reset(void)
     x86_fpu_disable();
 }
 
-/** sigreturn: the state saved in a frame back (`valid'), loaded at the
- * thread's next use of the FPU; MXCSR as the CPU takes it */
+/**
+ * Gives the current thread back the FPU state saved in a signal frame, at
+ * `sigreturn`. It is loaded at the thread's next use of the FPU, with the
+ * MXCSR bits the CPU doesn't accept cleared.
+ *
+ * @param buf    the saved state: 512 bytes
+ * @param valid  whether the frame has a state (the thread had used the
+ *               FPU); if not, the thread starts afresh
+ */
 void x86_fpu_load_from(const void *buf, int valid)
 {
     struct x86_thread *arch = curthread->arch;

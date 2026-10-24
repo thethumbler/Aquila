@@ -1,3 +1,16 @@
+/** \file
+ * procfs: the kernel's and the processes' state as files, usually
+ * mounted on `/proc`.
+ *
+ * Its files hold no data: reading one makes its text then, a snapshot.
+ * The top directory has the system's files (`meminfo`, `mounts`, ...),
+ * `self`, and a directory for each process, named by its ID, with the
+ * process's files (`status`, `maps`, `vmstats`). Vnodes are made when
+ * they are looked up, and their inode numbers say what they are: a
+ * system file's is negative, and a process's directory and its files
+ * have consecutive numbers from the process's ID.
+ */
+
 #include <core/system.h>
 #include <core/arch.h>
 #include <core/module.h>
@@ -21,16 +34,17 @@
 
 struct fs procfs;
 
+/** A file of the top directory: its name, and what makes its text. */
 struct procfs_entry {
     char *name;
     ssize_t (*read)(off_t off, size_t size, char *buf);
 };
 
-/* procfs root directory (usually mounted on /proc) */
+/* procfs's root directory, usually mounted on /proc */
 struct vnode *procfs_root = NULL;
 struct vcache procfs_vcache = {0};
 
-/** proc/meminfo */
+/** Makes `/proc/meminfo`: the memory there is, and how it's used. */
 static ssize_t procfs_meminfo(off_t off, size_t size, char *buf)
 {
     char meminfo_buf[512];
@@ -58,7 +72,7 @@ static ssize_t procfs_meminfo(off_t off, size_t size, char *buf)
     return 0;
 }
 
-/** proc/kvmem */
+/** Makes `/proc/kvmem`: the kernel's allocations, by malloc type. */
 static ssize_t procfs_kvmem(off_t off, size_t size, char *buf)
 {
     extern struct queue *malloc_types;
@@ -84,7 +98,7 @@ static ssize_t procfs_kvmem(off_t off, size_t size, char *buf)
     return 0;
 }
 
-/** proc/version */
+/** Makes `/proc/version`: the kernel's name and version. */
 static ssize_t procfs_version(off_t off, size_t size, char *buf)
 {
     char version_buf[512];
@@ -106,7 +120,7 @@ static ssize_t procfs_version(off_t off, size_t size, char *buf)
     return 0;
 }
 
-/** proc/uptime */
+/** Makes `/proc/uptime`: the time since boot. */
 static ssize_t procfs_uptime(off_t off, size_t size, char *buf)
 {
     char uptime_buf[64];
@@ -122,9 +136,11 @@ static ssize_t procfs_uptime(off_t off, size_t size, char *buf)
     return 0;
 }
 
-/* proc/interrupts: the controller, the IRQs (the architecture's) */
+/* the architecture's description of its interrupts, if it has one */
 int arch_interrupts_info(char *buf, size_t size) __attribute__((weak));
 
+/** Makes `/proc/interrupts`: the interrupt controller and the IRQs, as the
+ * architecture describes them. */
 static ssize_t procfs_interrupts(off_t off, size_t size, char *buf)
 {
     char info[2048];
@@ -141,7 +157,7 @@ static ssize_t procfs_interrupts(off_t off, size_t size, char *buf)
     return 0;
 }
 
-/** proc/filesystems */
+/** Makes `/proc/filesystems`: the installed filesystems. */
 static ssize_t procfs_filesystems(off_t off, size_t size, char *buf)
 {
     char fs_buf[512];
@@ -165,7 +181,7 @@ static ssize_t procfs_filesystems(off_t off, size_t size, char *buf)
     return 0;
 }
 
-/** proc/cmdline */
+/** Makes `/proc/cmdline`: the kernel's command line. */
 static ssize_t procfs_cmdline(off_t off, size_t size, char *buf)
 {
     char cmdline_buf[512];
@@ -183,7 +199,7 @@ static ssize_t procfs_cmdline(off_t off, size_t size, char *buf)
     return 0;
 }
 
-/** proc/rdcmdline */
+/** Makes `/proc/rdcmdline`: the RAM disk module's command line. */
 static ssize_t procfs_rdcmdline(off_t off, size_t size, char *buf)
 {
     char rdcmdline_buf[512];
@@ -204,7 +220,7 @@ static ssize_t procfs_rdcmdline(off_t off, size_t size, char *buf)
     return 0;
 }
 
-/** proc/mounts */
+/** Makes `/proc/mounts`: the mounted filesystems. */
 static ssize_t procfs_mounts(off_t off, size_t size, char *buf)
 {
     char mounts_buf[4096];
@@ -230,7 +246,7 @@ static ssize_t procfs_mounts(off_t off, size_t size, char *buf)
     return 0;
 }
 
-/** proc/buddyinfo */
+/** Makes `/proc/buddyinfo`: the buddy allocator's free blocks, by size. */
 static ssize_t procfs_buddyinfo(off_t off, size_t size, char *buf)
 {
     char buddyinfo_buf[4096];
@@ -263,7 +279,7 @@ static ssize_t procfs_buddyinfo(off_t off, size_t size, char *buf)
     return 0;
 }
 
-/** proc/devices */
+/** Makes `/proc/devices`: the registered device drivers. */
 static ssize_t procfs_devices(off_t off, size_t size, char *buf)
 {
     char dev_buf[512];
@@ -300,6 +316,7 @@ static ssize_t procfs_devices(off_t off, size_t size, char *buf)
     return 0;
 }
 
+/* the top directory's files */
 static struct procfs_entry entries[] = {
     {"meminfo", procfs_meminfo},
     {"cmdline", procfs_cmdline},
@@ -308,7 +325,6 @@ static struct procfs_entry entries[] = {
     {"uptime",  procfs_uptime},
     {"interrupts", procfs_interrupts},
     {"filesystems",  procfs_filesystems},
-    //{"zoneinfo",  procfs_zoneinfo},
     {"buddyinfo", procfs_buddyinfo},
     {"kvmem", procfs_kvmem},
     {"mounts", procfs_mounts},
@@ -317,6 +333,7 @@ static struct procfs_entry entries[] = {
 
 #define PROCFS_ENTRIES  (sizeof(entries)/sizeof(entries[0]))
 
+/** Makes a process's `status`: its IDs, its state and its threads'. */
 static ssize_t procfs_proc_status(int pid, off_t off, size_t size, void *buf)
 {
     struct proc *proc = proc_pid_find(pid);
@@ -381,6 +398,8 @@ static ssize_t procfs_proc_status(int pid, off_t off, size_t size, void *buf)
     return 0;
 }
 
+/** Makes a process's `maps`: its mappings, as Linux's `/proc/<pid>/maps`
+ * shows them. */
 static ssize_t procfs_proc_maps(int pid, off_t off, size_t size, void *buf)
 {
     struct proc *proc = proc_pid_find(pid);
@@ -417,12 +436,12 @@ static ssize_t procfs_proc_maps(int pid, off_t off, size_t size, void *buf)
 
         sz += snprintf(maps_buf + sz, sizeof(maps_buf) - sz,
                 "%x-%x %s %x %x %x %s\n",
-                vm_entry->base,  /* Start address */
-                vm_entry->base + vm_entry->size,  /* End address */
-                perm,   /* Access permissions */
-                vm_entry->off, /* Offset in file */
-                vnode? vnode->dev : 0, /* Device ID */
-                vnode? vnode->ino : 0, /* Inode ID */
+                vm_entry->base,  /* its start */
+                vm_entry->base + vm_entry->size,  /* its end */
+                perm,   /* its permissions */
+                vm_entry->off, /* its offset in the file */
+                vnode? vnode->dev : 0, /* the file's device */
+                vnode? vnode->ino : 0, /* the file's inode */
                 desc); 
     }
     
@@ -435,6 +454,7 @@ static ssize_t procfs_proc_maps(int pid, off_t off, size_t size, void *buf)
     return 0;
 }
 
+/** Makes a process's `vmstats`: its mappings and their vm objects. */
 static ssize_t procfs_proc_vmstats(int pid, off_t off, size_t size, void *buf)
 {
     struct proc *proc = proc_pid_find(pid);
@@ -462,19 +482,8 @@ static ssize_t procfs_proc_vmstats(int pid, off_t off, size_t size, void *buf)
             switch (vm_entry->vm_object->type) {
                 case VMOBJ_FILE: type = "file"; break;
                 case VMOBJ_ZERO: type = "anon"; break;
-                //case VMOBJ_SHADOW: type = "shadow"; break;
             }
         }
-
-        /*
-        printk("%p-%p %s %p %p %s\n",
-                vm_entry->base,
-                vm_entry->base + vm_entry->size,
-                perm,
-                vm_entry->off,
-                vm_entry->vm_object,
-                type); 
-                */
 
         sz += snprintf(vmstats_buf + sz, sizeof(vmstats_buf) - sz,
                 "%p-%p %s %p %p %s\n",
@@ -483,7 +492,7 @@ static ssize_t procfs_proc_vmstats(int pid, off_t off, size_t size, void *buf)
                 perm,
                 vm_entry->off,
                 vm_entry->vm_object,
-                0); //type); 
+ 0); 
     }
     
     if (off < sz) {
@@ -495,6 +504,7 @@ static ssize_t procfs_proc_vmstats(int pid, off_t off, size_t size, void *buf)
     return 0;
 }
 
+/** A file of a process's directory: its name, and what makes its text. */
 struct procfs_proc_entry {
     char *name;
     ssize_t (*read)(int pid, off_t off, size_t size, void *buf);
@@ -508,12 +518,13 @@ static struct procfs_proc_entry proc_entries[] = {
 
 #define PROCFS_PROC_ENTRIES  (sizeof(proc_entries)/sizeof(proc_entries[0]))
 
-/* a process's directory, its entries' inodes follow (from pid 0, whose
- * directory isn't inode 0) */
+/* the inode number of a process's directory; its files' follow it. They
+ * start from process 0's, which isn't inode 0 */
 #define PROC_INO(pid)   (((pid) + 1) * (PROCFS_PROC_ENTRIES + 1))
 #define INO_PID(ino)    ((ino) / (PROCFS_PROC_ENTRIES + 1) - 1)
 
-/** an entry's text from offset, into the kernel's buf */
+/** Makes the text of a file of procfs, from an offset, into a kernel
+ * buffer. Returns how many bytes there are, or a negative errno. */
 static ssize_t procfs_entry_read(struct vnode *node, off_t offset, size_t size, char *buf)
 {
     size_t id = (size_t) node->p;
@@ -531,7 +542,8 @@ static ssize_t procfs_entry_read(struct vnode *node, off_t offset, size_t size, 
     return -ENOSYS;
 }
 
-/** the text made a page at a time, out through the iobuf */
+/** Reads a file of procfs: its text is made a page at a time, and copied
+ * out through the iobuf. */
 static ssize_t procfs_read(struct vnode *node, off_t offset, struct iobuf *io)
 {
     char *buf = kmalloc(PAGE_SIZE, &M_BUFFER, 0);
@@ -555,7 +567,7 @@ static ssize_t procfs_read(struct vnode *node, off_t offset, struct iobuf *io)
 
         done += r;
 
-        /* the text's end, or a fault */
+        /* the end of the text, or a fault */
         if ((size_t) r < len)
             break;
     }
@@ -564,6 +576,9 @@ static ssize_t procfs_read(struct vnode *node, off_t offset, struct iobuf *io)
     return done ? (ssize_t) done : r;
 }
 
+/** Reads a directory's entry at an offset. The entries are `.` and `..`,
+ * then the top directory's files, `self` and the processes, or a
+ * process's files. */
 static ssize_t procfs_readdir(struct vnode *vnode, off_t offset, struct dirent *dirent)
 {
     if (vnode == procfs_root) {
@@ -580,12 +595,11 @@ static ssize_t procfs_readdir(struct vnode *vnode, off_t offset, struct dirent *
         offset -= 2;
 
         if ((size_t) offset < PROCFS_ENTRIES) {
-            //dirent->d_ino = entries[offset].id;
             strcpy(dirent->d_name, entries[offset].name);
             return 1;
         }
 
-        /* Processes go here */
+        /* then self, and the processes */
         offset -= PROCFS_ENTRIES;
         
         if (!offset) {
@@ -628,6 +642,7 @@ static ssize_t procfs_readdir(struct vnode *vnode, off_t offset, struct dirent *
     return 0;
 }
 
+/** Finds the entry of a directory that has a name, and its inode number. */
 static int procfs_finddir(struct vnode *parent, const char *name, struct dirent *dirent)
 {
     if (parent->ino == (ino_t) procfs_root) {
@@ -656,7 +671,7 @@ static int procfs_finddir(struct vnode *parent, const char *name, struct dirent 
     } else if (parent->ino > 0) {
         size_t pid = INO_PID(parent->ino);
 
-        /* a process's directory is /proc's */
+        /* a process's directory's parent is /proc */
         if (!strcmp(name, "..")) {
             dirent->d_ino = (vino_t) procfs_root;
             return 0;
@@ -673,6 +688,7 @@ static int procfs_finddir(struct vnode *parent, const char *name, struct dirent 
     return -ENOENT;
 }
 
+/** Gets the vnode of an inode number, making it if it isn't in use. */
 static int procfs_vget(struct vnode *super, ino_t ino, struct vnode **vnode)
 {
     int err = 0;
@@ -685,7 +701,7 @@ static int procfs_vget(struct vnode *super, ino_t ino, struct vnode **vnode)
 
         if ((size_t) id < PROCFS_ENTRIES) {
             struct vnode *node = NULL;
-            if (!(node = vcache_find(&procfs_vcache, ino))) { /* Not in open vnode table? */
+            if (!(node = vcache_find(&procfs_vcache, ino))) { /* not in use yet */
                 node = kmalloc(sizeof(struct vnode), &M_VNODE, M_ZERO);
                 if (!node) goto e_nomem;
 
@@ -714,14 +730,13 @@ static int procfs_vget(struct vnode *super, ino_t ino, struct vnode **vnode)
         size_t id  = ino % (PROCFS_PROC_ENTRIES + 1);
         struct vnode *node = NULL;
 
-        if (!(node = vcache_find(&procfs_vcache, ino))) { /* Not in open vnode table? */
+        if (!(node = vcache_find(&procfs_vcache, ino))) { /* not in use yet */
             node = kmalloc(sizeof(struct vnode), &M_VNODE, M_ZERO);
             if (!node) goto e_nomem;
 
             node->ino = ino;
 
             if (id) {
-                //node->name = proc_entries[id].name;
                 node->mode = S_IFREG | 0555;
             } else {
                 node->mode = S_IFDIR | 0555;
@@ -751,11 +766,11 @@ error:
     return err;
 }
 
+/** Frees a vnode that has no references left; the root stays. */
 static int procfs_close(struct vnode *vnode)
 {
-    /* we can't free the root vnode */
+    /* the root vnode is never freed */
     if (vnode == procfs_root) {
-        /* should we panic here? */
         return 0;
     }
 
@@ -770,6 +785,7 @@ static int procfs_close(struct vnode *vnode)
     return 0;
 }
 
+/** Sets procfs up at boot: its root directory, and its vnode cache. */
 static int procfs_init()
 {
     procfs_root = kmalloc(sizeof(struct vnode), &M_VNODE, M_ZERO);
@@ -793,6 +809,7 @@ static int procfs_init()
     return 0;
 }
 
+/** Mounts procfs on a directory: its one root directory is bound there. */
 static int procfs_mount(struct vnode *dir, int flags, void *data)
 {
     vfs_bind(dir, procfs_root);

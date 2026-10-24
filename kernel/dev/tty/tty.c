@@ -1,5 +1,11 @@
 /** \file
- * tty device
+ * The terminal devices' numbers: which driver each one is.
+ *
+ * Major 4 is the terminals themselves: `/dev/tty0` to `/dev/tty6`, the
+ * virtual terminals (minor 0 is the one in the foreground), and
+ * `/dev/ttyS0` and up, the UARTs (minors 64 and up). Major 5 is the
+ * special ones: `/dev/tty` (the process's controlling terminal),
+ * `/dev/console` and `/dev/ptmx`. These are Linux's numbers.
  */
 
 #include <core/system.h>
@@ -11,8 +17,13 @@
 #include <dev/vt.h>
 #include <fs/vfs.h>
 
-/** /dev/tty1 to /dev/tty6 are virtual terminals (/dev/tty0 the foreground
- * one), /dev/ttyS0 and up uarts */
+/**
+ * Picks the driver of a terminal of major 4, by its minor: the virtual
+ * terminals' for minors up to `VT_COUNT`, the UARTs' for 64 and up.
+ *
+ * @param dd  the device's number
+ * @return its driver, or NULL if the kernel has none for it
+ */
 struct dev *sttydev_mux(struct devid *dd)
 {
 #ifdef CONFIG_DEV_UART
@@ -28,7 +39,9 @@ struct dev *sttydev_mux(struct devid *dd)
     return NULL;
 }
 
-/** /dev/tty: opens the controlling terminal's device instead */
+/** Opens `/dev/tty`: the file is made the controlling terminal's device
+ * instead. Fails with `ENXIO` if the process has no controlling
+ * terminal. */
 static int ctty_open(struct file *file)
 {
     struct tty *tty = curproc->pgrp->session->ctty;
@@ -59,13 +72,19 @@ static struct dev cttydev = {
     },
 };
 
+/**
+ * Picks the driver of a terminal device of major 5, by its minor.
+ *
+ * @param dd  the device's number
+ * @return its driver, or NULL if the kernel has none for it
+ */
 struct dev *ttydev_mux(struct devid *dd)
 {
     switch (dd->minor) {
         case 0: /* /dev/tty */
             return &cttydev;
-        case 1: /* /dev/console, the first virtual terminal, or without
-                 * them the first uart (uart_get()) */
+        case 1: /* /dev/console: the first virtual terminal or, without
+                 * them, the first UART (uart_get()) */
 #if defined(CONFIG_DEV_CONSOLE)
             return &vtdev;
 #elif defined(CONFIG_DEV_UART)
@@ -82,6 +101,11 @@ struct dev *ttydev_mux(struct devid *dd)
     return NULL;
 }
 
+/**
+ * Registers the terminal devices, majors 4 and 5.
+ *
+ * @return 0
+ */
 int ttydev_probe()
 {
     kdev_chrdev_register(4, &sttydev);

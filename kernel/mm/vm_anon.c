@@ -1,12 +1,21 @@
+/** \file
+ * Anons: the pages a process has written to, in one of its mappings.
+ *
+ * An anon (`struct vm_anon`) holds a mapping's private pages, each through
+ * an aref (`struct vm_aref`), keyed by its offset in the mapping. A fork
+ * shares the anon, and its arefs, between parent and child, copy on write:
+ * the first one to write a shared page gets its own copy (`mm/fault.c`).
+ * This is a simplified form of NetBSD's UVM amaps and anons.
+ */
+
 #include <core/system.h>
 #include <core/panic.h>
 #include <mm/vm.h>
 
 MALLOC_DEFINE(M_VM_ANON, "vm-anon", "anonymous virtual memory object");
 
-/**
- * check if two arefs are equal in a hashmap
- */
+/** Says whether an aref is the one for an offset (`_b`, a `size_t *`), for
+ * the anon's hashmap. */
 static int vm_aref_eq(void *_a, void *_b)
 {
     struct vm_aref *a = (struct vm_aref *) _a;
@@ -20,7 +29,9 @@ static int vm_aref_eq(void *_a, void *_b)
 }
 
 /**
- * create new anon structure
+ * Makes a new, empty anon.
+ *
+ * @return the anon, with no references, or NULL if there was no memory
  */
 struct vm_anon *vm_anon_new(void)
 {
@@ -35,8 +46,6 @@ struct vm_anon *vm_anon_new(void)
     return vm_anon;
 
 error:
-    //panic("failed to allocate vm_anon");
-
     if (vm_anon) {
         if (vm_anon->arefs)
             hashmap_free(vm_anon->arefs);
@@ -47,7 +56,10 @@ error:
 }
 
 /**
- * destroy all resources associated with an aref
+ * Releases what an aref holds. An aref holds nothing besides its page,
+ * which its anon frees, so this does nothing.
+ *
+ * @param vm_aref  the aref
  */
 void vm_aref_destroy(struct vm_aref *vm_aref)
 {
@@ -55,7 +67,9 @@ void vm_aref_destroy(struct vm_aref *vm_aref)
 }
 
 /**
- * decrement references to an aref
+ * Drops a reference to an aref.
+ *
+ * @param vm_aref  the aref
  */
 void vm_aref_decref(struct vm_aref *vm_aref)
 {
@@ -63,7 +77,10 @@ void vm_aref_decref(struct vm_aref *vm_aref)
 }
 
 /**
- * destroy all resources associated with an anon
+ * Releases an anon's arefs, and the pages of those that no other anon
+ * shares. The anon's structure itself is freed by its caller.
+ *
+ * @param vm_anon  the anon (NULL does nothing)
  */
 void vm_anon_destroy(struct vm_anon *vm_anon)
 {
@@ -93,7 +110,9 @@ void vm_anon_destroy(struct vm_anon *vm_anon)
 }
 
 /**
- * increment number of references to a vm anon
+ * Adds a reference to an anon: another mapping shares it (a fork).
+ *
+ * @param vm_anon  the anon (NULL does nothing)
  */
 void vm_anon_incref(struct vm_anon *vm_anon)
 {
@@ -104,8 +123,9 @@ void vm_anon_incref(struct vm_anon *vm_anon)
 }
 
 /**
- * decrement number of references to a vm anon
- * and destroy it when it reaches zero
+ * Drops a reference to an anon, and frees it with the last one.
+ *
+ * @param vm_anon  the anon (NULL does nothing)
  */
 void vm_anon_decref(struct vm_anon *vm_anon)
 {
@@ -120,15 +140,13 @@ void vm_anon_decref(struct vm_anon *vm_anon)
     }
 }
 
-/**
- * copy all aref structures from `src` to `dst`
- */
+/** Puts all of `src`'s arefs in `dst` as well, shared: each gets one more
+ * reference. Returns 0, or `-EINVAL`. */
 static int vm_anon_copy_arefs(struct vm_anon *src, struct vm_anon *dst)
 {
     if (!src || !dst || !src->arefs || !dst->arefs)
         return -EINVAL;
 
-    /* copy all arefs */
     hashmap_for (qnode, src->arefs) {
         struct hashmap_node *node = (struct hashmap_node *) qnode->value;
         struct vm_aref *aref = (struct vm_aref *) node->entry;
@@ -141,7 +159,13 @@ static int vm_anon_copy_arefs(struct vm_anon *src, struct vm_anon *dst)
 }
 
 /**
- * clone an existing anon into a new anon
+ * Makes a copy of an anon that shares its arefs, and so its pages, when
+ * a mapping's shared anon is written to after a fork. The pages
+ * themselves are copied later, one by one, as they are written to.
+ *
+ * @param vm_anon  the anon to copy
+ * @return the new anon, with one reference, or NULL if there was no
+ *         memory for it
  */
 struct vm_anon *vm_anon_copy(struct vm_anon *vm_anon)
 {
@@ -156,7 +180,6 @@ struct vm_anon *vm_anon_copy(struct vm_anon *vm_anon)
     new_anon->flags = vm_anon->flags & ~VM_COPY;
     new_anon->ref   = 1;
 
-    /* copy all arefs */
     if (vm_anon_copy_arefs(vm_anon, new_anon)) {
         kfree(new_anon);
         return NULL;

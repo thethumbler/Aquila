@@ -1,14 +1,16 @@
 /** \file
- * QEMU's virt machine: its interrupt controller, its PCI Express host
+ * QEMU's virt machine: setting up its interrupt controller and its PCI
+ * Express host bridge.
  */
 
 #include <core/system.h>
 #include <dev/pci.h>
 #include <platform/virt.h>
 
-/* the PCIe host bridge (pci-host-ecam-generic): bus 0's configuration
- * space; no firmware assigns BARs (QEMU's -kernel), the kernel does, in
- * its memory window and from port 0x1000 (not 0: unassigned) */
+/* The PCIe host bridge (pci-host-ecam-generic), with bus 0's
+ * configuration space. No firmware runs before the kernel (QEMU's
+ * -kernel), so the kernel assigns the BARs itself: in the memory window,
+ * and ports from 0x1000 (not 0, which means unassigned). */
 static struct pci_host virt_pci = {
     .name     = "ecam",
     .config   = {.type = IOADDR_MMIO8, .addr = VIRT_PCIE_ECAM},
@@ -23,6 +25,9 @@ static struct pci_host virt_pci = {
     .io_size  = 0x10000 - 0x1000,
 };
 
+/*
+ * Sets up the platform at boot: the GIC, and the PCI host bridge.
+ */
 int platform_init(void)
 {
     gic_setup();

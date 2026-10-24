@@ -3,6 +3,12 @@
 
 #include <stdint.h>
 
+/*
+ * The ELF format's structures and constants, as the ELF specification
+ * names them: the kernel loads ELF programs (sys/binfmt/elf.c), and reads
+ * its own symbols from its ELF file's sections.
+ */
+
 typedef int32_t  elf32_sword;
 typedef uint32_t elf32_word;
 typedef uint32_t elf32_addr;
@@ -141,9 +147,7 @@ typedef uint16_t elf64_half;
 #define STT_LOPROC  13
 #define STT_HIPROC  15
 
-/**
- * elf32 file header
- */
+/** An ELF32 file's header. */
 struct elf32_hdr {
     uint8_t     e_ident[EI_NIDENT];
     elf32_half  e_type;
@@ -161,9 +165,7 @@ struct elf32_hdr {
     elf32_half  e_shstrndx;
 };
 
-/**
- * elf32 section header
- */
+/** An ELF32 section header. */
 struct elf32_shdr {
     elf32_word  sh_name;
     elf32_word  sh_type;
@@ -177,9 +179,7 @@ struct elf32_shdr {
     elf32_word  sh_entsize;
 };
 
-/**
- * elf32 symbol
- */
+/** An ELF32 symbol. */
 struct elf32_sym {
     elf32_word  st_name;
     elf32_word  st_value;
@@ -189,9 +189,7 @@ struct elf32_sym {
     elf32_half  st_shndx;
 };
 
-/**
- * elf64 section header
- */
+/** An ELF64 section header. */
 struct elf64_shdr {
     elf64_word  sh_name;
     elf64_word  sh_type;
@@ -205,9 +203,7 @@ struct elf64_shdr {
     elf64_xword sh_entsize;
 };
 
-/**
- * elf64 symbol
- */
+/** An ELF64 symbol. */
 struct elf64_sym {
     elf64_word  st_name;
     uint8_t     st_info;
@@ -217,8 +213,9 @@ struct elf64_sym {
     elf64_xword st_size;
 };
 
-/* the kernel's own: its ELF class is the word size (the section headers
- * and symbols a Multiboot loader passes are the kernel file's) */
+/* The kernel's own section header and symbol types: its ELF class is
+ * the word size. A Multiboot loader passes the kernel file's own section
+ * headers and symbols. */
 #if __SIZEOF_POINTER__ == 8
 typedef struct elf64_shdr elf_shdr_t;
 typedef struct elf64_sym  elf_sym_t;
@@ -227,9 +224,7 @@ typedef struct elf32_shdr elf_shdr_t;
 typedef struct elf32_sym  elf_sym_t;
 #endif
 
-/**
- * elf32 program header
- */
+/** An ELF32 program header: a segment to load. */
 struct elf32_phdr {
     elf32_word  p_type;
     elf32_off   p_offset;
@@ -241,9 +236,7 @@ struct elf32_phdr {
     elf32_word  p_align;
 };
 
-/**
- * elf32 dynamic entry
- */
+/** An ELF32 dynamic section's entry. */
 struct elf32_dyn {
     elf32_sword     d_tag;
     union {
@@ -252,9 +245,7 @@ struct elf32_dyn {
     } d_un;
 };
 
-/**
- * elf64 file header
- */
+/** An ELF64 file's header. */
 struct elf64_hdr {
     uint8_t     e_ident[EI_NIDENT];
     elf64_half  e_type;
@@ -272,9 +263,7 @@ struct elf64_hdr {
     elf64_half  e_shstrndx;
 };
 
-/**
- * elf64 program header
- */
+/** An ELF64 program header: a segment to load. */
 struct elf64_phdr {
     elf64_word  p_type;
     elf64_word  p_flags;

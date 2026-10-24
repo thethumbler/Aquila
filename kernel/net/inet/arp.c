@@ -1,10 +1,13 @@
 /** \file
- * ARP: answers who has our address, keeps the hardware addresses of the
- * others (from their requests and replies, and the IPv4 packets they send
- * us), and asks for those packets are sent to: they wait for the answer
- * (ARP_HOLD of them an address), the question is asked ARP_TRIES times a
- * second apart. An address not heard from in ARP_EXPIRE is asked for
- * again: its machine may have gone, or another taken its address.
+ * ARP: finding the hardware (MAC) address of an IPv4 address on the link.
+ *
+ * ARP answers the requests for our own address, and keeps a table of the
+ * other machines' hardware addresses, learned from their requests and
+ * replies and from the IPv4 packets they send us. A packet to an address
+ * that isn't in the table waits (up to `ARP_HOLD` packets per address)
+ * while ARP asks for it, `ARP_TRIES` times, a second apart. An entry that
+ * hasn't been heard from for `ARP_EXPIRE` is asked for again: the machine
+ * may have gone, or another may have taken its address.
  */
 
 #include <core/system.h>
@@ -18,15 +21,17 @@
 
 #define ARP_ENTRIES 32
 
-/* how long an address is good for once heard from, as the BSDs keep it */
+/* how long an entry is good for after it was last heard from, as on the
+ * BSDs */
 #define ARP_EXPIRE  (20 * 60 * 1000ULL)     /* ms */
 
+/* The table: an IPv4 address's hardware address, on an interface. */
 static struct arp_entry {
     struct netif *netif;
     uint32_t ip;
     uint8_t mac[6];
-    uint32_t used;      /* when it was last updated, for replacing */
-    uint64_t heard;     /* then, in ms since boot, for expiring */
+    uint32_t used;      /* when it was last updated (clock), to replace the oldest */
+    uint64_t heard;     /* the same, in ms since boot, to expire it */
 } table[ARP_ENTRIES];
 
 static uint32_t clock;
@@ -35,7 +40,7 @@ static uint32_t clock;
 #define ARP_HOLD    3
 #define ARP_TRIES   3
 
-/** addresses asked for, with the packets waiting for them */
+/* The addresses being asked for, with the packets waiting for them. */
 static struct arp_pending {
     struct netif *netif;
     uint32_t ip;
@@ -47,7 +52,7 @@ static struct arp_pending {
 
 static const uint8_t ether_broadcast[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 
-/** who has `ip' */
+/** Broadcasts a request: who has `ip`? */
 static void arp_request(struct netif *netif, uint32_t ip)
 {
     struct netbuf *nb = netbuf_alloc();
@@ -70,6 +75,8 @@ static void arp_request(struct netif *netif, uint32_t ip)
     ether_output(netif, ether_broadcast, ETHER_TYPE_ARP, nb);
 }
 
+/** Gives up on an address being asked for: its waiting packets are
+ * dropped. */
 static void pending_drop(struct arp_pending *p)
 {
     for (int i = 0; i < p->nheld; ++i) {
@@ -82,7 +89,8 @@ static void pending_drop(struct arp_pending *p)
     p->nheld = 0;
 }
 
-/** no answer yet: again, or the packets go */
+/** Asks again for an address that hasn't answered, a second after the
+ * last request, or gives up after `ARP_TRIES` requests. */
 static void arp_retry(void *arg)
 {
     struct arp_pending *p = arg;
@@ -96,8 +104,17 @@ static void arp_retry(void *arg)
     net_callout_set(&p->retry, 1000000000ULL, arp_retry, p);
 }
 
-/** the packet waits for the hardware address of `ip' (asked for), the
- * netbuf is ARP's */
+/**
+ * Holds a packet until the hardware address of its next hop is known, and
+ * asks for it. If too many packets wait for that address, the oldest is
+ * dropped. The netbuf is ARP's from now on.
+ *
+ * @param netif  the interface to send it on
+ * @param ip     the next hop's address
+ * @param nb     the IPv4 packet
+ * @return 0, or `-ENOBUFS` if too many addresses are being asked for
+ *         already (the packet is dropped)
+ */
 int arp_resolve(struct netif *netif, uint32_t ip, struct netbuf *nb)
 {
     struct arp_pending *p = NULL, *free = NULL;
@@ -126,7 +143,7 @@ int arp_resolve(struct netif *netif, uint32_t ip, struct netbuf *nb)
         net_callout_set(&p->retry, 1000000000ULL, arp_retry, p);
     }
 
-    /* the oldest goes if there are too many */
+    /* drop the oldest packet if too many wait */
     if (p->nheld == ARP_HOLD) {
         netif->stats.tx_dropped++;
         netbuf_free(p->held[0]);
@@ -138,7 +155,7 @@ int arp_resolve(struct netif *netif, uint32_t ip, struct netbuf *nb)
     return 0;
 }
 
-/** the address is known: what waited for it goes */
+/** Sends the packets that waited for an address, now that it is known. */
 static void pending_flush(struct netif *netif, uint32_t ip, const uint8_t mac[6])
 {
     for (int i = 0; i < ARP_PENDING; ++i) {
@@ -157,6 +174,14 @@ static void pending_flush(struct netif *netif, uint32_t ip, const uint8_t mac[6]
     }
 }
 
+/**
+ * Records an address's hardware address, replacing the oldest entry if
+ * the table is full, and sends the packets that waited for it.
+ *
+ * @param netif  the interface it was heard on
+ * @param ip     the IPv4 address
+ * @param mac    its hardware address
+ */
 void arp_update(struct netif *netif, uint32_t ip, const uint8_t mac[6])
 {
     struct arp_entry *slot = &table[0];
@@ -167,7 +192,7 @@ void arp_update(struct netif *netif, uint32_t ip, const uint8_t mac[6])
             break;
         }
 
-        /* else the oldest */
+        /* otherwise, use the oldest entry */
         if (table[i].used < slot->used)
             slot = &table[i];
     }
@@ -181,11 +206,21 @@ void arp_update(struct netif *netif, uint32_t ip, const uint8_t mac[6])
     pending_flush(netif, ip, mac);
 }
 
+/**
+ * Looks up an address's hardware address. An entry that has expired is
+ * dropped, so that the address is asked for again.
+ *
+ * @param netif  the interface
+ * @param ip     the IPv4 address
+ * @param mac    set to the hardware address, if it is known
+ * @return 0 if it is known, or -1
+ */
 int arp_lookup(struct netif *netif, uint32_t ip, uint8_t mac[6])
 {
     for (int i = 0; i < ARP_ENTRIES; ++i) {
         if (table[i].netif == netif && table[i].ip == ip) {
-            /* too old: asked for again (the entry goes) */
+            /* too old: drop the entry, so that the address is asked for
+             * again */
             if (arch_rtime_ms() - table[i].heard > ARP_EXPIRE) {
                 table[i].netif = NULL;
                 return -1;
@@ -199,6 +234,13 @@ int arp_lookup(struct netif *netif, uint32_t ip, uint8_t mac[6])
     return -1;
 }
 
+/**
+ * Takes in an ARP packet: the sender's address is recorded, and a request
+ * for our address is answered.
+ *
+ * @param netif  the interface it came in on
+ * @param nb     the packet; it is freed or turned into the reply
+ */
 void arp_input(struct netif *netif, struct netbuf *nb)
 {
     struct arp_hdr *ah = (struct arp_hdr *) nb->data;
@@ -213,7 +255,7 @@ void arp_input(struct netif *netif, struct netbuf *nb)
     if (ah->spa)
         arp_update(netif, ah->spa, ah->sha);
 
-    /* who has our address: we have, the request turned into the reply */
+    /* a request for our address: turn it into the reply */
     if (ntohs(ah->op) == 1 && netif->ip && ah->tpa == netif->ip) {
         uint8_t requester[6];
         memcpy(requester, ah->sha, 6);

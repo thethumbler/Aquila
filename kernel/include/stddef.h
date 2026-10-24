@@ -1,6 +1,9 @@
 #ifndef _STDDEF_H
 #define _STDDEF_H
 
+/* The standard types and macros, for compilers that have no stddef.h of
+ * their own (the kernel has no C library). */
+
 typedef __SIZE_TYPE__ size_t;
 typedef __PTRDIFF_TYPE__ ssize_t;
 typedef __WCHAR_TYPE__ wchar_t;

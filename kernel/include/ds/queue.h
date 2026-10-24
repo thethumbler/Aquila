@@ -8,20 +8,24 @@ struct queue;
 
 #include <core/string.h>
 
-/**
- * queue node
+/*
+ * Queues: doubly linked lists of pointers, each entry in a node allocated
+ * for it. Adding an entry allocates, so it can fail; the kernel's lists
+ * that mustn't fail (the scheduler's, the wait queues) are in ds/list.h
+ * instead, linked through their entries.
  */
+
+/** A queue's node, holding one entry. */
 struct qnode {
     void *value;
     struct qnode *prev;
     struct qnode *next;
 };
 
+/* A queue flag: print what is added to it, for debugging. */
 #define QUEUE_TRACE 1
 
-/**
- * queue
- */
+/** A queue. */
 struct queue {
     size_t count;
     struct qnode *head;
@@ -29,19 +33,14 @@ struct queue {
     int flags;
 };
 
-/**
- * iterate over queue elements
- */
+/* Loops over each node `n` of queue `q`. */
 #define queue_for(n, q) for (struct qnode *(n) = (q)->head; (n); (n) = (n)->next)
 
-/**
- * create a new statically allocated queue
- */
+/* A new, empty, static queue. */
 #define QUEUE_NEW() &(struct queue){0}
 
-/**
- * create a new dynamically allocated queue
- */
+/** Returns a new, empty queue from kmalloc(), or NULL if there was no
+ * memory for it. */
 static inline struct queue *queue_new(void)
 {
     struct queue *queue;
@@ -53,9 +52,8 @@ static inline struct queue *queue_new(void)
     return queue;
 }
 
-/**
- * insert a new element in a queue
- */
+/** Adds an entry at the end of a queue. Returns its node, or NULL if
+ * there was no memory for it. */
 static inline struct qnode *enqueue(struct queue *queue, void *value) 
 {
     if (!queue)
@@ -77,7 +75,7 @@ static inline struct qnode *enqueue(struct queue *queue, void *value)
     node->value = value;
 
     if (!queue->count) {
-        /* Queue is not initalized */
+        /* the queue is empty */
         queue->head = queue->tail = node;
     } else {
         node->prev = queue->tail;
@@ -89,9 +87,8 @@ static inline struct qnode *enqueue(struct queue *queue, void *value)
     return node;
 }
 
-/**
- * insert a new element at the head of a queue, the next dequeued
- */
+/** Adds an entry at the head of a queue, so that dequeue() returns it
+ * next. Returns its node, or NULL if there was no memory for it. */
 static inline struct qnode *enqueue_head(struct queue *queue, void *value)
 {
     if (!queue)
@@ -115,9 +112,8 @@ static inline struct qnode *enqueue_head(struct queue *queue, void *value)
     return node;
 }
 
-/**
- * get an element from a queue and remove it
- */
+/** Takes the first entry off a queue, frees its node, and returns the
+ * entry, or NULL if the queue is empty. */
 static inline void *dequeue(struct queue *queue)
 {
     if (!queue || !queue->count)
@@ -140,9 +136,7 @@ static inline void *dequeue(struct queue *queue)
     return value;
 }
 
-/**
- * remove an element matching a specific value from a queue
- */
+/** Removes the first node whose entry is `value`, if there's one. */
 static inline void queue_remove(struct queue *queue, void *value)
 {
     if (!queue || !queue->count)
@@ -150,9 +144,9 @@ static inline void queue_remove(struct queue *queue, void *value)
 
     queue_for (node, queue) {
         if (node->value == value) {
-            if (!node->prev) {    /* Head */
+            if (!node->prev) {    /* the head */
                 dequeue(queue);
-            } else if (!node->next) {   /* Tail */
+            } else if (!node->next) {   /* the tail */
                 --queue->count;
                 queue->tail = queue->tail->prev;
                 queue->tail->next = NULL;
@@ -169,9 +163,7 @@ static inline void queue_remove(struct queue *queue, void *value)
     }
 }
 
-/**
- * remove an element from a queue given the queue node
- */
+/** Removes a node from a queue, and frees it. */
 static inline void queue_node_remove(struct queue *queue, struct qnode *node)
 {
     if (!queue || !queue->count || !node)

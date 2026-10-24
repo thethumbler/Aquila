@@ -3,6 +3,10 @@
 
 #include <fs/vfs.h>
 
+/* Pseudo filesystems' shared code (fs/pseudofs/): directories kept in
+ * memory, which tmpfs uses, and devfs and devpts, built on it. */
+
+/** A directory entry, kept in memory. */
 struct pseudofs_dirent {
     const char        *d_name;
     struct vnode      *d_ino;

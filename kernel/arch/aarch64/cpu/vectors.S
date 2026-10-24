@@ -1,18 +1,20 @@
-/**********************************************************************
- *              aarch64: the exception vectors
+/*
+ * aarch64: the exception vectors.
  *
- * VBAR_EL1's table: 16 entries of 0x80 bytes, four for each of where the
- * exception came from (EL1 with SP_EL0, EL1 with SP_EL1: the kernel, EL0
- * aarch64: user mode, EL0 aarch32) and what it is (synchronous: a system
- * call or a fault, IRQ, FIQ, SError).
+ * VBAR_EL1's table has 16 entries of 0x80 bytes: four for each place the
+ * exception came from (EL1 with SP_EL0; EL1 with SP_EL1, the kernel; EL0
+ * in aarch64, user mode; EL0 in aarch32), one for each kind of exception
+ * (synchronous: a system call or a fault; IRQ; FIQ; SError).
  *
- * Each saves the interrupted context on the kernel stack, a struct
- * aarch64_regs (cpu/cpu.h), calls C with it, and restores it. From user
- * mode the kernel stack is SP_EL1 as user mode was entered with: the
- * thread's own, at its top (aarch64_jump_user(), and every eret back).
- * IRQs are masked on entry (PSTATE.I), and stay so in the kernel.
+ * Each entry saves the interrupted context on the kernel stack, as a
+ * struct aarch64_regs (cpu/cpu.h), calls C with it, and restores it. From
+ * user mode, the kernel stack is SP_EL1 as it was when user mode was
+ * entered: the thread's own, at its top (aarch64_jump_user(), and every
+ * eret back). IRQs are masked on entry (PSTATE.I), and stay masked in the
+ * kernel.
  */
 
+/* The size of struct aarch64_regs, and its fields' offsets. */
 #define FRAME       288     /* sizeof(struct aarch64_regs) */
 #define F_SP        248
 #define F_PC        256
@@ -45,7 +47,7 @@
     stp     x21, x22, [sp, #F_SP]
     stp     x23, x0, [sp, #F_PSTATE]
     str     x24, [sp, #F_ESR]
-    mov     x29, xzr            /* backtraces end here */
+    mov     x29, xzr            /* a stack trace ends here */
 .endm
 
 .macro restore
@@ -90,22 +92,22 @@
 .balign 0x800
 .global aarch64_vectors
 aarch64_vectors:
-    /* EL1, SP_EL0: never (the kernel runs on SP_EL1) */
+    /* EL1 with SP_EL0: never used (the kernel runs on SP_EL1) */
     vector  bad
     vector  bad
     vector  bad
     vector  bad
-    /* EL1, SP_EL1: the kernel */
+    /* EL1 with SP_EL1: the kernel */
     vector  sync
     vector  irq
     vector  bad
     vector  bad
-    /* EL0, aarch64: user mode */
+    /* EL0 in aarch64: user mode */
     vector  sync
     vector  irq
     vector  bad
     vector  bad
-    /* EL0, aarch32: none */
+    /* EL0 in aarch32: not supported */
     vector  bad
     vector  bad
     vector  bad
@@ -125,9 +127,9 @@ bad:
     wfi
     b       1b
 
-/* a forked child's first return to user mode: on the frame its parent's
- * fork() made, copied to its own stack (sys/fork.c), the kernel lock let
- * go of first */
+/* A forked child's first return to user mode, from the frame that its
+ * parent's fork() made, copied to the child's own stack (sys/fork.c). The
+ * kernel lock is let go of first. */
 .global aarch64_fork_return
 aarch64_fork_return:
     bl      kernel_unlock

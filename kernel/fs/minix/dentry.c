@@ -1,6 +1,20 @@
+/** \file
+ * minix: directory entries, a name and an inode number each, in the
+ * directory's blocks.
+ */
+
 #include <core/panic.h>
 #include <minix.h>
 
+/**
+ * Finds the inode number of a name in a directory.
+ *
+ * @param desc     the mounted filesystem
+ * @param m_inode  the directory's inode
+ * @param name     the name
+ * @return the inode number, 0 if there's no such name, or `-ENOTDIR`
+ *         (as an unsigned number) if the inode isn't a directory
+ */
 uint32_t minix_dentry_find(struct minix *desc, struct minix_inode *m_inode, const char *name)
 {
     if (!S_ISDIR(m_inode->mode))
@@ -38,11 +52,22 @@ found:
     return dentry->ino;
 }
 
+/**
+ * Adds an entry to a directory, in its first free slot. The directory's
+ * size grows if the slot is past its end. A directory whose blocks are
+ * all full can't grow yet: that panics.
+ *
+ * @param dir   the directory
+ * @param name  the new entry's name (cut to the filesystem's longest)
+ * @param ino   its inode number
+ * @param mode  its type and permissions (not used)
+ * @return 0, or `-ENOTDIR` if `dir` isn't a directory
+ */
 int minix_dentry_create(struct vnode *dir, const char *name, ino_t ino, mode_t mode)
 {
     int err = 0;
 
-    if (!S_ISDIR(dir->mode))    /* Not a directory */
+    if (!S_ISDIR(dir->mode))
         return -ENOTDIR;
 
     struct minix *desc = dir->p;
@@ -51,7 +76,7 @@ int minix_dentry_create(struct vnode *dir, const char *name, ino_t ino, mode_t m
 
     struct minix_inode m_inode;
     if ((err = minix_inode_read(desc, dir->ino, &m_inode))) {
-        /* TODO Error checking */
+        /* not handled: the inode is used as it was read */
     }
 
     size_t bs = desc->bs;
@@ -73,7 +98,7 @@ int minix_dentry_create(struct vnode *dir, const char *name, ino_t ino, mode_t m
                 memcpy(dentry->name, name, MIN(len, desc->name_len));
                 minix_inode_block_write(desc, &m_inode, dir->ino, i, block);
 
-                /* update size */
+                /* the directory grows if the entry is past its end */
                 size_t new_size = i * bs + (size_t)((char *) dentry - block) + desc->dentry_size;
                 if (m_inode.size < new_size) {
                     m_inode.size = new_size;
@@ -87,6 +112,6 @@ int minix_dentry_create(struct vnode *dir, const char *name, ino_t ino, mode_t m
         }
     }
 
-    /* TOOD allocate */
+    /* growing a full directory by a block isn't implemented */
     panic("Need to allocate a new block\n");
 }

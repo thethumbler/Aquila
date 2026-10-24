@@ -14,12 +14,10 @@
 #include <aquila/syscall.h>
 #include <aquila/errno.h>
 
-/**
+/*
  * Runs a system call: the interrupt handler calls it for `int $0x80`. It
  * returns to user mode when the call is done, delivering the signals that
  * came meanwhile.
- *
- * @param r  the registers user mode had, saved on the kernel stack
  */
 void arch_syscall(struct x86_regs *r)
 {
@@ -43,13 +41,10 @@ void arch_syscall(struct x86_regs *r)
     x86_return_to_user(r, curthread->syscall_nr != SYS_sigreturn);
 }
 
-/**
+/*
  * Sets the result of a thread's system call: eax (rax) when it returns to
  * user mode. That's in its saved registers, or, for a thread that has
  * never run (a child of `fork()`), where it will start from.
- *
- * @param thread  the thread
- * @param val     the result
  */
 void arch_syscall_return(struct thread *thread, uintptr_t val)
 {

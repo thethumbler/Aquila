@@ -1,21 +1,25 @@
 /** \file
- * The clock (arch_rtime_ns): nanoseconds since it started, from a
- * counter chosen once (x86_clock_init), the first of
+ * x86: the clock, `arch_rtime_ns()`, the nanoseconds since it started.
  *
- *   - the TSC, if the CPU says it is invariant (it counts at the same
- *     rate whatever the CPU does), calibrated against the HPET (or the
- *     PIT without one) over CALIBRATE_US
- *   - the HPET's main counter, its rate known
- *   - the timer's ticks (2 ms, the local APIC's or the PIT's): what there
- *     was before
+ * The clock reads a counter, chosen once at boot (`x86_clock_init()`),
+ * the first that the machine has of:
  *
- * clock=tsc|hpet|pit on the kernel's command line says which.
+ * - the TSC, if the CPU says it is invariant (it counts at the same rate
+ *   whatever the CPU does), calibrated against the HPET (or the PIT
+ *   without one) over `CALIBRATE_US`;
+ * - the HPET's main counter, whose rate is known;
+ * - the timer's ticks (every 2 ms, the local APIC's or the PIT's), which
+ *   was all there was before.
  *
- * A count becomes nanoseconds as (count * mult) >> 32; the timer's tick
- * moves the base on (x86_clock_tick), counts since it stay few: the
- * HPET's low 32 bits are enough (they wrap in 43 s at 100 MHz), one read
- * of its slow registers. Reads never go back. The kernel runs on one CPU, with interrupts off: they
- * don't race.
+ * `clock=tsc`, `clock=hpet` or `clock=pit` on the kernel's command line
+ * chooses one.
+ *
+ * A count becomes nanoseconds as (count * mult) >> 32. Each tick of the
+ * timer moves the base on (`x86_clock_tick()`), so the counts since the
+ * base stay few: the HPET's low 32 bits are enough (they wrap in 43 s at
+ * 100 MHz), which is one read of its slow registers. The clock never goes
+ * back. The kernel runs on one CPU at a time, with interrupts off, so its
+ * readers don't race.
  */
 
 #include <core/system.h>
@@ -31,13 +35,14 @@ enum { SOURCE_PIT, SOURCE_HPET, SOURCE_TSC };
 static const char *names[] = {"pit", "hpet", "tsc"};
 
 static int source = SOURCE_PIT;
-static uint64_t mult;               /* ns a count, << 32 */
+static uint64_t mult;               /* the ns per count, << 32 */
 static uint64_t base_count, base_ns, last_ns;
 
-/* the PIT's ticks: their period, how many */
+/* the timer's ticks: their period, and how many there were */
 static uint32_t tick_period;
 static uint64_t ticks;
 
+/** Reads the TSC. */
 static inline uint64_t rdtsc(void)
 {
     uint32_t lo, hi;
@@ -45,12 +50,14 @@ static inline uint64_t rdtsc(void)
     return (uint64_t) hi << 32 | lo;
 }
 
+/** Runs CPUID for `leaf`. */
 static inline void cpuid(uint32_t leaf, uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d)
 {
     asm volatile("cpuid" : "=a"(*a), "=b"(*b), "=c"(*c), "=d"(*d) : "a"(leaf), "c"(0));
 }
 
-/** the TSC counts at a constant rate (CPUID 0x80000007, EDX bit 8) */
+/** Returns whether the TSC counts at a constant rate (CPUID 0x80000007,
+ * EDX bit 8). */
 static int tsc_invariant(void)
 {
     uint32_t a, b, c, d;
@@ -64,7 +71,8 @@ static int tsc_invariant(void)
     return !!(d & (1 << 8));
 }
 
-/** (a * b) >> 32 without its 128 bits: in 32-bit halves */
+/** Computes (a * b) >> 32 in 32-bit halves, without needing the 128-bit
+ * product. */
 static inline uint64_t mul_shift32(uint64_t a, uint64_t b)
 {
     uint64_t ah = a >> 32, al = a & 0xffffffff;
@@ -73,17 +81,21 @@ static inline uint64_t mul_shift32(uint64_t a, uint64_t b)
     return ((ah * bh) << 32) + ah * bl + al * bh + ((al * bl) >> 32);
 }
 
+/** Reads the counter the clock uses. */
 static uint64_t counter(void)
 {
     return source == SOURCE_TSC ? rdtsc() : x86_hpet_read32();
 }
 
-/** counts since the base */
+/** Returns the counts since the base, from the counter's value `c`. */
 static uint64_t since(uint64_t c)
 {
     return source == SOURCE_TSC ? c - base_count : (uint32_t) (c - base_count);
 }
 
+/*
+ * Reads the clock.
+ */
 uint64_t arch_rtime_ns(void)
 {
     if (source == SOURCE_PIT)
@@ -98,17 +110,23 @@ uint64_t arch_rtime_ns(void)
     return ns;
 }
 
+/*
+ * Reads the clock, in microseconds.
+ */
 uint64_t arch_rtime_us(void)
 {
     return arch_rtime_ns() / 1000ULL;
 }
 
+/*
+ * Reads the clock, in milliseconds.
+ */
 uint64_t arch_rtime_ms(void)
 {
     return arch_rtime_ns() / 1000000ULL;
 }
 
-/** the timer's tick: the base moves on */
+/** Counts a tick of the timer, and moves the clock's base on to now. */
 void x86_clock_tick(void)
 {
     ticks++;
@@ -122,7 +140,9 @@ void x86_clock_tick(void)
     base_count = c;
 }
 
-/** the TSC's mult: its counts over CALIBRATE_US, by the HPET or the PIT */
+/** Calibrates the TSC: counts it over `CALIBRATE_US`, timed by the HPET
+ * or the PIT, and returns its `mult` (0 if it didn't count). `*by` is set
+ * to the timer used. */
 static uint64_t tsc_calibrate(int hpet, const char **by)
 {
     uint64_t t0, t1, ns;
@@ -151,7 +171,12 @@ static uint64_t tsc_calibrate(int hpet, const char **by)
     return t1 > t0 ? (ns << 32) / (t1 - t0) : 0;
 }
 
-/** the timer ticks every `period_ns' from now on */
+/**
+ * Says how often the timer ticks, from now on: with neither TSC nor HPET,
+ * the ticks are the clock.
+ *
+ * @param period_ns  the tick's period, in ns
+ */
 void x86_clock_ticks(uint32_t period_ns)
 {
     tick_period = period_ns;
@@ -160,12 +185,18 @@ void x86_clock_ticks(uint32_t period_ns)
         printk("clock: timer ticks, %d ns\n", period_ns);
 }
 
+/**
+ * Says whether the clock counts finer than the ticks.
+ *
+ * @return 1 with the TSC or the HPET, 0 with the ticks
+ */
 int x86_clock_precise(void)
 {
     return source != SOURCE_PIT;
 }
 
-/** the clock's source (before the timer ticks) */
+/** Chooses the clock's counter and calibrates it, at boot, before the
+ * timer ticks. */
 void x86_clock_init(void)
 {
     const char *want = NULL;
@@ -218,6 +249,11 @@ void x86_clock_init(void)
     }
 }
 
+/**
+ * Returns the name of the clock's counter.
+ *
+ * @return "tsc", "hpet" or "pit"
+ */
 const char *x86_clock_source(void)
 {
     return names[source];

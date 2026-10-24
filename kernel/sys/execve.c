@@ -1,3 +1,14 @@
+/** \file
+ * `execve()`: a process runs another program.
+ *
+ * The arguments and the environment are copied into the kernel first,
+ * since the process's memory is about to go. A script ("#!" on its first
+ * line) runs as its interpreter. Then the program is loaded
+ * (`binfmt_load()`), the close-on-exec descriptors are closed, caught
+ * signals go back to their default action, and the architecture starts
+ * the program with its arguments on the stack (`arch_sys_execve()`).
+ */
+
 #include <core/system.h>
 #include <core/string.h>
 #include <core/arch.h>
@@ -7,9 +18,11 @@
 #include <mm/mm.h>
 #include <aquila/fcntl.h>
 
-/* maximum total size of arguments and environment (strings + pointers) */
+/* the most that the arguments and the environment may take, strings and
+ * pointers together */
 #define EXEC_ARG_MAX    (128 * 1024)
 
+/** Frees an array of `count` strings that `exec_strings_get()` made. */
 static void exec_strings_free(char **strs, int count)
 {
     if (!strs)
@@ -22,17 +35,19 @@ static void exec_strings_free(char **strs, int count)
 }
 
 /**
- * A NULL-terminated user array of user strings into a NULL-terminated
- * kernel array of kernel copies (*count of them), their size (strings and
- * pointers) added to `total', no more than EXEC_ARG_MAX in all; each
- * string comes in through `buf' (EXEC_ARG_MAX bytes).
+ * Copies a NULL-terminated array of strings (the arguments or the
+ * environment) from user memory into a NULL-terminated array of kernel
+ * copies, setting `*count` to how many there are and `*ref` to the array.
+ * Their size, strings and pointers, is added to `*total`, which may not
+ * go past `EXEC_ARG_MAX`. Each string comes in through `buf`, of
+ * `EXEC_ARG_MAX` bytes. Returns 0, or `-EFAULT`, `-E2BIG` or `-ENOMEM`.
  */
 static int exec_strings_get(char * const u_strs[], char *buf, size_t *total, int *count, char ***ref)
 {
     int cnt = 0, err = 0;
     char *u;
 
-    /* how many */
+    /* count the strings */
     for (; u_strs; ++cnt) {
         if (copyin(&u, &u_strs[cnt], sizeof(u)))
             return -EFAULT;
@@ -93,12 +108,14 @@ error:
     return err;
 }
 
-/* how many interpreters may be scripts themselves */
+/* how many interpreters in a row may be scripts themselves */
 #define EXEC_SCRIPT_DEPTH   4
 
 /**
- * The interpreter of a script, "#!interpreter [argument]" on its first
- * line, and the argument (the rest of the line), NULL if it isn't one.
+ * Reads the interpreter of a script, from "#!interpreter [argument]" on
+ * its first line. Sets `*interp` to the interpreter and `*arg` to the
+ * argument (the rest of the line), or to NULL if the file isn't a script
+ * or there is no argument. Returns 0 or a negative errno.
  */
 static int exec_script(struct proc *proc, const char *path, char **interp, char **arg)
 {
@@ -112,7 +129,8 @@ static int exec_script(struct proc *proc, const char *path, char **interp, char 
     if ((err = vfs_lookup(path, &uio, &vnode)))
         return err;
 
-    /* a regular file the process may execute, as any program */
+    /* like any program, it must be a regular file that the process may
+     * execute */
     if (!S_ISREG(vnode->mode))
         err = -EACCES;
     else
@@ -133,7 +151,7 @@ static int exec_script(struct proc *proc, const char *path, char **interp, char 
     while (*end && *end != '\n')
         ++end;
 
-    /* the whole line has to fit */
+    /* the whole line has to fit in the buffer */
     if (!*end)
         return -ENOEXEC;
 
@@ -173,9 +191,10 @@ static int exec_script(struct proc *proc, const char *path, char **interp, char 
 }
 
 /**
- * A script runs as its interpreter, with the arguments: the interpreter,
- * its argument from the script if any, the script's path, and those of
- * the script but the first (argv[0]).
+ * Makes the arguments of a script's interpreter: the interpreter, its
+ * argument from the script if there is one, the script's path, then the
+ * script's own arguments but the first (`argv[0]`). They replace `*argp`
+ * and `*argc`. Returns 0 or `-ENOMEM`.
  */
 static int exec_script_args(char *interp, char *arg, const char *path, char ***argp, int *argc)
 {
@@ -207,6 +226,19 @@ static int exec_script_args(char *interp, char *arg, const char *path, char ***a
     return 0;
 }
 
+/**
+ * Runs another program in a thread's process, for `execve()`. On success,
+ * the thread starts the new program when it returns to user mode.
+ *
+ * @param thread  the thread calling `execve()`
+ * @param fn      the program's path
+ * @param _argp   the arguments, in user memory
+ * @param _envp   the environment, in user memory
+ * @return 0, or a negative errno: `-EFAULT`, `-E2BIG`, `-ENOMEM`,
+ *         `-ELOOP` (too many nested scripts), or the loader's. If loading
+ *         fails after the old program is gone, the process is killed
+ *         (`SIGSEGV`) instead.
+ */
 int proc_execve(struct thread *thread, const char *fn, char * const _argp[], char * const _envp[])
 {
     int err = 0;
@@ -218,7 +250,7 @@ int proc_execve(struct thread *thread, const char *fn, char * const _argp[], cha
     char **argp = NULL;
     char **envp = NULL;
 
-    /* the arguments and the environment: the kernel's copies */
+    /* copy the arguments and the environment into the kernel */
     char *buf = kmalloc(EXEC_ARG_MAX, &M_BUFFER, 0);
 
     if (!buf)
@@ -232,7 +264,7 @@ int proc_execve(struct thread *thread, const char *fn, char * const _argp[], cha
     if (err)
         goto free_resources;
 
-    /* scripts run as their interpreters */
+    /* a script runs as its interpreter */
     for (int depth = 0;; ++depth) {
         char *interp, *arg;
 
@@ -255,8 +287,8 @@ int proc_execve(struct thread *thread, const char *fn, char * const _argp[], cha
 
     if ((err = binfmt_load(proc, fn, NULL))) {
         if (!proc->vm_space.vm_entries.count) {
-            /* the failure happened after the old image was destroyed,
-             * there is nothing to return to, kill the process */
+            /* the failure came after the old program was destroyed:
+             * there is nothing to return to, so the process is killed */
             exec_strings_free(argp, argc);
             exec_strings_free(envp, envc);
 
@@ -270,13 +302,13 @@ int proc_execve(struct thread *thread, const char *fn, char * const _argp[], cha
 
     thread->spawned = 0;
 
-    /* close descriptors marked close-on-exec */
+    /* close the descriptors marked close-on-exec */
     for (int fd = 0; fd < FDS_COUNT; ++fd)
         if (proc_fd_file(proc, fd) && (proc->fds[fd].flags & FD_CLOEXEC))
             proc_fd_close(proc, fd);
 
-    /* caught signals go back to their default action, ignored ones stay
-     * ignored (POSIX); the mask and the pending ones stay */
+    /* caught signals go back to their default action, and ignored ones
+     * stay ignored (POSIX); the signal mask and the pending signals stay */
     for (int i = 0; i <= SIG_MAX; ++i) {
         if (proc->sigaction[i].sa_handler != SIG_IGN)
             proc->sigaction[i].sa_handler = SIG_DFL;

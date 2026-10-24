@@ -1,16 +1,31 @@
+/** \file
+ * The wall clock: the date and time of day.
+ *
+ * The real time clock (the CMOS clock on the PC) only counts seconds, so
+ * it is read once, and from then on the wall clock follows the kernel's
+ * monotonic clock (`arch_rtime_ns()`), which counts much finer.
+ * `time_resync()` sets it from the real time clock again now and then, in
+ * case the two drift apart.
+ */
+
 #include <core/system.h>
 #include <core/time.h>
 #include <core/arch.h>
 #include <core/printk.h>
 
-/* the real time clock (CMOS: seconds) once, at the monotonic time
- * clock_base_ns; from then on the monotonic clock counts (time_resync
- * sets it again if they drift apart) */
+/* The real time clock's seconds, read at the monotonic time
+ * clock_base_ns. */
 static time_t clock_base_sec;
 static uint64_t clock_base_ns;
 static int clock_set;
 
-/** the wall clock (CLOCK_REALTIME) */
+/**
+ * Reads the wall clock (`CLOCK_REALTIME`). The first call reads the real
+ * time clock.
+ *
+ * @param ts  set to the time, since the epoch
+ * @return 0, or a negative errno if the real time clock can't be read
+ */
 int gettime(struct timespec *ts)
 {
     if (!clock_set) {
@@ -32,9 +47,9 @@ int gettime(struct timespec *ts)
 }
 
 /**
- * The real time clock again (now and then): the monotonic clock, which
- * the wall clock follows, may count a little fast or slow; 2 s or more
- * from the RTC (which counts seconds), the wall clock is the RTC's again
+ * Sets the wall clock from the real time clock again, if they are 2
+ * seconds or more apart. The tick calls it now and then: the monotonic
+ * clock, which the wall clock follows, may count a little fast or slow.
  */
 void time_resync(void)
 {
@@ -53,6 +68,13 @@ void time_resync(void)
     }
 }
 
+/**
+ * Reads the wall clock, in microseconds, for `gettimeofday()`.
+ *
+ * @param tv  if not NULL, set to the time, since the epoch
+ * @param tz  if not NULL, set to UTC (the kernel has no time zones)
+ * @return 0, or a negative errno if the real time clock can't be read
+ */
 int gettimeofday(struct timeval *tv, struct timezone *tz)
 {
     int err = 0;

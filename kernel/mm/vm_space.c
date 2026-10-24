@@ -1,3 +1,8 @@
+/** \file
+ * Address spaces: a process's mappings (map entries), kept in address
+ * order, and its page tables (`pmap`).
+ */
+
 #include <core/system.h>
 #include <core/arch.h>
 
@@ -7,7 +12,17 @@
 #include <ds/queue.h>
 
 /**
- * insert a new vm entry into a vm space
+ * Adds a map entry to an address space, in address order.
+ *
+ * If the entry's `base` is 0, the entry is placed at the highest free gap
+ * between mappings that it fits in. The entry always goes before an
+ * existing one (the stack's, at the top of user space): an entry past the
+ * last one can't be added.
+ *
+ * @param vm_space  the address space
+ * @param vm_entry  the entry, with its `base` (or 0) and `size` set
+ * @return 0, `-EINVAL` if either is NULL, or `-ENOMEM` if there is no
+ *         room for it, or no memory for its list node
  */
 int vm_space_insert(struct vm_space *vm_space, struct vm_entry *vm_entry)
 {
@@ -24,7 +39,7 @@ int vm_space_insert(struct vm_space *vm_space, struct vm_entry *vm_entry)
     uintptr_t prev_end = 0;
 
     if (alloc) {
-        /* look for the last valid entry */
+        /* find the highest gap that the entry fits in */
         queue_for (node, queue) {
             struct vm_entry *cur_vm_entry = (struct vm_entry *) node->value;
 
@@ -75,7 +90,11 @@ int vm_space_insert(struct vm_space *vm_space, struct vm_entry *vm_entry)
 }
 
 /**
- * lookup the vm entry containing `vaddr` inside a vm space
+ * Finds the map entry that an address is in.
+ *
+ * @param vm_space  the address space
+ * @param vaddr     the address
+ * @return the entry, or NULL if no mapping covers the address
  */
 struct vm_entry *vm_space_find(struct vm_space *vm_space, vaddr_t vaddr)
 {
@@ -97,7 +116,10 @@ struct vm_entry *vm_space_find(struct vm_space *vm_space, vaddr_t vaddr)
 }
 
 /**
- * destroy all resources associated with a vm space
+ * Removes all the mappings of an address space: its entries are released
+ * and freed, and its page tables emptied.
+ *
+ * @param vm_space  the address space (NULL does nothing)
  */
 void vm_space_destroy(struct vm_space *vm_space)
 {
@@ -115,20 +137,29 @@ void vm_space_destroy(struct vm_space *vm_space)
 }
 
 /**
- * fork a vm space into another vm space
+ * Copies an address space's mappings into another, for `fork()`. The two
+ * share the pages, copy on write: writable private mappings become
+ * read-only in `src`, and their anons are marked to be copied, so that
+ * the first write to a page gives the writer its own copy
+ * (`mm/fault.c`).
+ *
+ * @param src  the parent's address space
+ * @param dst  the child's address space, empty
+ * @return 0, `-EINVAL` if either is NULL, or `-ENOMEM` if there was no
+ *         memory for an entry; what was copied stays in `dst`, for the
+ *         caller to destroy
  */
 int vm_space_fork(struct vm_space *src, struct vm_space *dst)
 {
     if (!src || !dst)
         return -EINVAL;
 
-    /* copy vm entries */
     queue_for (node, &src->vm_entries) {
         struct vm_entry *s_entry = node->value;
         struct vm_entry *d_entry = kmalloc(sizeof(struct vm_entry), &M_VM_ENTRY, 0);
 
-        /* out of memory: what was copied goes with dst (the caller's
-         * vm_space_destroy(), fork's error path) */
+        /* out of memory: what was copied so far goes with dst, when the
+         * caller destroys it (fork's error path) */
         if (!d_entry)
             return -ENOMEM;
 
@@ -149,7 +180,7 @@ int vm_space_fork(struct vm_space *src, struct vm_space *dst)
         }
 
         if (s_entry->flags & (VM_UW|VM_KW) && !(s_entry->flags & VM_SHARED)) {
-            /* remove write permission from all pages */
+            /* make the parent's pages read-only: the first write copies */
             vaddr_t sva = s_entry->base;
             vaddr_t eva = sva + s_entry->size;
             unsigned flags = s_entry->flags & ~(VM_UW|VM_KW);

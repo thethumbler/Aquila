@@ -1,3 +1,12 @@
+/** \file
+ * x86: the 8254 programmable interval timer (PIT).
+ *
+ * Its channel 0 is the scheduler's tick when there's no APIC (IRQ 0).
+ * Its channel 2, normally the speaker's, measures short delays: to
+ * calibrate the TSC and the local APIC's timer, and to wait while
+ * starting the other CPUs.
+ */
+
 #include <core/system.h>
 #include <core/string.h>
 #include <core/kargs.h>
@@ -10,12 +19,14 @@ static struct ioaddr pit_ioaddr;
 #define PIT_CHANNEL2    0x02
 #define PIT_CMD         0x03
 
-/* channel 2's gate and output (the speaker's port) */
+/* channel 2's gate and output, in the speaker's port */
 #define PIT_GATE_PORT   0x61
 #define GATE2           0x01
 #define SPEAKER         0x02
 #define OUT2            0x20
 
+/** The PIT's command register: which channel, how it is loaded, and in
+ * which mode it counts. */
 struct pit_cmd_register {
     union {
         struct {
@@ -32,6 +43,12 @@ struct pit_cmd_register {
 #define PIT_MODE_SQUARE_WAVE    0x3
 #define PIT_ACCESS_LOHIBYTE     0x3
 
+/**
+ * Sets where the PIT's ports are.
+ *
+ * @param io  its ports (0x40)
+ * @return 0
+ */
 int x86_pit_setup(struct ioaddr *io)
 {
     printk("i8254: Initializing [%p (%s)]\n", io->addr, ioaddr_type_str(io));
@@ -39,8 +56,9 @@ int x86_pit_setup(struct ioaddr *io)
     return 0;
 }
 
-#define FBASE   1193182ULL  /* PIT Oscillator operates at 1.193182 MHz */
+#define FBASE   1193182ULL  /* the PIT's oscillator runs at 1.193182 MHz */
 
+/** Converts a decimal string to a number. */
 static uint32_t atou32(const char *s)
 {
     uint32_t ret = 0;
@@ -53,6 +71,14 @@ static uint32_t atou32(const char *s)
     return ret;
 }
 
+/**
+ * Makes channel 0 interrupt periodically, for the scheduler's tick. The
+ * `i8254.div` kernel argument sets the divisor directly.
+ *
+ * @param period_ns  the period wanted, in ns
+ * @return the period it is, in ns (the PIT's clock divided by a whole
+ *         number)
+ */
 uint32_t x86_pit_period_set(uint32_t period_ns)
 {
     printk("i8254: requested period %d ns\n", period_ns);
@@ -89,9 +115,10 @@ uint32_t x86_pit_period_set(uint32_t period_ns)
 }
 
 /**
- * `us' microseconds, busy (at most 54 ms): channel 2 counts down once,
- * its output goes high at 0 (channel 0 keeps the tick). To calibrate
- * the TSC without an HPET.
+ * Waits `us` microseconds, at most 54 ms, busy. Channel 2 counts down
+ * once, and its output goes high at 0; channel 0 keeps the tick.
+ *
+ * @param us  how long to wait, in microseconds
  */
 void x86_pit_delay(uint32_t us)
 {
@@ -101,12 +128,12 @@ void x86_pit_delay(uint32_t us)
     if (count > 0xFFFF)
         count = 0xFFFF;
 
-    /* gate off, speaker off */
+    /* the gate off, and the speaker off */
     io_out8(&gate, 0, (io_in8(&gate, 0) & ~(GATE2 | SPEAKER)));
 
     struct pit_cmd_register cmd = {
         .bcd = 0,
-        .mode = 0,      /* interrupt on terminal count: once */
+        .mode = 0,      /* "interrupt on terminal count": count down once */
         .access = PIT_ACCESS_LOHIBYTE,
         .channel = 2,
     };
@@ -115,7 +142,7 @@ void x86_pit_delay(uint32_t us)
     io_out8(&pit_ioaddr, PIT_CHANNEL2, count & 0xFF);
     io_out8(&pit_ioaddr, PIT_CHANNEL2, count >> 8);
 
-    /* gate on: it counts */
+    /* the gate on: it counts */
     io_out8(&gate, 0, (io_in8(&gate, 0) & ~SPEAKER) | GATE2);
 
     while (!(io_in8(&gate, 0) & OUT2))

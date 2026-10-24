@@ -1,3 +1,8 @@
+/** \file
+ * The operations on open files: each goes to the socket layer, the
+ * device's driver, or the vnode's filesystem (its `fops`).
+ */
+
 #include <core/system.h>
 #include <fs/vfs.h>
 #include <fs/posix.h>
@@ -7,7 +12,12 @@
 #include <aquila/fcntl.h>
 
 /**
- * open a new file
+ * Opens a file whose vnode is set: a device's driver, a FIFO's pipe, or
+ * the filesystem opens it.
+ *
+ * @param file  the file, its vnode and flags set
+ * @return 0, `-EISDIR` to write to a directory, `-ENOSYS`, or the open's
+ *         error
  */
 int vfs_file_open(struct file *file)
 {
@@ -21,7 +31,7 @@ int vfs_file_open(struct file *file)
     if (ISDEV(file->vnode))
         return kdev_file_open(&VNODE_DEV(file->vnode), file);
 
-    /* becomes an end of the FIFO's pipe */
+    /* a FIFO's open file becomes an end of its pipe */
     if (S_ISFIFO(file->vnode->mode))
         return pipefs_fifo_open(file);
 
@@ -32,7 +42,12 @@ int vfs_file_open(struct file *file)
 }
 
 /**
- * read from an open file
+ * Reads from an open file, at its offset.
+ *
+ * @param file  the open file
+ * @param io    where the data goes, and how much is wanted
+ * @return the number of bytes read, 0 at the end, `-EISDIR` for a
+ *         directory, or a negative errno
  */
 ssize_t vfs_file_read(struct file *file, struct iobuf *io)
 {
@@ -59,7 +74,11 @@ ssize_t vfs_file_read(struct file *file, struct iobuf *io)
 }
 
 /**
- * write to an open file
+ * Writes to an open file, at its offset.
+ *
+ * @param file  the open file
+ * @param io    the data, and how much of it
+ * @return the number of bytes written, or a negative errno
  */
 ssize_t vfs_file_write(struct file *file, struct iobuf *io)
 {
@@ -82,7 +101,12 @@ ssize_t vfs_file_write(struct file *file, struct iobuf *io)
 }
 
 /**
- * perform ioctl on an open file
+ * Passes an `ioctl()` request to an open file's device or filesystem.
+ *
+ * @param file     the open file
+ * @param request  the request
+ * @param argp     its argument
+ * @return the request's result, or a negative errno
  */
 int vfs_file_ioctl(struct file *file, int request, void *argp)
 {
@@ -102,7 +126,12 @@ int vfs_file_ioctl(struct file *file, int request, void *argp)
 }
 
 /**
- * perform a seek in an open file
+ * Moves an open file's offset.
+ *
+ * @param file    the open file
+ * @param offset  the offset, or the distance to move it
+ * @param whence  `SEEK_SET`, `SEEK_CUR` or `SEEK_END`
+ * @return the new offset, `-ESPIPE` for a pipe, or a negative errno
  */
 off_t vfs_file_lseek(struct file *file, off_t offset, int whence)
 {
@@ -123,7 +152,12 @@ off_t vfs_file_lseek(struct file *file, off_t offset, int whence)
 }
 
 /**
- * read entries from an open directory
+ * Reads the next entry of an open directory.
+ *
+ * @param file    the open directory
+ * @param dirent  the entry, filled in
+ * @return 1 if an entry was read, 0 at the end, `-ENOTDIR`, or a negative
+ *         errno
  */
 ssize_t vfs_file_readdir(struct file *file, struct dirent *dirent)
 {
@@ -140,7 +174,11 @@ ssize_t vfs_file_readdir(struct file *file, struct dirent *dirent)
 }
 
 /**
- * close an open file
+ * Closes an open file, when its last reference goes: its lock is
+ * released, then its socket, device or filesystem closes it.
+ *
+ * @param file  the open file
+ * @return 0, or a negative errno
  */
 ssize_t vfs_file_close(struct file *file)
 {
@@ -158,7 +196,7 @@ ssize_t vfs_file_close(struct file *file)
     if (!file->vnode->fs)
         return -EINVAL;
 
-    /* default to releasing the vnode reference */
+    /* by default, the vnode's reference is dropped */
     if (!file->vnode->fs->fops.close)
         return posix_file_close(file);
 
@@ -166,7 +204,11 @@ ssize_t vfs_file_close(struct file *file)
 }
 
 /**
- * truncate an open file
+ * Changes the length of an open file.
+ *
+ * @param file  the open file
+ * @param len   the new length, in bytes
+ * @return 0, `-EINVAL` for a socket or a device, or a negative errno
  */
 int vfs_file_trunc(struct file *file, off_t len)
 {
@@ -189,10 +231,14 @@ int vfs_file_trunc(struct file *file, off_t len)
 }
 
 /**
- * The queue a reader (a writer, if `write') of `file' sleeps on until it
- * can, which poll() and select() wait on too: a socket's says, a device's
- * and a pipe's are their vnode's (fs/posix/read.c, write.c); NULL if it
- * can't tell
+ * Finds the wait queue that a reader (or a writer) of an open file sleeps
+ * on until it can go on, which `poll()` and `select()` wait on too. A
+ * socket says which; a device's and a pipe's are their vnode's (see
+ * `fs/posix/read.c` and `write.c`).
+ *
+ * @param file   the open file
+ * @param write  whether it's the writers' queue, rather than the readers'
+ * @return the wait queue, or NULL if there's none to tell
  */
 struct waitq *vfs_file_wait_queue(struct file *file, int write)
 {
@@ -205,6 +251,14 @@ struct waitq *vfs_file_wait_queue(struct file *file, int write)
     return write ? file->vnode->write_queue : file->vnode->read_queue;
 }
 
+/**
+ * Says whether a read of an open file would go on without waiting, for
+ * `poll()` and `select()`. A regular file or a directory never waits.
+ *
+ * @param file  the open file
+ * @param size  how many bytes would be read
+ * @return 1 if it would, 0 if it would wait, or a negative errno
+ */
 int vfs_file_can_read(struct file *file, size_t size)
 {
     if (file && file->flags & FILE_SOCKET)
@@ -213,7 +267,7 @@ int vfs_file_can_read(struct file *file, size_t size)
     if (!file || !file->vnode)
         return -EINVAL;
 
-    /* reading a file never waits */
+    /* reading a regular file or a directory never waits */
     if (S_ISREG(file->vnode->mode) || S_ISDIR(file->vnode->mode))
         return 1;
 
@@ -229,6 +283,15 @@ int vfs_file_can_read(struct file *file, size_t size)
     return file->vnode->fs->fops.can_read(file, size);
 }
 
+/**
+ * Says whether a write to an open file would go on without waiting, for
+ * `poll()`, `select()` and non-blocking writes. A regular file never
+ * waits.
+ *
+ * @param file  the open file
+ * @param size  how many bytes would be written
+ * @return 1 if it would, 0 if it would wait, or a negative errno
+ */
 int vfs_file_can_write(struct file *file, size_t size)
 {
     if (file && file->flags & FILE_SOCKET)
@@ -252,6 +315,13 @@ int vfs_file_can_write(struct file *file, size_t size)
     return file->vnode->fs->fops.can_write(file, size);
 }
 
+/**
+ * Says whether an open file is at its end, so that a read returns 0
+ * rather than waiting.
+ *
+ * @param file  the open file
+ * @return 1 at the end, 0 otherwise, or a negative errno
+ */
 int vfs_file_eof(struct file *file)
 {
     if (!file || !file->vnode)

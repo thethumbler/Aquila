@@ -1,5 +1,12 @@
 /** \file
- *          Process managment helpers
+ * Processes: making them and ending them, their IDs, their descriptors,
+ * and their sessions and process groups.
+ *
+ * A process that ends becomes a zombie: it keeps its ID and its exit
+ * status until its parent waits for it (`proc_reap()`). Its children go to
+ * init. Sessions and process groups follow POSIX's job control: a group
+ * that would be left stopped with no one to continue it (an orphaned
+ * group) gets `SIGHUP` and `SIGCONT`. See docs/kernel/processes.md.
  */
 
 
@@ -24,27 +31,28 @@
 MALLOC_DEFINE(M_PROC, "proc", "process structure");
 MALLOC_DEFINE(M_SESSION, "session", "session structure");
 MALLOC_DEFINE(M_PGROUP, "pgroup", "process group structure");
-MALLOC_DEFINE(M_FDS, "fds", "file descriptor array"); /* FIXME */
+MALLOC_DEFINE(M_FDS, "fds", "file descriptor array");
 
-/* all processes */
+/* every process */
 struct queue *procs = QUEUE_NEW();
 
 struct proc *initproc;
 
-/* all sessions */
+/* every session (each has its process groups) */
 struct queue *sessions = QUEUE_NEW();
 
-/* all process groups */
-
+/* the process IDs in use */
 struct bitmap *pid_bitmap = BITMAP_NEW(4096);
 
-/* the last pid given out: the next is the first free one after it,
- * wrapping around, as UNIX does (the pid of a process just reaped isn't
- * the next one: a kill() meant for it doesn't find a new process) */
+/* The last process ID given out. The next one is the first free ID after
+ * it, wrapping around, as UNIX does: the ID of a process just reaped isn't
+ * given out again at once, so a kill() meant for it doesn't find a new
+ * process. */
 static int last_pid;
 
-/** a process group or a session has `pid' as its id: not a new pid, as
- * POSIX says (they outlive their leader) */
+/** Returns whether a process group or a session has `pid` as its ID. Such
+ * an ID isn't given to a new process (POSIX), since groups and sessions
+ * outlive their leader. */
 static int pid_is_group(int pid)
 {
     queue_for (snode, sessions) {
@@ -64,7 +72,11 @@ static int pid_is_group(int pid)
     return 0;
 }
 
-/** a new pid, from 1 (init's) on; -1 if none is left */
+/**
+ * Allocates a process ID, from 1 (init's) on.
+ *
+ * @return the ID, or -1 if none is free
+ */
 int proc_pid_alloc()
 {
     size_t range = pid_bitmap->max_idx - 1;     /* 1 to max_idx - 1 */
@@ -82,11 +94,23 @@ int proc_pid_alloc()
     return -1;
 }
 
+/**
+ * Frees a process ID.
+ *
+ * @param pid  the ID
+ */
 void proc_pid_free(int pid)
 {
     bitmap_clear(pid_bitmap, pid);
 }
 
+/**
+ * Makes a new process structure, with one thread and an empty address
+ * space, on the list of every process. It has no ID yet.
+ *
+ * @param ref  if not NULL, set to the new process
+ * @return 0, or `-ENOMEM`
+ */
 int proc_new(struct proc **ref)
 {
     int err = 0;
@@ -115,12 +139,12 @@ int proc_new(struct proc **ref)
 
     proc->vm_space.pmap = pmap;
 
-    /* Set all signal handlers to default */
+    /* every signal has its default action */
     for (int i = 0; i < SIG_MAX; ++i)
         proc->sigaction[i].sa_handler = SIG_DFL;
 
     proc->running = 1;
-    enqueue(procs, proc);   /* Add process to all processes queue */
+    enqueue(procs, proc);
 
     if (ref)
         *ref = proc;
@@ -139,6 +163,12 @@ error:
     return err;
 }
 
+/**
+ * Finds a process by its ID.
+ *
+ * @param pid  the ID
+ * @return the process (it may be a zombie), or NULL
+ */
 struct proc *proc_pid_find(pid_t pid)
 {
     queue_for (node, procs) {
@@ -150,12 +180,19 @@ struct proc *proc_pid_find(pid_t pid)
     return NULL;
 }
 
+/**
+ * Gives a new process (init) its ID and its descriptor table.
+ *
+ * @param proc  the process
+ * @return 0, `-EINVAL` if `proc` is NULL, `-EAGAIN` if no ID is free, or
+ *         `-ENOMEM`
+ */
 int proc_init(struct proc *proc)
 {
     if (!proc)
         return -EINVAL;
 
-    /* all taken: fork() says try again */
+    /* no free ID: fork() says to try again */
     if ((proc->pid = proc_pid_alloc()) < 0)
         return -EAGAIN;
 
@@ -170,10 +207,15 @@ int proc_init(struct proc *proc)
 }
 
 /**
- * A process group is orphaned (POSIX) when none of its members has a
- * parent in another group of its session: no one there would continue it
- * once it stops. `gone', on its way out, doesn't count, as a member or a
- * parent; nor does init, as a parent (it isn't a shell).
+ * Says whether a process group is orphaned (POSIX): none of its members
+ * has a parent in another group of the same session, so no one there
+ * would continue it once it stops. Init doesn't count as such a parent,
+ * since it isn't a shell.
+ *
+ * @param pgrp  the process group
+ * @param gone  a process on its way out, which doesn't count as a member
+ *              or a parent; or NULL
+ * @return 1 if it is orphaned, 0 if not
  */
 int pgrp_orphaned(struct pgroup *pgrp, struct proc *gone)
 {
@@ -190,8 +232,9 @@ int pgrp_orphaned(struct pgroup *pgrp, struct proc *gone)
     return 1;
 }
 
-/** `gone' leaving makes `pgrp' orphaned: if one of its members is stopped,
- * SIGHUP and SIGCONT to all of them, nothing else would continue them */
+/** Sends `SIGHUP` and `SIGCONT` to a process group that `gone` leaving
+ * makes orphaned, if one of its members is stopped: nothing else would
+ * continue them. */
 static void pgrp_orphaned_hangup(struct pgroup *pgrp, struct proc *gone)
 {
     int stopped = 0;
@@ -209,15 +252,16 @@ static void pgrp_orphaned_hangup(struct pgroup *pgrp, struct proc *gone)
     }
 }
 
-/** the group of `p' is in the session of the group of `q', and another */
+/** Returns whether `p`'s process group is another group of the same
+ * session as `q`'s. */
 static int pgrp_other_same_session(struct proc *p, struct proc *q)
 {
     return p->pgrp != q->pgrp && p->pgrp->session == q->pgrp->session;
 }
 
-/** `proc' is a zombie: its parent is told, and may wait for it; a parent
- * that doesn't wait for its children (SIGCHLD ignored, SA_NOCLDWAIT)
- * leaves no zombie */
+/** Tells a zombie's parent that it ended: its `wait()` wakes up and it gets
+ * `SIGCHLD`. If the parent doesn't wait for its children (it ignores
+ * `SIGCHLD`, or set `SA_NOCLDWAIT`), the zombie is reaped at once. */
 static void proc_zombie_notify(struct proc *proc)
 {
     struct proc *parent = proc->parent;
@@ -238,11 +282,18 @@ static void proc_zombie_notify(struct proc *proc)
 }
 
 /**
- * The threads of `proc' but `keep' end: freed, or, running on another CPU
- * (in user mode: this one has the kernel lock), killed there, freeing
- * themselves when they enter the kernel, which they do now. `exiting':
- * the process goes, they're detached from it; else they leave its list
- * when they go and wake proc->thread_join. How many run elsewhere.
+ * Ends the threads of a process, but one. A thread that isn't running is
+ * freed. One running on another CPU (in user mode, since this CPU has the
+ * kernel lock) is marked killed and made to enter the kernel now, where it
+ * frees itself.
+ *
+ * @param proc     the process
+ * @param keep     the thread to keep, or NULL
+ * @param exiting  whether the process is ending: then the threads running
+ *                 elsewhere are detached from it at once; otherwise they
+ *                 leave its list when they go, and wake up
+ *                 `proc->thread_join`
+ * @return how many threads were running on other CPUs
  */
 int proc_threads_end(struct proc *proc, struct thread *keep, int exiting)
 {
@@ -270,16 +321,17 @@ int proc_threads_end(struct proc *proc, struct thread *keep, int exiting)
 
         queue_node_remove(&proc->threads, node);
 
-        /* off the wait queue it sleeps on, or the ready list */
+        /* take it off the wait queue it sleeps on, or the ready list */
         list_remove(&thread->run_link);
         thread->waitq = NULL;
 
         sched_timer_cancel(thread);
 
-        /* a system call it won't return from: the files it held */
+        /* it won't return from its system call: let go of the files the
+         * call held */
         thread_files_release(thread);
 
-        /* zombie threads (thread_exit) already released their resources */
+        /* a zombie thread (thread_exit()) released its resources already */
         if (thread->state != ZOMBIE)
             thread_kill(thread);
 
@@ -290,8 +342,11 @@ int proc_threads_end(struct proc *proc, struct thread *keep, int exiting)
 }
 
 /**
- * exec: the threads of the process but the running one end (they run in
- * the image that is replaced, POSIX), those on other CPUs waited for
+ * Ends every thread of a process but the current one, for `execve()`
+ * (POSIX: they run in the program that is replaced). It waits for the
+ * threads running on other CPUs to be gone.
+ *
+ * @param proc  the process, which must be the current thread's
  */
 void proc_threads_exec(struct proc *proc)
 {
@@ -302,6 +357,14 @@ void proc_threads_exec(struct proc *proc)
         waitq_sleep_unint(&proc->thread_join);
 }
 
+/**
+ * Ends a process: its threads end, its descriptors are closed, its memory
+ * is freed, its children go to init, and it becomes a zombie that its
+ * parent may wait for. If the current thread is the process's, it doesn't
+ * return. Ending init restarts the machine.
+ *
+ * @param proc  the process; its exit status is set already
+ */
 void proc_kill(struct proc *proc)
 {
     if (proc->pid == 1) {
@@ -319,7 +382,7 @@ void proc_kill(struct proc *proc)
     /* no more SIGALRM */
     sched_alarm(proc, 0, 0, NULL, NULL);
 
-    /* its threads end, the current one last (it runs this) */
+    /* its threads end, the current one last (it runs this code) */
     struct thread *self = curthread && curthread->owner == proc ? curthread : NULL;
     int kill_curthread = self != NULL;
 
@@ -330,13 +393,13 @@ void proc_kill(struct proc *proc)
         thread_files_release(self);
     }
 
-    /* close all file descriptors */
+    /* close every descriptor */
     for (int i = 0; i < FDS_COUNT; ++i)
         proc_fd_close(proc, i);
 
-    /* what is left frees what the thread killing itself runs on (its map,
-     * its process once reaped), it must not be switched out until it is
-     * gone */
+    /* what follows frees what a thread killing its own process runs on
+     * (its address space, and its process once reaped), so it must not be
+     * switched out until it is gone */
     if (kill_curthread)
         arch_interrupts_disable();
 
@@ -344,10 +407,10 @@ void proc_kill(struct proc *proc)
     vm_space_destroy(vm_space);
     pmap_decref(vm_space->pmap);
 
-    /* nothing may switch to the freed map */
+    /* nothing may switch to the freed page tables */
     vm_space->pmap = kvm_space.pmap;
 
-    /* Free kernel-space resources */
+    /* the descriptor table and the working directory */
     kfree(proc->fds);
 
     if (proc->cwd)
@@ -358,17 +421,17 @@ void proc_kill(struct proc *proc)
     proc->sig_pending = 0;
 
     /* its own group: its parent, in another group of the session, may
-     * have been what kept it from being orphaned */
+     * have been what kept the group from being orphaned */
     if (proc->parent && pgrp_other_same_session(proc->parent, proc))
         pgrp_orphaned_hangup(proc->pgrp, proc);
 
-    /* the children are init's: it waits for them, the zombies among them
-     * already (live ones when they exit); a child's group in another
-     * group of the session may be orphaned now */
+    /* its children become init's: init waits for them (for the zombies
+     * among them now, for the others when they end). A child's group, if
+     * it is another group of the session, may be orphaned now */
     struct qnode *node = procs->head;
     while (node) {
         struct proc *_proc = node->value;
-        node = node->next;  /* proc_reap removes the current node */
+        node = node->next;  /* proc_reap() removes the current node */
 
         if (_proc->parent == proc) {
             _proc->parent = initproc;
@@ -381,9 +444,9 @@ void proc_kill(struct proc *proc)
         }
     }
 
-    /* the end of the session: the controlling terminal hangs up (a zombie
-     * stays in its process group until it is reaped, waitpid matches it
-     * by group) */
+    /* if it leads its session, the session ends and its controlling
+     * terminal hangs up (a zombie stays in its process group until it is
+     * reaped: waitpid() matches it by group) */
     struct session *session = proc->pgrp->session;
 
     if (session->leader == proc) {
@@ -395,7 +458,7 @@ void proc_kill(struct proc *proc)
 
     proc->zombie = 1;
 
-    /* its parent waits for it */
+    /* tell its parent, which may wait for it */
     proc_zombie_notify(proc);
 
     if (kill_curthread) {
@@ -404,9 +467,16 @@ void proc_kill(struct proc *proc)
     }
 }
 
+/**
+ * Frees a zombie, once its parent waited for it (or doesn't wait for its
+ * children). Its CPU times are added to its parent's children's times.
+ *
+ * @param proc  the zombie
+ * @return 0
+ */
 int proc_reap(struct proc *proc)
 {
-    /* the parent waited for it: its times count as the parent's children's */
+    /* its CPU times count as the parent's children's */
     if (proc->parent) {
         proc->parent->cutime += proc->utime + proc->cutime;
         proc->parent->cstime += proc->stime + proc->cstime;
@@ -417,7 +487,7 @@ int proc_reap(struct proc *proc)
     queue_node_remove(proc->pgrp->procs, proc->pgrp_node);
     pgrp_release(proc->pgrp);
 
-    /* its name stays with the zombie (ps, /proc show it) */
+    /* the name stayed with the zombie until now (ps and /proc show it) */
     kfree(proc->name);
 
     queue_remove(procs, proc);
@@ -426,8 +496,14 @@ int proc_reap(struct proc *proc)
     return 0;
 }
 
-/** the lowest free descriptor, reserved while the call sets it up (no one
- * else takes it, it isn't open yet): -1 if there's none */
+/**
+ * Reserves the lowest free descriptor of a process, while a system call
+ * sets it up: no other thread takes it, and it doesn't refer to a file
+ * yet. `proc_fd_install()` or `proc_fd_release()` ends the reservation.
+ *
+ * @param proc  the process
+ * @return the descriptor, or -1 if there is no free one
+ */
 int proc_fd_get(struct proc *proc)
 {
     for (int i = 0; i < FDS_COUNT; ++i) {
@@ -440,21 +516,40 @@ int proc_fd_get(struct proc *proc)
     return -1;
 }
 
-/** a reserved descriptor wasn't set up after all: free again */
+/**
+ * Frees a reserved descriptor that wasn't set up after all.
+ *
+ * @param proc  the process
+ * @param fd    the descriptor
+ */
 void proc_fd_release(struct proc *proc, int fd)
 {
     if (fd >= 0 && fd < FDS_COUNT)
         proc->fds[fd] = (struct fd) {0};
 }
 
-/** a reserved descriptor refers to `file' (the reference is the
- * descriptor's now) */
+/**
+ * Makes a reserved descriptor refer to an open file. The caller's
+ * reference to the file becomes the descriptor's.
+ *
+ * @param proc   the process
+ * @param fd     the descriptor, reserved by `proc_fd_get()`
+ * @param file   the open file
+ * @param flags  the descriptor's flags (`FD_CLOEXEC`)
+ */
 void proc_fd_install(struct proc *proc, int fd, struct file *file, int flags)
 {
     proc->fds[fd] = (struct fd) {.file = file, .flags = flags};
 }
 
-/** the open file `fd' refers to, NULL if it's free or being set up */
+/**
+ * Finds the open file a descriptor refers to.
+ *
+ * @param proc  the process
+ * @param fd    the descriptor
+ * @return the open file, or NULL if the descriptor is free, being set up,
+ *         or out of range
+ */
 struct file *proc_fd_file(struct proc *proc, int fd)
 {
     if (fd < 0 || fd >= FDS_COUNT)
@@ -464,8 +559,15 @@ struct file *proc_fd_file(struct proc *proc, int fd)
     return file == FD_RESERVED ? NULL : file;
 }
 
-/** the descriptor is free, its reference to the open file dropped (the
- * last one closes the file: what the close says) */
+/**
+ * Closes a descriptor: it is free again, and its reference to the open
+ * file is dropped. Dropping the last reference closes the file.
+ *
+ * @param proc  the process
+ * @param fd    the descriptor
+ * @return what closing the file returned (0 or a negative errno), or
+ *         `-EBADF` if the descriptor isn't open
+ */
 int proc_fd_close(struct proc *proc, int fd)
 {
     struct file *file = proc_fd_file(proc, fd);
@@ -477,17 +579,24 @@ int proc_fd_close(struct proc *proc, int fd)
     return file_put(file);
 }
 
+/**
+ * Makes a new session, with a new process group, both led by a process
+ * and with its ID, and moves the process into it, as `setsid()` does.
+ *
+ * @param proc  the process
+ * @return 0, or `-ENOMEM`
+ */
 int session_new(struct proc *proc)
 {
     int err = 0;
     struct session *session = NULL;
     struct pgroup  *pgrp    = NULL;
 
-    /* allocate a new session structure */
+    /* the session */
     session = kmalloc(sizeof(struct session), &M_SESSION, M_ZERO);
     if (!session) goto e_nomem;
 
-    /* allocate a new process group structure for the session */
+    /* its process group */
     pgrp = kmalloc(sizeof(struct pgroup), &M_PGROUP, M_ZERO);
     if (!pgrp) goto e_nomem;
 
@@ -531,10 +640,14 @@ error:
 }
 
 /**
- * move `proc' into the process group `pgid' of its session
+ * Moves a process into a process group of its session, as `setpgid()`
+ * does. A group can only be joined if it exists and has members; a
+ * process can only start a new group with its own ID as the group's ID.
  *
- * Joining a group requires it to exist (and have members), only a process
- * can start a group with its own pid as the id.
+ * @param proc  the process
+ * @param pgid  the group's ID
+ * @return 0, `-EPERM` if there is no such group and `pgid` isn't the
+ *         process's ID, or `-ENOMEM`
  */
 int proc_setpgid(struct proc *proc, pid_t pgid)
 {
@@ -593,8 +706,11 @@ int proc_setpgid(struct proc *proc, pid_t pgid)
 }
 
 /**
- * free `pgrp' if it has no processes left, and its session if that
- * was its last group (a terminal loses it as its foreground group)
+ * Frees a process group if no process is left in it, and its session if
+ * that was the session's last group. A terminal whose foreground group or
+ * session it was loses it.
+ *
+ * @param pgrp  the process group
  */
 void pgrp_release(struct pgroup *pgrp)
 {

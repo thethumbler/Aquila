@@ -1,5 +1,13 @@
 /** \file
- * devices management
+ * The device layer: devices by their numbers, and what calls them.
+ *
+ * A driver registers itself as the character or block device of a major
+ * number (`kdev_chrdev_register()`, `kdev_blkdev_register()`); a driver
+ * with several devices picks one by minor with its `mux`. The rest of the
+ * kernel reaches a device through these functions, by its number. Block
+ * devices are read and written in whole blocks: `kdev_bread()` and
+ * `kdev_bwrite()` make any range of bytes into blocks. See
+ * docs/kernel/devices.md.
  */
 
 #include <core/system.h>
@@ -13,6 +21,8 @@ MALLOC_DEFINE(M_KDEV_BLK, "kdev-blk", "kdev block buffer");
 struct dev *chrdev[256];
 struct dev *blkdev[256];
 
+/** Returns the driver of a device number, picked by minor if the major's
+ * driver multiplexes several devices, or NULL if there is none. */
 static inline struct dev *kdev_get(struct devid *dd)
 {
     struct dev *dev = NULL;
@@ -26,25 +36,47 @@ static inline struct dev *kdev_get(struct devid *dd)
             break;
     }
 
-    if (dev && dev->mux) {  /* Mulitplexed Device? */
+    if (dev && dev->mux) {  /* several devices, one per minor */
         return dev->mux(dd);
     }
 
     return dev;
 }
 
-/** the file operations of a device, NULL if there is none */
+/**
+ * Returns the file operations of a device.
+ *
+ * @param dd  the device's number
+ * @return its file operations, or NULL if there is no such device
+ */
 struct fops *kdev_fops(struct devid *dd)
 {
     struct dev *dev = kdev_get(dd);
     return dev ? &dev->fops : NULL;
 }
 
+/**
+ * Closes a device: there is nothing to do.
+ *
+ * @param dev  the device's number
+ * @return 0
+ */
 int kdev_close(struct devid *dev __unused)
 {
     return 0;
 }
 
+/**
+ * Reads bytes from a block device, at any offset: the driver reads whole
+ * blocks, and the partial blocks at either end go through a buffer.
+ *
+ * @param dd      the device's number
+ * @param offset  where to read from, in bytes
+ * @param size    how many bytes to read
+ * @param buf     where to put them
+ * @return how many bytes were read (fewer at the device's end), or a negative
+ *         errno if nothing could be
+ */
 ssize_t kdev_bread(struct devid *dd, off_t offset, size_t size, void *buf)
 {
     struct dev *dev = kdev_get(dd);
@@ -58,10 +90,10 @@ ssize_t kdev_bread(struct devid *dd, off_t offset, size_t size, void *buf)
     char *cbuf = buf;
     char *bbuf = NULL;
 
-    /* a driver's bread() gives how many blocks it read: fewer, the
-     * device ended there, and so does what's read */
+    /* a driver's bread() returns how many blocks it read: if it read fewer
+     * than asked, the device ended there, and so does what is read */
 
-    /* Read up to block boundary */
+    /* the part up to the first block boundary */
     if (offset % bs) {
         if (!(bbuf = kmalloc(bs, &M_KDEV_BLK, 0)))
             return -ENOMEM;
@@ -82,7 +114,7 @@ ssize_t kdev_bread(struct devid *dd, off_t offset, size_t size, void *buf)
             goto done;
     }
 
-    /* Read entire blocks */
+    /* the whole blocks */
     size_t count = size/bs;
 
     if (count) {
@@ -114,10 +146,22 @@ ssize_t kdev_bread(struct devid *dd, off_t offset, size_t size, void *buf)
 done:
     kfree(bbuf);
 
-    /* an error, if nothing was read before it */
+    /* return the error only if nothing was read before it */
     return r < 0 && !ret ? r : ret;
 }
 
+/**
+ * Writes bytes to a block device, at any offset: the driver writes whole
+ * blocks, and the partial blocks at either end are read, changed and
+ * written back.
+ *
+ * @param dd      the device's number
+ * @param offset  where to write, in bytes
+ * @param size    how many bytes to write
+ * @param buf     the bytes
+ * @return how many bytes were written, or a negative errno if nothing could
+ *         be (`-ENOSPC` past the device's end)
+ */
 ssize_t kdev_bwrite(struct devid *dd, off_t offset, size_t size, void *buf)
 {
     struct dev *dev = kdev_get(dd);
@@ -131,13 +175,14 @@ ssize_t kdev_bwrite(struct devid *dd, off_t offset, size_t size, void *buf)
     char *cbuf = buf;
     char *bbuf = NULL;
 
-    /* as kdev_bread(): fewer blocks than asked, the device ended there */
+    /* as in kdev_bread(): fewer blocks than asked means the device ended
+     * there */
 
     if (offset % bs) {
         if (!(bbuf = kmalloc(bs, &M_KDEV_BLK, 0)))
             return -ENOMEM;
 
-        /* Write up to block boundary */
+        /* the part up to the first block boundary */
         size_t start = MIN(bs - offset % bs, size);
 
         if ((r = dev->bread(dd, offset/bs, 1, bbuf)) < 1)
@@ -157,7 +202,7 @@ ssize_t kdev_bwrite(struct devid *dd, off_t offset, size_t size, void *buf)
             goto done;
     }
 
-    /* Write entire blocks */
+    /* the whole blocks */
     size_t count = size/bs;
 
     if (count) {
@@ -193,18 +238,18 @@ ssize_t kdev_bwrite(struct devid *dd, off_t offset, size_t size, void *buf)
 done:
     kfree(bbuf);
 
-    /* an error, if nothing was written before it; nothing at all past
-     * the end, no room */
+    /* return the error only if nothing was written before it; if nothing
+     * could be written at all, the device is full */
     if (r < 0 && !ret)
         return r;
 
     return ret || !size ? ret : -ENOSPC;
 }
 
-/**
- * A block device's bytes through an iobuf: a page at a time through a
- * kernel buffer, kdev_bread() and kdev_bwrite() make blocks of them
- */
+/** Reads or writes a block device's bytes from or to an iobuf (user
+ * memory), a page at a time through a kernel buffer; `kdev_bread()` and
+ * `kdev_bwrite()` make blocks of them. Returns how many bytes were moved,
+ * or a negative errno if none were. */
 static ssize_t kdev_blk_io(struct devid *dd, off_t offset, struct iobuf *io, int write)
 {
     char *buf = kmalloc(PAGE_SIZE, &M_KDEV_BLK, 0);
@@ -231,7 +276,7 @@ static ssize_t kdev_blk_io(struct devid *dd, off_t offset, struct iobuf *io, int
 
         done += r;
 
-        /* the device's end, or a fault */
+        /* the device's end, or a fault in the iobuf */
         if ((size_t) r < len)
             break;
     }
@@ -240,6 +285,15 @@ static ssize_t kdev_blk_io(struct devid *dd, off_t offset, struct iobuf *io, int
     return done ? (ssize_t) done : r;
 }
 
+/**
+ * Reads from a device: a character device through its driver, a block
+ * device in blocks.
+ *
+ * @param dd      the device's number
+ * @param offset  where to read from, in bytes
+ * @param io      where to put what is read
+ * @return how many bytes were read, or a negative errno
+ */
 ssize_t kdev_read(struct devid *dd, off_t offset, struct iobuf *io)
 {
     struct dev *dev = NULL;
@@ -253,6 +307,15 @@ ssize_t kdev_read(struct devid *dd, off_t offset, struct iobuf *io)
         return dev->bread ? kdev_blk_io(dd, offset, io, 0) : -ENXIO;
 }
 
+/**
+ * Writes to a device: a character device through its driver, a block
+ * device in blocks.
+ *
+ * @param dd      the device's number
+ * @param offset  where to write, in bytes
+ * @param io      what to write
+ * @return how many bytes were written, or a negative errno
+ */
 ssize_t kdev_write(struct devid *dd, off_t offset, struct iobuf *io)
 {
     struct dev *dev = NULL;
@@ -266,6 +329,14 @@ ssize_t kdev_write(struct devid *dd, off_t offset, struct iobuf *io)
         return dev->bwrite ? kdev_blk_io(dd, offset, io, 1) : -ENXIO;
 }
 
+/**
+ * Passes an `ioctl()` to a device's driver.
+ *
+ * @param dd       the device's number
+ * @param request  the request
+ * @param argp     its argument
+ * @return what the driver returns, or `-ENXIO` if it takes no `ioctl()`
+ */
 int kdev_ioctl(struct devid *dd, int request, void *argp)
 {
     struct dev *dev = NULL;
@@ -279,6 +350,14 @@ int kdev_ioctl(struct devid *dd, int request, void *argp)
     return dev->ioctl(dd, request, argp);
 }
 
+/**
+ * Maps a device into an address space (`mmap()` of a framebuffer).
+ *
+ * @param dd        the device's number
+ * @param vm_space  the address space
+ * @param vm_entry  the mapping
+ * @return 0, or a negative errno (`-ENXIO` if the device can't be mapped)
+ */
 int kdev_map(struct devid *dd, struct vm_space *vm_space, struct vm_entry *vm_entry)
 {
     struct dev *dev = NULL;
@@ -292,6 +371,13 @@ int kdev_map(struct devid *dd, struct vm_space *vm_space, struct vm_entry *vm_en
     return dev->map(dd, vm_space, vm_entry);
 }
 
+/**
+ * Opens a device, through its driver's file operations.
+ *
+ * @param dd    the device's number
+ * @param file  the open file
+ * @return 0, or a negative errno (`-ENXIO` if there is no such device)
+ */
 int kdev_file_open(struct devid *dd, struct file *file)
 {
     struct dev *dev = NULL;
@@ -305,6 +391,14 @@ int kdev_file_open(struct devid *dd, struct file *file)
     return dev->fops.open(file);
 }
 
+/**
+ * Reads an open device file, through its driver's file operations.
+ *
+ * @param dd    the device's number
+ * @param file  the open file
+ * @param io    where to put what is read
+ * @return how many bytes were read, or a negative errno
+ */
 ssize_t kdev_file_read(struct devid *dd, struct file *file, struct iobuf *io)
 {
     struct dev *dev = NULL;
@@ -318,6 +412,14 @@ ssize_t kdev_file_read(struct devid *dd, struct file *file, struct iobuf *io)
     return dev->fops.read(file, io);
 }
 
+/**
+ * Writes to an open device file, through its driver's file operations.
+ *
+ * @param dd    the device's number
+ * @param file  the open file
+ * @param io    what to write
+ * @return how many bytes were written, or a negative errno
+ */
 ssize_t kdev_file_write(struct devid *dd, struct file *file, struct iobuf *io)
 {
     struct dev *dev = NULL;
@@ -331,6 +433,17 @@ ssize_t kdev_file_write(struct devid *dd, struct file *file, struct iobuf *io)
     return dev->fops.write(file, io);
 }
 
+/**
+ * Moves an open device file's offset, through its driver's file
+ * operations.
+ *
+ * @param dd      the device's number
+ * @param file    the open file
+ * @param offset  the offset
+ * @param whence  what it is from (`SEEK_SET`, `SEEK_CUR`, `SEEK_END`)
+ * @return the new offset, or a negative errno (`-ESPIPE` for a device that
+ *         can't seek)
+ */
 off_t kdev_file_lseek(struct devid *dd, struct file *file, off_t offset, int whence)
 {
     struct dev *dev = NULL;
@@ -345,6 +458,13 @@ off_t kdev_file_lseek(struct devid *dd, struct file *file, off_t offset, int whe
     return dev->fops.lseek(file, offset, whence);
 }
 
+/**
+ * Closes an open device file, through its driver's file operations.
+ *
+ * @param dd    the device's number
+ * @param file  the open file
+ * @return 0, or a negative errno
+ */
 ssize_t kdev_file_close(struct devid *dd, struct file *file)
 {
     struct dev *dev = NULL;
@@ -359,6 +479,16 @@ ssize_t kdev_file_close(struct devid *dd, struct file *file)
     return dev->fops.close(file);
 }
 
+/**
+ * Passes an `ioctl()` on an open device file to its driver's file
+ * operations.
+ *
+ * @param dd       the device's number
+ * @param file     the open file
+ * @param request  the request
+ * @param argp     its argument
+ * @return what the driver returns, or a negative errno
+ */
 int kdev_file_ioctl(struct devid *dd, struct file *file, int request, void *argp)
 {
     struct dev *dev = NULL;
@@ -372,6 +502,14 @@ int kdev_file_ioctl(struct devid *dd, struct file *file, int request, void *argp
     return dev->fops.ioctl(file, request, argp);
 }
 
+/**
+ * Asks a device's driver whether a read wouldn't have to wait.
+ *
+ * @param dd    the device's number
+ * @param file  the open file
+ * @param size  how much would be read
+ * @return whether it can be read, or a negative errno
+ */
 int kdev_file_can_read(struct devid *dd, struct file * file, size_t size)
 {
     struct dev *dev = NULL;
@@ -385,6 +523,14 @@ int kdev_file_can_read(struct devid *dd, struct file * file, size_t size)
     return dev->fops.can_read(file, size);
 }
 
+/**
+ * Asks a device's driver whether a write wouldn't have to wait.
+ *
+ * @param dd    the device's number
+ * @param file  the open file
+ * @param size  how much would be written
+ * @return whether it can be written, or a negative errno
+ */
 int kdev_file_can_write(struct devid *dd, struct file * file, size_t size)
 {
     struct dev *dev = NULL;
@@ -398,6 +544,14 @@ int kdev_file_can_write(struct devid *dd, struct file * file, size_t size)
     return dev->fops.can_write(file, size);
 }
 
+/**
+ * Asks a device's driver whether a read that found no data is at the
+ * end of the file.
+ *
+ * @param dd    the device's number
+ * @param file  the open file
+ * @return whether it is, or a negative errno
+ */
 int kdev_file_eof(struct devid *dd, struct file *file)
 {
     struct dev *dev = NULL;
@@ -412,16 +566,24 @@ int kdev_file_eof(struct devid *dd, struct file *file)
 }
 
 /**
- * register a new character device
+ * Registers a driver as the character device of a major number. A driver
+ * registered before for that major is replaced.
+ *
+ * @param major  the major number
+ * @param dev    the driver
  */
 void kdev_chrdev_register(devid_t major, struct dev *dev)
 {
-    chrdev[major] = dev; /* XXX */
+    chrdev[major] = dev;
     printk("kdev: registered chrdev %d: %s\n", major, dev->name);
 }
 
-/** what was written to the block cache, and what block devices have in
- * their write caches, to the media */
+/**
+ * Writes what the block cache holds that was written, and what the block
+ * devices hold in their write caches, to the media.
+ *
+ * @return 0, or a negative errno if a write failed
+ */
 int kdev_sync(void)
 {
     int err = blkcache_flush();
@@ -434,16 +596,21 @@ int kdev_sync(void)
 }
 
 /**
- * register a new block device
+ * Registers a driver as the block device of a major number. A driver
+ * registered before for that major is replaced.
+ *
+ * @param major  the major number
+ * @param dev    the driver
  */
 void kdev_blkdev_register(devid_t major, struct dev *dev)
 {
-    blkdev[major] = dev; /* XXX */
+    blkdev[major] = dev;
     printk("kdev: registered blkdev %d: %s\n", major, dev->name);
 }
 
 /**
- * initialize kdev subsystem
+ * Starts the device layer, at boot. It has nothing to set up: the drivers
+ * register themselves.
  */
 void kdev_init()
 {

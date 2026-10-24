@@ -1,13 +1,13 @@
 /*
- * The FP/SIMD registers saved and loaded (for cpu/fpsimd.c): v0 to v31 (512
- * bytes), then FPSR and FPCR. The kernel is built without them
- * (-mgeneral-regs-only); this file uses them, EL1's access isn't trapped
- * (CPACR_EL1.FPEN 0b01: EL0's is).
+ * Saving and loading the FP/SIMD registers, for cpu/fpsimd.c: v0 to v31
+ * (512 bytes), then FPSR and FPCR. The kernel is built without these
+ * registers (-mgeneral-regs-only), but this file uses them: EL1's access
+ * doesn't trap (with CPACR_EL1.FPEN = 0b01, only EL0's does).
  */
 
 .arch armv8-a+fp+simd
 
-/* void aarch64_fpsimd_save(void *state) */
+/* void aarch64_fpsimd_save(void *state): saves the registers to state */
 .global aarch64_fpsimd_save
 aarch64_fpsimd_save:
     stp     q0, q1, [x0, #0]
@@ -32,7 +32,7 @@ aarch64_fpsimd_save:
     stp     x1, x2, [x0]
     ret
 
-/* void aarch64_fpsimd_load(const void *state) */
+/* void aarch64_fpsimd_load(const void *state): loads them from state */
 .global aarch64_fpsimd_load
 aarch64_fpsimd_load:
     ldp     q0, q1, [x0, #0]

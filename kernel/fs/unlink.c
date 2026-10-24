@@ -1,7 +1,13 @@
+/** \file
+ * Removing a name by its path: `unlink()` and `rmdir()`.
+ */
+
 #include <core/system.h>
 #include <fs/vfs.h>
 
-/** remove the entry at path, a directory if `rmdir' is set */
+/** Removes the entry at a path, which must be an empty directory if
+ * `rmdir` is set, and anything but a directory otherwise. The caller
+ * needs write and search permission on the directory it's in. */
 static int vfs_remove(const char *path, struct uio *uio, int rmdir)
 {
     int ret = 0;
@@ -35,7 +41,8 @@ static int vfs_remove(const char *path, struct uio *uio, int rmdir)
         ret = vfs_vunlink(dir, name, uio);
 
 done:
-    /* the vnode is freed here if that was its last link */
+    /* the vnode is freed here if that was its last link and nothing else
+     * has it open */
     if (vnode)
         vfs_close(vnode);
 
@@ -44,11 +51,26 @@ done:
     return ret;
 }
 
+/**
+ * Removes the name of a file (not a directory) at a path. The file goes
+ * when its last name is removed and nothing has it open.
+ *
+ * @param path  the path
+ * @param uio   who is asking
+ * @return 0, `-EISDIR` for a directory, or another negative errno
+ */
 int vfs_unlink(const char *path, struct uio *uio)
 {
     return vfs_remove(path, uio, 0);
 }
 
+/**
+ * Removes an empty directory at a path.
+ *
+ * @param path  the path
+ * @param uio   who is asking
+ * @return 0, `-ENOTDIR`, `-ENOTEMPTY`, or another negative errno
+ */
 int vfs_rmdir(const char *path, struct uio *uio)
 {
     return vfs_remove(path, uio, 1);

@@ -1,12 +1,14 @@
 /** \file
- * AF_INET sockets: UDP (SOCK_DGRAM), and ping (SOCK_DGRAM, IPPROTO_ICMP:
- * echo requests sent, the replies to them received, by anyone)
+ * `AF_INET` datagram sockets: UDP (`SOCK_DGRAM`), and ping sockets
+ * (`SOCK_DGRAM` with `IPPROTO_ICMP`), which send echo requests and
+ * receive the replies, without needing root. TCP sockets are in
+ * `tcp_socket.c`.
  *
  * A socket bound to a port (for a ping socket, the identifier of its
- * echoes) is on the list of the bound ones, which the protocols look
- * datagrams' sockets up in. Received datagrams wait in the socket's queue
- * (RECV_MAX bytes of buffers at most, the others are dropped), with where
- * they came from.
+ * echoes) is on the list of bound sockets, where the protocols look up
+ * the socket a datagram is for. Received datagrams wait in the socket's
+ * queue, with where they came from, up to `RECV_MAX` bytes of buffers;
+ * more are dropped.
  */
 
 #include <core/system.h>
@@ -30,18 +32,21 @@
 MALLOC_DECLARE(M_SOCKET);
 MALLOC_DEFINE(M_INET_SOCK, "inet socket", "AF_INET socket");
 
-/* what a socket's queue may hold, in buffers: a datagram costs its
- * netbuf, whatever its size (counted by its bytes, empty ones would cost
- * nothing, and a process could queue all of memory) */
+/* What a socket's queue may hold, counted in buffers: each datagram costs
+ * its whole netbuf, whatever its size. If datagrams were counted by their
+ * bytes, empty ones would cost nothing, and a process could fill all of
+ * memory with them. */
 #define RECV_MAX        (128 * NETBUF_SIZE)
 
-#define PORT_FIRST      49152   /* the ephemeral ports */
+#define PORT_FIRST      49152   /* the ephemeral ports' range */
 #define PORT_LAST       65535
 
+/** A UDP or ping socket. */
 struct inet_sock {
-    uint8_t proto;              /* IP_PROTO_UDP, IP_PROTO_ICMP */
+    uint8_t proto;              /* IP_PROTO_UDP or IP_PROTO_ICMP */
 
-    /* in the network's byte order; not bound while lport is 0 */
+    /* addresses and ports in network byte order; it isn't bound while
+     * lport is 0 */
     uint32_t laddr;
     uint16_t lport;
     uint32_t raddr;
@@ -52,14 +57,14 @@ struct inet_sock {
     size_t recv_bytes;
     struct waitq recv_wait;
 
-    struct netif *netif;        /* SO_BINDTODEVICE: only through it */
+    struct netif *netif;        /* SO_BINDTODEVICE: only use this interface */
 
-    int error;                  /* to report (SO_ERROR, the next call) */
-    uint64_t rcvtimeo;          /* ns, 0: none */
+    int error;                  /* an error to report (SO_ERROR, or the next call) */
+    uint64_t rcvtimeo;          /* the receive timeout in ns, or 0 for none */
     int broadcast;              /* SO_BROADCAST */
     int shut_rd;
 
-    struct inet_sock *next;     /* bound */
+    struct inet_sock *next;     /* the next bound socket */
 };
 
 static struct inet_sock *bound;
@@ -67,9 +72,11 @@ static struct inet_sock *bound;
 static struct sock_ops socket_inet_ops;
 
 /*
- * The lists
+ * The list of bound sockets
  */
 
+/** Returns whether a socket of `proto` is bound to `port` on `addr` (or on
+ * any address, or `addr` is any). */
 static int port_used(uint8_t proto, uint32_t addr, uint16_t port)
 {
     for (struct inet_sock *s = bound; s; s = s->next)
@@ -80,11 +87,15 @@ static int port_used(uint8_t proto, uint32_t addr, uint16_t port)
     return 0;
 }
 
+/** Binds a socket to an address and port, and puts it on the list of bound
+ * sockets. Port 0 picks a free ephemeral port. Returns 0, or
+ * `-EADDRINUSE`. */
 static int sock_bind(struct inet_sock *sock, uint32_t addr, uint16_t port)
 {
     if (!port) {
-        /* from a random one on, the first free (RFC 6056, algorithm 1):
-         * the next port isn't the last one plus one, for anyone to guess */
+        /* the first free port from a random one on (RFC 6056, algorithm
+         * 1), so that the next port isn't the last one plus one, for
+         * anyone to guess */
         uint16_t next;
         random_get(&next, sizeof(next));
         next = PORT_FIRST + next % (PORT_LAST - PORT_FIRST + 1);
@@ -113,6 +124,7 @@ static int sock_bind(struct inet_sock *sock, uint32_t addr, uint16_t port)
     return 0;
 }
 
+/** Takes a socket off the list of bound sockets. */
 static void sock_unbind(struct inet_sock *sock)
 {
     for (struct inet_sock **p = &bound; *p; p = &(*p)->next) {
@@ -125,10 +137,20 @@ static void sock_unbind(struct inet_sock *sock)
     sock->lport = 0;
 }
 
-/* the socket a datagram from (remote, remote_port) to (local, port),
- * received on `netif', is for: a connected one to that remote first, else
- * one that isn't connected (the remote port doesn't count for ping); not
- * one bound to another interface */
+/**
+ * Finds the socket that a received datagram is for: a socket connected to
+ * its sender first, or else one that isn't connected. A socket bound to
+ * another interface doesn't count. For ping sockets, the remote port
+ * doesn't count.
+ *
+ * @param netif        the interface it came in on
+ * @param proto        `IP_PROTO_UDP` or `IP_PROTO_ICMP`
+ * @param local        the address it was sent to
+ * @param port         the port it was sent to (a ping's identifier)
+ * @param remote       the sender's address
+ * @param remote_port  the sender's port
+ * @return the socket, or NULL
+ */
 struct inet_sock *inet_sock_find(struct netif *netif, uint8_t proto, uint32_t local,
                                  uint16_t port, uint32_t remote, uint16_t remote_port)
 {
@@ -152,7 +174,14 @@ struct inet_sock *inet_sock_find(struct netif *netif, uint8_t proto, uint32_t lo
     return any;
 }
 
-/** a datagram for it (src_ip, src_port set), the netbuf is the socket's */
+/**
+ * Queues a received datagram on its socket, and wakes up its readers. The
+ * datagram is dropped if the socket's queue is full or reading is shut
+ * down. The netbuf is the socket's from now on.
+ *
+ * @param sock  the socket
+ * @param nb    the datagram's data, with `src_ip` and `src_port` set
+ */
 void inet_sock_deliver(struct inet_sock *sock, struct netbuf *nb)
 {
     if (sock->shut_rd || sock->recv_bytes + NETBUF_SIZE > RECV_MAX) {
@@ -173,7 +202,12 @@ void inet_sock_deliver(struct inet_sock *sock, struct netbuf *nb)
     waitq_wakeup(&sock->recv_wait);
 }
 
-/** an error for it (ICMP's), the next call reports it */
+/**
+ * Gives a socket an error (from ICMP), which its next call reports.
+ *
+ * @param sock  the socket
+ * @param err   the error (a positive errno)
+ */
 void inet_sock_error(struct inet_sock *sock, int err)
 {
     sock->error = err;
@@ -184,6 +218,15 @@ void inet_sock_error(struct inet_sock *sock, int err)
  * Operations
  */
 
+/**
+ * Makes an `AF_INET` socket: a TCP, UDP or ping socket.
+ *
+ * @param file      the open file that becomes the socket
+ * @param domain    `AF_INET`
+ * @param type      `SOCK_STREAM` or `SOCK_DGRAM`
+ * @param protocol  0, `IPPROTO_TCP`, `IPPROTO_UDP` or `IPPROTO_ICMP`
+ * @return 0, `-EPROTONOSUPPORT`, or `-ENOMEM`
+ */
 int socket_inet_create(struct file *file, int domain, int type, int protocol)
 {
     uint8_t proto;
@@ -228,7 +271,15 @@ int socket_inet_create(struct file *file, int domain, int type, int protocol)
     return 0;
 }
 
-/** an AF_INET address of `len' bytes at `addr' */
+/**
+ * Reads an `AF_INET` address.
+ *
+ * @param addr  the address, in the kernel's memory
+ * @param len   its size
+ * @param ip    set to its IPv4 address
+ * @param port  set to its port
+ * @return 0, `-EINVAL` if it's too short, or `-EAFNOSUPPORT`
+ */
 int inet_sockaddr_get(const struct sockaddr *addr, socklen_t len, uint32_t *ip, uint16_t *port)
 {
     const struct sockaddr_in *sin = (const struct sockaddr_in *) addr;
@@ -244,6 +295,14 @@ int inet_sockaddr_get(const struct sockaddr *addr, socklen_t len, uint32_t *ip, 
     return 0;
 }
 
+/**
+ * Writes an `AF_INET` address, cut to `*len` bytes if it doesn't fit.
+ *
+ * @param addr  where to write it
+ * @param len   its room, set to the address's full size
+ * @param ip    the IPv4 address
+ * @param port  the port
+ */
 void inet_sockaddr_put(struct sockaddr *addr, socklen_t *len, uint32_t ip, uint16_t port)
 {
     struct sockaddr_in sin = {
@@ -256,7 +315,8 @@ void inet_sockaddr_put(struct sockaddr *addr, socklen_t *len, uint32_t ip, uint1
     *len = sizeof(sin);
 }
 
-/** one of ours (or any) */
+/** Binds a socket to an address that is ours, any address, or the
+ * broadcast address. Ports below 1024 are root's. */
 static int socket_inet_bind(struct file *file, const struct sockaddr *addr, socklen_t len)
 {
     struct inet_sock *sock = file->socket->p;
@@ -270,18 +330,20 @@ static int socket_inet_bind(struct file *file, const struct sockaddr *addr, sock
     if (sock->lport)
         return -EINVAL;
 
-    /* any, one of ours, or the broadcast address (to receive what is sent
-     * to it only, as a DHCP client does) */
+    /* any address, one of ours, or the broadcast address (to receive only
+     * what is sent to it, as a DHCP client does) */
     if (ip && ip != 0xffffffff && !ipv4_is_local(ip))
         return -EADDRNOTAVAIL;
 
-    /* the ports below 1024 are root's */
+    /* only root may bind to the ports below 1024 */
     if (sock->proto == IP_PROTO_UDP && ntohs(port) && ntohs(port) < 1024 && curproc->uid)
         return -EACCES;
 
     return sock_bind(sock, ip, port);
 }
 
+/** Connects a datagram socket: its default destination, and the only
+ * sender it receives from. `AF_UNSPEC` disconnects it. */
 static int socket_inet_connect(struct file *file, const struct sockaddr *addr, socklen_t len)
 {
     struct inet_sock *sock = file->socket->p;
@@ -289,7 +351,7 @@ static int socket_inet_connect(struct file *file, const struct sockaddr *addr, s
     uint16_t port;
     int err;
 
-    /* AF_UNSPEC: not connected anymore */
+    /* AF_UNSPEC: disconnect */
     if (len >= sizeof(sa_family_t) && addr->sa_family == AF_UNSPEC) {
         sock->connected = 0;
         sock->raddr = 0;
@@ -313,6 +375,9 @@ static int socket_inet_connect(struct file *file, const struct sockaddr *addr, s
     return 0;
 }
 
+/** Sends a datagram, whole: to `to`, or to the connected peer. A ping
+ * socket's data must be an echo request; its identifier is the socket's.
+ * Returns the datagram's size, or a negative errno. */
 static ssize_t socket_inet_send(struct file *file, struct iobuf *io, int flags,
                                 const struct sockaddr *to, socklen_t tolen)
 {
@@ -338,7 +403,8 @@ static ssize_t socket_inet_send(struct file *file, struct iobuf *io, int flags,
         return err;
     }
 
-    /* bound to an interface: through it, whatever the routes say */
+    /* a socket bound to an interface sends through it, whatever the routes
+     * say */
     struct netif *netif = sock->netif ? sock->netif : ipv4_route(ip);
 
     if (!netif)
@@ -363,12 +429,13 @@ static ssize_t socket_inet_send(struct file *file, struct iobuf *io, int flags,
     if (!nb)
         return -ENOBUFS;
 
-    /* from the address it's bound to, if it is (not the broadcast
-     * address: from the interface's then, 0.0.0.0 if it has none) */
+    /* send from the address it is bound to, if any (but not from the
+     * broadcast address: from the interface's then, or 0.0.0.0 if it has
+     * none) */
     uint32_t src = sock->laddr && sock->laddr != 0xffffffff ? sock->laddr :
                    ipv4_source(netif, ip);
 
-    /* the datagram whole, or not at all */
+    /* copy in the whole datagram, or nothing */
     void *data = netbuf_put(nb, len);
 
     if ((size_t) iobuf_in(io, data, len) != len) {
@@ -384,11 +451,11 @@ static ssize_t socket_inet_send(struct file *file, struct iobuf *io, int flags,
         uh->checksum = 0;
         uh->checksum = inet_checksum_pseudo(src, ip, IP_PROTO_UDP, uh, nb->len);
 
-        /* 0 is no checksum, all ones is it too */
+        /* 0 means no checksum, so a checksum of 0 is sent as all ones */
         if (!uh->checksum)
             uh->checksum = 0xffff;
     } else {
-        /* ping: echo requests, with the socket's identifier */
+        /* ping: only echo requests, with the socket's identifier */
         struct icmp_hdr *icmp = data;
 
         if (len < sizeof(*icmp) || icmp->type != ICMP_ECHO_REQUEST || icmp->code) {
@@ -407,6 +474,10 @@ static ssize_t socket_inet_send(struct file *file, struct iobuf *io, int flags,
     return len;
 }
 
+/** Receives a datagram, waiting for one unless the socket doesn't block
+ * or the receive timeout passes. A datagram longer than the buffer is cut;
+ * the rest is lost. Returns its size, 0 once reading is shut down, or a
+ * negative errno. */
 static ssize_t socket_inet_recv(struct file *file, struct iobuf *io, int flags,
                                 struct sockaddr *from, socklen_t *fromlen)
 {
@@ -434,7 +505,7 @@ static ssize_t socket_inet_recv(struct file *file, struct iobuf *io, int flags,
 
     struct netbuf *nb = sock->recv_head;
 
-    /* a fault: the datagram stays */
+    /* if copying out faults, the datagram stays queued */
     ssize_t n = iobuf_out(io, nb->data, nb->len);
 
     if (n < 0)
@@ -443,7 +514,7 @@ static ssize_t socket_inet_recv(struct file *file, struct iobuf *io, int flags,
     if (from && fromlen)
         inet_sockaddr_put(from, fromlen, nb->src_ip, nb->src_port);
 
-    /* the rest of a datagram longer than the buffer goes too */
+    /* the datagram is gone, even the part that didn't fit */
     if (!(flags & MSG_PEEK)) {
         sock->recv_head = nb->next;
 
@@ -457,26 +528,31 @@ static ssize_t socket_inet_recv(struct file *file, struct iobuf *io, int flags,
     return n;
 }
 
+/** Says whether a read wouldn't wait: a datagram is queued, or there is an
+ * error to report, or reading is shut down. */
 static int socket_inet_can_read(struct file *file, size_t len)
 {
     struct inet_sock *sock = file->socket->p;
 
-    /* a datagram, an error to report, or the end */
     return sock->recv_head ? (int) sock->recv_head->len + 1 : sock->error || sock->shut_rd;
 }
 
+/** Says that a write never waits. */
 static int socket_inet_can_write(struct file *file, size_t len)
 {
     return 1;
 }
 
-/** a datagram's reader waits on recv_wait (a writer never waits) */
+/** Returns the wait queue that the socket's readers sleep on; writers
+ * never wait. */
 static struct waitq *socket_inet_wait_queue(struct file *file, int write)
 {
     struct inet_sock *sock = file->socket->p;
     return write ? NULL : &sock->recv_wait;
 }
 
+/** Gets the socket's local address, or its peer's (`-ENOTCONN` if it isn't
+ * connected). */
 static int socket_inet_getname(struct file *file, struct sockaddr *addr, socklen_t *len, int peer)
 {
     struct inet_sock *sock = file->socket->p;
@@ -493,6 +569,8 @@ static int socket_inet_getname(struct file *file, struct sockaddr *addr, socklen
     return 0;
 }
 
+/** Reads a socket option: `SO_ERROR`, `SO_BROADCAST`, `SO_BINDTODEVICE` or
+ * `SO_RCVTIMEO`. */
 static int socket_inet_getsockopt(struct file *file, int level, int name, void *val, socklen_t *len)
 {
     struct inet_sock *sock = file->socket->p;
@@ -517,7 +595,7 @@ static int socket_inet_getsockopt(struct file *file, int level, int name, void *
             return 0;
 
         case SO_BINDTODEVICE: {
-            /* its name, "" if none */
+            /* the interface's name, or "" if none */
             const char *name = sock->netif ? sock->netif->name : "";
             size_t n = strlen(name) + 1;
 
@@ -544,6 +622,8 @@ static int socket_inet_getsockopt(struct file *file, int level, int name, void *
     return -ENOPROTOOPT;
 }
 
+/** Sets a socket option: `SO_BROADCAST`, `SO_BINDTODEVICE` or
+ * `SO_RCVTIMEO`. */
 static int socket_inet_setsockopt(struct file *file, int level, int name, const void *val, socklen_t len)
 {
     struct inet_sock *sock = file->socket->p;
@@ -560,8 +640,9 @@ static int socket_inet_setsockopt(struct file *file, int level, int name, const 
             return 0;
 
         case SO_BINDTODEVICE: {
-            /* an interface's name (in a buffer that may be longer, as a
-             * struct ifreq), none if empty; root's, as Linux has it */
+            /* an interface's name (in a buffer that may be longer, such as
+             * a struct ifreq), or none if empty; only root may set it, as
+             * on Linux */
             char name[17] = {0};
 
             if (curproc->uid)
@@ -600,11 +681,12 @@ static int socket_inet_setsockopt(struct file *file, int level, int name, const 
     return -ENOPROTOOPT;
 }
 
+/** Handles `FIONREAD` (the size of the next datagram) and the interface
+ * requests. */
 static int socket_inet_ioctl(struct file *file, int request, void *argp)
 {
     struct inet_sock *sock = file->socket->p;
 
-    /* the size of the next datagram */
     if (request == FIONREAD) {
         int n = sock->recv_head ? (int) sock->recv_head->len : 0;
         return copyout(argp, &n, sizeof(n));
@@ -613,6 +695,8 @@ static int socket_inet_ioctl(struct file *file, int request, void *argp)
     return inet_ifioctl(request, argp);
 }
 
+/** Shuts down reading: the readers wake up and see the end. Shutting down
+ * writing does nothing for a datagram socket. */
 static int socket_inet_shut(struct file *file, int how)
 {
     struct inet_sock *sock = file->socket->p;
@@ -625,7 +709,8 @@ static int socket_inet_shut(struct file *file, int how)
     return 0;
 }
 
-/** the last descriptor is closed */
+/** Frees the socket when its last descriptor is closed: it is unbound, and
+ * its queued datagrams are freed. */
 static int socket_inet_shutdown(struct file *file, int how)
 {
     struct inet_sock *sock = file->socket->p;

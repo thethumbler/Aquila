@@ -6,11 +6,14 @@
 #include <sys/cpu.h>
 #include <sys/waitq.h>
 
-/* the thread running on this CPU (NULL when it idles), and its process */
+/* The scheduler (sys/sched.c). */
+
+/* The thread running on this CPU (NULL when it's idle), and its process. */
 #define curthread (curcpu()->thread)
 #define curproc (curthread->owner)
 
-/* processes run, a thread may sleep (before, at boot, only the kernel) */
+/* Whether processes run, and a thread may sleep (before that, at boot,
+ * only the kernel runs). */
 extern int sched_running;
 void kernel_idle(void);
 void scheduler_init(void);
@@ -19,22 +22,26 @@ void sched_init_spawn(struct proc *init);
 void schedule(void);
 void sched_idle_wakeup(void);
 
+/* Makes a thread ready to run; makes a woken thread ready. */
 void sched_thread_ready(struct thread *thread);
 void sched_thread_wake(struct thread *thread);
 
-/* an urgent thread was woken (thread->urgent), it runs once the interrupt
- * returns */
+/* An urgent thread was woken up (thread->urgent): it runs once the
+ * interrupt returns. */
 extern int sched_urgent;
 
+/* The ticks: the boot CPU's, and every CPU's. */
 void sched_timer_tick(uint32_t period, int user);
 void sched_cpu_tick(uint32_t period, int user);
 
-/* another CPU, running a thread: the one that runs `thread', and it
- * entering the kernel now */
+/* Finds the other CPU that runs `thread`; makes it enter the kernel now;
+ * ends the current thread, which was killed. */
 struct cpu *sched_thread_cpu(struct thread *thread);
 void sched_thread_kick(struct thread *thread);
 void sched_thread_killed(void);
 
+/* Sleeping until a time, or on a wait queue with a deadline; the real
+ * time timers. */
 int  sched_sleep(uint64_t until);
 int  sched_wait(struct waitq *waitq, uint64_t until);
 void sched_timer_cancel(struct thread *thread);

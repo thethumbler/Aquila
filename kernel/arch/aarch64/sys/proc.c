@@ -1,5 +1,6 @@
 /** \file
- * aarch64: init, the first process: its thread, and its program's start
+ * aarch64: init, the first process: its thread, and where its program
+ * starts.
  */
 
 #include <core/system.h>
@@ -11,6 +12,10 @@
 
 struct aarch64_thread *aarch64_thread_new(void);
 
+/*
+ * Sets up the architecture's part of init's thread, to start at its
+ * program's entry point. Panics if there's no memory.
+ */
 void arch_proc_init(struct proc *proc)
 {
     struct aarch64_thread *arch = aarch64_thread_new();
@@ -25,6 +30,10 @@ void arch_proc_init(struct proc *proc)
     thread->arch = arch;
 }
 
+/*
+ * Sets up init's user stack and registers for its program, from the
+ * kernel's boot (no process runs yet).
+ */
 void arch_init_execve(struct proc *proc, int argc, char * const _argp[], int envc, char * const _envp[])
 {
     struct thread *thread = (struct thread *) proc->threads.head->value;

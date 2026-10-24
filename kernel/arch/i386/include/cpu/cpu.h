@@ -3,22 +3,29 @@
 
 #include <core/system.h>
 
+/* x86: the CPU's structures (the interrupt frame, the GDT and TSS), the
+ * control registers, and the functions of arch/i386/cpu/. */
+
+/** The registers an interrupt or exception saved, on the kernel stack,
+ * as cpu.S's stubs push them: the general registers, the stub's vector
+ * and error code, then what the CPU pushed. */
 struct x86_regs {
 #if ARCH_BITS==32
     uint32_t
     edi, esi, ebp, ebx, ecx, edx, eax,
     gs, fs, es, ds,
-    vec, err,       /* the stub's: the vector, the error code (or 0) */
+    vec, err,       /* pushed by the stub: the vector, the error code (or 0) */
     eip, cs, eflags, esp, ss;
 #else
     uint64_t
     r15, r14, r13, r12, r11, r10, r9, r8,
     rdi, rsi, rbp, rbx, rcx, rdx, rax,
-    vec, err,       /* the stub's: the vector, the error code (or 0) */
+    vec, err,       /* pushed by the stub: the vector, the error code (or 0) */
     rip, cs, rflags, rsp, ss;
 #endif
 };
 
+/* Prints the saved registers, for a panic. */
 static inline void x86_dump_registers(struct x86_regs *regs)
 {
     printk("Registers dump:\n");
@@ -63,45 +70,46 @@ static inline void x86_dump_registers(struct x86_regs *regs)
 #endif
 }
 
-/** a segment descriptor */
+/** A segment descriptor, an entry of the GDT. */
 struct x86_gdt_entry {
-    uint32_t limit_lo : 16; /* Segment Limit 15:00 */
-    uint32_t base_lo  : 16; /* Base Address 15:00 */
+    uint32_t limit_lo : 16; /* the limit, bits 0 to 15 */
+    uint32_t base_lo  : 16; /* the base, bits 0 to 15 */
 
-    uint32_t base_mid : 8;  /* Base Address 23:16 */
-    uint32_t type     : 4;  /* Segment Type */
-    uint32_t s        : 1;  /* Descriptor type (0=system, 1=code) */
-    uint32_t dpl      : 2;  /* Descriptor Privellage Level */
-    uint32_t p        : 1;  /* Segment present */
+    uint32_t base_mid : 8;  /* the base, bits 16 to 23 */
+    uint32_t type     : 4;  /* the segment's type */
+    uint32_t s        : 1;  /* 0 for a system segment, 1 for code or data */
+    uint32_t dpl      : 2;  /* its privilege level */
+    uint32_t p        : 1;  /* present */
 
-    uint32_t limit_hi : 4;  /* Segment Limit 19:16 */
-    uint32_t avl      : 1;  /* Avilable for use by system software */
-    uint32_t l        : 1;  /* Long mode segment (64-bit only) */
-    uint32_t db       : 1;  /* Default operation size / upper Bound */
-    uint32_t g        : 1;  /* Granularity */
-    uint32_t base_hi  : 8;  /* Base Address 31:24 */
+    uint32_t limit_hi : 4;  /* the limit, bits 16 to 19 */
+    uint32_t avl      : 1;  /* free for the system's use */
+    uint32_t l        : 1;  /* a 64-bit code segment (x86_64) */
+    uint32_t db       : 1;  /* the default operation size (32-bit) */
+    uint32_t g        : 1;  /* the limit counts 4 KiB pages, not bytes */
+    uint32_t base_hi  : 8;  /* the base, bits 24 to 31 */
 } __aligned(8);
 
-/* the task state segment: only the stack interrupts from user mode take */
+/* The task state segment. The kernel only uses it for the stack that
+ * interrupts from user mode switch to. */
 #if ARCH_BITS==32
 struct x86_tss {
     uint32_t link;
     uint32_t sp;
     uint32_t ss;
-    uint32_t _[23]; /* To know the actuall fields, consult Intel Manuals */
+    uint32_t _[23]; /* the other fields, unused (see Intel's manuals) */
 } __packed;
 #else
 struct x86_tss {
     uint32_t _;
     uint64_t sp;
-    uint32_t __[23]; /* To know the actuall fields, consult Intel Manuals */
+    uint32_t __[23]; /* the other fields, unused (see Intel's manuals) */
 } __packed;
 #endif
 
 /*
- * The GDT, each CPU's: the same segments, but its own TSS (a TSS is busy
- * on the CPU that loaded it), and on i386 the segment %gs selects in the
- * kernel, its struct cpu
+ * Each CPU has its own GDT, with the same segments but its own TSS (a TSS
+ * is busy on the CPU that loaded it) and, on i386, the segment that %gs
+ * selects in the kernel: its struct cpu.
  */
 #define X86_GDT_TSS     5   /* 5 and 6 on x86_64 */
 #define X86_GDT_CPU     7
@@ -112,24 +120,24 @@ struct x86_tss {
 struct pmap;
 struct thread;
 
-/** the CPU's own (struct cpu's arch) */
+/** A CPU's x86 state (struct cpu's `arch`). */
 struct arch_cpu {
-    uint32_t apic_id;           /* its local APIC's */
+    uint32_t apic_id;           /* its local APIC's ID */
     struct x86_gdt_entry gdt[X86_GDT_NR];
     struct x86_tss tss __aligned(8);
-    struct pmap *pmap;          /* CR3's (pmap_switch) */
-    struct thread *fpu_thread;  /* whose state the FPU has */
+    struct pmap *pmap;          /* the page tables in its CR3 (pmap_switch) */
+    struct thread *fpu_thread;  /* the thread whose state its FPU holds */
     struct x86_regs *irq_regs;  /* the interrupted context, for the tick */
     int tick_switch;            /* the tick asked for a switch (irq.c) */
-    int ticking;                /* its local APIC's timer runs */
-    uintptr_t idle_stack;       /* the idle loop's, its top */
-    uint64_t tlb_flushes;       /* done for another CPU (mm/tlb.c) */
-    uint64_t kernel_gen;        /* its TLB has the kernel's mappings as of */
+    int ticking;                /* its local APIC's timer is running */
+    uintptr_t idle_stack;       /* the top of its idle loop's stack */
+    uint64_t tlb_flushes;       /* TLB flushes done for another CPU (mm/tlb.c) */
+    uint64_t kernel_gen;        /* the generation of the kernel's mappings its TLB has */
 };
 
-/* the running CPU's struct cpu: its first member points to it, at %gs:0
- * (i386: the X86_SEL_CPU segment; x86_64: the GS base, user mode's
- * swapped in and out with swapgs) */
+/* The running CPU's struct cpu. Its first member points to itself, and
+ * is at %gs:0: on i386 through the X86_SEL_CPU segment, on x86_64 through
+ * the GS base (user mode's is swapped in and out with swapgs). */
 struct cpu;
 
 static inline struct cpu *curcpu(void)
@@ -143,20 +151,20 @@ static inline struct cpu *curcpu(void)
     return cpu;
 }
 
-/* CR0 */
+/* CR0's bits */
 #define CR0_PG  _BV(31)
-#define CR0_WP  _BV(16)     /* honour read-only pages in kernel mode */
+#define CR0_WP  _BV(16)     /* read-only pages are read-only for the kernel too */
 #define CR0_MP  _BV(1)
 #define CR0_EM  _BV(2)
 #define CR0_TS  _BV(3)
 #define CR0_NE  _BV(5)
 
-/* CR4 */
+/* CR4's bits */
 #define CR4_PSE _BV(4)
 #define CR4_OSFXSR      _BV(9)
 #define CR4_OSXMMEXCPT  _BV(10)
 
-/** CPU function */
+/* Read and write the control registers. */
 static inline uintptr_t read_cr0(void)
 {
     uint32_t retval = 0;
@@ -279,20 +287,9 @@ int  x86_fpu_save_to(void *buf);
 void x86_fpu_reset(void);
 void x86_fpu_load_from(const void *buf, int valid);
 
-/* sys/signal.c: back to user mode (its signals) from the context `r' */
+/* sys/signal.c: delivers the pending signals on the way back to user
+ * mode from the context `r` */
 void x86_return_to_user(struct x86_regs *r, int syscall);
-
-//void pic_setup(void);
-//void pic_disable(void);
-//void pit_setup(uint32_t);
-//void acpi_setup(void);
-//uintptr_t acpi_rsdt_find(char signature[4]);
-//void hpet_setup(void);
-//int hpet_timer_setup(size_t period_ns, void (*handler)());
-
-//#include "msr.h"
-//#include "sdt.h"
-//#include "pit.h"
 
 #include_next <cpu/cpu.h>
 

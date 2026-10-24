@@ -1,9 +1,19 @@
+/** \file
+ * Syncing vnodes and filesystems to their disks. None of it is
+ * implemented yet: writes go to the disk (through the block cache) when
+ * they are made.
+ */
+
 #include <core/system.h>
 #include <fs/vfs.h>
 #include <aquila/errno.h>
 
 /**
- * sync the metadata and/or data associated with a vnode
+ * Would write a vnode's data and metadata to its disk. Not implemented.
+ *
+ * @param vnode  the vnode
+ * @param mode   what to sync
+ * @return `-ENOTSUP`
  */
 int vfs_vsync(struct vnode *vnode, int mode)
 {
@@ -11,7 +21,12 @@ int vfs_vsync(struct vnode *vnode, int mode)
 }
 
 /**
- * sync the metadata and/or data associated with a filesystem
+ * Would write a filesystem's data and metadata to its disk. Not
+ * implemented.
+ *
+ * @param super  the filesystem's root vnode
+ * @param mode   what to sync
+ * @return `-ENOTSUP`
  */
 int vfs_fssync(struct vnode *super, int mode)
 {
@@ -19,7 +34,11 @@ int vfs_fssync(struct vnode *super, int mode)
 }
 
 /**
- * sync all metadata and/or data of all filesystems
+ * Would write every filesystem's data and metadata to its disk. Not
+ * implemented.
+ *
+ * @param mode  what to sync
+ * @return `-ENOTSUP`
  */
 int vfs_sync(int mode)
 {

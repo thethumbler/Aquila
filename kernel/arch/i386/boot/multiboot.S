@@ -1,5 +1,11 @@
-/**********************************************************************
- *                      Multiboot support
+/** \file
+ * x86: the Multiboot header, and the kernel's entry point.
+ *
+ * A Multiboot boot loader (Limine, QEMU's `-kernel`) finds the header in
+ * the kernel's first 8 KiB, loads the kernel, and jumps to `_start` in
+ * 32-bit protected mode with paging off. `_start` saves what the loader
+ * passed, sets up a stack, and calls the C code that moves the kernel to
+ * the higher half (`x86_bootstrap()`, or `x86_64_bootstrap` on x86_64).
  */
 
 #include <config.h>
@@ -7,7 +13,8 @@
 #include <boot/multiboot.h>
 
 /*
- *  Multiboot definitions
+ * The header's flags: page-aligned modules, the memory map, and a
+ * graphics mode if the kernel is built for one.
  */
 
 #if MULTIBOOT_GFX
@@ -19,16 +26,16 @@
 #if ARCH_BITS==32
 #define MULTIBOOT_FLAGS  MULTIBOOT_PAGE_ALIGN | MULTIBOOT_MEMORY_INFO | MULTIBOOT_GFX_ENABLE
 #else
-/* loaders (QEMU's, Limine's) only take 32-bit ELF files, the addresses of
- * the header load a 64-bit one as it is: the file is laid out as it is in
- * memory (kernel.x86_64.ld) */
+/* The loaders (QEMU's, Limine's) only take 32-bit ELF files. The header's
+ * addresses (the "a.out kludge") let them load a 64-bit one as it is: the
+ * file is laid out as it is in memory (see kernel.x86_64.ld). */
 #define MULTIBOOT_FLAGS  MULTIBOOT_PAGE_ALIGN | MULTIBOOT_MEMORY_INFO | MULTIBOOT_GFX_ENABLE | \
                          MULTIBOOT_AOUT_KLUDGE
 #endif
 #define MULTIBOOT_CHKSUM -(MULTIBOOT_HEADER_MAGIC + MULTIBOOT_FLAGS)
 
 /*
- *  Multiboot lookup header
+ * The header itself, which the boot loader looks for.
  */
 
 #if ARCH_BITS==64
@@ -43,10 +50,10 @@ multiboot_header:
 .long MULTIBOOT_CHKSUM          /* checksum */
 #if ARCH_BITS==32
 .long 0                         /* header_addr */
-.long 0                         /* heload_addr */
-.long 0                         /* heload_end_addr */
-.long 0                         /* hebss_end_addr */
-.long 0                         /* heentry_addr */
+.long 0                         /* load_addr */
+.long 0                         /* load_end_addr */
+.long 0                         /* bss_end_addr */
+.long 0                         /* entry_addr */
 #else
 .long multiboot_header          /* header_addr */
 .long kernel_start              /* load_addr */
@@ -55,14 +62,16 @@ multiboot_header:
 .long _start                    /* entry_addr */
 #endif
 
-/* the screen, which the bootloader may change (Limine's resolution:) */
+/* The graphics mode wanted; the boot loader may choose another one (with
+ * Limine, its configured resolution). */
 .long 0                         /* mode_type */
-.long 1280                      /* mowidth */
-.long 800                       /* moheight */
-.long 32                        /* modepth */
+.long 1280                      /* width */
+.long 800                       /* height */
+.long 32                        /* depth */
 
 /*
- * Entry point of the bootloader
+ * The kernel's entry point, where the boot loader jumps: eax holds the
+ * Multiboot magic number, ebx the address of the Multiboot information.
  */
 
 .global _start
@@ -71,17 +80,17 @@ _start:
     movl %ebx, (multiboot_info)
 
     /*
-     * Multiboot leaves %esp undefined, so use our own boot stack. Paging is
-     * not enabled yet, but the boot sections are linked at their physical
-     * addresses so the symbol can be used as is.
+     * Multiboot leaves %esp undefined, so use our own boot stack. Paging
+     * is not enabled yet, but the boot sections are linked at their
+     * physical addresses, so the symbol can be used as it is.
      */
 #if ARCH_BITS==32
     movl $boot_stack_top, %esp
 #else
-    /* in the kernel's .bss, at its physical address */
+    /* the stack is in the kernel's .bss: use its physical address */
     movl $(boot_stack_top - 0xFFFFFFFF80000000), %esp
 #endif
-    and  $-16, %esp /* Align stack to 16 byte */
+    and  $-16, %esp /* align the stack to 16 bytes */
 
     mov  $0, %ebp
 

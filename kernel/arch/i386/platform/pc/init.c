@@ -1,17 +1,23 @@
+/** \file
+ * The PC platform: its interrupt controllers, its timers, its PCI bus
+ * and its real time clock, set up at boot, and the tick.
+ */
+
 #include <core/kargs.h>
 #include <core/system.h>
 #include <cpu/io.h>
 #include <dev/pci.h>
 #include <platform/misc.h>
 
-
-/* i8254 PIT controller */
+/* the 8254 PIT's ports */
 #define I8254_ADDR  0x40
 #define I8254_TYPE  IOADDR_PORT
 
+/* the 8259s' ports */
 #define PIC_MASTER  0x20
 #define PIC_SLAVE   0xA0
 
+/** Sets up the 8259s at the PC's ports. Returns 0, or -ENODEV. */
 static int x86_pc_pic_init(void)
 {
     struct ioaddr pic_master;
@@ -25,8 +31,8 @@ static int x86_pc_pic_init(void)
     return x86_pic_setup(&pic_master, &pic_slave);
 }
 
-/* the PCI bus: configuration mechanism #1, its ports; the firmware set
- * its devices' registers and interrupt lines */
+/* The PCI bus, through configuration mechanism #1's ports. The firmware
+ * set up its devices' registers and interrupt lines. */
 static struct pci_host x86_pc_pci = {
     .name   = "configuration mechanism #1",
     .config = {.type = IOADDR_PORT, .addr = 0xCF8},
@@ -34,6 +40,7 @@ static struct pci_host x86_pc_pci = {
     .write  = pci_conf1_write,
 };
 
+/** Gives PCI its host bridge. */
 static void x86_pc_pci_init(void)
 {
 #ifdef CONFIG_DEV_PCI
@@ -41,6 +48,7 @@ static void x86_pc_pci_init(void)
 #endif
 }
 
+/** Sets up the PIT at the PC's ports. */
 static int x86_pc_pit_init(void)
 {
     struct ioaddr pit;
@@ -51,6 +59,7 @@ static int x86_pc_pit_init(void)
     return x86_pit_setup(&pit);
 }
 
+/** Sets up the real time clock at the PC's ports. */
 static int x86_pc_cmos_init(void)
 {
     struct ioaddr cmos;
@@ -64,7 +73,14 @@ static int x86_pc_cmos_init(void)
 
 static int apic;
 
-/** the tick: the local APIC's timer, or the PIT */
+/**
+ * Starts the scheduler's tick: the local APIC's timer if the APIC brings
+ * the interrupts, else the PIT.
+ *
+ * @param period_ns  the tick's period, in ns
+ * @param handler    the tick's handler
+ * @return the period it really is, in ns
+ */
 uint32_t platform_timer_setup(size_t period_ns, irq_handler_t handler)
 {
     if (apic)
@@ -75,8 +91,8 @@ uint32_t platform_timer_setup(size_t period_ns, irq_handler_t handler)
     return period;
 }
 
-/** the interrupts: the APIC's if there's one (and not apic=off), else the
- * 8259s'; the 8259s are remapped either way */
+/** Sets up the interrupts: through the APIC if there's one (and not
+ * `apic=off`), else through the 8259s. The 8259s are remapped either way. */
 static void x86_pc_irq_init(void)
 {
     x86_irq_gates_setup();
@@ -95,6 +111,10 @@ static void x86_pc_irq_init(void)
     printk("x86: interrupts through the %s\n", x86_irq_chip_name());
 }
 
+/*
+ * Sets up the PC platform at boot: PCI, the interrupt controllers, the
+ * timers, the real time clock, then the other CPUs.
+ */
 int platform_init(void)
 {
     x86_pc_pci_init();
@@ -102,7 +122,7 @@ int platform_init(void)
     x86_pc_pit_init();
     x86_pc_cmos_init();
 
-    /* the other CPUs (the PIT times their start) */
+    /* start the other CPUs (the PIT times their start) */
     if (apic)
         x86_smp_init();
 

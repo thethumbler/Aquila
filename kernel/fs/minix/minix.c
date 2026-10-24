@@ -1,5 +1,7 @@
 /** \file
- * minix filesystem
+ * minix: loading and mounting the filesystem, and the vnodes of its
+ * inodes. The inode and zone bitmaps are kept in memory, and the vnodes in
+ * use in a cache by inode number. See `minix.h` for the disk's format.
  */
 #include <core/system.h>
 #include <core/module.h>
@@ -16,12 +18,21 @@
 MALLOC_DEFINE(M_MINIX, "minix", "minix filesystem structure");
 MALLOC_DEFINE(M_MINIX_SB, "minix-sb", "minix filesystem superblock structure");
 
+/**
+ * Gets the vnode of an inode: the cached one if it's in use, or a new one
+ * made from the inode on the disk.
+ *
+ * @param desc  the mounted filesystem
+ * @param ino   the inode number
+ * @param ref   if not NULL, set to the vnode
+ * @return 0, `-ENOMEM`, or an I/O error
+ */
 int minix_inode_build(struct minix *desc, ino_t ino, struct vnode **ref)
 {
     int err = 0;
     struct vnode *inode = NULL;
 
-    /* In open inode table? */
+    /* is it in use already? */
     if ((inode = vcache_find(desc->vcache, ino)))
         goto found;
 
@@ -45,12 +56,9 @@ int minix_inode_build(struct minix *desc, ino_t ino, struct vnode **ref)
     if (S_ISCHR(minix_inode.mode) || S_ISBLK(minix_inode.mode))
         inode->rdev = (dev_t) minix_inode.zones[0];
 
-    //node->atim.tv_sec  = i.last_access_time;
-    //node->atim.tv_nsec = 0;
+    /* version 1 inodes have one time, the modification time */
     inode->mtime.tv_sec  = minix_inode.mtime;
     inode->mtime.tv_nsec = 0;
-    //node->ctim.tv_sec  = i.creation_time;
-    //node->ctim.tv_nsec = 0;
 
     inode->fs = &minixfs;
     inode->p  = desc;
@@ -70,6 +78,12 @@ error:
     return err;
 }
 
+/**
+ * Writes a vnode's attributes back to its inode on the disk.
+ *
+ * @param inode  the vnode
+ * @return 0, or an I/O error
+ */
 int minix_inode_sync(struct vnode *inode)
 {
     int err = 0;
@@ -90,13 +104,18 @@ int minix_inode_sync(struct vnode *inode)
     return minix_inode_write(desc, inode->ino, &minix_inode);
 }
 
-/* ================== VFS routines ================== */
+/* The filesystem's operations */
 
+/** Installs the minix filesystem at boot. */
 static int minix_init()
 {
     return vfs_install(&minixfs);
 }
 
+/** Loads a minix filesystem from a device: its superblock, its bitmaps,
+ * and its root directory's vnode in `*super`. Returns 0, `-EINVAL` if the
+ * device doesn't have a minix v1 filesystem with 1 KiB blocks, or a
+ * negative errno. */
 static int minix_load(struct vnode *dev, struct vnode **super)
 {
     int err = 0;
@@ -124,14 +143,14 @@ static int minix_load(struct vnode *dev, struct vnode **super)
             break;
     }
 
-    /* zones of one block of 1 KiB, what version 1 has (the code keeps
+    /* only zones of one 1 KiB block, which version 1 has (the code keeps
      * blocks in buffers on the stack) */
     if (!version || sb->block_size) {
         err = -EINVAL;
         goto error;
     }
 
-    /* Build descriptor structure */
+    /* the mounted filesystem's structure */
     desc = kmalloc(sizeof(struct minix), &M_MINIX, M_ZERO);
     if (!desc) goto e_nomem;
 
@@ -154,7 +173,8 @@ static int minix_load(struct vnode *dev, struct vnode **super)
         goto error;
     }
 
-    /* the bitmaps, kept in memory: all of them read, or no filesystem */
+    /* the bitmaps are kept in memory: unless all of them can be read,
+     * there's no filesystem */
     size_t imap_size = sb->imap_blocks * desc->bs, zmap_size = sb->zmap_blocks * desc->bs;
 
     desc->imap.map = kmalloc(imap_size, &M_BUFFER, 0);
@@ -180,7 +200,8 @@ static int minix_load(struct vnode *dev, struct vnode **super)
     bcache_init(desc->bcache);
     if (!desc->vcache->hashmap || !desc->bcache->hashmap) goto e_nomem;
 
-    /* the root (an inode that can't be read: no filesystem) */
+    /* the root directory (if its inode can't be read, there's no
+     * filesystem) */
     if (super && (err = minix_inode_build(desc, 1, super)))
         goto error;
 
@@ -189,7 +210,7 @@ static int minix_load(struct vnode *dev, struct vnode **super)
 e_nomem:
     err = -ENOMEM;
 error:
-    /* nothing of it is used: nothing was built (the root comes last) */
+    /* nothing of it is in use yet, since the root comes last */
     if (desc) {
         if (desc->vcache && desc->vcache->hashmap)
             hashmap_free(desc->vcache->hashmap);
@@ -207,6 +228,8 @@ error:
     return err;
 }
 
+/** Mounts the minix filesystem of a device (the `dev` argument) on a
+ * directory. */
 static int minix_mount(struct vnode *dir, int flags, void *_args)
 {
     struct {
@@ -217,7 +240,7 @@ static int minix_mount(struct vnode *dir, int flags, void *_args)
     struct vnode *dev = NULL;
     int err;
 
-    struct uio uio = {0};   /* FIXME */
+    struct uio uio = {0};   /* the device is looked up as root */
 
     if (!args || !args->dev)
         return -EINVAL;

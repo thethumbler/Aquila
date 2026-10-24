@@ -1,20 +1,20 @@
 /*
- * Copying to and from user memory (sys/uaccess.h: copyin, copyout,
- * copyinstr), as x86's cpu/uaccess.S
+ * Copying to and from user memory (sys/uaccess.h: copyin(), copyout(),
+ * copyinstr()), as x86's cpu/uaccess.S does.
  *
  * The instructions that touch user memory are listed in a table
- * (aarch64_uaccess_fixups: the instruction, where to go on): a page fault
- * on one that the fault handler can't resolve resumes at its fixup, which
- * returns what wasn't copied, or -EFAULT. A fault anywhere else in the
- * kernel is a bug.
+ * (aarch64_uaccess_fixups: each instruction, and where to go on from). A
+ * page fault on one of them that the fault handler can't resolve resumes
+ * at its fixup, which returns how much wasn't copied, or -EFAULT. A fault
+ * anywhere else in the kernel is a bug.
  */
 
 #define EFAULT  14
 
 .text
 
-/* size_t arch_copy_user(void *dst, const void *src, size_t n): what wasn't
- * copied (0: all of it) */
+/* size_t arch_copy_user(void *dst, const void *src, size_t n): copies n
+ * bytes, and returns how many weren't copied (0 if they all were). */
 .global arch_copy_user
 arch_copy_user:
     cbz     x2, 2f
@@ -33,9 +33,9 @@ arch_copy_user:
     ret
 
 /*
- * long arch_copy_user_str(char *dst, const char *src, size_t max): the
- * string's length (its NUL copied), max if there's no NUL in max bytes,
- * -EFAULT
+ * long arch_copy_user_str(char *dst, const char *src, size_t max): copies
+ * a string with its NUL, and returns its length, max if there's no NUL in
+ * its first max bytes, or -EFAULT.
  */
 .global arch_copy_user_str
 arch_copy_user_str:

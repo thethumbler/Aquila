@@ -1,7 +1,9 @@
 /** \file
- * The interfaces' requests (ioctl() on an AF_INET socket): their list,
- * flags, addresses and hardware address, and the default route. Setting
- * is root's.
+ * The network interfaces' `ioctl()` requests, made on an `AF_INET` socket.
+ *
+ * They list the interfaces, read and set their flags and addresses, read
+ * their hardware address, MTU and index, and set the default route, as
+ * `ifconfig` and `route` need. Only root may set anything.
  */
 
 #include <core/system.h>
@@ -18,6 +20,7 @@
 #include <aquila/ioctl.h>
 #include <aquila/route.h>
 
+/** Returns an interface's index: its place in the list, from 1. */
 static int netif_index(struct netif *netif)
 {
     int i = 1;
@@ -28,6 +31,7 @@ static int netif_index(struct netif *netif)
     return i;
 }
 
+/** Writes an IPv4 address into a `struct sockaddr`. */
 static void ifaddr_put(struct sockaddr *a, uint32_t ip)
 {
     struct sockaddr_in *sin = (struct sockaddr_in *) a;
@@ -37,6 +41,8 @@ static void ifaddr_put(struct sockaddr *a, uint32_t ip)
     sin->sin_addr.s_addr = ip;
 }
 
+/** Reads an IPv4 address from a `struct sockaddr`. Returns 0, or
+ * `-EAFNOSUPPORT` if it isn't an `AF_INET` address. */
 static int ifaddr_get(const struct sockaddr *a, uint32_t *ip)
 {
     const struct sockaddr_in *sin = (const struct sockaddr_in *) a;
@@ -48,8 +54,9 @@ static int ifaddr_get(const struct sockaddr *a, uint32_t *ip)
     return 0;
 }
 
-/** SIOCGIFCONF: as many interfaces as there is room for (how much is
- * needed, without a buffer) */
+/** Handles `SIOCGIFCONF`: lists as many interfaces as the buffer has room
+ * for, or says how much room is needed if there is no buffer. Returns 0
+ * or a negative errno. */
 static int ifconf(struct ifconf *uifc)
 {
     struct ifconf ifc;
@@ -72,7 +79,7 @@ static int ifconf(struct ifconf *uifc)
 
     int len = 0;
 
-    /* each made here, then out */
+    /* make each entry here, then copy it out */
     for (struct netif *netif = netifs; netif; netif = netif->next) {
         if (len + (int) sizeof(struct ifreq) > ifc.ifc_len)
             break;
@@ -92,8 +99,10 @@ static int ifconf(struct ifconf *uifc)
     return copyout(uifc, &ifc, sizeof(ifc));
 }
 
-/** SIOCADDRT, SIOCDELRT: the default route (0.0.0.0/0 through a gateway),
- * to the interface on whose link the gateway is */
+/** Handles `SIOCADDRT` and `SIOCDELRT`, for the default route only
+ * (0.0.0.0/0 through a gateway): the gateway is set on the interface whose
+ * link it is on, or removed from every interface. Returns 0 or a negative
+ * errno. */
 static int route(int request, struct rtentry *urt)
 {
     struct rtentry _rt, *rt = &_rt;
@@ -132,6 +141,15 @@ static int route(int request, struct rtentry *urt)
 
 static int ifreq_request(int request, struct ifreq *ifr);
 
+/**
+ * Handles an interface `ioctl()` request on an `AF_INET` socket.
+ *
+ * @param request  the request (`SIOC*`)
+ * @param argp     its argument, in user memory
+ * @return 0, or a negative errno: `-ENOTTY` for another request, `-EPERM`
+ *         to set something without being root, `-ENODEV` for no such
+ *         interface, or `-EFAULT`
+ */
 int inet_ifioctl(int request, void *argp)
 {
     switch (request) {
@@ -146,8 +164,8 @@ int inet_ifioctl(int request, void *argp)
             return route(request, argp);
     }
 
-    /* the requests of an interface, by its name: the kernel's copy of
-     * the ifreq, back out once done */
+    /* the requests about one interface, named in a struct ifreq: work on
+     * the kernel's copy of it, then copy it back out */
     struct ifreq ifr;
 
     switch (request) {
@@ -170,6 +188,8 @@ int inet_ifioctl(int request, void *argp)
     return err ? err : copyout(argp, &ifr, sizeof(ifr));
 }
 
+/** Handles a request about one interface, on the kernel's copy of the
+ * `struct ifreq`. Returns 0 or a negative errno. */
 static int ifreq_request(int request, struct ifreq *ifr)
 {
     struct netif *netif = netif_find(ifr->ifr_name);
@@ -209,7 +229,8 @@ static int ifreq_request(int request, struct ifreq *ifr)
 
             netif->ip = ip;
 
-            /* the class's mask until one is set */
+            /* a /24 mask until one is set (whatever the address's
+             * class) */
             if (!netif->netmask)
                 netif->netmask = htonl(0xffffff00);
 

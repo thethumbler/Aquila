@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+/* The kernel's basic types, as POSIX names them. */
+
 typedef int       pid_t;
 typedef pid_t     tid_t;
 typedef long int  off_t;
@@ -11,7 +13,7 @@ typedef long int  off_t;
 typedef long int  ssize_t;
 #endif
 
-typedef uintptr_t vino_t;    /* vino_t should be large enough to hold a pointer */
+typedef uintptr_t vino_t;    /* a vnode's number; big enough to hold a pointer */
 typedef uint32_t  mode_t;
 typedef uint8_t   mask_t;
 typedef uint8_t   devid_t;

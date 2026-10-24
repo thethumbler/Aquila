@@ -4,6 +4,7 @@
 #include <core/system.h>
 #include <ds/ringbuf.h>
 
+/** A keyboard: the bytes it sent, waiting to be read. */
 struct keyboard {
     const char     *name;
 

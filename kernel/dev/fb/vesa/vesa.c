@@ -1,15 +1,29 @@
+/** \file
+ * The VESA framebuffer: the linear framebuffer that the boot loader set
+ * up, as `/dev/fb0`.
+ *
+ * The boot loader chose the video mode and gave its description (a VBE
+ * mode info block). This driver maps the framebuffer into the kernel's
+ * address space, at `ARCH_VESA_BASE`, and describes it with Linux's
+ * framebuffer structures. The mode can't be changed. A process can write
+ * to the framebuffer, or map it into its own address space (a shared
+ * mapping only).
+ */
+
 #include <core/system.h>
 #include <dev/fbdev.h>
 #include <fs/devfs.h>
 #include <video/vesa.h>
 #include <mm/vm.h>
 
+/* the framebuffer, in the kernel's address space */
 static char *vmem = (char *) ARCH_VESA_BASE;
 
 static struct vm_entry vesa_vm = {
     .base = ARCH_VESA_BASE,
 };
 
+/* the framebuffer's size, in bytes */
 static size_t len = 0;
 
 static struct fb_fix_screeninfo vesa_fix_screeninfo = {
@@ -18,6 +32,8 @@ static struct fb_fix_screeninfo vesa_fix_screeninfo = {
 
 static struct fb_var_screeninfo vesa_var_screeninfo;
 
+/** Writes to the framebuffer at `offset`, as much as fits before its end.
+ * Returns how much was written, 0 past the end. */
 static ssize_t fbdev_vesa_write(struct fbdev *fb __unused, off_t offset, struct iobuf *io)
 {
     if (offset < 0)
@@ -26,18 +42,21 @@ static ssize_t fbdev_vesa_write(struct fbdev *fb __unused, off_t offset, struct 
     if ((size_t) offset >= len)
         return 0;
 
-    /* Copy what fits from the buffer into the framebuffer */
+    /* copy what fits into the framebuffer */
     return iobuf_in(io, (char *) vmem + offset, MIN(io->resid, len - (size_t) offset));
 }
 
+/** Maps the framebuffer, or part of it, into a process's address space.
+ * Only a shared mapping is possible (`ENOTSUP` for a private one), and it
+ * must lie within the framebuffer (`ENXIO` otherwise). */
 static int fbdev_vesa_map(struct fbdev *fb, struct vm_space *vm_space, struct vm_entry *vm_entry)
 {
 
-    /* We do not support private maps */
+    /* private mappings aren't supported */
     if (!(vm_entry->flags & VM_SHARED))
         return -ENOTSUP;
 
-    /* Mapping must lie within the (page rounded) framebuffer */
+    /* the mapping must lie within the framebuffer (rounded to pages) */
     size_t fb_size = PAGE_ROUND(vesa_vm.size);
 
     if (vm_entry->off > fb_size || vm_entry->size > fb_size - vm_entry->off)
@@ -47,6 +66,9 @@ static int fbdev_vesa_map(struct fbdev *fb, struct vm_space *vm_space, struct vm
     return vm_map(vm_space, vm_entry);
 }
 
+/** Sets up the framebuffer from the mode the boot loader chose: maps it
+ * into the kernel's address space, and fills in its screen information
+ * for `ioctl()`. */
 static int fbdev_vesa_prope(int i __unused, struct fbdev *fb)
 {
     struct fbdev_vesa *data = (struct fbdev_vesa *) fb->data;
@@ -56,12 +78,10 @@ static int fbdev_vesa_prope(int i __unused, struct fbdev *fb)
 
     vesa_vm.paddr = info->phys_base_ptr;
     vesa_vm.size  = size;
-    /* cached, as the console's (arch/i386/earlycon/fb.c) */
+    /* cached, as the early console's mapping is (arch/i386/earlycon/fb.c) */
     vesa_vm.flags = VM_KRW;
 
     vm_map(&kvm_space, &vesa_vm);
-
-    //memset(vmem, 0x5A, size);
 
     len = size;
 
@@ -72,7 +92,7 @@ static int fbdev_vesa_prope(int i __unused, struct fbdev *fb)
     fb->fix_screeninfo = &vesa_fix_screeninfo;
     fb->var_screeninfo = &vesa_var_screeninfo;
 
-    /* Init fb structs */
+    /* the screen information, which ioctl() gives */
     vesa_fix_screeninfo.smem_start = (uintptr_t) vmem;
     vesa_fix_screeninfo.smem_len   = size;
     vesa_fix_screeninfo.type          = FB_TYPE_PACKED_PIXELS;
@@ -83,10 +103,6 @@ static int fbdev_vesa_prope(int i __unused, struct fbdev *fb)
     vesa_fix_screeninfo.line_length   = info->lin_bytes_per_scanline;
     vesa_fix_screeninfo.mmio_start    = info->phys_base_ptr;
     vesa_fix_screeninfo.mmio_len      = size;
-    //vesa_fix_screenifo.accel
-    //vesa_fix_screenifo.capabilities
-    //vesa_fix_screenifo.reserved[2]
-    //
 
     vesa_var_screeninfo.xres          = info->x_resolution;
     vesa_var_screeninfo.yres          = info->y_resolution;
@@ -97,8 +113,8 @@ static int fbdev_vesa_prope(int i __unused, struct fbdev *fb)
 
     vesa_var_screeninfo.bits_per_pixel = info->bits_per_pixel;
 
-    /* the colors' bits; xRGB if the mode doesn't tell (8 bits each, or
-     * 5-6-5 for 16 bits per pixel) */
+    /* where each colour's bits are; if the mode doesn't say, xRGB with 8
+     * bits each, or 5-6-5 for 16 bits per pixel */
     if (info->red_mask_size && info->green_mask_size && info->blue_mask_size) {
         vesa_var_screeninfo.red   = (struct fb_bitfield) {info->red_field_position, info->red_mask_size, 0};
         vesa_var_screeninfo.green = (struct fb_bitfield) {info->green_field_position, info->green_mask_size, 0};
@@ -112,24 +128,6 @@ static int fbdev_vesa_prope(int i __unused, struct fbdev *fb)
         vesa_var_screeninfo.green = (struct fb_bitfield) {8, 8, 0};
         vesa_var_screeninfo.blue  = (struct fb_bitfield) {0, 8, 0};
     }
-
-    //vesa_var_screeninfo.nonstd
-    //vesa_var_screeninfo.activate
-    //vesa_var_screeninfo.height
-    //vesa_var_screeninfo.width
-    //vesa_var_screeninfo.accel_flags
-    //vesa_var_screeninfo.pixclock
-    //vesa_var_screeninfo.left_margin
-    //vesa_var_screeninfo.right_margin
-    //vesa_var_screeninfo.upper_margin
-    //vesa_var_screeninfo.lower_margin
-    //vesa_var_screeninfo.hsync_len
-    //vesa_var_screeninfo.vsync_len
-    //vesa_var_screeninfo.sync
-    //vesa_var_screeninfo.vmode
-    //vesa_var_screeninfo.rotate
-    //vesa_var_screeninfo.colorspace
-    //vesa_var_screeninfo.reserved[4]
 
     return 0;
 }

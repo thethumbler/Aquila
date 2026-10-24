@@ -5,6 +5,9 @@
 #include <core/arch.h>
 #include <core/printk.h>
 
+/* x86's panic(): the message, where it happened, a stack trace (unless
+ * the trace itself panicked), then the CPU stops with interrupts off. */
+
 #define __PANIC_MSG "Bailing out. You are on your own. Good luck."
 
 extern int __printing_trace;

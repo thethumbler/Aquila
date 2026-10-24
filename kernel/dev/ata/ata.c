@@ -1,5 +1,14 @@
 /** \file
- * ata device
+ * The ATA driver: hard disks on the IDE controller, as block device 3
+ * (`/dev/hda` and up).
+ *
+ * The driver finds the IDE controller on the PCI bus, detects the four
+ * drives its two channels may have, and moves their sectors by PIO
+ * (`pio.c`) or bus master DMA (`dma.c`). Minor numbers are 64 per drive:
+ * 0 is the whole disk, 1 to 4 its primary partitions, from the MBR. Reads
+ * and writes go through the block cache (`blkcache.c`). One command at a
+ * time runs on a channel. Only ATA hard disks are supported: not ATAPI
+ * (CD-ROMs), and not SATA's own interface.
  */
 
 #include <core/system.h>
@@ -26,9 +35,9 @@
 static struct ata_drive drives[4];
 static struct ata_channel channels[2];
 
-/** one command at a time on a channel, a request may sleep (DMA); before
- * there are processes nothing else runs. A signal doesn't end the wait:
- * a transfer is never left halfway */
+/** Takes a channel for one command, waiting while another runs (a DMA
+ * request sleeps). Before there are processes, nothing else runs. A
+ * signal doesn't end the wait: a transfer is never left halfway. */
 static void channel_acquire(struct ata_channel *ch)
 {
     while (ch->busy && sched_running && curthread)
@@ -37,14 +46,15 @@ static void channel_acquire(struct ata_channel *ch)
     ch->busy = 1;
 }
 
+/** Gives a channel back, and wakes up the requests waiting for it. */
 static void channel_release(struct ata_channel *ch)
 {
     ch->busy = 0;
     waitq_wakeup_nopoll(&ch->wait);
 }
 
-/** the driver's transfers, for the block cache: the channel is held for
- * the command only, the buffers are the cache's */
+/** Reads sectors from a drive, for the block cache: the channel is held
+ * for the command only, and the buffer is the cache's. */
 static ssize_t drive_read(void *_drive, uint64_t lba, size_t count, void *buf)
 {
     struct ata_drive *drive = _drive;
@@ -56,6 +66,7 @@ static ssize_t drive_read(void *_drive, uint64_t lba, size_t count, void *buf)
     return ret;
 }
 
+/** Writes sectors to a drive, for the block cache. */
 static ssize_t drive_write(void *_drive, uint64_t lba, size_t count, void *buf)
 {
     struct ata_drive *drive = _drive;
@@ -67,22 +78,26 @@ static ssize_t drive_write(void *_drive, uint64_t lba, size_t count, void *buf)
     return ret;
 }
 
+/** Handles a channel's interrupt. */
 static void ata_irq(void *channel)
 {
     dma_irq(channel);
 }
 
-/* last drive select register value written, invalidated by a reset */
+/* the drive and mode last written to the drive select register, so that
+ * selecting the same again is skipped; a reset forgets them */
 static struct ata_drive *last_selected_drive = NULL;
 static uint32_t last_selected_mode = -1;
 
 /**
- * reset both drives on the drive's channel and wait for completion
+ * Resets both drives on a drive's channel, and waits until they are done.
+ *
+ * @param drive  a drive on the channel
  */
 void ata_reset(struct ata_drive *drive)
 {
-    /* select the master first so its status reflects the reset (an absent
-     * slave would read 0 and hide BSY) */
+    /* select the master first, so that the status is its (an absent slave
+     * would read 0, which hides BSY) */
     io_out8(&drive->base, ATA_REG_HDDEVSEL, 0xA0);
     ata_wait(drive);
 
@@ -96,16 +111,22 @@ void ata_reset(struct ata_drive *drive)
             break;
     }
 
-    /* a reset changes the drive selection, force the next select */
+    /* a reset changes the drive selection: the next select must happen */
     last_selected_drive = NULL;
     last_selected_mode  = -1;
 }
 
+/**
+ * Selects a drive on its channel, for an addressing mode, if it isn't
+ * selected so already, and waits for the drive to take it.
+ *
+ * @param drive  the drive
+ * @param mode   the addressing mode (`ATA_MODE_*`), or 0 to detect it
+ */
 void ata_select_drive(struct ata_drive *drive, uint32_t mode)
 {
     if (drive != last_selected_drive || mode != last_selected_mode) {
         if (mode & ATA_MODE_LBA48)
-            //io_out8(&drive->base, ATA_REG_HDDEVSEL, ATA_DRIVE_LBA48 | (drive->slave << 4) | (mode & 0xF));
             io_out8(&drive->base, ATA_REG_HDDEVSEL, 0xE0 | (drive->slave << 4) | (mode & 0xF));
         else if (mode & ATA_MODE_LBA28)
             io_out8(&drive->base, ATA_REG_HDDEVSEL, 0xE0 | (drive->slave << 4));
@@ -123,22 +144,31 @@ void ata_select_drive(struct ata_drive *drive, uint32_t mode)
     }
 }
 
-/** the registers of a command on `count' sectors from `lba' */
+/**
+ * Writes the registers of a command on `count` sectors from `lba`: the
+ * drive, the address and the count. The command itself is sent after.
+ *
+ * @param drive  the drive
+ * @param lba    the first sector
+ * @param count  how many sectors
+ */
 void ata_setup(struct ata_drive *drive, uint64_t lba, size_t count)
 {
     ata_select_drive(drive, drive->mode);
 
-    /* Send NULL byte to error register */
+    /* the features register (the error register's port) is 0 */
     io_out8(&drive->base, ATA_REG_ERROR, 0);
 
-    /* Send sectors count and LBA */
+    /* the sector count and the address: with LBA48, the high bytes first,
+     * then the low ones, through the same registers */
     if (drive->mode == ATA_MODE_LBA48) {
         io_out8(&drive->base, ATA_REG_SECCOUNT0, (count >> 8) & 0xFF);
         io_out8(&drive->base, ATA_REG_LBA0, (uint8_t) (lba >> (8 * 3)));
         io_out8(&drive->base, ATA_REG_LBA1, (uint8_t) (lba >> (8 * 4)));
         io_out8(&drive->base, ATA_REG_LBA2, (uint8_t) (lba >> (8 * 5)));
     } else {
-        /* LBA28 carries bits 24-27 of the address in the drive select register */
+        /* LBA28 has bits 24 to 27 of the address in the drive select
+         * register */
         io_out8(&drive->base, ATA_REG_HDDEVSEL,
                 0xE0 | (drive->slave << 4) | ((lba >> 24) & 0xF));
     }
@@ -149,12 +179,15 @@ void ata_setup(struct ata_drive *drive, uint64_t lba, size_t count)
     io_out8(&drive->base, ATA_REG_LBA2, (uint8_t) (lba >> (8 * 2)));
 }
 
+/* where the MBR is read into */
 static char read_buf[BLOCK_SIZE] __aligned(16);
+
 /**
- * Partition `part' of `drive' (1 to 4; 0 is the whole disk): its first
- * sector and how many, from the MBR (read once). -ENXIO if the MBR has no
- * partition there (no signature, an empty entry, one past the disk's
- * end), -EIO if it can't be read
+ * Finds partition `part` of a drive (1 to 4; 0 is the whole disk): its
+ * first sector and how many sectors it has, from the MBR, which is read
+ * once. Returns 0, `-ENXIO` if the MBR has no partition there (no
+ * signature, an empty entry, or one past the disk's end), or `-EIO` if
+ * the MBR can't be read.
  */
 static int ata_partition(struct ata_drive *drive, size_t part, uint64_t *start, uint64_t *nsectors)
 {
@@ -173,8 +206,8 @@ static int ata_partition(struct ata_drive *drive, size_t part, uint64_t *start, 
         struct mbr *mbr = (struct mbr *) read_buf;
         struct mbr_part *e = &mbr->ptab[part];
 
-        /* the CHS fields aren't used: LBA's are what any disk since the
-         * 90s has */
+        /* the CHS fields aren't used: every disk since the 90s has the
+         * LBA ones */
         if (mbr->boot_signature != 0xAA55 || !e->type || !e->sectors_count ||
             (uint64_t) e->start_lba + e->sectors_count > drive->max_lba)
             return -ENXIO;
@@ -188,11 +221,13 @@ static int ata_partition(struct ata_drive *drive, size_t part, uint64_t *start, 
     return 0;
 }
 
-/* the drive, and where the partition of `dd' is on it */
+/** Finds the drive of a device number, and where its partition is on
+ * it. Returns 0 or a negative errno (`-ENXIO` if there is no such drive
+ * or partition). */
 static int ata_locate(struct devid *dd, int write, struct ata_drive **ref,
                       uint64_t *start, uint64_t *nsectors)
 {
-    /* Get drive and parition numbers */
+    /* 64 minors per drive: the drive's number, then the partition's */
     size_t drive_id  = dd->minor / 64;
     size_t partition = dd->minor % 64;
 
@@ -212,8 +247,9 @@ static int ata_locate(struct devid *dd, int write, struct ata_drive **ref,
     return err;
 }
 
-/** sectors of the partition, from `offset' on: none past its end; how
- * many were read (a block driver's bread) */
+/** Reads sectors of a partition, from sector `offset` on, through the
+ * block cache. Returns how many were read (none past the partition's
+ * end), or a negative errno. */
 static ssize_t ata_read(struct devid *dd, off_t offset, size_t size, void *buf)
 {
     struct ata_drive *drive;
@@ -232,6 +268,9 @@ static ssize_t ata_read(struct devid *dd, off_t offset, size_t size, void *buf)
     return err < 0 ? err : (ssize_t) size;
 }
 
+/** Writes sectors of a partition, from sector `offset` on, through the
+ * block cache. Returns how many were written (none past the partition's
+ * end: `-ENOSPC`), or a negative errno. */
 static ssize_t ata_write(struct devid *dd, off_t offset, size_t size, void *buf)
 {
     struct ata_drive *drive;
@@ -250,13 +289,9 @@ static ssize_t ata_write(struct devid *dd, off_t offset, size_t size, void *buf)
     return err < 0 ? err : (ssize_t) size;
 }
 
-/**
- * check whether the selected drive exists, must be called after the
- * channel reset completed. A floating bus (no drives on the channel)
- * reads 0xFF, a missing drive next to a present one reads 0.
- *
- * \return 1 if a drive is present, 0 otherwise
- */
+/** Returns whether the selected drive is there. It must be called once
+ * the channel's reset is done. A floating bus (no drive on the channel)
+ * reads 0xFF, and a missing drive next to a present one reads 0. */
 static int ata_drive_present(struct ata_drive *drive)
 {
     uint8_t status = io_in8(&drive->base, ATA_REG_STATUS);
@@ -264,7 +299,8 @@ static int ata_drive_present(struct ata_drive *drive)
     if (status == 0xFF || status & ATA_STATUS_BSY)
         return 0;
 
-    /* ATA drives report ready, ATAPI drives don't but set a signature */
+    /* an ATA drive says it is ready; an ATAPI drive doesn't, but sets a
+     * signature */
     if (status & ATA_STATUS_DRDY)
         return 1;
 
@@ -274,17 +310,19 @@ static int ata_drive_present(struct ata_drive *drive)
     return (lba1 == 0x14 && lba2 == 0xEB) || (lba1 == 0x69 && lba2 == 0x96);
 }
 
+/** Detects what a drive is (`ATADEV_*`). An ATA disk's IDENTIFY reply
+ * gives its size, its capabilities and its model. */
 static uint8_t ata_detect_drive(struct ata_drive *drive)
 {
     if (!drive->slave) {
-        /* reset both devices on the channel */
+        /* reset both drives on the channel, once */
         ata_reset(drive);
     }
 
     ata_select_drive(drive, 0);
 
     if (!ata_drive_present(drive)) {
-        /* no device, bail */
+        /* no drive there */
         drive->type = ATADEV_NOTFOUND;
         goto done;
     }
@@ -331,7 +369,7 @@ static uint8_t ata_detect_drive(struct ata_drive *drive)
     io_out8(&drive->base, ATA_REG_CMD, identify_command);
 
     if (io_in8(&drive->base, ATA_REG_STATUS) == 0 || ata_poll(drive, 1)) {
-        /* drive did not respond to IDENTIFY */
+        /* the drive didn't answer IDENTIFY */
         drive->type = ATADEV_NOTFOUND;
         goto done;
     }
@@ -372,7 +410,8 @@ done:
     return drive->type;
 }
 
-/** the drives' write caches to the disks */
+/** Has every drive write what its cache holds to the disk, for `sync()`.
+ * Returns 0, or `-EIO` if a drive failed. */
 static int ata_sync(void)
 {
     int err = 0;
@@ -390,11 +429,14 @@ static int ata_sync(void)
     return err;
 }
 
+/** Returns the block size: one sector, 512 bytes. */
 static size_t ata_getbs(struct devid *dd __unused)
 {
     return BLOCK_SIZE;
 }
 
+/** Finds the IDE controller, detects its drives, sets them up, and
+ * registers the disks as block device 3. */
 static int ata_probe()
 {
     struct pci_dev ide;
@@ -414,7 +456,8 @@ static int ata_probe()
 
         uint32_t base, control;
 
-        /* primary channel */
+        /* the primary channel: its ports from BARs 0 and 1, or the ISA's
+         * in compatibility mode */
         base    = pci_read_bar(&ide, 0);
         control = pci_read_bar(&ide, 1);
 
@@ -426,13 +469,13 @@ static int ata_probe()
 
         printk("ata: IDE controller primary channel: base: 0x%x, control: 0x%x\n", base, control);
 
-        /* native PCI mode has the controller's interrupt line, the
-         * compatibility mode those of the ISA controllers */
+        /* in native PCI mode, the channels use the controller's interrupt;
+         * in compatibility mode, the ISA's IRQs 14 and 15 */
         int native = !(base == ATA_PIO_PRI_PORT_BASE);
         channels[0].base = (struct ioaddr) {.addr = base, .type = IOADDR_PORT};
         channels[0].irq  = native ? pci_irq(&ide) : 14;
 
-        /* master device */
+        /* its master drive */
         drives[0].id        = 0;
         drives[0].base.addr = base;
         drives[0].base.type = IOADDR_PORT;
@@ -440,7 +483,7 @@ static int ata_probe()
         drives[0].ctrl.type = IOADDR_PORT;
         drives[0].slave     = 0;
 
-        /* slave device */
+        /* its slave drive */
         drives[1].id        = 1;
         drives[1].base.addr = base;
         drives[1].base.type = IOADDR_PORT;
@@ -448,7 +491,7 @@ static int ata_probe()
         drives[1].ctrl.type = IOADDR_PORT;
         drives[1].slave     = 1;
 
-        /* secondary channel */
+        /* the secondary channel: BARs 2 and 3 */
         base    = pci_read_bar(&ide, 2);
         control = pci_read_bar(&ide, 3);
 
@@ -463,7 +506,7 @@ static int ata_probe()
         channels[1].base = (struct ioaddr) {.addr = base, .type = IOADDR_PORT};
         channels[1].irq  = native ? channels[0].irq : 15;
 
-        /* bus master DMA registers, 8 for each channel */
+        /* the bus master's registers (BAR 4), 8 for each channel */
         uint32_t bm = pci_read_bar(&ide, 4);
 
         if ((bm & 1) && (bm & ~3U)) {
@@ -479,7 +522,7 @@ static int ata_probe()
         for (int i = 0; i < 4; ++i)
             drives[i].channel = &channels[i / 2];
 
-        /* master device */
+        /* the secondary's master drive */
         drives[2].id        = 2;
         drives[2].base.addr = base;
         drives[2].base.type = IOADDR_PORT;
@@ -487,7 +530,7 @@ static int ata_probe()
         drives[2].ctrl.type = IOADDR_PORT;
         drives[2].slave     = 0;
 
-        /* slave device */
+        /* the secondary's slave drive */
         drives[3].id        = 3;
         drives[3].base.addr = base;
         drives[3].base.type = IOADDR_PORT;
@@ -497,15 +540,12 @@ static int ata_probe()
     }
 
     for (int i = 0; i < 4 * count; ++i) {
-        /* disable interrupts */
-        //io_out8(&drives[i].base, ATA_REG_CONTROL, 0x2);
-
         uint8_t type = ata_detect_drive(&drives[i]);
 
         switch (type) {
             case ATADEV_PATA:
                 pio_init(&drives[i]);
-                /* ata.nodma keeps to PIO */
+                /* DMA if possible, unless the ata.nodma argument says PIO */
                 printk("ata%d: initializing ATA device (%s)\n", i,
                         !kargs_get("ata.nodma", NULL) || dma_init(&drives[i]) ? "PIO" : "DMA");
                 break;
@@ -525,7 +565,8 @@ static int ata_probe()
         }
     }
 
-    /* DMA transfers end with them, the others are acknowledged */
+    /* the channels' interrupts: they end DMA transfers, and the others
+     * are acknowledged */
     if (count) {
         irq_install(channels[0].irq, ata_irq, &channels[0]);
         irq_install(channels[1].irq, ata_irq, &channels[1]);

@@ -1,5 +1,8 @@
 /** \file
- *          VFS => File System binding for CPIO archives
+ * initramfs: the root filesystem from the RAM disk the boot loader
+ * loaded. The RAM disk is an archive; each archiver (cpiofs, the only one)
+ * is asked in turn to make a filesystem from it, and the first that can
+ * becomes the root.
  */
 
 #include <core/system.h>
@@ -20,6 +23,12 @@
 static struct vnode *rd_dev = NULL;
 static struct queue *archivers = QUEUE_NEW();
 
+/**
+ * Registers a filesystem that can make a root from a RAM disk archive.
+ *
+ * @param fs  the filesystem, whose `load` operation reads the archive
+ * @return 0, or `-ENOMEM`
+ */
 int initramfs_archiver_register(struct fs *fs)
 {
     if (!enqueue(archivers, fs))
@@ -30,6 +39,13 @@ int initramfs_archiver_register(struct fs *fs)
     return 0;
 }
 
+/**
+ * Mounts the RAM disk as the root filesystem. The kernel can't go on
+ * without a root: if no archiver can read the RAM disk, it panics.
+ *
+ * @param module  the boot loader's module that holds the RAM disk
+ * @return what mounting the root returns
+ */
 int load_ramdisk(module_t *module)
 {
     printk("kernel: loading ramdisk\n");

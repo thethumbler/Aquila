@@ -1,6 +1,9 @@
 #ifndef _CORE_ASSERT_H
 #define _CORE_ASSERT_H
 
+/* Panics if a condition isn't true, if a size isn't what's expected, or
+ * if a pointer isn't aligned as it should be. */
+
 #define assert(x) \
     if (!(x)) \
         panic("Assertion " #x " failed");
