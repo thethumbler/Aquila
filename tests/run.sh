@@ -2,13 +2,15 @@
 #
 # Build the kernel with the host toolchain and run the QEMU test suite.
 #
-# usage: tests/run.sh [-a arch] [-c cpus] [-k args] [-n] [-v] [test...]
+# usage: tests/run.sh [-a arch] [-c cpus] [-j jobs] [-k args] [-n] [-v] [test...]
 #
 #   -a      the architecture: x86_64 (default), i386, or aarch64 (QEMU's
 #           virt machine, the kernel and tests built with clang; the
 #           aarch64 and oom tests)
 #   -c      the CPUs QEMU has (-smp), every boot (but the irq and smp
 #           tests', which choose)
+#   -j      tests run at once (default 1); the ones that time things or
+#           take much memory (clock, irq, smp, memory) run alone, after
 #   -k      more for the kernel's command line, every boot (e.g. apic=off;
 #           but the disk test's, Limine's configuration says it)
 #   -n      don't rebuild the kernel, use the existing image
@@ -47,15 +49,21 @@ TOOLS="gcc ld cpio"
 verbose=0
 kargs=
 smp=
+jobs=1
 
-while getopts "a:c:k:nvh" opt; do
+# tests that measure time (a tick's rate, the clock against the host's,
+# threads running at once) or use much memory: never beside others
+SERIAL_TESTS="clock irq smp memory"
+
+while getopts "a:c:j:k:nvh" opt; do
     case $opt in
         a) ARCH=$OPTARG ;;
         c) smp=$OPTARG ;;
+        j) jobs=$OPTARG ;;
         k) kargs=$OPTARG ;;
         n) build=0 ;;
         v) verbose=1 ;;
-        *) sed -n '3,18p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+        *) sed -n '3,20p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
     esac
 done
 shift $((OPTIND - 1))
@@ -399,9 +407,12 @@ test_clock()
         IFS='|' read -r name args karg want fine <<< "$m"
         local log=$OUT/clock/$name.log
 
+        # QEMU (timeout's) is the job, its output timestamped beside it: a
+        # pipeline's job would be waited for until QEMU's timeout, killing
+        # the stamper doesn't stop QEMU
         timeout 60 $QEMU $ACCEL $args -kernel "$KERNEL" -initrd "$OUT/clock/initrd.img" -m 256 \
-            -display none -no-reboot -append "$karg" -serial stdio 2>/dev/null |
-            python3 "$TESTS/clock/stamp.py" > "$log" &
+            -display none -no-reboot -append "$karg" -serial stdio 2>/dev/null \
+            > >(python3 "$TESTS/clock/stamp.py" > "$log") &
         local pid=$!
 
         for _ in $(seq 300); do
@@ -409,7 +420,7 @@ test_clock()
             sleep 0.1
         done
 
-        pkill -P $pid 2>/dev/null; kill $pid 2>/dev/null
+        kill $pid 2>/dev/null
         wait $pid 2>/dev/null
 
         local problem
@@ -1212,23 +1223,106 @@ for name in cpu syscalls memory oom kvmem clock irq smp net tcp ext2 minix libc 
     esac
 done
 
-for name in $selected; do
-    printf '%-10s ' "$name"
-    result=$(test_$name 2>&1)
-    status=$?
+# each test's output and exit status, in $RESULTS
+RESULTS=$OUT/results
+rm -rf "$RESULTS"
+mkdir -p "$RESULTS"
 
-    if [ $status = 0 ]; then
-        echo "ok    $(echo "$result" | tail -1)"
+# run_test <name>: in a subshell of its own, which takes its background
+# helpers (servers, peers, QEMU) with it when it ends, however it ends
+run_test()
+{
+    local start=$SECONDS
+
+    (
+        trap 'kill $(jobs -p) 2>/dev/null' EXIT
+        test_$1
+    ) > "$RESULTS/$1.out" 2>&1
+    local status=$?
+
+    echo $((SECONDS - start)) > "$RESULTS/$1.time"
+    echo $status > "$RESULTS/$1.status"
+}
+
+# report <name>: a finished test's line (and what it said, if it failed)
+report()
+{
+    local name=$1 status
+    status=$(cat "$RESULTS/$name.status")
+
+    printf '%-10s %4ss ' "$name" "$(cat "$RESULTS/$name.time")"
+
+    if [ "$status" = 0 ]; then
+        echo "ok    $(tail -1 "$RESULTS/$name.out")"
     else
         echo "FAIL"
-        echo "$result" | sed 's/^/    /'
+        sed 's/^/    /' "$RESULTS/$name.out"
         if [ $verbose = 1 ]; then
             echo "    --- serial log:"
             sed 's/^/    | /' "$OUT/$name/serial.log" 2>/dev/null | tail -40
         fi
         failed=$((failed + 1))
     fi
-done
+}
+
+# the tests left to report, in order: each as soon as it and those
+# before it are done
+order=()
+next=0
+
+report_done()
+{
+    while [ $next -lt ${#order[@]} ] && [ -f "$RESULTS/${order[$next]}.status" ]; do
+        report "${order[$next]}"
+        next=$((next + 1))
+    done
+}
+
+# interrupted: the tests running go too (their EXIT traps take their
+# helpers)
+trap 'kill $(jobs -p) 2>/dev/null; exit 130' INT TERM
+
+if [ "$jobs" -le 1 ]; then
+    for name in $selected; do
+        order+=("$name")
+        run_test "$name"
+        report_done
+    done
+else
+    # the others N at a time, then the serial ones, one by one
+    parallel= serial=
+    for name in $selected; do
+        case " $SERIAL_TESTS " in
+            *" $name "*) serial="$serial $name" ;;
+            *)           parallel="$parallel $name" ;;
+        esac
+    done
+
+    order=($parallel $serial)
+    running=0
+
+    for name in $parallel; do
+        if [ $running -ge "$jobs" ]; then
+            wait -n
+            running=$((running - 1))
+            report_done
+        fi
+
+        run_test "$name" &
+        running=$((running + 1))
+    done
+
+    while [ $running -gt 0 ]; do
+        wait -n
+        running=$((running - 1))
+        report_done
+    done
+
+    for name in $serial; do
+        run_test "$name"
+        report_done
+    done
+fi
 
 [ $failed = 0 ] && echo "all tests passed" || echo "$failed test(s) failed"
 exit $failed
