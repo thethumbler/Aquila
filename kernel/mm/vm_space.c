@@ -54,9 +54,9 @@ int vm_space_insert(struct vm_space *vm_space, struct vm_entry *vm_entry)
         return -ENOMEM;
 
     struct qnode *node = kmalloc(sizeof(struct qnode), &M_QNODE, M_ZERO);
-    if (!node) {
-        /* TODO */
-    }
+
+    if (!node)
+        return -ENOMEM;
 
     node->value = vm_entry;
     node->next = cur;
@@ -127,17 +127,21 @@ int vm_space_fork(struct vm_space *src, struct vm_space *dst)
         struct vm_entry *s_entry = node->value;
         struct vm_entry *d_entry = kmalloc(sizeof(struct vm_entry), &M_VM_ENTRY, 0);
 
-        if (!d_entry) {
-            /* TODO */
-        }
+        /* out of memory: what was copied goes with dst (the caller's
+         * vm_space_destroy(), fork's error path) */
+        if (!d_entry)
+            return -ENOMEM;
 
         memcpy(d_entry, s_entry, sizeof(struct vm_entry));
-        d_entry->qnode = enqueue(&dst->vm_entries, d_entry);
+
+        if (!(d_entry->qnode = enqueue(&dst->vm_entries, d_entry))) {
+            kfree(d_entry);
+            return -ENOMEM;
+        }
 
         if (s_entry->vm_anon) {
             s_entry->vm_anon->flags |= VM_COPY;
             vm_anon_incref(s_entry->vm_anon);
-            //s_entry->vm_anon->ref++;
         }
 
         if (s_entry->vm_object) {
