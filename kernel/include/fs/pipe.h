@@ -20,7 +20,7 @@ struct pipe {
     struct vnode *rw_node;
 
     /** readers and writers sleep here */
-    struct queue *queue;
+    struct waitq queue;
 
     /** a FIFO's opens for reading and for writing, so far: an open waiting
      *  for the other side sees it came, even if it's gone already */

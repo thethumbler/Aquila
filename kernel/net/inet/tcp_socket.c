@@ -203,7 +203,7 @@ uint32_t tcp_iss(struct tcp_pcb *pcb)
 
 void tcp_wakeup(struct tcp_pcb *pcb)
 {
-    thread_queue_wakeup(&pcb->wait);
+    waitq_wakeup(&pcb->wait);
 }
 
 /** taken off its listener's queues (it is done, or accept() took it) */
@@ -753,7 +753,7 @@ static int socket_tcp_can_read(struct file *file, size_t len)
 }
 
 /** accept, connect, recv and send all wait on the connection's queue */
-static struct queue *socket_tcp_wait_queue(struct file *file, int write)
+static struct waitq *socket_tcp_wait_queue(struct file *file, int write)
 {
     struct tcp_pcb *pcb = file->socket->p;
     return &pcb->wait;

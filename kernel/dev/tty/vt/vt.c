@@ -50,7 +50,7 @@ static int busy;
 static int pending = -1;
 
 /* VT_WAITACTIVE, woken up after each switch */
-static struct queue active_queue;
+static struct waitq active_queue;
 
 static const uint32_t ansi_colors[16] = {
     0x000000, 0xaa0000, 0x00aa00, 0xaa5500, 0x0000aa, 0xaa00aa, 0x00aaaa, 0xaaaaaa,
@@ -180,7 +180,7 @@ static void vt_input_flush(struct tty *tty)
 static void vt_input_to(struct vt *vt, const char *buf, size_t size)
 {
     tty_master_write(vt->tty, size, (void *) buf);
-    thread_queue_wakeup(&vt->read_queue);
+    waitq_wakeup(&vt->read_queue);
 }
 
 /** replies to requests in what was written (DSR, DA) are input */
@@ -292,7 +292,7 @@ static void vt_switch_now(int id)
     if (vt->mode.mode == VT_PROCESS)
         vt_signal(vt, vt->mode.acqsig);
 
-    thread_queue_wakeup(&active_queue);
+    waitq_wakeup(&active_queue);
 }
 
 void vt_switch(int id)
@@ -586,7 +586,7 @@ static int vt_kd_ioctl(struct vt *vt, int request, void *argp)
                 return -ENXIO;
 
             while (arg && fg != &vts[arg - 1]) {
-                int err = thread_queue_sleep(&active_queue);
+                int err = waitq_sleep(&active_queue);
 
                 if (err)
                     return err;

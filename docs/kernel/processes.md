@@ -108,9 +108,9 @@ others, and take no signals. There is one today, `net` (`net/netif.c`).
 ### Round robin
 
 The scheduler ([`sys/sched.c`](../../kernel/sys/sched.c)) is the simplest
-there is: one queue of ready threads, `ready_queue`, shared by every CPU,
+there is: one list of ready threads, `ready`, shared by every CPU,
 first in first out. `schedule()` puts the running thread at the end of
-the queue and runs the one at its head. It runs:
+the list and runs the one at its head. It runs:
 
 - **on every tick**, every 2 ms on each CPU (see [Interrupts](interrupts.md)):
   so a thread runs for one tick at most, its *time slice*, before the
@@ -154,27 +154,27 @@ and `/proc` report these.
 ### Sleeping and waking
 
 A thread that has to wait for something (data on a pipe, a disk block,
-a child to exit) sleeps on a *wait queue*, a `struct queue` of threads
-that belongs to what it waits for: a pipe has one for its readers, a
-process one for its parent's `waitpid()`. The pattern is the same
-everywhere:
+a child to exit) sleeps on a *wait queue*, a `struct waitq` of threads
+([`sys/waitq.h`](../../kernel/include/sys/waitq.h)) that belongs to what
+it waits for: a pipe has one for its readers, a process one for its
+parent's `waitpid()`. The pattern is the same everywhere:
 
 ```c
 while (!what_we_wait_for())
-    if (thread_queue_sleep(&queue))
+    if (waitq_sleep(&waitq))
         return -ERESTARTSYS;    /* a signal: the call returns */
 ```
 
-- `thread_queue_sleep()` ([`sys/thread.c`](../../kernel/sys/thread.c))
+- `waitq_sleep()` ([`sys/waitq.c`](../../kernel/sys/waitq.c))
   puts the thread on the queue, marks it `ISLEEP`, and switches away
   (`arch_sleep()`). A signal the process doesn't block wakes it, and it
   returns `-ERESTARTSYS`: the system call gives up and returns, the
   signal is delivered on the way out, and the call is restarted or fails
   with `EINTR` (see [Signals](signals.md)).
-- `thread_queue_sleep_unint()` sleeps until woken, whatever comes: for
+- `waitq_sleep_unint()` sleeps until woken, whatever comes: for
   waits that can't be given up halfway, a disk transfer or a page being
   read in.
-- `thread_queue_wakeup()` wakes every thread on a queue. They become
+- `waitq_wakeup()` wakes every thread on a queue. They become
   ready, and each looks again at what it waits for: a wakeup says
   something changed, not that what it waits for is there. That's why the
   sleep is always in a loop.
@@ -188,6 +188,16 @@ queue nothing else wakes.
 `select()` and `poll()` wait for any of several files: the thread
 registers the wait queue of each (`poll_register()`) and sleeps on its
 own (`thread->poll_wait`); a wakeup of any registered queue wakes it too.
+
+**Nothing here allocates.** A thread is linked into the ready list or
+the wait queue it sleeps on through a link inside it (`run_link`: on one
+of them at a time), and into the list of timed threads through another
+(`timer_link`). The lists are BSD's `TAILQ`, Linux's `list_head`:
+[`ds/list.h`](../../kernel/include/ds/list.h), with `list_entry()` to get
+the thread back from its link. So going to sleep, waking up and being
+scheduled can't fail, even with no memory left (see
+[Memory](memory.md)): a list that allocated a node for each entry would
+lose a thread whose node it couldn't have.
 
 ### Timers
 
@@ -419,7 +429,9 @@ clean FPU, and `sigreturn` puts the old state back.
 | `kernel/include/sys/proc.h`             | kernel | processes, groups, sessions                  |
 | `kernel/include/sys/thread.h`           | kernel | threads                                      |
 | `kernel/sys/proc.c`                     | kernel | pids, groups, sessions, `proc_kill()`, `proc_reap()`, descriptors |
-| `kernel/sys/thread.c`                   | kernel | threads, wait queues, `poll_register()`      |
+| `kernel/sys/thread.c`                   | kernel | threads                                      |
+| `kernel/sys/waitq.c`, `include/sys/waitq.h` | kernel | wait queues, `poll_register()`         |
+| `kernel/include/ds/list.h`              | kernel | lists linked through their entries          |
 | `kernel/sys/kthread.c`                  | kernel | process 0 and kernel threads                 |
 | `kernel/sys/sched.c`                    | kernel | the scheduler, the tick, timed waits, alarms |
 | `kernel/sys/callout.c`                  | kernel | callouts                                     |

@@ -48,7 +48,7 @@ struct sock_ops {
     int (*can_write)(struct file *socket, size_t len);
 
     /* what a reader (writer) sleeps on until it can, poll() too */
-    struct queue *(*wait_queue)(struct file *socket, int write);
+    struct waitq *(*wait_queue)(struct file *socket, int write);
 
     /* the last descriptor is closed */
     int (*shutdown) (struct file *socket, int how);
@@ -72,7 +72,7 @@ int socket_setsockopt(struct file *file, int level, int name, const void *val, s
 int socket_ioctl(struct file *file, int request, void *argp);
 int socket_can_read(struct file *file, size_t len);
 int socket_can_write(struct file *file, size_t len);
-struct queue *socket_wait_queue(struct file *file, int write);
+struct waitq *socket_wait_queue(struct file *file, int write);
 int socket_shutdown(struct file *file, int how);
 int socket_shutdown_dir(struct file *file, int how);
 

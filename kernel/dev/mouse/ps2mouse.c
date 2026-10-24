@@ -39,7 +39,7 @@ struct dev ps2mousedev;
 
 static struct ringbuf *mouse_ring = RINGBUF_NEW(BUF_SIZE);   /* Mouse ring Buffer */
 static struct proc *proc = NULL; /* Current process using mouse */
-static struct queue *mouse_read_queue = QUEUE_NEW(); /* Mouse read queue */
+static struct waitq *mouse_read_queue = &(struct waitq){0};  /* readers sleep here */
 
 /* replies of the reset at open, nobody reads them */
 static int skip = 0;
@@ -57,7 +57,7 @@ void ps2mouse_handler(int byte)
     ringbuf_write(mouse_ring, 1, &b);
 
     /* readers, and select() and poll() (which don't sleep on the queue) */
-    thread_queue_wakeup(mouse_read_queue);
+    waitq_wakeup(mouse_read_queue);
 }
 
 void ps2mouse_register(void)

@@ -29,10 +29,10 @@ struct pty {
     struct ringbuf *out;
 
     /** slave read, master write wait queue */
-    struct queue pts_read_queue;
+    struct waitq pts_read_queue;
 
     /** slave write, master read wait queue */
-    struct queue pts_write_queue;
+    struct waitq pts_write_queue;
 };
 
 #define PTY_BUF 4096
@@ -67,7 +67,7 @@ ssize_t pty_master_write(struct tty *tty, size_t size, void *buf)
 
         if (written != size) {
             /* writes must always complete, but for a signal */
-            int err = thread_queue_sleep(&pty->pts_read_queue);
+            int err = waitq_sleep(&pty->pts_read_queue);
 
             if (err)
                 return written ? (ssize_t) written : err;
@@ -87,7 +87,7 @@ ssize_t pty_slave_write(struct tty *tty, size_t size, void *buf)
 
         if (written != size) {
             /* writes must always complete, but for a signal */
-            int err = thread_queue_sleep(&pty->pts_read_queue);
+            int err = waitq_sleep(&pty->pts_read_queue);
 
             if (err)
                 return written ? (ssize_t) written : err;
@@ -141,7 +141,7 @@ static ssize_t ptm_read(struct devid *dd, off_t offset __unused, struct iobuf *i
 
     ssize_t ret = ringbuf_read_iobuf(pty->out, io->resid, io);
 
-    thread_queue_wakeup(&pty->pts_read_queue);
+    waitq_wakeup(&pty->pts_read_queue);
 
     return ret;
 }
@@ -353,8 +353,8 @@ static void pty_free(struct pty *pty)
     tty_free(pty->tty);
 
     /* slaves still open fail with ENXIO, wake up those waiting on them */
-    thread_queue_wakeup(&pty->pts_read_queue);
-    thread_queue_wakeup(&pty->pts_write_queue);
+    waitq_wakeup(&pty->pts_read_queue);
+    waitq_wakeup(&pty->pts_write_queue);
     pty->slave->read_queue  = NULL;
     pty->slave->write_queue = NULL;
 

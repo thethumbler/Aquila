@@ -11,11 +11,11 @@ struct un_conn {
      * read, then the end; the reader frees the ring */
     int soci_end, sico_end;
 
-    struct queue server_recv;
-    struct queue server_send;
-    struct queue client_recv;
-    struct queue client_send;
-    struct queue connect;
+    struct waitq server_recv;
+    struct waitq server_send;
+    struct waitq client_recv;
+    struct waitq client_send;
+    struct waitq connect;
 
     /* 1 when accepted, -1 when refused by the listener closing */
     int connected;
@@ -27,7 +27,7 @@ struct un_socket {
     size_t backlog;    /* Number of connections to keep in queue */
 
     struct queue requests;
-    struct queue accept;
+    struct waitq accept;
 
     /* Flags */
     int listening;

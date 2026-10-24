@@ -10,6 +10,7 @@ struct session;
 #include <mm/vm.h>
 #include <fs/vfs.h>
 #include <ds/queue.h>
+#include <sys/waitq.h>
 #include <sys/thread.h>
 #include <sys/signal.h>
 #include <dev/dev.h>
@@ -101,7 +102,7 @@ struct proc {
     int wait_event;
 
     /** stopped threads sleep here */
-    struct queue stop_queue;
+    struct waitq stop_queue;
 
     /** CPU time in user mode and in the kernel (ns), and that of the
      *  children it waited for */
@@ -109,9 +110,9 @@ struct proc {
     uint64_t cutime, cstime;
 
     /** ITIMER_REAL: SIGALRM when arch_rtime_ns() reaches alarm_at, then
-     *  every alarm_interval ns (0: once); alarm_node is set while armed */
+     *  every alarm_interval ns (0: once); on the alarms list while armed */
     uint64_t alarm_at, alarm_interval;
-    struct qnode *alarm_node;
+    struct list_node alarm_link;
 
     /** User ID */
     uid_t uid;
@@ -142,7 +143,7 @@ struct proc {
     int tid_last;
 
     /** Threads join wait queue */
-    struct queue thread_join;
+    struct waitq thread_join;
 
     /** Pending signals, (1 << sig): a signal sent again while pending is
      *  delivered once (POSIX leaves it to us, as everyone) */
@@ -152,7 +153,7 @@ struct proc {
     sigset_t sigmask;
 
     /** Dummy queue for children wait */
-    struct queue wait_queue;
+    struct waitq wait_queue;
 
     /** Registered signal handlers */
     struct aquila_sigaction sigaction[SIG_MAX+1];

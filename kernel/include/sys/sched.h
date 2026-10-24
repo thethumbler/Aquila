@@ -4,9 +4,7 @@
 #include <core/system.h>
 #include <sys/proc.h>
 #include <sys/cpu.h>
-#include <ds/queue.h>
-
-extern struct queue *ready_queue;
+#include <sys/waitq.h>
 
 /* the thread running on this CPU (NULL when it idles), and its process */
 #define curthread (curcpu()->thread)
@@ -38,7 +36,7 @@ void sched_thread_kick(struct thread *thread);
 void sched_thread_killed(void);
 
 int  sched_sleep(uint64_t until);
-int  sched_wait(struct queue *queue, uint64_t until);
+int  sched_wait(struct waitq *waitq, uint64_t until);
 void sched_timer_cancel(struct thread *thread);
 void sched_alarm(struct proc *proc, uint64_t value, uint64_t interval,
                  uint64_t *old_value, uint64_t *old_interval);

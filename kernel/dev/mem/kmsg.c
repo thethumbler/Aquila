@@ -9,7 +9,7 @@
 
 struct dev kmsgdev;
 extern struct ringbuf *kmsg;
-extern struct queue *kmsg_wait;
+extern struct waitq *kmsg_wait;
 
 static ssize_t kmsgdev_read(struct devid *dd __unused, off_t offset, struct iobuf *io)
 {

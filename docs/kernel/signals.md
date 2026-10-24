@@ -94,7 +94,7 @@ unblocks the signal and resets its action to the default first. A program that b
 ### Interrupting system calls
 
 A thread that sleeps in a system call (reading a terminal, waiting for a
-child) sleeps with `thread_queue_sleep()` (see [Processes and threads](processes.md)).
+child) sleeps with `waitq_sleep()` (see [Processes and threads](processes.md)).
 Woken by a signal, it returns `-ERESTARTSYS`, and the system call gives
 up and returns it, undoing nothing: every system call is written so that
 returning before it did anything is safe.

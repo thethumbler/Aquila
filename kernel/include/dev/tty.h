@@ -40,7 +40,7 @@ struct tty {
      *  VSTART on start_wait; how many wait (tty_free() leaves the tty to
      *  the last of them, gone) */
     int stopped;
-    struct queue start_wait;
+    struct waitq start_wait;
     int start_waiters;
     int gone;
 

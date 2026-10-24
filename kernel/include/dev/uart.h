@@ -17,8 +17,8 @@ struct uart {
 
     /* every node of it sleeps on these (it's woken here, not through a
      * vnode that may be gone) */
-    struct queue read_queue;
-    struct queue write_queue;
+    struct waitq read_queue;
+    struct waitq write_queue;
 
     void    (*init)    (struct uart *u);
     ssize_t (*transmit)(struct uart *u, char c);

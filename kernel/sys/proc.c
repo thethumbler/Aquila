@@ -230,7 +230,7 @@ static void proc_zombie_notify(struct proc *proc)
     int nowait = parent->sigaction[SIGCHLD].sa_handler == SIG_IGN ||
                  (parent->sigaction[SIGCHLD].sa_flags & SA_NOCLDWAIT);
 
-    thread_queue_wakeup(&parent->wait_queue);
+    waitq_wakeup(&parent->wait_queue);
     signal_proc_send(parent, SIGCHLD);
 
     if (nowait)
@@ -270,13 +270,11 @@ int proc_threads_end(struct proc *proc, struct thread *keep, int exiting)
 
         queue_node_remove(&proc->threads, node);
 
-        if (thread->sleep_node) /* Thread is sleeping on some queue */
-            queue_node_remove(thread->sleep_queue, thread->sleep_node);
+        /* off the wait queue it sleeps on, or the ready list */
+        list_remove(&thread->run_link);
+        thread->waitq = NULL;
 
         sched_timer_cancel(thread);
-
-        if (thread->sched_node) /* Thread is in the scheduler queue */
-            queue_node_remove(thread->sched_queue, thread->sched_node);
 
         /* a system call it won't return from: the files it held */
         thread_files_release(thread);
@@ -301,7 +299,7 @@ void proc_threads_exec(struct proc *proc)
         return;
 
     while (proc_threads_end(proc, curthread, 0))
-        thread_queue_sleep_unint(&proc->thread_join);
+        waitq_sleep_unint(&proc->thread_join);
 }
 
 void proc_kill(struct proc *proc)

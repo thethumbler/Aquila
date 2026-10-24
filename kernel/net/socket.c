@@ -121,7 +121,7 @@ int socket_can_read(struct file *file, size_t len)
 }
 
 /** NULL if the protocol can't tell: any wakeup is */
-struct queue *socket_wait_queue(struct file *file, int write)
+struct waitq *socket_wait_queue(struct file *file, int write)
 {
     if (!file->socket->ops || !file->socket->ops->wait_queue)
         return NULL;

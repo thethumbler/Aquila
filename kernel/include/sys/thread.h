@@ -6,6 +6,8 @@
 struct thread;
 
 #include <sys/proc.h>
+#include <sys/waitq.h>
+#include <ds/list.h>
 
 typedef enum {
     RUNNABLE,
@@ -37,8 +39,10 @@ struct thread {
     uintptr_t stack_base;
     size_t    stack_size;
 
-    /** Current sleep queue */
-    struct queue *sleep_queue;
+    /** On the ready list (sched.c) while it's ready to run, or on the
+     *  wait queue it sleeps on (waitq: run_link.list says which) */
+    struct list_node run_link;
+    struct waitq *waitq;
 
     /** The system call it's in (the last it made), to restart it */
     int syscall_nr;
@@ -57,7 +61,6 @@ struct thread {
      *  on the way out (signal_return) */
     int      sig_oldmask_set;
     sigset_t sig_oldmask;
-    struct qnode *sleep_node;
 
     /** Waiting with a deadline (sched_wait): when (arch_rtime_ns()) */
     uint64_t sleep_until;
@@ -65,12 +68,8 @@ struct thread {
     /** Address of the last fault, the si_addr of the signal it raised */
     uintptr_t fault_addr;
 
-    /** In the timer's list while waiting with a deadline (sched_wait) */
-    struct qnode *timer_node;
-
-    /** Scheduler queue */
-    struct queue *sched_queue;
-    struct qnode *sched_node;
+    /** On the timer's list while waiting with a deadline (sched_wait) */
+    struct list_node timer_link;
 
     /** The open files its system call holds (file_hold), let go of when
      *  it returns, or when the thread is killed */
@@ -91,7 +90,7 @@ struct thread {
     /** In select() or poll(): what it waits on (poll_register), and where
      *  it sleeps meanwhile */
     struct poll_reg *poll_regs;
-    struct queue poll_wait;
+    struct waitq poll_wait;
 
     /** Killed (proc_threads_end) while it ran on another CPU: it frees
      *  itself there, when that CPU next enters the kernel (its process,
@@ -99,16 +98,7 @@ struct thread {
     int killed;
 };
 
-int  thread_queue_sleep(struct queue *queue);
-void thread_queue_sleep_unint(struct queue *queue);
-int thread_queue_wakeup(struct queue *queue);
-int thread_queue_wakeup_nopoll(struct queue *queue);
-
-/* select() and poll(): the queues of the files the current thread waits
- * for, its sleep ended by a wakeup of one (NULL: of any) */
-int  poll_register(struct queue *queue);
-void poll_unregister(struct thread *thread);
-void thread_wakeup(struct thread *thread);
+/* sleeping and waking up: sys/waitq.h */
 int thread_new(struct proc *proc, struct thread **rthread);
 int thread_create(struct thread *thread, uintptr_t stack, uintptr_t entry, uintptr_t uentry, uintptr_t arg, uintptr_t attr, struct thread **new_thread);
 int thread_kill(struct thread *thread);

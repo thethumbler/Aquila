@@ -50,7 +50,7 @@ struct inet_sock {
 
     struct netbuf *recv_head, *recv_tail;
     size_t recv_bytes;
-    struct queue recv_wait;
+    struct waitq recv_wait;
 
     struct netif *netif;        /* SO_BINDTODEVICE: only through it */
 
@@ -170,14 +170,14 @@ void inet_sock_deliver(struct inet_sock *sock, struct netbuf *nb)
     sock->recv_tail = nb;
     sock->recv_bytes += NETBUF_SIZE;
 
-    thread_queue_wakeup(&sock->recv_wait);
+    waitq_wakeup(&sock->recv_wait);
 }
 
 /** an error for it (ICMP's), the next call reports it */
 void inet_sock_error(struct inet_sock *sock, int err)
 {
     sock->error = err;
-    thread_queue_wakeup(&sock->recv_wait);
+    waitq_wakeup(&sock->recv_wait);
 }
 
 /*
@@ -471,7 +471,7 @@ static int socket_inet_can_write(struct file *file, size_t len)
 }
 
 /** a datagram's reader waits on recv_wait (a writer never waits) */
-static struct queue *socket_inet_wait_queue(struct file *file, int write)
+static struct waitq *socket_inet_wait_queue(struct file *file, int write)
 {
     struct inet_sock *sock = file->socket->p;
     return write ? NULL : &sock->recv_wait;
@@ -619,7 +619,7 @@ static int socket_inet_shut(struct file *file, int how)
 
     if (how & SHUT_RD) {
         sock->shut_rd = 1;
-        thread_queue_wakeup(&sock->recv_wait);
+        waitq_wakeup(&sock->recv_wait);
     }
 
     return 0;

@@ -130,7 +130,7 @@ struct vt {
     struct tty *tty;
     struct ringbuf *in;
     struct vnode *vnode;
-    struct queue read_queue, write_queue;
+    struct waitq read_queue, write_queue;
 };
 
 /* term.c: the terminal emulator */

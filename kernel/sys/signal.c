@@ -3,7 +3,7 @@
  *
  * Sending a signal makes it pending (a bit of proc->sig_pending) and, if
  * the process doesn't block it, wakes its threads that sleep where a
- * signal may end the sleep (thread_queue_sleep): they return ERESTARTSYS
+ * signal may end the sleep (waitq_sleep): they return ERESTARTSYS
  * and their system calls unwind. A signal is delivered on the way back to
  * user mode only, the architecture's return path calling signal_take()
  * (stops, default actions) and running the handler it returns: the
@@ -71,7 +71,7 @@ static void signal_notify_parent(struct proc *proc)
     if (!parent)
         return;
 
-    thread_queue_wakeup(&parent->wait_queue);
+    waitq_wakeup(&parent->wait_queue);
 
     if (!(parent->sigaction[SIGCHLD].sa_flags & SA_NOCLDSTOP))
         signal_proc_send(parent, SIGCHLD);
@@ -91,7 +91,7 @@ void signal_stop(int sig)
     signal_notify_parent(proc);
 
     while (proc->stopped)
-        thread_queue_sleep_unint(&proc->stop_queue);
+        waitq_sleep_unint(&proc->stop_queue);
 }
 
 #define STOP_SIGNALS    ((1UL << SIGSTOP) | (1UL << SIGTSTP) | (1UL << SIGTTIN) | (1UL << SIGTTOU))
@@ -144,7 +144,7 @@ static int signal_to(struct proc *proc, int signal)
                 signal_notify_parent(proc);
             }
 
-            thread_queue_wakeup(&proc->stop_queue);
+            waitq_wakeup(&proc->stop_queue);
         }
     }
 
@@ -162,7 +162,7 @@ static int signal_to(struct proc *proc, int signal)
     queue_for (node, &proc->threads) {
         struct thread *thread = node->value;
 
-        if (thread->state == ISLEEP && thread->sleep_node)
+        if (thread->state == ISLEEP && thread->waitq)
             thread_wakeup(thread);
         else
             sched_thread_kick(thread);  /* running elsewhere: it takes it */

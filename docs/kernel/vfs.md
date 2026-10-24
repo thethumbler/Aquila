@@ -55,7 +55,7 @@ struct vnode {
     void *p;                /* the filesystem's own data */
     size_t ref;             /* who uses it */
 
-    struct queue *read_queue, *write_queue;  /* who waits on it */
+    struct waitq *read_queue, *write_queue;  /* who waits on it */
     struct vm_object *vm_object;             /* its pages, if mapped */
     struct pipe *fifo;                       /* a FIFO's pipe, while open */
     struct vnode *mounted, *covered;         /* mount points */

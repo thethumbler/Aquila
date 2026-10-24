@@ -33,10 +33,10 @@ static int unix_addr_check(const struct sockaddr *addr)
 /** wake up everyone sleeping on a connection, so they notice state changes */
 static void unix_conn_wakeup(struct un_conn *conn)
 {
-    thread_queue_wakeup(&conn->server_recv);
-    thread_queue_wakeup(&conn->server_send);
-    thread_queue_wakeup(&conn->client_recv);
-    thread_queue_wakeup(&conn->client_send);
+    waitq_wakeup(&conn->server_recv);
+    waitq_wakeup(&conn->server_send);
+    waitq_wakeup(&conn->client_recv);
+    waitq_wakeup(&conn->client_send);
 }
 
 int socket_unix_create(struct file *file, int domain, int type, int protocol)
@@ -77,7 +77,7 @@ static int socket_unix_accept(struct file *file, struct file *conn, const struct
         if (file->flags & O_NONBLOCK)
             return -EAGAIN;
 
-        int err = thread_queue_sleep(&socket->accept);
+        int err = waitq_sleep(&socket->accept);
 
         if (err)
             return err;
@@ -115,7 +115,7 @@ static int socket_unix_accept(struct file *file, struct file *conn, const struct
     request->connected = 1;
 
     /* Wakeup client if waiting for connection */
-    thread_queue_wakeup(&request->connect);
+    waitq_wakeup(&request->connect);
 
     return 0;
 }
@@ -215,11 +215,11 @@ static int socket_unix_connect(struct file *file, const struct sockaddr *addr, s
     enqueue(&socket->requests, request);
 
     /* Wake up server if waiting for connections */
-    thread_queue_wakeup(&socket->accept);
+    waitq_wakeup(&socket->accept);
 
     /* Sleep until the connection is established */
     while (!request->connected) {
-        int err = thread_queue_sleep(&request->connect);
+        int err = waitq_sleep(&request->connect);
 
         if (err)
             return err;
@@ -328,8 +328,8 @@ static ssize_t socket_unix_send(struct file *file, struct iobuf *io, int flags,
      * keep a pointer to the conn field and re-read it every iteration */
     struct ringbuf **ring_p = NULL;
 
-    struct queue *recv_queue = NULL;
-    struct queue *send_queue = NULL;
+    struct waitq *recv_queue = NULL;
+    struct waitq *send_queue = NULL;
 
     if (file->offset == 0) {  /* Server */
         ring_p     = &conn->soci;
@@ -360,7 +360,7 @@ static ssize_t socket_unix_send(struct file *file, struct iobuf *io, int flags,
             return retval ? retval : incr;
 
         if (incr > 0)
-            thread_queue_wakeup(recv_queue);
+            waitq_wakeup(recv_queue);
 
         if (incr > 0 && !(flags & MSG_WAITALL))
             return incr;
@@ -374,7 +374,7 @@ static ssize_t socket_unix_send(struct file *file, struct iobuf *io, int flags,
         if (file->flags & O_NONBLOCK)
             return retval ? retval : -EAGAIN;
 
-        int err = thread_queue_sleep(send_queue);
+        int err = waitq_sleep(send_queue);
 
         if (err)
             return retval ? retval : err;
@@ -401,8 +401,8 @@ static ssize_t socket_unix_recv(struct file *file, struct iobuf *io, int flags,
     /* see socket_unix_send */
     struct ringbuf **ring_p = NULL;
 
-    struct queue *recv_queue = NULL;
-    struct queue *send_queue = NULL;
+    struct waitq *recv_queue = NULL;
+    struct waitq *send_queue = NULL;
 
     int *end_p;
 
@@ -431,7 +431,7 @@ static ssize_t socket_unix_recv(struct file *file, struct iobuf *io, int flags,
             return retval ? retval : incr;
 
         if (incr > 0)
-            thread_queue_wakeup(send_queue);
+            waitq_wakeup(send_queue);
 
         /* nothing more will come */
         if (!incr && *end_p)
@@ -449,7 +449,7 @@ static ssize_t socket_unix_recv(struct file *file, struct iobuf *io, int flags,
         if (file->flags & O_NONBLOCK)
             return retval ? retval : -EAGAIN;
 
-        int err = thread_queue_sleep(recv_queue);
+        int err = waitq_sleep(recv_queue);
 
         if (err)
             return retval ? retval : err;
@@ -495,7 +495,7 @@ static int socket_unix_can_read(struct file *file, size_t len)
 
 /** a listener's accept waits on accept; a connection's recv and send on
  * the queues of its side (socket_unix_recv, socket_unix_send) */
-static struct queue *socket_unix_wait_queue(struct file *file, int write)
+static struct waitq *socket_unix_wait_queue(struct file *file, int write)
 {
     if (file->socket->domain == AF_UNIX) {
         struct un_socket *socket = file->socket->p;
@@ -606,7 +606,7 @@ static int socket_unix_shutdown(struct file *file, int how)
         /* refuse pending connections, connect() frees the request */
         while ((request = dequeue(&socket->requests))) {
             request->connected = -1;
-            thread_queue_wakeup(&request->connect);
+            waitq_wakeup(&request->connect);
         }
 
         vfs_close(socket->vnode);

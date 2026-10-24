@@ -32,7 +32,7 @@ static struct ata_channel channels[2];
 static void channel_acquire(struct ata_channel *ch)
 {
     while (ch->busy && sched_running && curthread)
-        thread_queue_sleep_unint(&ch->wait);
+        waitq_sleep_unint(&ch->wait);
 
     ch->busy = 1;
 }
@@ -40,7 +40,7 @@ static void channel_acquire(struct ata_channel *ch)
 static void channel_release(struct ata_channel *ch)
 {
     ch->busy = 0;
-    thread_queue_wakeup_nopoll(&ch->wait);
+    waitq_wakeup_nopoll(&ch->wait);
 }
 
 /** the driver's transfers, for the block cache: the channel is held for

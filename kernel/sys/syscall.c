@@ -719,7 +719,7 @@ static void sys_waitpid(int pid, int *stat_loc, int options)
             return;
         }
 
-        if (thread_queue_sleep(&curproc->wait_queue)) {
+        if (waitq_sleep(&curproc->wait_queue)) {
             arch_syscall_return(curthread, -ERESTARTSYS);
             return;
         }
@@ -1229,7 +1229,7 @@ static void sys_thread_exit(void *value_ptr)
         sys_exit(0);
 
     /* Wakeup owner if it is waiting for joining */
-    thread_queue_wakeup(&owner->thread_join);
+    waitq_wakeup(&owner->thread_join);
 
     /* The thread stays in owner->threads as a zombie, freed by
      * thread_join, or when the process exits. Its kernel stack (which we
@@ -1267,7 +1267,7 @@ static void sys_thread_join(int tid, void **value_ptr)
     }
 
     while (thread->state != ZOMBIE) {
-        if (thread_queue_sleep(&curproc->thread_join)) {
+        if (waitq_sleep(&curproc->thread_join)) {
             arch_syscall_return(curthread, -ERESTARTSYS);
             return;
         }
@@ -2117,7 +2117,7 @@ static void sys_sigsuspend(const sigset_t *set)
     }
 
     struct thread *thread = curthread;
-    struct queue wait = {0};
+    struct waitq wait = {0};
 
     /* the mask it replaces is the handler's frame's (sigreturn restores
      * it), or comes back if it's restarted (x86_return_to_user) */
@@ -2126,7 +2126,7 @@ static void sys_sigsuspend(const sigset_t *set)
     curproc->sigmask = kset & ~SIG_UNMASKABLE;
 
     /* until a signal it doesn't block (nothing else wakes it up) */
-    while (!thread_queue_sleep(&wait))
+    while (!waitq_sleep(&wait))
         ;
 
     /* EINTR once a handler ran; restarted if none did (a stop) */

@@ -37,7 +37,7 @@ ssize_t posix_file_write(struct file *file, struct iobuf *io)
             
             /* Wake up all sleeping readers if a `read_queue' is attached */
             if (file->vnode->read_queue)
-                thread_queue_wakeup(file->vnode->read_queue);
+                waitq_wakeup(file->vnode->read_queue);
 
             /* Return written bytes count */
             return retval;
@@ -66,7 +66,7 @@ ssize_t posix_file_write(struct file *file, struct iobuf *io)
             /* readers may be asleep waiting for what was just written
              * (a pipe's ring holds less than one stdio buffer) */
             if (file->vnode->read_queue)
-                thread_queue_wakeup(file->vnode->read_queue);
+                waitq_wakeup(file->vnode->read_queue);
 
             /* nothing would wake a writer up, nothing more fits */
             if (!file->vnode->write_queue)
@@ -74,7 +74,7 @@ ssize_t posix_file_write(struct file *file, struct iobuf *io)
 
             /* Sleep on the file writers queue; a signal: what was
              * written, or the call ends for it */
-            int err = thread_queue_sleep(file->vnode->write_queue);
+            int err = waitq_sleep(file->vnode->write_queue);
 
             if (err) {
                 if (io->resid == size)
@@ -91,7 +91,7 @@ ssize_t posix_file_write(struct file *file, struct iobuf *io)
 
         /* Wake up all sleeping readers if a `read_queue' is attached */
         if (file->vnode->read_queue)
-            thread_queue_wakeup(file->vnode->read_queue);
+            waitq_wakeup(file->vnode->read_queue);
 
         return retval;
     }

@@ -4,27 +4,29 @@
 #include <sys/proc.h>
 #include <sys/sched.h>
 #include <sys/signal.h>
-#include <ds/queue.h>
+#include <ds/list.h>
 #include <dev/random.h>
 #include <sys/callout.h>
 #include <fs/vfs.h>
 
 #include <aquila/stat.h>
 
-struct queue *ready_queue = QUEUE_NEW();   /* Ready threads queue */
+/* the threads ready to run, in the order they run (their run_link) */
+static struct list ready;
 
 /* the processors: cpus[0] the one that booted */
 struct cpu cpus[CPUS_MAX];
 int cpus_count;
 
-/* threads waiting with a deadline (thread->sleep_until), on any queue */
-static struct queue *timed = QUEUE_NEW();
+/* threads waiting with a deadline (thread->sleep_until), on any wait
+ * queue (their timer_link) */
+static struct list timed;
 
 /* nanosleep() sleeps here, only the timer wakes it */
-static struct queue *naps = QUEUE_NEW();
+static struct waitq naps;
 
-/* processes with a real time timer armed (proc->alarm_at) */
-static struct queue *alarms = QUEUE_NEW();
+/* processes with a real time timer armed (proc->alarm_at, alarm_link) */
+static struct list alarms;
 
 /**
  * Each CPU's timer tick, `period' ns after its last one, which interrupted
@@ -57,23 +59,17 @@ void sched_timer_tick(uint32_t period, int user)
 
     sched_cpu_tick(period, user);
 
-    struct qnode *node = timed->head;
-
-    while (node) {
-        struct qnode *next = node->next;
-        struct thread *thread = node->value;
+    list_for (node, &timed) {
+        struct thread *thread = list_entry(node, struct thread, timer_link);
 
         if (now >= thread->sleep_until) {
             sched_timer_cancel(thread);
             thread_wakeup(thread);
         }
-
-        node = next;
     }
 
-    for (node = alarms->head; node; ) {
-        struct qnode *next = node->next;
-        struct proc *proc = node->value;
+    list_for (node, &alarms) {
+        struct proc *proc = list_entry(node, struct proc, alarm_link);
 
         if (now >= proc->alarm_at) {
             if (proc->alarm_interval) {
@@ -82,14 +78,11 @@ void sched_timer_tick(uint32_t period, int user)
                 if (proc->alarm_at <= now)
                     proc->alarm_at = now + proc->alarm_interval;
             } else {
-                queue_node_remove(alarms, proc->alarm_node);
-                proc->alarm_node = NULL;
+                list_remove(&proc->alarm_link);
             }
 
             signal_proc_send(proc, SIGALRM);
         }
-
-        node = next;
     }
 }
 
@@ -98,8 +91,10 @@ void sched_alarm_get(struct proc *proc, uint64_t *value, uint64_t *interval)
 {
     uint64_t now = arch_rtime_ns();
 
-    *value = !proc->alarm_node ? 0 : proc->alarm_at > now ? proc->alarm_at - now : 1;
-    *interval = proc->alarm_node ? proc->alarm_interval : 0;
+    int armed = list_linked(&proc->alarm_link);
+
+    *value = !armed ? 0 : proc->alarm_at > now ? proc->alarm_at - now : 1;
+    *interval = armed ? proc->alarm_interval : 0;
 }
 
 /*
@@ -120,44 +115,38 @@ void sched_alarm(struct proc *proc, uint64_t value, uint64_t interval,
     if (old_interval)
         *old_interval = i;
 
-    if (proc->alarm_node) {
-        queue_node_remove(alarms, proc->alarm_node);
-        proc->alarm_node = NULL;
-    }
+    list_remove(&proc->alarm_link);
 
     if (!value)
         return;
 
     proc->alarm_at = now + value;
     proc->alarm_interval = interval;
-    proc->alarm_node = enqueue(alarms, proc);
+    list_append(&alarms, &proc->alarm_link);
 }
 
 /** the thread no longer waits with a deadline (woken, or killed) */
 void sched_timer_cancel(struct thread *thread)
 {
-    if (thread->timer_node) {
-        queue_node_remove(timed, thread->timer_node);
-        thread->timer_node = NULL;
-    }
+    list_remove(&thread->timer_link);
 }
 
 /**
  * Sleep on `queue' until woken up, or until arch_rtime_ns() reaches
  * `until' (0: no limit). Returns 1 if the time is up, -ERESTARTSYS if a
- * signal ended the sleep (thread_queue_sleep), 0 if woken up.
+ * signal ended the sleep (waitq_sleep), 0 if woken up.
  */
-int sched_wait(struct queue *queue, uint64_t until)
+int sched_wait(struct waitq *waitq, uint64_t until)
 {
     if (until) {
         if (arch_rtime_ns() >= until)
             return 1;
 
         curthread->sleep_until = until;
-        curthread->timer_node  = enqueue(timed, curthread);
+        list_append(&timed, &curthread->timer_link);
     }
 
-    int err = thread_queue_sleep(queue);
+    int err = waitq_sleep(waitq);
     sched_timer_cancel(curthread);
 
     if (err)
@@ -174,7 +163,7 @@ int sched_sleep(uint64_t until)
 {
     int r;
 
-    while (!(r = sched_wait(naps, until)))
+    while (!(r = sched_wait(&naps, until)))
         ;
 
     return r < 0 ? r : 0;
@@ -211,7 +200,7 @@ void sched_thread_killed(void)
 
     if (thread->owner) {
         queue_remove(&thread->owner->threads, thread);
-        thread_queue_wakeup(&thread->owner->thread_join);
+        waitq_wakeup(&thread->owner->thread_join);
         thread->owner = NULL;
     }
 
@@ -239,9 +228,7 @@ static void sched_cpu_wake(void)
 
 void sched_thread_ready(struct thread *thread)
 {
-    struct qnode *sched_node = enqueue(ready_queue, thread);
-    thread->sched_queue = ready_queue;
-    thread->sched_node  = sched_node;
+    list_append(&ready, &thread->run_link);
     sched_cpu_wake();
 }
 
@@ -257,8 +244,7 @@ void sched_thread_wake(struct thread *thread)
         return;
     }
 
-    thread->sched_queue = ready_queue;
-    thread->sched_node  = enqueue_head(ready_queue, thread);
+    list_prepend(&ready, &thread->run_link);
     sched_urgent = 1;
     sched_cpu_wake();
 }
@@ -269,7 +255,7 @@ void kernel_idle(void)
 {
     curcpu()->idle = 1;
 
-    if (ready_queue->count)
+    if (!list_empty(&ready))
         schedule();
 
     arch_idle();
@@ -282,7 +268,7 @@ void sched_idle_wakeup(void)
     /* another CPU may wake it again */
     curcpu()->kicked = 0;
 
-    if (curcpu()->idle && ready_queue->count)
+    if (curcpu()->idle && !list_empty(&ready))
         schedule();
 }
 
@@ -313,11 +299,10 @@ void sched_init_spawn(struct proc *init)
     sched_thread_spawn(curthread);
 }
 
-void schedule() /* Called from arch-specific timer event handler */
+/** the running thread (if any) to the end of the ready list, the one at
+ * its head runs; none: the CPU idles */
+void schedule(void)
 {
-    if (!ready_queue)    /* How did we even get here? */
-        panic("Threads queue is not initialized");
-
     sched_urgent = 0;
 
     if (!curcpu()->idle)
@@ -325,11 +310,10 @@ void schedule() /* Called from arch-specific timer event handler */
 
     curcpu()->idle = 0;
 
-    if (!ready_queue->count) /* No ready threads, idle */
+    if (list_empty(&ready))
         kernel_idle();
 
-    curthread = dequeue(ready_queue);
-    curthread->sched_node = NULL;
+    curthread = list_entry(list_pop(&ready), struct thread, run_link);
 
     if (curthread->spawned) {
         arch_thread_switch(curthread);

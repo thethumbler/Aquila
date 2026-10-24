@@ -29,7 +29,7 @@ void uart_receive_handler(struct uart *u, size_t size)
         size -= n;
     }
 
-    thread_queue_wakeup(&u->read_queue);
+    waitq_wakeup(&u->read_queue);
 }
 
 /** Called when data is ready to be transmitted */
@@ -44,7 +44,7 @@ void uart_transmit_handler(struct uart *u, size_t size)
         u->transmit(u, c);
     }
 
-    thread_queue_wakeup(&u->write_queue);
+    waitq_wakeup(&u->write_queue);
 }
 
 /** TTY Interface */

@@ -43,7 +43,7 @@ static void list_insert(struct vmem_seg **list, struct vmem_seg *seg)
     *list = seg;
 }
 
-static void list_remove(struct vmem_seg **list, struct vmem_seg *seg)
+static void seg_list_remove(struct vmem_seg **list, struct vmem_seg *seg)
 {
     if (seg->lprev)
         seg->lprev->lnext = seg->lnext;
@@ -135,7 +135,7 @@ struct vmem_seg *vmem_alloc(struct vmem *vm, size_t size)
         if (!rest)
             return NULL;
 
-        list_remove(free_list(vm, seg), seg);
+        seg_list_remove(free_list(vm, seg), seg);
 
         rest->base = seg->base + size;
         rest->size = seg->size - size;
@@ -145,7 +145,7 @@ struct vmem_seg *vmem_alloc(struct vmem *vm, size_t size)
         seg_link(vm, seg, rest);
         list_insert(free_list(vm, rest), rest);
     } else {
-        list_remove(free_list(vm, seg), seg);
+        seg_list_remove(free_list(vm, seg), seg);
     }
 
     seg->free = 0;
@@ -167,8 +167,8 @@ struct vmem_seg *vmem_find(struct vmem *vm, uintptr_t base)
 /** `b' (right after `a', both free) becomes part of `a' */
 static void seg_merge(struct vmem *vm, struct vmem_seg *a, struct vmem_seg *b)
 {
-    list_remove(free_list(vm, a), a);
-    list_remove(free_list(vm, b), b);
+    seg_list_remove(free_list(vm, a), a);
+    seg_list_remove(free_list(vm, b), b);
 
     a->size += b->size;
     seg_unlink(vm, b);
@@ -182,7 +182,7 @@ void vmem_free(struct vmem *vm, struct vmem_seg *seg)
     if (seg->free)
         panic("vmem_free: a free segment");
 
-    list_remove(hash_chain(vm, seg->base), seg);
+    seg_list_remove(hash_chain(vm, seg->base), seg);
     vm->inuse -= seg->size;
 
     seg->free  = 1;

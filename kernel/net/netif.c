@@ -36,7 +36,7 @@ static int ethers_nr;
 static struct netif loopback;
 
 static struct thread *net_thread;
-static struct queue net_wait;
+static struct waitq net_wait;
 
 static struct netbuf *rx_head, *rx_tail;
 static size_t rx_count;

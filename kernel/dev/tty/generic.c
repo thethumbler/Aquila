@@ -105,7 +105,7 @@ ssize_t tty_master_write(struct tty *tty, size_t size, void *buf)
         if (tios->c_iflag & IXON) {
             if (tty->stopped && (IS_CC(tty, c, VSTART) || (tios->c_iflag & IXANY))) {
                 tty->stopped = 0;
-                thread_queue_wakeup(&tty->start_wait);
+                waitq_wakeup(&tty->start_wait);
 
                 if (IS_CC(tty, c, VSTART))
                     continue;
@@ -329,7 +329,7 @@ static int tty_wait_start(struct tty *tty)
 
     while (tty->stopped && !tty->gone && !err) {
         tty->start_waiters++;
-        err = thread_queue_sleep(&tty->start_wait);
+        err = waitq_sleep(&tty->start_wait);
         tty->start_waiters--;
     }
 
@@ -406,7 +406,7 @@ int tty_ioctl(struct tty *tty, int request, void *argp)
             /* no flow control anymore: what was stopped goes */
             if (!(tios.c_iflag & IXON) && tty->stopped) {
                 tty->stopped = 0;
-                thread_queue_wakeup(&tty->start_wait);
+                waitq_wakeup(&tty->start_wait);
             }
             break;
         }
@@ -616,7 +616,7 @@ int tty_free(struct tty *tty)
     if (tty->start_waiters) {
         tty->gone = 1;
         tty->stopped = 0;
-        thread_queue_wakeup(&tty->start_wait);
+        waitq_wakeup(&tty->start_wait);
         return 0;
     }
 

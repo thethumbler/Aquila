@@ -115,7 +115,7 @@ struct tcp_pcb {
     int error;                      /* to report */
     int shut_rd;
     uint64_t rcvtimeo, sndtimeo;    /* ns, 0: none */
-    struct queue wait;              /* connect, accept, send and recv sleep here */
+    struct waitq wait;              /* connect, accept, send and recv sleep here */
 };
 
 /* tcp_input.c */

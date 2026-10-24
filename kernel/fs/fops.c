@@ -194,7 +194,7 @@ int vfs_file_trunc(struct file *file, off_t len)
  * and a pipe's are their vnode's (fs/posix/read.c, write.c); NULL if it
  * can't tell
  */
-struct queue *vfs_file_wait_queue(struct file *file, int write)
+struct waitq *vfs_file_wait_queue(struct file *file, int write)
 {
     if (file->flags & FILE_SOCKET)
         return socket_wait_queue(file, write);

@@ -34,8 +34,6 @@ static void pipefs_pfree(struct pipe *pipe)
     if (pipe) {
         if (pipe->ring)
             ringbuf_free(pipe->ring);
-        if (pipe->queue)
-            kfree(pipe->queue);
         kfree(pipe);
     }
 }
@@ -83,7 +81,7 @@ static int pipefs_close(struct vnode *node)
     }
 
     /* wake up the other end so it can see EOF/EPIPE */
-    thread_queue_wakeup(pipe->queue);
+    waitq_wakeup(&pipe->queue);
     return 0;
 }
 
@@ -129,10 +127,9 @@ static int pipefs_mkpipe(struct pipe **ref)
     pipe = kmalloc(sizeof(struct pipe), &M_PIPE, M_ZERO);
     if (!pipe) return -ENOMEM;
 
-    pipe->ring  = ringbuf_new(PIPE_BUFLEN);
-    pipe->queue = queue_new();
+    pipe->ring = ringbuf_new(PIPE_BUFLEN);
 
-    if (!pipe->ring || !pipe->queue) {
+    if (!pipe->ring) {
         pipefs_pfree(pipe);
         return -ENOMEM;
     }
@@ -159,8 +156,8 @@ static struct vnode *pipefs_end(struct pipe *pipe, int which)
 
     /* readers and writers share a single wait queue: readers sleep on
      * read_queue and wake write_queue, writers do the opposite */
-    node->read_queue  = pipe->queue;
-    node->write_queue = pipe->queue;
+    node->read_queue  = &pipe->queue;
+    node->write_queue = &pipe->queue;
 
     node->fs   = &pipefs;
     node->p    = pipe;
@@ -240,7 +237,7 @@ int pipefs_fifo_open(struct file *file)
         pipe->w_opens++;
 
     /* the other end may be waiting for this one */
-    thread_queue_wakeup(pipe->queue);
+    waitq_wakeup(&pipe->queue);
 
     /* until the other side opens, or has: one that opened, wrote and
      * closed while this one waited to run again counts (POSIX) */
@@ -249,7 +246,7 @@ int pipefs_fifo_open(struct file *file)
     if (!(file->flags & O_NONBLOCK)) {
         while (which == END_READ ? !has_writers(pipe) && pipe->w_opens == w_seen :
                which == END_WRITE ? !has_readers(pipe) && pipe->r_opens == r_seen : 0) {
-            if ((err = thread_queue_sleep(pipe->queue))) {
+            if ((err = waitq_sleep(&pipe->queue))) {
                 /* releases the pipe too if it was the only end */
                 vfs_close(end);
                 return err;

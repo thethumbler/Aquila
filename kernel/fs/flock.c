@@ -22,7 +22,7 @@ struct file_lock {
 
 /* locks held, and the threads waiting for one to be released */
 static struct queue locks = {0};
-static struct queue waiters = {0};
+static struct waitq waiters = {0};
 
 /** whether a lock of the type conflicts with one another file holds */
 static int lock_conflicts(struct file_lock *lock, int type)
@@ -45,7 +45,7 @@ static void lock_unlock(struct file_lock *lock)
 
     queue_remove(&locks, lock);
     lock->type = 0;
-    thread_queue_wakeup(&waiters);
+    waitq_wakeup(&waiters);
 }
 
 int vfs_file_flock(struct file *file, int op)
@@ -78,7 +78,7 @@ int vfs_file_flock(struct file *file, int op)
         if (op & LOCK_NB)
             return -EWOULDBLOCK;
 
-        int err = thread_queue_sleep(&waiters);
+        int err = waitq_sleep(&waiters);
 
         if (err)
             return err;
@@ -89,7 +89,7 @@ int vfs_file_flock(struct file *file, int op)
 
     /* a shared lock instead of an exclusive one may let others in */
     if (lock->type == LOCK_EX && type == LOCK_SH)
-        thread_queue_wakeup(&waiters);
+        waitq_wakeup(&waiters);
 
     lock->type = type;
     return 0;

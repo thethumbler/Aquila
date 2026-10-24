@@ -7,7 +7,7 @@
 struct keyboard {
     const char     *name;
 
-    struct queue   *read_queue;
+    struct waitq   *read_queue;
     struct ringbuf *ring;
 };
 

@@ -130,8 +130,8 @@ struct vnode {
     /** number of processes referencing this vnode */
     size_t ref;
 
-    struct queue *read_queue;
-    struct queue *write_queue;
+    struct waitq *read_queue;
+    struct waitq *write_queue;
 
     /** virtual memory object associated with vnode */
     struct vm_object *vm_object;
@@ -260,7 +260,7 @@ int     vfs_file_trunc(struct file *file, off_t len);
 
 /* helpers */
 int     vfs_file_can_read(struct file * file, size_t size);
-struct queue *vfs_file_wait_queue(struct file *file, int write);
+struct waitq *vfs_file_wait_queue(struct file *file, int write);
 int     vfs_file_can_write(struct file * file, size_t size);
 int     vfs_file_eof(struct file *);
 

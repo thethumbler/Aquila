@@ -47,7 +47,7 @@ ssize_t posix_file_read(struct file *file, struct iobuf *io)
             
             /* Wake up all sleeping writers if a `write_queue' is attached */
             if (file->vnode->write_queue)
-                thread_queue_wakeup(file->vnode->write_queue);
+                waitq_wakeup(file->vnode->write_queue);
 
             /* Return read bytes count */
             return retval;

@@ -366,9 +366,10 @@ static ssize_t procfs_proc_status(int pid, off_t off, size_t size, void *buf)
         sz += snprintf(status_buf + sz, sizeof(status_buf) - sz,
                 "thread %d%s%s: %s%s%s%s\n", thread->tid,
                 thread->name ? " " : "", thread->name ? thread->name : "", state,
-                thread->sleep_node ? " on a queue" : "",
-                thread->timer_node ? " with a deadline" : "",
-                thread->sched_node ? " (ready)" : thread == curthread ? " (current)" : "");
+                thread->waitq ? " on a queue" : "",
+                list_linked(&thread->timer_link) ? " with a deadline" : "",
+                list_linked(&thread->run_link) && !thread->waitq ? " (ready)" :
+                    thread == curthread ? " (current)" : "");
     }
 
     if (off < sz) {

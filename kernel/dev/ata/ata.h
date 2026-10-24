@@ -102,10 +102,10 @@ struct ata_channel {
 
     /** one command at a time, those waiting for the channel */
     int busy;
-    struct queue wait;
+    struct waitq wait;
 
     /** the DMA transfer waiting for the interrupt */
-    struct queue irq_wait;
+    struct waitq irq_wait;
     volatile int done;
     uint8_t bm_status, status;
 };

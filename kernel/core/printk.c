@@ -1,5 +1,6 @@
 #include <core/system.h>
 #include <ds/queue.h>
+#include <sys/waitq.h>
 
 #include <core/string.h>
 #include <console/earlycon.h>
@@ -7,7 +8,7 @@
 
 #define KMSG_SIZE   8192
 struct ringbuf *kmsg = RINGBUF_NEW(KMSG_SIZE);
-struct queue *kmsg_wait = QUEUE_NEW();
+struct waitq *kmsg_wait = &(struct waitq){0};
 
 static int use_earlycon = 1;
 void earlycon_disable()
