@@ -1,3 +1,10 @@
+/** \file
+ * x86: system calls. A program makes one with `int $0x80`: the number in
+ * eax, the arguments in ebx, ecx, edx, esi and edi (i386), or in rdi,
+ * rsi, rdx, r10 and r8 (x86_64, as with Linux's `syscall` instruction),
+ * and the result comes back in eax. See docs/kernel/syscalls.md.
+ */
+
 #include <core/system.h>
 #include <core/arch.h>
 #include <sys/proc.h>
@@ -7,28 +14,43 @@
 #include <aquila/syscall.h>
 #include <aquila/errno.h>
 
+/**
+ * Runs a system call: the interrupt handler calls it for `int $0x80`. It
+ * returns to user mode when the call is done, delivering the signals that
+ * came meanwhile.
+ *
+ * @param r  the registers user mode had, saved on the kernel stack
+ */
 void arch_syscall(struct x86_regs *r)
 {
 #if ARCH_BITS==32
     syscall_dispatch(r->eax, r->ebx, r->ecx, r->edx, r->esi, r->edi);
 #else
-    /* the arguments in Linux's registers (r10 for rcx, which the syscall
-     * instruction takes) */
+    /* the arguments in Linux's registers (r10 instead of rcx, which the
+     * syscall instruction overwrites) */
     syscall_dispatch(r->rax, r->rdi, r->rsi, r->rdx, r->r10, r->r8);
 #endif
 
-    /* an urgent thread was woken during the call (the network's, by a
-     * packet to ourselves): it runs before returning to user mode */
+    /* if the call woke up an urgent thread (the network's, for a packet
+     * sent to ourselves), it runs before we return to user mode */
     if (sched_urgent) {
         extern void x86_preempt(void);
         x86_preempt();
     }
 
-    /* the signals, the call restarted if one interrupted it (not
-     * sigreturn's: the registers are the frame's) */
+    /* deliver the pending signals, and restart the call if one
+     * interrupted it (not sigreturn, whose registers are the frame's) */
     x86_return_to_user(r, curthread->syscall_nr != SYS_sigreturn);
 }
 
+/**
+ * Sets the result of a thread's system call: eax (rax) when it returns to
+ * user mode. That's in its saved registers, or, for a thread that has
+ * never run (a child of `fork()`), where it will start from.
+ *
+ * @param thread  the thread
+ * @param val     the result
+ */
 void arch_syscall_return(struct thread *thread, uintptr_t val)
 {
     struct x86_thread *arch = thread->arch;

@@ -1,19 +1,20 @@
 /** \file
- * kmalloc() and kfree(): the kernel's memory
+ * `kmalloc()` and `kfree()`: the kernel's memory for its own structures.
  *
- * Objects of up to SLAB_MAX bytes come from slabs (mm/slab.c). Bigger
- * ones take whole pages of their own, in the kvmem region of the
- * kernel's address space (ARCH_KVMEM_BASE): a vmem arena (mm/vmem.h)
- * gives the range, pages of memory are mapped in it, and the segment
- * keeps the object's size and malloc type for kfree().
+ * Objects of up to `SLAB_MAX` bytes, most of them, come from slabs
+ * (`mm/slab.c`). Bigger objects get whole pages of their own, in the
+ * kvmem region of the kernel's address space (`ARCH_KVMEM_BASE`): a vmem
+ * arena (`mm/vmem.h`) gives the range of addresses, pages of memory are
+ * mapped there, and the arena's segment keeps the object's size and
+ * malloc type for `kfree()`.
  *
- * Each object's range ends in a guard page, never mapped: what runs past
- * an object's end faults, so does what runs below its start (the page
- * there is another's guard, or isn't allocated): a kernel stack that
- * overflows, a buffer overrun, end in a page fault, not in another
- * object. It costs addresses, not memory.
+ * Each object's range ends in a guard page, which is never mapped. A
+ * write past an object's end faults, and so does a write below its start
+ * (the page there is another object's guard, or isn't allocated). So a
+ * kernel stack that overflows, or a buffer overrun, ends in a page fault
+ * instead of corrupting another object. It costs addresses, not memory.
  *
- * Every allocation is counted by its malloc type (/proc/kvmem).
+ * Every allocation is counted by its malloc type (`/proc/kvmem`).
  */
 
 #include <core/system.h>
@@ -40,17 +41,21 @@ MALLOC_DEFINE(M_HASHMAP_NODE, "hashmap-node", "hashmap node structure");
 
 static struct vmem kvmem;
 
-size_t kvmem_used;      /* bytes of objects' pages, for /proc/meminfo */
-size_t kvmem_obj_cnt;   /* objects */
+size_t kvmem_used;      /* bytes of the objects' pages, for /proc/meminfo */
+size_t kvmem_obj_cnt;   /* how many objects there are */
 
 void *slab_alloc(size_t size, struct malloc_type *type);
 int  slab_owns(void *ptr);
 void slab_free(void *ptr);
 
+/**
+ * Sets up the kernel's allocator at boot, once physical memory and the
+ * page tables are ready.
+ */
 void kvmem_setup(void)
 {
-    /* enqueue() allocates the list's node: M_QNODE's own can't be on the
-     * list before it, it gets a placeholder first */
+    /* enqueue() allocates the list's node, so M_QNODE can't be on the
+     * list before that node exists: it gets a placeholder first */
     M_QNODE.qnode = (void *) 0xDEADBEEF;
     M_QNODE.qnode = enqueue(malloc_types, &M_QNODE);
 
@@ -58,7 +63,8 @@ void kvmem_setup(void)
         panic("kvmem: no memory for its arena");
 }
 
-/** the object's pages, from `base': unmapped, back to the buddy allocator */
+/** Unmaps the pages of an object at `base`, and gives them back to the
+ * buddy allocator. Pages that aren't mapped are skipped. */
 static void kvmem_unmap(vaddr_t base, size_t size)
 {
     for (vaddr_t va = base; va < base + size; va += PAGE_SIZE) {
@@ -71,7 +77,8 @@ static void kvmem_unmap(vaddr_t base, size_t size)
     }
 }
 
-/** an object of whole pages, its guard after it */
+/** Allocates an object of whole pages, with its guard page after it.
+ * Returns NULL if there is no memory, or no room left in the region. */
 static void *kvmem_alloc(size_t size, struct malloc_type *type)
 {
     size = PAGE_ROUND(size);
@@ -105,6 +112,14 @@ static void *kvmem_alloc(size_t size, struct malloc_type *type)
     return (void *) seg->base;
 }
 
+/**
+ * Allocates memory for one of the kernel's structures.
+ *
+ * @param size   the size wanted, in bytes
+ * @param type   the malloc type it's counted as (`MALLOC_DEFINE()`)
+ * @param flags  `M_ZERO` to have it zeroed, or 0
+ * @return the object, or NULL if there was no memory for it
+ */
 void *kmalloc(size_t size, struct malloc_type *type, int flags)
 {
     /* the small objects, most of them, from slabs */
@@ -122,6 +137,12 @@ void *kmalloc(size_t size, struct malloc_type *type, int flags)
     return obj;
 }
 
+/**
+ * Frees an object that `kmalloc()` gave. Freeing anything else (a
+ * pointer into an object, or one freed already) is a bug, and panics.
+ *
+ * @param ptr  the object, or NULL to do nothing
+ */
 void kfree(void *ptr)
 {
     if (!ptr)
@@ -134,8 +155,8 @@ void kfree(void *ptr)
 
     struct vmem_seg *seg = vmem_find(&kvmem, (uintptr_t) ptr);
 
-    /* not an object's start: a bug (a pointer into one, freed twice,
-     * never kmalloc's) */
+    /* not the start of an object: a pointer into one, an object freed
+     * twice, or something kmalloc() never gave */
     if (!seg) {
         printk("kfree: %p isn't an object kmalloc() gave\n", ptr);
         panic("kfree of something kmalloc() didn't give");
@@ -153,12 +174,13 @@ void kfree(void *ptr)
 }
 
 /*
- * Checks, on request (the kvmem.test and kvmem.guard arguments,
- * tests/kvmem)
+ * Self-checks, run when the kernel's command line asks for them (the
+ * kvmem.test and kvmem.guard arguments, which tests/kvmem uses).
  */
 
 MALLOC_DEFINE(M_KVMEM_TEST, "kvmem-test", "kvmem self-test object");
 
+/** Returns how many segments, used and free, the arena has. */
 static size_t kvmem_segs(void)
 {
     size_t n = 0;
@@ -171,8 +193,12 @@ static size_t kvmem_segs(void)
 
 #define TEST_OBJS   48
 
-/** objects of many sizes: each its own pages, its guard unmapped, none
- * overwriting another; freed out of order, the arena as it was */
+/**
+ * Allocates objects of many sizes and checks that each is on pages of its
+ * own, that its guard page isn't mapped, and that none overwrites
+ * another. Then frees them out of order, and checks that the arena is as
+ * it was. Returns NULL if all is well, or what went wrong.
+ */
 static const char *kvmem_selftest_run(void)
 {
     static uint8_t *obj[TEST_OBJS];
@@ -203,7 +229,7 @@ static const char *kvmem_selftest_run(void)
                 if (obj[i][b] != (uint8_t) (i + 1))
                     return "an object was overwritten";
 
-        /* every third one, then every other: holes to merge and fill */
+        /* every third one, then every other: holes to fill and merge */
         for (int i = round; i < TEST_OBJS; i += 3 - round) {
             kfree(obj[i]);
             obj[i] = NULL;
@@ -213,7 +239,7 @@ static const char *kvmem_selftest_run(void)
     if (M_KVMEM_TEST.nr != (size_t) (kvmem_obj_cnt - objs))
         return "the type's count is wrong";
 
-    /* the rest, from the last */
+    /* the rest, from the last one */
     for (int i = TEST_OBJS - 1; i >= 0; --i) {
         kfree(obj[i]);
         obj[i] = NULL;
@@ -231,6 +257,10 @@ static const char *kvmem_selftest_run(void)
     return NULL;
 }
 
+/**
+ * Runs the allocator's self-test, for the `kvmem.test` kernel argument,
+ * and prints whether it passed.
+ */
 void kvmem_selftest(void)
 {
     const char *err = kvmem_selftest_run();
@@ -241,7 +271,10 @@ void kvmem_selftest(void)
         printk("kvmem: self-test passed\n");
 }
 
-/** a write one byte past an object's end: its guard page faults (a panic) */
+/**
+ * Writes one byte past the end of an object, for the `kvmem.guard` kernel
+ * argument: the guard page should fault, and the kernel panic.
+ */
 void kvmem_guardtest(void)
 {
     volatile char *buf = kmalloc(3000, &M_KVMEM_TEST, 0);

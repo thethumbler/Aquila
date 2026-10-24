@@ -1,17 +1,19 @@
 /** \file
- *                  Slabs: the kernel's small objects
+ * Slabs: the kernel's small objects.
  *
- * kmalloc() takes objects of up to SLAB_MAX bytes from here, the rest
- * from kvmem. A slab is a page of objects of one size (a power of two from
- * 16 bytes) and one malloc type, its header at the start of the page;
- * each type has a list of its slabs that have free objects, per size, and
- * a slab's free objects are a list too: allocating and freeing take the
- * same time however many objects there are.
+ * `kmalloc()` takes objects of up to `SLAB_MAX` bytes from here, and the
+ * bigger ones from kvmem (`mm/kvmem.c`). A slab is one page of objects of
+ * one size (a power of two, from 16 bytes) and one malloc type, with its
+ * header at the start of the page. Each malloc type has, for each size, a
+ * list of its slabs that have free objects, and each slab keeps a list of
+ * its free objects. So allocating and freeing take the same time, however
+ * many objects there are.
  *
- * The pages are mapped in their own region of the kernel's address space
- * (ARCH_SLAB_BASE), which tells kfree() that an object is a slab's; a
- * bitmap has which of its pages are in use. An empty slab's page goes back
- * to the buddy allocator.
+ * The slabs' pages are mapped in a region of their own in the kernel's
+ * address space (`ARCH_SLAB_BASE`), which tells `kfree()` that an object
+ * is a slab's, and a bitmap says which pages of the region are in use. A
+ * slab whose objects are all free gives its page back to the buddy
+ * allocator.
  */
 
 #include <core/system.h>
@@ -24,23 +26,26 @@
 #include <mm/pmap.h>
 #include <mm/vm.h>
 
+/** A slab's header, at the start of its page. */
 struct slab {
-    struct slab *next, *prev;   /* the type's slabs of this size with free objects */
+    struct slab *next, *prev;   /* the type's slabs of this size that have free objects */
     struct malloc_type *type;
-    void *free;                 /* its free objects */
-    uint32_t size;              /* of its objects */
-    uint32_t used;
+    void *free;                 /* its free objects, linked through their first word */
+    uint32_t size;              /* the size of its objects */
+    uint32_t used;              /* how many of them are in use */
 };
 
-/* the objects start after the header, aligned as kmalloc's are */
+/* the objects start after the header, aligned as kmalloc()'s are */
 #define SLAB_HEADER     ((sizeof(struct slab) + 15) & ~(size_t) 15)
 #define SLAB_PAGES      (ARCH_SLAB_SIZE / PAGE_SIZE)
 
 static uint8_t slab_map[SLAB_PAGES / 8];
 static size_t slab_first_free;
 
-size_t slab_used;   /* bytes of pages, for /proc/meminfo */
+size_t slab_used;   /* bytes of the slabs' pages, for /proc/meminfo */
 
+/** Returns the size class for objects of `size` bytes: the smallest power
+ * of two from `SLAB_MIN` that holds them, as an index (0 for `SLAB_MIN`). */
 static int slab_class(size_t size)
 {
     int class = 0;
@@ -51,9 +56,9 @@ static int slab_class(size_t size)
     return class;
 }
 
-/** a page of the region, mapped to a page of memory */
-/** a page for a slab, in the slab region; NULL if the region is full or
- * there's no memory (kmalloc() returns NULL) */
+/** Maps a page of memory at a free page of the slab region, for a new
+ * slab. Returns NULL if the region is full or there is no memory, and
+ * then `kmalloc()` returns NULL. */
 static struct slab *slab_page_alloc(void)
 {
     size_t i = slab_first_free;
@@ -82,6 +87,7 @@ static struct slab *slab_page_alloc(void)
     return (struct slab *) vaddr;
 }
 
+/** Unmaps a slab's page, and gives it back to the buddy allocator. */
 static void slab_page_free(struct slab *slab)
 {
     vaddr_t vaddr = (vaddr_t) slab;
@@ -98,6 +104,7 @@ static void slab_page_free(struct slab *slab)
         slab_first_free = i;
 }
 
+/** Takes `slab` off a list of slabs with free objects. */
 static void slab_unlink(struct slab **list, struct slab *slab)
 {
     if (slab->prev)
@@ -111,6 +118,7 @@ static void slab_unlink(struct slab **list, struct slab *slab)
     slab->next = slab->prev = NULL;
 }
 
+/** Puts `slab` at the head of a list of slabs with free objects. */
 static void slab_link(struct slab **list, struct slab *slab)
 {
     slab->prev = NULL;
@@ -122,6 +130,15 @@ static void slab_link(struct slab **list, struct slab *slab)
     *list = slab;
 }
 
+/**
+ * Allocates a small object, from a slab of its malloc type and size
+ * class, making a new slab if none has a free object. `kmalloc()` calls
+ * it for objects of up to `SLAB_MAX` bytes.
+ *
+ * @param size  the size wanted, in bytes, at most `SLAB_MAX`
+ * @param type  the malloc type it's counted as
+ * @return the object, or NULL if there was no memory for a new slab
+ */
 void *slab_alloc(size_t size, struct malloc_type *type)
 {
     int class = slab_class(size);
@@ -137,7 +154,7 @@ void *slab_alloc(size_t size, struct malloc_type *type)
         slab->used = 0;
         slab->free = NULL;
 
-        /* every object free, the first at the head of the list */
+        /* every object free, the first one at the head of the list */
         for (size_t off = PAGE_SIZE - slab->size; off >= SLAB_HEADER; off -= slab->size) {
             void **obj = (void **) ((char *) slab + off);
             *obj = slab->free;
@@ -151,7 +168,7 @@ void *slab_alloc(size_t size, struct malloc_type *type)
     slab->free = *obj;
     slab->used++;
 
-    /* full: no more on the list */
+    /* the slab is full now: it leaves the list */
     if (!slab->free)
         slab_unlink(list, slab);
 
@@ -161,12 +178,24 @@ void *slab_alloc(size_t size, struct malloc_type *type)
     return obj;
 }
 
+/**
+ * Says whether an object is a slab's, for `kfree()`.
+ *
+ * @param ptr  the object
+ * @return whether it is in the slab region
+ */
 int slab_owns(void *ptr)
 {
     uintptr_t addr = (uintptr_t) ptr;
     return addr >= ARCH_SLAB_BASE && addr < ARCH_SLAB_BASE + ARCH_SLAB_SIZE;
 }
 
+/**
+ * Frees an object of a slab. The slab goes back on its list if it was
+ * full, and gives its page back if it is empty now.
+ *
+ * @param ptr  the object, which `slab_alloc()` gave
+ */
 void slab_free(void *ptr)
 {
     struct slab *slab = (struct slab *) PAGE_ALIGN((uintptr_t) ptr);

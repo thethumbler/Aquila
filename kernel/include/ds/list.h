@@ -5,11 +5,11 @@
 #include <core/types.h>
 
 /*
- * A doubly linked list whose links are in the things listed: a structure
- * that goes on a list has a `struct list_node' member for it, and
- * list_entry() gets the structure back from the node. Putting something
- * on a list, or taking it off, allocates nothing, so it can't fail (BSD's
- * TAILQ, Linux's list_head).
+ * A doubly linked list whose links are inside the things it lists. A
+ * structure that can be on a list has a `struct list_node` member for it,
+ * and list_entry() gets the structure back from its node. Putting
+ * something on a list, or taking it off, allocates nothing, so it can't
+ * fail. BSD's TAILQ and Linux's list_head work the same way.
  *
  *      struct thread {
  *          ...
@@ -19,45 +19,49 @@
  *      list_append(&ready, &thread->run_link);
  *      struct thread *t = list_entry(list_pop(&ready), struct thread, run_link);
  *
- * A node is on one list at a time; one that's on none has `list' NULL. A
- * structure on several lists has a node for each. A list or a node all
- * zeros is empty, not on a list: {0} initializes them.
+ * A node is on at most one list at a time, and its `list` field says
+ * which one (NULL when it's on none). A structure that can be on several
+ * lists at once has one node for each. A list or a node that is all
+ * zeros is empty, or on no list, so `{0}` initializes both.
  */
 
 struct list;
 
+/** A link in a list, inside the structure that is listed. */
 struct list_node {
     struct list_node *prev, *next;
-    struct list *list;          /* the list it's on, NULL if none */
+    struct list *list;          /* the list it's on, or NULL */
 };
 
+/** A list: its first and last nodes, and how many there are. */
 struct list {
     struct list_node *head, *tail;
     size_t count;
 };
 
-/* the structure of `type' whose member `member' is the node `node' */
+/* The structure of type `type` whose member `member` is the node `node`. */
 #define list_entry(node, type, member) \
     ((type *) ((char *) (node) - offsetof(type, member)))
 
-/* each node of `list', `n' the node (it may be removed meanwhile: the
- * next one is taken before) */
+/* Loops over each node `n` of list `l`. The loop body may remove `n`
+ * from the list: the next node is taken before the body runs. */
 #define list_for(n, l) \
     for (struct list_node *(n) = (l)->head, *__next_##n = (n) ? (n)->next : NULL; \
          (n); (n) = __next_##n, __next_##n = (n) ? (n)->next : NULL)
 
+/** Returns whether `list` has no nodes. */
 static inline int list_empty(struct list *list)
 {
     return !list->head;
 }
 
-/** whether `node' is on a list (which, node->list says) */
+/** Returns whether `node` is on a list (`node->list` says which). */
 static inline int list_linked(struct list_node *node)
 {
     return node->list != NULL;
 }
 
-/** `node' at the end of `list' */
+/** Adds `node` at the end of `list`. */
 static inline void list_append(struct list *list, struct list_node *node)
 {
     node->list = list;
@@ -73,7 +77,7 @@ static inline void list_append(struct list *list, struct list_node *node)
     list->count++;
 }
 
-/** `node' at the head of `list', the next list_pop() */
+/** Adds `node` at the head of `list`, so that list_pop() returns it next. */
 static inline void list_prepend(struct list *list, struct list_node *node)
 {
     node->list = list;
@@ -89,7 +93,7 @@ static inline void list_prepend(struct list *list, struct list_node *node)
     list->count++;
 }
 
-/** `node' off the list it's on (none: nothing) */
+/** Takes `node` off the list it is on. A node on no list is left alone. */
 static inline void list_remove(struct list_node *node)
 {
     struct list *list = node->list;
@@ -112,7 +116,7 @@ static inline void list_remove(struct list_node *node)
     list->count--;
 }
 
-/** the head of `list', off it; NULL if it's empty */
+/** Takes the first node off `list` and returns it, or NULL if it's empty. */
 static inline struct list_node *list_pop(struct list *list)
 {
     struct list_node *node = list->head;

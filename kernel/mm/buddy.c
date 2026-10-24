@@ -1,5 +1,13 @@
 /** \file
- *                  Buddy Memory Allocator 
+ * The buddy allocator: physical memory, in blocks of 2^n pages.
+ *
+ * Each zone of RAM has one bitmap per block size (order), from one page
+ * (order 0) to `BUDDY_MAX_BS` (order `BUDDY_MAX_ORDER`); a set bit is a
+ * block that isn't free. Allocating takes a free block of the size asked
+ * for, or splits a bigger one in two "buddies", one used and one free, as
+ * many times as needed. Freeing a block merges it with its buddy when that
+ * one is free too, and so on up. Both take a few steps, whatever the
+ * amount of RAM. See docs/kernel/memory.md.
  */
 
 #include <core/system.h>
@@ -13,9 +21,10 @@ size_t k_total_mem, k_used_mem;
 static uintptr_t kstart = 0, kend = 0;
 
 /*
- * What isn't free at boot is set unusable a block of BUDDY_MAX_BS at a
- * time, the ranges kept; the first allocation gives the rest of those
- * blocks back, a page at a time (buddy_reserved_done()).
+ * At boot, what isn't free RAM (the kernel, the modules, firmware ranges)
+ * is set unusable a whole block of BUDDY_MAX_BS at a time, and its ranges
+ * are kept here. The first allocation gives back the pages of those
+ * blocks that no range covers (buddy_reserved_done()).
  */
 #define RESERVED_MAX    64
 
@@ -25,10 +34,11 @@ static struct {
 
 static int reserved_nr, reserved_done;
 
-/* the pages of each zone that are RAM (buddy_setup) */
+/* How many top-order blocks of each zone are RAM (set by buddy_setup()). */
 static size_t zone_blocks[BUDDY_ZONE_NR];
 
-/** the bitmaps are sized by the memory, from what mm_setup() set aside */
+/** Allocates memory for the bitmaps at boot, from what `mm_setup()` set
+ * aside: their size depends on how much RAM there is. */
 static inline void *alloc(size_t size, size_t align)
 {
     extern void *mm_boot_alloc(size_t size, size_t align);
@@ -42,6 +52,11 @@ uintptr_t buddy_zone_offset[BUDDY_ZONE_NR+1] = {
     [BUDDY_ZONE_NR]      = (uintptr_t) -1,
 };
 
+/**
+ * Takes a free block of order `order` from `zone`, splitting a bigger
+ * block if there is none. Returns its index in that order's bitmap, or
+ * `(size_t) -1` if the zone has no free block that large.
+ */
 static size_t buddy_recursive_alloc(int zone, size_t order)
 {
     if (order > BUDDY_MAX_ORDER)
@@ -91,6 +106,10 @@ static size_t buddy_recursive_alloc(int zone, size_t order)
     }
 }
 
+/**
+ * Frees the block at index `idx` of order `order` in `zone`, merging it
+ * with its buddy, and that block with its own, as long as they are free.
+ */
 static void buddy_recursive_free(int zone, size_t order, size_t idx)
 {
     if (order > BUDDY_MAX_ORDER) return;
@@ -115,14 +134,18 @@ static void buddy_recursive_free(int zone, size_t order, size_t idx)
     }
 }
 
-/** allocate new buddy
- * @param zone zone index
- * @param _sz chunk size
- */
 static void buddy_reserved_done(void);
 
-/** a block of `_sz' (rounded to a power of two) from `zone', or
- * (paddr_t) -1 if it has none */
+/**
+ * Allocates a block of physical memory from a zone, rounded up to a power
+ * of two pages.
+ *
+ * @param zone  the zone to take it from (`BUDDY_ZONE_DMA` or
+ *              `BUDDY_ZONE_NORMAL`)
+ * @param _sz   the size wanted, in bytes, at most `BUDDY_MAX_BS`
+ * @return the block's physical address, or `(paddr_t) -1` if the zone has
+ *         no free block that large
+ */
 paddr_t buddy_alloc(int zone, size_t _sz)
 {
     if (_sz > BUDDY_MAX_BS)
@@ -133,7 +156,7 @@ paddr_t buddy_alloc(int zone, size_t _sz)
 
     size_t sz = BUDDY_MIN_BS;
 
-    /* FIXME */
+    /* the smallest order whose blocks hold _sz bytes */
     size_t order = 0;
     for (; order <= BUDDY_MAX_ORDER; ++order) {
         if (sz >= _sz)
@@ -150,6 +173,13 @@ paddr_t buddy_alloc(int zone, size_t _sz)
     return buddy_zone_offset[zone] + (uintptr_t) (idx * (BUDDY_MIN_BS << order));
 }
 
+/**
+ * Frees a block that `buddy_alloc()` gave.
+ *
+ * @param zone  the zone it came from
+ * @param addr  its physical address
+ * @param size  the size that was asked for, in bytes
+ */
 void buddy_free(int zone, paddr_t addr, size_t size)
 {
     if (addr >= kstart && addr < kend)
@@ -157,7 +187,7 @@ void buddy_free(int zone, paddr_t addr, size_t size)
 
     size_t sz = BUDDY_MIN_BS;
 
-    /* FIXME */
+    /* the order buddy_alloc() took it from */
     size_t order = 0;
     for (; order < BUDDY_MAX_ORDER; ++order) {
         if (sz >= size)
@@ -168,10 +198,17 @@ void buddy_free(int zone, paddr_t addr, size_t size)
     k_used_mem -= sz;
 
     addr -= buddy_zone_offset[zone];
-    size_t idx = (addr / (BUDDY_MIN_BS << order));  // & (sz - 1);
+    size_t idx = (addr / (BUDDY_MIN_BS << order));
     buddy_recursive_free(zone, order, idx);
 }
 
+/**
+ * Marks a range of physical memory as not free, at boot, before the
+ * first allocation: the kernel, the modules, the firmware's ranges.
+ *
+ * @param addr  the range's start
+ * @param size  its size, in bytes (0 does nothing)
+ */
 void buddy_set_unusable(paddr_t addr, size_t size)
 {
     if (!size) return;
@@ -184,12 +221,12 @@ void buddy_set_unusable(paddr_t addr, size_t size)
     if (reserved_nr == RESERVED_MAX)
         panic("buddy: too many unusable ranges");
 
-    /* its pages, whole */
+    /* the range, widened to whole pages */
     reserved[reserved_nr].start = addr & ~(paddr_t) (BUDDY_MIN_BS - 1);
     reserved[reserved_nr].end   = (addr + size + BUDDY_MIN_BS - 1) & ~(paddr_t) (BUDDY_MIN_BS - 1);
     reserved_nr++;
 
-    /* End of region (exclusive), clamped on wrap-around */
+    /* the range's end (exclusive), clamped if it wraps around */
     uintptr_t end = addr + size;
     if (end < addr)
         end = (uintptr_t) -1;
@@ -207,11 +244,11 @@ void buddy_set_unusable(paddr_t addr, size_t size)
         uintptr_t zone_addr = MAX(addr, zone_start) - zone_start;
         uintptr_t zone_size = MIN(end, zone_end) - zone_start - zone_addr;
 
-        /* Indices of first and last (inclusive) blocks touched */
+        /* the first and last (inclusive) blocks the range touches */
         size_t start_idx = zone_addr / BUDDY_MAX_BS;
         size_t end_idx   = (zone_addr + zone_size - 1) / BUDDY_MAX_BS;
 
-        /* Region lies beyond available memory in this zone */
+        /* the range is past this zone's RAM */
         if (start_idx > buddy->bitmap.max_idx)
             continue;
 
@@ -219,7 +256,7 @@ void buddy_set_unusable(paddr_t addr, size_t size)
             end_idx = buddy->bitmap.max_idx;
 
         for (size_t idx = start_idx; idx <= end_idx; ++idx) {
-            /* Block may already be marked by an overlapping region */
+            /* an overlapping range may have marked the block already */
             if (!bitmap_check(&buddy->bitmap, idx)) {
                 bitmap_set(&buddy->bitmap, idx);
                 buddy->usable--;
@@ -233,6 +270,7 @@ void buddy_set_unusable(paddr_t addr, size_t size)
     }
 }
 
+/** Returns whether a range set unusable at boot covers `page`. */
 static int reserved_page(paddr_t page)
 {
     for (int i = 0; i < reserved_nr; ++i)
@@ -243,9 +281,10 @@ static int reserved_page(paddr_t page)
 }
 
 /**
- * The blocks set unusable at boot: their pages that no range covers are
- * freed (and merge back into bigger blocks as they would), the others stay
- * used. What's free then is RAM less what's reserved, to the page.
+ * Frees the pages of the blocks set unusable at boot that no reserved
+ * range covers, at the first allocation. They merge back into bigger
+ * blocks as they would; the other pages stay used. After this, what is
+ * free is all of RAM except what is reserved, to the page.
  */
 static void buddy_reserved_done(void)
 {
@@ -274,10 +313,18 @@ static void buddy_reserved_done(void)
         }
     }
 
-    /* what /proc/meminfo's MemFree is: k_total_mem - k_used_mem */
+    /* /proc/meminfo's MemFree is k_total_mem - k_used_mem */
     k_used_mem = k_total_mem > free ? k_total_mem - free : 0;
 }
 
+/**
+ * Sets up the allocator at boot: a bitmap for each zone and order, every
+ * top-order block of RAM free, then the kernel and its symbol tables set
+ * unusable.
+ *
+ * @param total_mem  the end of RAM, in bytes
+ * @return 0
+ */
 int buddy_setup(size_t total_mem)
 {
     printk("buddy: Setting up buddy allocator (total memory %p)\n", total_mem);
@@ -297,7 +344,7 @@ int buddy_setup(size_t total_mem)
         zone_blocks[zone] = bits_cnt;
 
         if (!bits_cnt) {
-            /* No memory in this zone, keep a single block marked as used */
+            /* no RAM in this zone: one block, marked used */
             for (int i = BUDDY_MAX_ORDER; i >= 0; --i) {
                 buddies[zone][i].bitmap.map = alloc(bitmap_size(1), 4);
                 buddies[zone][i].bitmap.max_idx = 0;
@@ -318,7 +365,7 @@ int buddy_setup(size_t total_mem)
             bits_cnt <<= 1;
         }
 
-        /* Set the heighst order as free and the rest as unusable */
+        /* the top order's blocks free, the smaller orders' all used */
         bitmap_clear_range(&buddies[zone][BUDDY_MAX_ORDER].bitmap, 0, buddies[zone][BUDDY_MAX_ORDER].bitmap.max_idx);
         buddies[zone][BUDDY_MAX_ORDER].first_free_idx = 0;
         buddies[zone][BUDDY_MAX_ORDER].usable = buddies[zone][BUDDY_MAX_ORDER].bitmap.max_idx + 1;
@@ -330,7 +377,7 @@ int buddy_setup(size_t total_mem)
         }
     }
 
-    /* FIXME */
+    /* the kernel's own memory (the linker script's symbols) */
     extern char kernel_start;
     extern char kernel_end;
 

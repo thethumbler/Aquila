@@ -101,7 +101,27 @@ A few conventions help:
 - **Comments say what and why**, not how: what a function does and
   returns, what a structure holds, why something is done the way it is. A
   function's comment is right above it; the code reference is built from
-  those.
+  those. They are written in plain sentences, with a subject and a verb,
+  and names in backticks (`` `size` ``). A function other files call
+  (not `static`) also has `@param` for each argument and `@return` for
+  its result, which Doxygen checks against the code (`make docs` warns
+  about a parameter that doesn't exist):
+
+  ```c
+  /**
+   * Allocates a block from a buddy zone, rounded up to a power of two.
+   *
+   * @param zone  the zone to take it from (`BUDDY_ZONE_DMA` or
+   *              `BUDDY_ZONE_NORMAL`)
+   * @param size  the size wanted, in bytes
+   * @return the block's physical address, or `(paddr_t) -1` if the zone
+   *         has no free block that large
+   */
+  paddr_t buddy_alloc(int zone, size_t size)
+  ```
+
+  Older parts of the kernel still have terser comments; they're
+  rewritten this way as they're worked on.
 - **Errors are negative `errno` values**: a function returns 0 or a
   positive value on success, `-EINVAL`, `-ENOMEM`, ... on failure. System
   calls hand them back to user space as they are. The exceptions return

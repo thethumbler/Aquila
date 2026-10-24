@@ -1,6 +1,7 @@
 /** \file
- * aarch64: system calls, `svc #0', as Linux's: the number in x8, the
- * arguments in x0 to x4, the result back in x0 (syscalls.md)
+ * aarch64: system calls. A program makes one with the `svc #0`
+ * instruction, as on Linux: the number in x8, the arguments in x0 to x4,
+ * and the result comes back in x0. See docs/kernel/syscalls.md.
  */
 
 #include <core/system.h>
@@ -14,23 +15,36 @@
 
 void aarch64_preempt(void);
 
+/**
+ * Runs a system call: the exception handler calls it for an `svc`
+ * instruction from user mode. It returns to user mode when the call is
+ * done, delivering the signals that came meanwhile.
+ *
+ * @param r  the registers user mode had, saved on the kernel stack
+ */
 void arch_syscall(struct aarch64_regs *r)
 {
-    /* the number in x8, the arguments in x0 to x4 (Linux's) */
+    /* the number in x8, the arguments in x0 to x4 (as on Linux) */
     syscall_dispatch(r->x[8], r->x[0], r->x[1], r->x[2], r->x[3], r->x[4]);
 
-    /* an urgent thread was woken during the call (the network's, by a
-     * packet to ourselves): it runs before returning to user mode */
+    /* if the call woke up an urgent thread (the network's, for a packet
+     * sent to ourselves), it runs before we return to user mode */
     if (sched_urgent)
         aarch64_preempt();
 
-    /* the signals, the call restarted if one interrupted it (not
-     * sigreturn's: the registers are the frame's) */
+    /* deliver the pending signals, and restart the call if one
+     * interrupted it (not sigreturn, whose registers are the frame's) */
     aarch64_return_to_user(r, curthread->syscall_nr != SYS_sigreturn);
 }
 
-/** a call's result: in x0 when the thread returns to user mode (its
- * saved registers; a thread that never ran, where it starts) */
+/**
+ * Sets the result of a thread's system call: x0 when it returns to user
+ * mode. That's in its saved registers, or, for a thread that has never
+ * run (a child of `fork()`), where it will start from.
+ *
+ * @param thread  the thread
+ * @param val     the result
+ */
 void arch_syscall_return(struct thread *thread, uintptr_t val)
 {
     struct aarch64_thread *arch = thread->arch;

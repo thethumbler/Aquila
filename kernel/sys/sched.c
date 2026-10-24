@@ -1,3 +1,13 @@
+/** \file
+ * The scheduler: which thread runs next, and the tick.
+ *
+ * It is a round robin. The threads that are ready to run wait on one
+ * list, shared by every CPU, and run in turn, each for one tick at most.
+ * A thread that sleeps or exits gives its CPU to the next ready thread,
+ * and a CPU with nothing to run idles until an interrupt comes. See
+ * docs/kernel/processes.md.
+ */
+
 #include <core/system.h>
 #include <core/panic.h>
 #include <core/arch.h>
@@ -11,31 +21,39 @@
 
 #include <aquila/stat.h>
 
-/* the threads ready to run, in the order they run (their run_link) */
+/* The threads ready to run, in the order they will run (their run_link). */
 static struct list ready;
 
-/* the processors: cpus[0] the one that booted */
+/* The processors; cpus[0] is the one that booted. */
 struct cpu cpus[CPUS_MAX];
 int cpus_count;
 
-/* threads waiting with a deadline (thread->sleep_until), on any wait
- * queue (their timer_link) */
+/* The threads waiting with a deadline (thread->sleep_until), whichever
+ * wait queue they sleep on (their timer_link). */
 static struct list timed;
 
-/* nanosleep() sleeps here, only the timer wakes it */
+/* nanosleep() sleeps here; only the timer wakes its threads up. */
 static struct waitq naps;
 
-/* processes with a real time timer armed (proc->alarm_at, alarm_link) */
+/* The processes with a real time timer armed (proc->alarm_at, their
+ * alarm_link). */
 static struct list alarms;
 
 /**
- * Each CPU's timer tick, `period' ns after its last one, which interrupted
- * user mode if `user' is set: charged to the running process (system
- * calls run with interrupts disabled, so kernel time is mostly missed)
+ * Charges a timer tick to the process that was running on this CPU. It is
+ * called on every CPU's tick.
+ *
+ * The time goes to the process's user time if the tick interrupted user
+ * mode, and to its system time otherwise. System calls run with
+ * interrupts disabled, so a tick during one waits until it returns, and
+ * most kernel time is charged as user time.
+ *
+ * @param period  the time since this CPU's previous tick, in ns
+ * @param user    whether the tick interrupted user mode
  */
 void sched_cpu_tick(uint32_t period, int user)
 {
-    /* a killed thread's process may be gone (thread->killed) */
+    /* a killed thread's process may be gone already (thread->killed) */
     if (!curcpu()->idle && curthread && !curthread->killed) {
         if (user)
             curproc->utime += period;
@@ -45,14 +63,19 @@ void sched_cpu_tick(uint32_t period, int user)
 }
 
 /**
- * The boot CPU's tick (its own as the others', sched_cpu_tick): the
- * callouts, the sleeps that are over, the real time timers
+ * Runs the boot CPU's timer tick. Besides charging the tick (as on every
+ * CPU), it runs the callouts that are due, wakes up the threads whose
+ * deadline has passed, and sends `SIGALRM` to the processes whose real
+ * time timer has expired.
+ *
+ * @param period  the time since the previous tick, in ns
+ * @param user    whether the tick interrupted user mode
  */
 void sched_timer_tick(uint32_t period, int user)
 {
     uint64_t now = arch_rtime_ns();
 
-    /* when an interrupt comes, in cycles, isn't predictable */
+    /* when an interrupt comes, counted in cycles, isn't predictable */
     random_add((uint32_t) arch_cycles());
 
     callout_run(now);
@@ -73,7 +96,7 @@ void sched_timer_tick(uint32_t period, int user)
 
         if (now >= proc->alarm_at) {
             if (proc->alarm_interval) {
-                /* the next expiry, not every one that was missed */
+                /* the next expiry, rather than every one that was missed */
                 proc->alarm_at += proc->alarm_interval;
                 if (proc->alarm_at <= now)
                     proc->alarm_at = now + proc->alarm_interval;
@@ -86,7 +109,15 @@ void sched_timer_tick(uint32_t period, int user)
     }
 }
 
-/** what is left of the real time timer of `proc', 0 if it isn't armed */
+/**
+ * Reads what is left of a process's real time timer.
+ *
+ * @param proc      the process
+ * @param value     set to the time until it expires, in ns, or 0 if it
+ *                  isn't armed
+ * @param interval  set to its interval, in ns, or 0 if it isn't armed or
+ *                  expires only once
+ */
 void sched_alarm_get(struct proc *proc, uint64_t *value, uint64_t *interval)
 {
     uint64_t now = arch_rtime_ns();
@@ -97,10 +128,18 @@ void sched_alarm_get(struct proc *proc, uint64_t *value, uint64_t *interval)
     *interval = armed ? proc->alarm_interval : 0;
 }
 
-/*
- * The real time timer of `proc' (setitimer, alarm): SIGALRM in `value' ns,
- * then every `interval' ns (0: once), value 0 disarms it. What was left of
- * the previous one is returned in old_value and old_interval if set.
+/**
+ * Sets a process's real time timer, which `setitimer()` and `alarm()` use:
+ * the process gets `SIGALRM` once `value` ns have passed, then every
+ * `interval` ns.
+ *
+ * @param proc          the process
+ * @param value         the time until the first `SIGALRM`, in ns; 0
+ *                      disarms the timer
+ * @param interval      the time between the next ones, in ns; 0 for none
+ * @param old_value     if not NULL, set to what was left of the previous
+ *                      timer
+ * @param old_interval  if not NULL, set to the previous timer's interval
  */
 void sched_alarm(struct proc *proc, uint64_t value, uint64_t interval,
                  uint64_t *old_value, uint64_t *old_interval)
@@ -125,16 +164,25 @@ void sched_alarm(struct proc *proc, uint64_t value, uint64_t interval,
     list_append(&alarms, &proc->alarm_link);
 }
 
-/** the thread no longer waits with a deadline (woken, or killed) */
+/**
+ * Takes a thread off the list of threads waiting with a deadline, when it
+ * no longer waits (it was woken up, or killed).
+ *
+ * @param thread  the thread
+ */
 void sched_timer_cancel(struct thread *thread)
 {
     list_remove(&thread->timer_link);
 }
 
 /**
- * Sleep on `queue' until woken up, or until arch_rtime_ns() reaches
- * `until' (0: no limit). Returns 1 if the time is up, -ERESTARTSYS if a
- * signal ended the sleep (waitq_sleep), 0 if woken up.
+ * Puts the current thread to sleep on a wait queue until it is woken up,
+ * a signal ends the sleep, or a deadline passes.
+ *
+ * @param waitq  the wait queue to sleep on
+ * @param until  the deadline, in `arch_rtime_ns()` time, or 0 for none
+ * @return 0 if the thread was woken up, 1 if the deadline passed, or
+ *         `-ERESTARTSYS` if a signal ended the sleep
  */
 int sched_wait(struct waitq *waitq, uint64_t until)
 {
@@ -156,8 +204,10 @@ int sched_wait(struct waitq *waitq, uint64_t until)
 }
 
 /**
- * Sleep until arch_rtime_ns() reaches `until': 0, or -ERESTARTSYS if a
- * signal ended the sleep before
+ * Puts the current thread to sleep until a time comes, for `nanosleep()`.
+ *
+ * @param until  the time to wake up, in `arch_rtime_ns()` time
+ * @return 0, or `-ERESTARTSYS` if a signal ended the sleep before then
  */
 int sched_sleep(uint64_t until)
 {
@@ -169,7 +219,13 @@ int sched_sleep(uint64_t until)
     return r < 0 ? r : 0;
 }
 
-/** the CPU that runs `thread', if it's another one */
+/**
+ * Finds the CPU that is running a thread, if it's another CPU than this
+ * one.
+ *
+ * @param thread  the thread
+ * @return the CPU, or NULL if the thread isn't running on another CPU
+ */
 struct cpu *sched_thread_cpu(struct thread *thread)
 {
     for (int i = 0; i < cpus_count; ++i)
@@ -179,8 +235,12 @@ struct cpu *sched_thread_cpu(struct thread *thread)
     return NULL;
 }
 
-/** `thread' runs on another CPU: it enters the kernel (a signal for it, it
- * was killed), not at its next tick but now */
+/**
+ * Makes a thread that runs on another CPU enter the kernel now, rather
+ * than at its next tick: a signal came for it, or it was killed.
+ *
+ * @param thread  the thread
+ */
 void sched_thread_kick(struct thread *thread)
 {
     struct cpu *cpu = sched_thread_cpu(thread);
@@ -190,9 +250,10 @@ void sched_thread_kick(struct thread *thread)
 }
 
 /**
- * The running thread was killed while it ran here (thread->killed): it
- * goes; if its process lives on (exec ended it), it leaves it, and wakes
- * the exec waiting for it (proc_threads_exec)
+ * Ends the current thread, which was killed while it ran on this CPU
+ * (`thread->killed`). If its process lives on (an `exec()` ended the
+ * thread), the thread leaves it and wakes up the `exec()` that waits for
+ * it (`proc_threads_exec()`). It doesn't return.
  */
 void sched_thread_killed(void)
 {
@@ -207,8 +268,11 @@ void sched_thread_killed(void)
     arch_cur_thread_kill();
 }
 
-/** a thread is ready: a CPU that idles runs it (if this one idles, it's in
- * an interrupt, it does on the way out: sched_idle_wakeup) */
+/**
+ * Wakes up an idle CPU to run a thread that just became ready. If this CPU
+ * is the idle one, it is in an interrupt, and runs the thread on the way
+ * out of it (`sched_idle_wakeup()`).
+ */
 static void sched_cpu_wake(void)
 {
     if (!sched_running || curcpu()->idle)
@@ -217,7 +281,7 @@ static void sched_cpu_wake(void)
     for (int i = 0; i < cpus_count; ++i) {
         struct cpu *cpu = &cpus[i];
 
-        /* one already woken runs another thread: the next one */
+        /* a CPU already woken up runs another thread: try the next one */
         if (cpu != curcpu() && cpu->idle && !cpu->kicked) {
             cpu->kicked = 1;
             arch_cpu_kick(cpu);
@@ -226,17 +290,28 @@ static void sched_cpu_wake(void)
     }
 }
 
+/**
+ * Puts a thread at the end of the ready list, to run in its turn.
+ *
+ * @param thread  the thread, which must be on no other list
+ */
 void sched_thread_ready(struct thread *thread)
 {
     list_append(&ready, &thread->run_link);
     sched_cpu_wake();
 }
 
-/* an urgent thread was woken: switch to it when the interrupt returns to
- * user mode (an idle CPU switches anyway) */
+/* An urgent thread was woken up: switch to it when the interrupt returns
+ * to user mode (an idle CPU switches anyway). */
 int sched_urgent = 0;
 
-/** a sleeping thread woken up: ready, ahead of the others if urgent */
+/**
+ * Makes a thread that was sleeping ready to run. An urgent thread
+ * (`thread->urgent`, the network's) goes ahead of the others, and runs as
+ * soon as the interrupt that woke it returns.
+ *
+ * @param thread  the thread that was woken up
+ */
 void sched_thread_wake(struct thread *thread)
 {
     if (!thread->urgent) {
@@ -249,8 +324,11 @@ void sched_thread_wake(struct thread *thread)
     sched_cpu_wake();
 }
 
-/** the current thread is done running (it sleeps, or exited): another
- * ready one runs now, or the CPU idles until an interrupt */
+/**
+ * Gives up the CPU when the current thread can't run anymore (it sleeps,
+ * or it exited): the next ready thread runs, or the CPU idles until an
+ * interrupt comes. It doesn't return to the caller.
+ */
 void kernel_idle(void)
 {
     curcpu()->idle = 1;
@@ -261,18 +339,26 @@ void kernel_idle(void)
     arch_idle();
 }
 
-/** an interrupt woke a thread up while the CPU was idle: it runs now rather
- * than at the next timer tick (a disk request would wait for one each) */
+/**
+ * Runs a ready thread now if an interrupt made one ready while this CPU
+ * was idle, rather than at the next tick. Without this, every disk request
+ * would wait for a tick.
+ */
 void sched_idle_wakeup(void)
 {
-    /* another CPU may wake it again */
+    /* another CPU may wake this one up again */
     curcpu()->kicked = 0;
 
     if (curcpu()->idle && !list_empty(&ready))
         schedule();
 }
 
-void sched_thread_spawn(struct thread *thread)   /* Starts thread execution */
+/**
+ * Starts running a thread for the first time. It doesn't return.
+ *
+ * @param thread  the thread, which has never run
+ */
+void sched_thread_spawn(struct thread *thread)
 {
     thread->spawned = 1;
     arch_thread_spawn(thread);
@@ -280,11 +366,17 @@ void sched_thread_spawn(struct thread *thread)   /* Starts thread execution */
 
 int sched_running = 0;
 
+/**
+ * Starts the scheduler with the first process, init, and runs it. It
+ * doesn't return.
+ *
+ * @param init  the first process, made by the caller
+ */
 void sched_init_spawn(struct proc *init)
 {
     proc_init(init);
 
-    /* init defaults */
+    /* init's defaults */
     init->mask = 022;   /* umask */
     init->cwd = vfs_root;
     vfs_root->ref++;
@@ -299,8 +391,12 @@ void sched_init_spawn(struct proc *init)
     sched_thread_spawn(curthread);
 }
 
-/** the running thread (if any) to the end of the ready list, the one at
- * its head runs; none: the CPU idles */
+/**
+ * Switches to the next ready thread. The running thread, if there is one,
+ * goes to the end of the ready list; if no thread is ready, the CPU
+ * idles. It returns, in the thread that was running, once that thread is
+ * chosen again.
+ */
 void schedule(void)
 {
     sched_urgent = 0;

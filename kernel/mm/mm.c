@@ -1,9 +1,10 @@
 /** \file
- * Memory Management
+ * Physical memory: setting it up at boot, and the pages of it.
  *
- * The memory management subsystem is responsible for the allocation
- * of physical memory pages, management of virtual memory of processes
- * and caching of virtual memory objects.
+ * Every page of RAM has a `struct vm_page`, in `pages[]`, with its
+ * reference count. `mm_page_alloc()` takes free pages from the buddy
+ * allocator (`mm/buddy.c`), and `mm_setup()` sets both up from the boot
+ * loader's memory map. See docs/kernel/memory.md.
  */
 
 #include <core/system.h>
@@ -29,8 +30,11 @@ static size_t pages_nr;
  * framebuffer mapped by a process): no reference counts for those */
 #define TRACKED(addr) ((addr)/PAGE_SIZE < pages_nr)
 
-/** 
- * increment references count of a physical page
+/**
+ * Adds a reference to a page of RAM. A page past RAM (device memory, such
+ * as a framebuffer) has no reference count, and is left alone.
+ *
+ * @param paddr  the page's physical address
  */
 void mm_page_incref(paddr_t paddr)
 {
@@ -39,7 +43,9 @@ void mm_page_incref(paddr_t paddr)
 }
 
 /**
- * decrement references count of a physical page
+ * Drops a reference to a page of RAM. A page past RAM is left alone.
+ *
+ * @param paddr  the page's physical address
  */
 void mm_page_decref(paddr_t paddr)
 {
@@ -48,7 +54,10 @@ void mm_page_decref(paddr_t paddr)
 }
 
 /**
- * get reference counts of a physical page
+ * Returns how many references a page of RAM has.
+ *
+ * @param paddr  the page's physical address
+ * @return its reference count, or 0 for a page past RAM
  */
 size_t mm_page_ref(paddr_t paddr)
 {
@@ -56,10 +65,15 @@ size_t mm_page_ref(paddr_t paddr)
 }
 
 /**
- * An unused page of physical memory, NULL if there's none: out of memory
- * is an error its caller handles, as any other (a process's page fault
- * kills it, a system call returns ENOMEM, a frame is dropped), not a
- * panic. Only what the kernel can't boot without panics.
+ * Allocates a free page of physical memory.
+ *
+ * Running out of memory is an error that the caller handles like any
+ * other, not a panic: a process's page fault kills it, a system call
+ * returns `ENOMEM`, a network frame is dropped. Only what the kernel
+ * can't boot without panics.
+ *
+ * @return the page's structure, zeroed but for its address, or NULL if
+ *         there is no free page
  */
 struct vm_page *mm_page_alloc(void)
 {
@@ -82,7 +96,9 @@ struct vm_page *mm_page_alloc(void)
 }
 
 /**
- * deallocate a page
+ * Frees a page of physical memory, back to the zone it came from.
+ *
+ * @param paddr  the page's physical address
  */
 void mm_page_dealloc(paddr_t paddr)
 {
@@ -92,19 +108,36 @@ void mm_page_dealloc(paddr_t paddr)
     buddy_free(zone, paddr, PAGE_SIZE);
 }
 
-/** (the pages' references are the vm objects', not the mappings') */
+/**
+ * Maps a page into an address space. The page's references are the vm
+ * objects' that hold it, not the mappings', so this doesn't add one.
+ *
+ * @param pmap   the address space's page tables
+ * @param vaddr  the virtual address, page-aligned
+ * @param paddr  the page's physical address, page-aligned
+ * @param flags  the mapping's permissions (`VM_*`)
+ * @return 0, `-EINVAL` for an address that can't be mapped page by page,
+ *         or `-ENOMEM` if there was no memory for a page table
+ */
 int mm_page_map(struct pmap *pmap, vaddr_t vaddr, paddr_t paddr, int flags)
 {
     return pmap_add(pmap, vaddr, paddr, flags);
 }
 
+/**
+ * Unmaps a page from an address space.
+ *
+ * @param pmap   the address space's page tables
+ * @param vaddr  the page's virtual address
+ * @return 0, or `-EINVAL` if no page is mapped there
+ */
 int mm_page_unmap(struct pmap *pmap, vaddr_t vaddr)
 {
-    /* Check if page is mapped */
+    /* is a page mapped there? */
     paddr_t paddr = arch_page_get_mapping(pmap, vaddr);
 
     if (paddr) {
-        /* Call arch specific page unmapper */
+        /* the architecture's page tables */
         pmap_remove(pmap, vaddr, vaddr + PAGE_SIZE);
         return 0;
     }
@@ -112,6 +145,19 @@ int mm_page_unmap(struct pmap *pmap, vaddr_t vaddr)
     return -EINVAL;
 }
 
+/**
+ * Maps a range of an address space, page by page. Pages that are mapped
+ * already are left as they are.
+ *
+ * @param pmap   the address space's page tables
+ * @param paddr  the physical address to map, or 0 to map new pages of
+ *               memory
+ * @param vaddr  the virtual address
+ * @param size   the size of the range, in bytes (rounded to whole pages)
+ * @param flags  the mappings' permissions (`VM_*`)
+ * @return 0, or `-ENOMEM` if there was no memory for a page or a page
+ *         table; the pages mapped before that stay mapped
+ */
 int mm_map(struct pmap *pmap, paddr_t paddr, vaddr_t vaddr, size_t size, int flags)
 {
     int alloc = !paddr;
@@ -152,6 +198,13 @@ int mm_map(struct pmap *pmap, paddr_t paddr, vaddr_t vaddr, size_t size, int fla
     return 0;
 }
 
+/**
+ * Unmaps every page of a range of an address space.
+ *
+ * @param pmap   the address space's page tables
+ * @param vaddr  the range's start
+ * @param size   its size, in bytes (rounded to whole pages)
+ */
 void mm_unmap_full(struct pmap *pmap, vaddr_t vaddr, size_t size)
 {
     vaddr_t start = PAGE_ALIGN(vaddr);
@@ -166,13 +219,22 @@ void mm_unmap_full(struct pmap *pmap, vaddr_t vaddr, size_t size)
 }
 
 /*
- * Memory for what the size of the RAM decides (pages[], the buddy
- * allocator's bitmaps): after the kernel, where nothing the boot loader
- * left is, taken before the buddy allocator knows what is free and then
- * marked used. It is reached through the boot mapping (VMA()).
+ * Boot memory: the structures whose size depends on how much RAM there is
+ * (pages[], the buddy allocator's bitmaps). They go after the kernel,
+ * where the boot loader left nothing, and are taken before the buddy
+ * allocator knows what is free; then they are marked used. They are
+ * reached through the boot mapping (VMA()).
  */
 static paddr_t boot_mem_start, boot_mem_next, boot_mem_end;
 
+/**
+ * Allocates boot memory, zeroed, before the buddy allocator is set up.
+ * Running out panics: the kernel can't boot without it.
+ *
+ * @param size   the size wanted, in bytes
+ * @param align  its alignment, a power of two
+ * @return its kernel address
+ */
 void *mm_boot_alloc(size_t size, size_t align)
 {
     paddr_t paddr = (boot_mem_next + align - 1) & ~(paddr_t) (align - 1);
@@ -187,9 +249,9 @@ void *mm_boot_alloc(size_t size, size_t align)
     return ptr;
 }
 
-/** the end of what [start, start + size) overlaps that the boot loader
- * left in memory (modules, the kernel's symbols, the command line), 0 if
- * nothing */
+/** Returns the end of whatever the boot loader left in memory (modules,
+ * the kernel's symbols, the command line) that overlaps `[start, start +
+ * size)`, or 0 if nothing does. */
 static paddr_t boot_left(struct boot *boot, paddr_t start, size_t size)
 {
     paddr_t end = start + size;
@@ -227,6 +289,8 @@ static paddr_t boot_left(struct boot *boot, paddr_t start, size_t size)
     return 0;
 }
 
+/** Returns whether `[start, start + size)` is all in one usable region of
+ * the boot loader's memory map. */
 static int boot_usable(struct boot *boot, paddr_t start, size_t size)
 {
     for (int i = 0; i < boot->mmap_count; ++i)
@@ -237,8 +301,8 @@ static int boot_usable(struct boot *boot, paddr_t start, size_t size)
     return 0;
 }
 
-/** where the boot memory goes: the first place after the kernel that is
- * RAM, free, and in the boot mapping */
+/** Places the boot memory: at the first place after the kernel that is
+ * RAM, free, and in the boot mapping. Panics if there's none. */
 static void boot_mem_place(struct boot *boot, size_t size)
 {
     extern char kernel_end;
@@ -254,15 +318,14 @@ static void boot_mem_place(struct boot *boot, size_t size)
     boot_mem_end = start + size;
 }
 
-/** RAM is [0, the end of the last usable region of the memory map), what
- * isn't usable in it (the regions the map reserves, and its gaps) is
- * marked used */
+/** Marks as used what isn't usable RAM below `ram_end`: the regions the
+ * memory map reserves, and the gaps between its regions. */
 static void mm_mark_unusable(struct boot *boot, paddr_t ram_end)
 {
     paddr_t at = 0;
 
     while (at < ram_end) {
-        /* the usable region that starts the lowest at or after `at' */
+        /* the usable region that starts the lowest at or after `at` */
         paddr_t next = ram_end, next_end = ram_end;
 
         for (int i = 0; i < boot->mmap_count; ++i) {
@@ -291,6 +354,14 @@ static void mm_mark_unusable(struct boot *boot, paddr_t ram_end)
                 MIN(boot->mmap[i].end, ram_end) - boot->mmap[i].start);
 }
 
+/**
+ * Sets up physical memory at boot, from the boot loader's memory map: the
+ * page structures, the buddy allocator, and what isn't free (the kernel,
+ * the modules, the reserved regions, page 0). Then the architecture sets
+ * up its page tables (`arch_mm_setup()`).
+ *
+ * @param boot  what the boot loader passed (see `boot/boot.h`)
+ */
 void mm_setup(struct boot *boot)
 {
     /* the end of RAM, and how much there is */
@@ -304,14 +375,14 @@ void mm_setup(struct boot *boot)
         }
     }
 
-    /* no memory map: what the boot loader says there is from 0 */
+    /* no memory map: as much as the boot loader says there is, from 0 */
     if (!ram_end) {
         ram_end = (paddr_t) boot->total_mem * 1024;
         ram = ram_end;
     }
 
 #ifdef ARCH_RAM_MAX
-    /* only what the kernel maps (i386's direct map) */
+    /* only what the kernel maps can be used (i386's direct map) */
     if (ram_end > ARCH_RAM_MAX) {
         ram = 0;
 
@@ -324,17 +395,17 @@ void mm_setup(struct boot *boot)
     }
 #endif
 
-    /* the buddy allocator works in blocks of BUDDY_MAX_BS: up to the next
-     * one, past RAM is set unusable (mm_mark_unusable()) and only RAM is
-     * handed out (buddy_reserved_done()) */
+    /* the buddy allocator works in blocks of BUDDY_MAX_BS, so round up to
+     * the next one; what's past RAM is set unusable (mm_mark_unusable()),
+     * and only RAM is handed out (buddy_reserved_done()) */
     ram_end = (ram_end + BUDDY_MAX_BS - 1) & ~(paddr_t) (BUDDY_MAX_BS - 1);
 
     printk("kernel: %ld MiB of memory, up to %p\n", ram >> 20, ram_end);
 
     pages_nr = ram_end / PAGE_SIZE;
 
-    /* the page structures, and the buddy allocator's bitmaps (two bits a
-     * page at most, over all its orders) */
+    /* room for the page structures and the buddy allocator's bitmaps
+     * (at most two bits per page, over all its orders) */
     size_t pages_size = pages_nr * sizeof(struct vm_page);
     boot_mem_place(boot, PAGE_ROUND(pages_size + pages_nr / 4 + 0x10000));
 
@@ -342,19 +413,19 @@ void mm_setup(struct boot *boot)
 
     buddy_setup(ram_end);
 
-    /* physical page 0 never: 0 is what "no page" is (no mapping) */
+    /* never hand out physical page 0: 0 means "no page" (no mapping) */
     buddy_set_unusable(0, PAGE_SIZE);
 
     buddy_set_unusable(boot_mem_start, PAGE_ROUND(boot_mem_next) - boot_mem_start);
     mm_mark_unusable(boot, ram_end);
 
-    /* Mark modules space as unusable */
+    /* the modules (the RAM disk) */
     for (int i = 0; i < boot->modules_count; ++i) {
         module_t *mod = &boot->modules[i];
         buddy_set_unusable(mod->paddr, mod->size);
     }
 
-    /* what /proc/meminfo calls the total */
+    /* what /proc/meminfo reports as the total */
     extern size_t k_total_mem;
     k_total_mem = ram;
 

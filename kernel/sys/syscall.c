@@ -1,9 +1,9 @@
 /** \file
  * System calls: what the architecture calls when user mode makes one
- * (syscall_dispatch()), the table of them, and what several kinds of
- * them share: the user memory and descriptors they take. The calls
- * themselves are in sys_file.c, sys_proc.c, sys_signal.c, sys_net.c and
- * sys_poll.c; syscalls.h lists them.
+ * (`syscall_dispatch()`), the table of them, and the helpers that several
+ * kinds of calls share, for the user memory and descriptors they take.
+ * The calls themselves are in `sys_file.c`, `sys_proc.c`, `sys_signal.c`,
+ * `sys_net.c` and `sys_poll.c`, and `syscalls.h` lists them all.
  */
 
 #include "syscalls.h"
@@ -11,8 +11,14 @@
 static int syscall_log_level = LOG_NONE;
 LOGGER_DEFINE(syscall, syscall_log, syscall_log_level)
 
-/** the open file `fd' refers to, held until the call returns (a close
- * meanwhile doesn't take it away); NULL if `fd' is not open */
+/**
+ * Finds the open file that a descriptor of the current process refers to,
+ * and holds it until the system call returns, so that a `close()` by
+ * another thread meanwhile doesn't free it.
+ *
+ * @param fd  the descriptor
+ * @return the open file, or NULL if `fd` isn't open
+ */
 struct file *fd_file(int fd)
 {
     struct file *file = proc_fd_file(curproc, fd);
@@ -20,14 +26,23 @@ struct file *fd_file(int fd)
 }
 
 /*
- * User memory: what a call reads from it comes in with copyin() and
- * copyinstr() (a path: upath_get()), what it writes goes out with
- * copyout(), data through an iobuf (fs/iobuf.h); a bad address is EFAULT.
- * Below them the kernel works with its own copies only.
+ * User memory: a system call reads what the program passed it with
+ * copyin(), or copyinstr() for a string (upath_get() for a path), and
+ * writes its results with copyout(); data goes through an iobuf
+ * (fs/iobuf.h). A bad address makes them fail with EFAULT. Past them, the
+ * kernel only works with its own copies.
  */
 
-
-/** user space's path into a kernel copy, *path (the caller kfree()s it) */
+/**
+ * Copies a path from user memory into a new kernel buffer.
+ *
+ * @param upath  the path, in user memory
+ * @param path   set to the kernel's copy, which the caller frees with
+ *               `kfree()`; NULL on failure
+ * @return 0, `-ENOMEM` if there was no memory for the copy, `-EFAULT` if
+ *         `upath` is a bad address, or `-ENAMETOOLONG` if the path is
+ *         longer than `UPATH_MAX`
+ */
 int upath_get(const char *upath, char **path)
 {
     char *buf = kmalloc(UPATH_MAX, &M_BUFFER, 0);
@@ -49,15 +64,18 @@ int upath_get(const char *upath, char **path)
 }
 
 /*
- * The table: what each system call number calls. Its entries all have
- * the one type the dispatch calls through, five register-sized
- * arguments and a long result (syscall_t); a system call is written
- * with its own types, sys_read(int fd, void *buf, size_t nbytes).
- * SYSCALLn(name, types...) makes the entry for sys_<name>, of n
- * arguments: sys_<name>_entry(), which converts the registers to those
- * types and calls it, so the compiler checks the call. Calling sys_read
- * itself through a pointer of another type would be undefined in C (it
- * happened to work with x86's and aarch64's calling conventions).
+ * The table says what each system call number calls. All its entries
+ * have the one type that the dispatch calls them through, syscall_t: five
+ * arguments the size of a register, and a long result. A system call is
+ * written with its own types instead, as sys_read(int fd, void *buf,
+ * size_t nbytes).
+ *
+ * SYSCALLn(name, types...) makes the table's entry for sys_<name>, which
+ * takes n arguments: a function sys_<name>_entry() of the table's type,
+ * which converts the registers to those types and calls sys_<name>(). So
+ * the compiler checks every call. Calling sys_read() itself through a
+ * pointer of another type would be undefined behaviour in C, even though
+ * x86's and aarch64's calling conventions happen to make it work.
  */
 
 #define SYSCALL_ARGS \
@@ -276,11 +294,21 @@ const size_t syscall_cnt = sizeof(syscall_table)/sizeof(syscall_table[0]);
 
 
 /**
- * A system call from user mode (the architecture's arch_syscall(): the
- * number and the arguments, as they came in registers). Its result is
- * the thread's to return to user mode (arch_syscall_return()), but
- * sigreturn's: its registers are the signal frame's it restored. A call
- * that doesn't return (exit, an exec that worked) doesn't come back here.
+ * Runs a system call that the current thread made from user mode. The
+ * architecture's `arch_syscall()` calls it with the number and the
+ * arguments, as they came in registers.
+ *
+ * The call's result is set as the thread's result to return to user mode
+ * (`arch_syscall_return()`), except for `sigreturn`'s: its registers are
+ * the ones it restored from the signal frame. A call that doesn't return
+ * (`exit`, or an `execve` that worked) doesn't come back here.
+ *
+ * @param nr  the system call's number (`SYS_*`)
+ * @param a1  its first argument
+ * @param a2  its second argument
+ * @param a3  its third argument
+ * @param a4  its fourth argument
+ * @param a5  its fifth argument
  */
 void syscall_dispatch(unsigned long nr, uintptr_t a1, uintptr_t a2, uintptr_t a3,
                       uintptr_t a4, uintptr_t a5)
