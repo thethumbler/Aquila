@@ -52,6 +52,8 @@ static int slab_class(size_t size)
 }
 
 /** a page of the region, mapped to a page of memory */
+/** a page for a slab, in the slab region; NULL if the region is full or
+ * there's no memory (kmalloc() returns NULL) */
 static struct slab *slab_page_alloc(void)
 {
     size_t i = slab_first_free;
@@ -60,15 +62,21 @@ static struct slab *slab_page_alloc(void)
         ++i;
 
     if (i >= SLAB_PAGES)
-        panic("slab: the region is full");
-
-    slab_map[i / 8] |= 1 << (i % 8);
-    slab_first_free = i + 1;
+        return NULL;
 
     vaddr_t vaddr = ARCH_SLAB_BASE + i * PAGE_SIZE;
     struct vm_page *vm_page = mm_page_alloc();
 
-    pmap_add(kvm_space.pmap, vaddr, vm_page->paddr, VM_KRW);
+    if (!vm_page)
+        return NULL;
+
+    if (pmap_add(kvm_space.pmap, vaddr, vm_page->paddr, VM_KRW)) {
+        mm_page_dealloc(vm_page->paddr);
+        return NULL;
+    }
+
+    slab_map[i / 8] |= 1 << (i % 8);
+    slab_first_free = i + 1;
     slab_used += PAGE_SIZE;
 
     return (struct slab *) vaddr;
@@ -121,7 +129,9 @@ void *slab_alloc(size_t size, struct malloc_type *type)
     struct slab *slab = *list;
 
     if (!slab) {
-        slab = slab_page_alloc();
+        if (!(slab = slab_page_alloc()))
+            return NULL;
+
         slab->type = type;
         slab->size = SLAB_MIN << class;
         slab->used = 0;

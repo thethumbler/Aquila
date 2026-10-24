@@ -149,11 +149,16 @@ static inline void reg_write(uint32_t reg, uint32_t val)
     io_out32(&e1000.regs, reg, val);
 }
 
-/** a page of memory: its physical address, its kernel address in *virt */
+/** a page of memory: its physical address, its kernel address in *virt
+ * (the rings and buffers, once, at boot: the kernel can't boot without
+ * that little memory) */
 static paddr_t page_get(void **virt)
 {
     struct vm_page *vm_page = mm_page_alloc();
-    *virt = arch_phys_map(vm_page->paddr, PAGE_SIZE);
+
+    if (!vm_page || !(*virt = arch_phys_map(vm_page->paddr, PAGE_SIZE)))
+        panic("e1000: no memory for its rings");
+
     memset(*virt, 0, PAGE_SIZE);
     return vm_page->paddr;
 }

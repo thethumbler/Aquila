@@ -5,8 +5,8 @@
 # usage: tests/run.sh [-a arch] [-c cpus] [-k args] [-n] [-v] [test...]
 #
 #   -a      the architecture: x86_64 (default), i386, or aarch64 (QEMU's
-#           virt machine, the kernel and tests built with clang; only the
-#           aarch64 test by default)
+#           virt machine, the kernel and tests built with clang; the
+#           aarch64 and oom tests)
 #   -c      the CPUs QEMU has (-smp), every boot (but the irq and smp
 #           tests', which choose)
 #   -k      more for the kernel's command line, every boot (e.g. apic=off;
@@ -17,8 +17,8 @@
 # QEMU uses KVM when /dev/kvm can be used, KVM=0 in the environment turns
 # it off.
 #
-# tests: ata cpu syscalls memory kvmem clock irq smp net tcp ext2 minix libc system disk tcc curl
-# bash; aarch64 (-a aarch64)
+# tests: ata cpu syscalls memory oom kvmem clock irq smp net tcp ext2 minix libc system disk tcc curl
+# bash; aarch64 and oom (-a aarch64)
 # (default: all)
 #
 # Requires gcc with 32-bit support, ld, cpio and qemu-system-i386 (or
@@ -34,7 +34,7 @@ set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 TESTS=$ROOT/tests
 
-ALL_TESTS="ata cpu syscalls memory kvmem clock irq smp net tcp ext2 minix libc system disk tcc curl bash"
+ALL_TESTS="ata cpu syscalls memory oom kvmem clock irq smp net tcp ext2 minix libc system disk tcc curl bash"
 
 ARCH=x86_64
 build=1
@@ -85,7 +85,7 @@ case $ARCH in
         TEST_CC="clang --target=aarch64-none-elf -fuse-ld=lld"
         TEST_CFLAGS=
         TOOLS="clang ld.lld llvm-objcopy cpio"
-        ALL_TESTS="aarch64"
+        ALL_TESTS="aarch64 oom"
         CROSS_CC=
         # no KVM: another CPU
         KVM=0 ;;
@@ -337,6 +337,14 @@ test_memory()
     QEMU_MEM=$MEMORY_TEST_RAM run_qemu "$OUT/memory/serial.log" 180 'aqtest: done' \
         -initrd "$OUT/memory/initrd.img"
     aqtest_result "$OUT/memory/serial.log"
+}
+
+# out of memory (128 MiB): a process that has none left is killed, the
+# system goes on and has its memory back
+test_oom()
+{
+    QEMU_MEM=128 run_qemu "$OUT/oom/serial.log" 120 'aqtest: done' -initrd "$OUT/oom/initrd.img"
+    aqtest_result "$OUT/oom/serial.log"
 }
 
 # the kernel's allocator (mm/kvmem.c): its self-test at boot (kvmem.test),
@@ -1196,7 +1204,7 @@ needed=" $selected "
 case "$needed" in *" ata "*|*" smp "*) needed="$needed cpu " ;; esac
 [ -x "$CROSS_CC" ] || needed=${needed/ libc / }
 
-for name in cpu syscalls memory kvmem clock irq smp net tcp ext2 minix libc aarch64; do
+for name in cpu syscalls memory oom kvmem clock irq smp net tcp ext2 minix libc aarch64; do
     case "$needed" in
         *" $name "*)
             mkdir -p "$OUT/$name"

@@ -71,12 +71,13 @@ static inline uint64_t *table(paddr_t paddr)
     return PHYS2VIRT(paddr);
 }
 
+/** a page table, empty; 0 if there's no memory for it */
 static paddr_t table_alloc(void)
 {
     struct vm_page *vm_page = mm_page_alloc();
 
     if (!vm_page)
-        panic("could not allocate a page table");
+        return 0;
 
     memset(table(vm_page->paddr), 0, PAGE_SIZE);
     return vm_page->paddr;
@@ -88,8 +89,8 @@ static void table_free(paddr_t paddr)
 }
 
 /** the entry of the page table that maps `va' (in `pmap', or the
- * kernel's half), the tables on the way made if `make', else NULL if one
- * is missing */
+ * kernel's half), the tables on the way made if `make' (NULL if there's
+ * no memory for one), else NULL if one is missing */
 static uint64_t *pte_get(struct pmap *pmap, vaddr_t va, int make)
 {
     uint64_t *t = table(KERNEL_HALF(va) ? k_root : pmap->map);
@@ -98,10 +99,12 @@ static uint64_t *pte_get(struct pmap *pmap, vaddr_t va, int make)
         uint64_t *e = &t[IDX(va, level)];
 
         if (!(*e & D_VALID)) {
-            if (!make)
+            paddr_t t_new;
+
+            if (!make || !(t_new = table_alloc()))
                 return NULL;
 
-            *e = table_alloc() | D_VALID | D_TABLE;
+            *e = t_new | D_VALID | D_TABLE;
         }
 
         /* the direct map's blocks aren't the pmap's to change */
@@ -190,7 +193,9 @@ void pmap_init(void)
 
     /* the kernel's own user half: none (the boot tables' identity map
      * goes with it) */
-    k_pmap.map = table_alloc();
+    if (!(k_pmap.map = table_alloc()))
+        panic("no memory for the kernel's page tables");
+
     k_pmap.ref = 1;
     kvm_space.pmap = &k_pmap;
 
@@ -219,7 +224,11 @@ struct pmap *pmap_create(void)
         return NULL;
 
     /* the user half only: the kernel's is TTBR1_EL1's */
-    pmap->map = table_alloc();
+    if (!(pmap->map = table_alloc())) {
+        kfree(pmap);
+        return NULL;
+    }
+
     pmap->ref = 1;
 
     return pmap;
@@ -264,10 +273,15 @@ int pmap_add(struct pmap *pmap, vaddr_t va, paddr_t pa, uint32_t flags)
     if ((va & PAGE_MASK) || (pa & PAGE_MASK))
         return -EINVAL;
 
+    /* the direct map's blocks aren't changed page by page */
+    if (va >= ARCH_DMAP_BASE && va < ARCH_DMAP_BASE + dmap_end)
+        return -EINVAL;
+
     uint64_t *pte = pte_get(pmap, va, 1);
 
+    /* no memory for a table on the way */
     if (!pte)
-        return -EINVAL;
+        return -ENOMEM;
 
     uint64_t old = *pte;
     *pte = pa | pte_flags(flags);
@@ -388,20 +402,27 @@ int pmap_page_write(paddr_t paddr, off_t off, size_t size, void *buf)
 /* where the window has room for devices' registers */
 static vaddr_t mmio_next = ARCH_MMIO_BASE;
 
-/** physical memory mapped in the window, with `flags' */
+/** physical memory mapped in the window, with `flags'; NULL if there's
+ * no room left in it, or no memory for a page table */
 static void *window_map(uintptr_t paddr, size_t size, uint32_t flags)
 {
     paddr_t start = PAGE_ALIGN(paddr);
     size_t  len   = PAGE_ROUND(paddr + size) - start;
 
     if (mmio_next + len > ARCH_MMIO_BASE + ARCH_MMIO_SIZE)
-        panic("no room to map a device's registers");
+        return NULL;    /* no room left in the window */
 
     vaddr_t vaddr = mmio_next;
-    mmio_next += len;
 
-    for (size_t off = 0; off < len; off += PAGE_SIZE)
-        pmap_add(&k_pmap, vaddr + off, start + off, flags);
+    /* no memory for a page table: what was mapped of it goes */
+    for (size_t off = 0; off < len; off += PAGE_SIZE) {
+        if (pmap_add(&k_pmap, vaddr + off, start + off, flags)) {
+            pmap_remove(&k_pmap, vaddr, vaddr + off);
+            return NULL;
+        }
+    }
+
+    mmio_next += len;
 
     return (void *) (vaddr + (paddr - start));
 }

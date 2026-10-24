@@ -6,6 +6,7 @@
 #include <mm/vm.h>
 
 #include <sys/sched.h>
+#include <sys/signal.h>
 
 /**
  * a structure holding parameters relevant to a page fault
@@ -59,6 +60,10 @@ static inline int pf_present(struct pf *pf)
     if (vm_aref->flags & VM_COPY) {
         /* copy page */
         struct vm_page *new_page = mm_page_alloc();
+
+        if (!new_page)
+            return -ENOMEM;
+
         new_page->off = vm_aref->vm_page->off;
         new_page->ref = 1;
         new_page->vm_object = NULL;
@@ -70,7 +75,12 @@ static inline int pf_present(struct pf *pf)
         vm_aref->vm_page = new_page;
         vm_aref->flags &= ~VM_COPY;
 
-        mm_page_map(pmap, pf->addr, new_page->paddr, pf->vm_entry->flags & VM_PERM);
+        /* no memory for its page table: the copy is the aref's, a fault
+         * again maps it */
+        int err = mm_page_map(pmap, pf->addr, new_page->paddr, pf->vm_entry->flags & VM_PERM);
+
+        if (err)
+            return err;
     } else {
         /* we own the aref, just change permissions */
         pmap_protect(pmap, pf->addr, pf->addr+PAGE_SIZE, pf->vm_entry->flags & VM_PERM);
@@ -117,9 +127,12 @@ static inline int pf_anon(struct pf *pf)
         struct vm_page *vm_page = aref->vm_page;
 
         uint32_t perm = (vm_entry->flags & VM_PERM) & ~(VM_UW|VM_KW);
-        mm_page_map(pmap, pf->addr, vm_page->paddr, perm);
-        mm_page_incref(vm_page->paddr);
+        int err = mm_page_map(pmap, pf->addr, vm_page->paddr, perm);
 
+        if (err)
+            return err;
+
+        mm_page_incref(vm_page->paddr);
         return 1;
     }
 
@@ -131,42 +144,49 @@ static inline int pf_anon(struct pf *pf)
         struct vm_page *vm_page = aref->vm_page;
 
         uint32_t perm = vm_entry->flags & VM_PERM;
-        mm_page_map(pmap, pf->addr, vm_page->paddr, perm);
+        int err = mm_page_map(pmap, pf->addr, vm_page->paddr, perm);
+
+        if (err)
+            return err;
 
         mm_page_incref(vm_page->paddr);
-
         return 1;
     }
 
     /* copy, map read-write */
 
+    /* the copy and its aref first: without memory for them, nothing has
+     * changed */
     struct vm_aref *new_aref = kmalloc(sizeof(struct vm_aref), &M_VM_AREF, M_ZERO);
+    struct vm_page *new_page = new_aref ? mm_page_alloc() : NULL;
 
-    if (!new_aref)
+    if (!new_page) {
+        kfree(new_aref);
         return -ENOMEM;
-
-    new_aref->ref = 1;
-    new_aref->flags = aref->flags;
-
-    aref->ref--;
+    }
 
     struct vm_page *vm_page = aref->vm_page;
 
-    struct vm_page *new_page = mm_page_alloc();
     new_page->off = vm_page->off;
     new_page->ref = 1;
     new_page->vm_object = NULL;
 
     pmap_page_copy(vm_page->paddr, new_page->paddr);
 
+    new_aref->ref = 1;
+    new_aref->flags = aref->flags;
     new_aref->vm_page = new_page;
 
-    hashmap_node_remove(vm_entry->vm_anon->arefs, aref_node);
-    hashmap_insert(vm_entry->vm_anon->arefs, pf->hash, new_aref);
+    /* the anon's page at this offset is the copy (the same key: its node
+     * takes the new aref) */
+    aref_node->entry = new_aref;
+    aref->ref--;
 
-    mm_page_map(pmap, pf->addr, new_page->paddr, vm_entry->flags & VM_PERM);
+    /* no memory for its page table: the copy is the anon's now, a fault
+     * again maps it */
+    int err = mm_page_map(pmap, pf->addr, new_page->paddr, vm_entry->flags & VM_PERM);
 
-    return 1;
+    return err ? err : 1;
 }
 
 static inline struct vm_page *vm_object_page(struct vm_object *vm_object, hash_t hash, size_t off)
@@ -205,8 +225,12 @@ static inline int pf_object(struct pf *pf)
 
     if (!(vm_entry->flags & VM_UW)) {
         /* read only page -- just map */
+        int err = mm_page_map(pmap, pf->addr, vm_page->paddr, vm_entry->flags & VM_PERM);
+
+        if (err)
+            return err;
+
         mm_page_incref(vm_page->paddr);
-        mm_page_map(pmap, pf->addr, vm_page->paddr, vm_entry->flags & VM_PERM);
         return 1;
     }
 
@@ -225,20 +249,16 @@ static inline int pf_object(struct pf *pf)
     if (!vm_aref)
         return -ENOMEM;
 
-    vm_aref->vm_page = vm_page;
     vm_aref->ref = 1;
-
-    //if (!(pf->flags & PF_WRITE)) {
-    //    /* just mark for copying */
-    //    vm_aref->flags |= VM_COPY;
-    //    hashmap_insert(vm_entry->vm_anon->arefs, pf->hash, vm_aref);
-    //    uint32_t perms = (vm_entry->flags & VM_PERM) & ~(VM_UW|VM_KW);
-    //    mm_page_map(pmap, pf->addr, vm_page->paddr, perms);
-    //    return 1;
-    //}
 
     /* copy page */
     struct vm_page *new_page = mm_page_alloc();
+
+    if (!new_page) {
+        kfree(vm_aref);
+        return -ENOMEM;
+    }
+
     new_page->off = vm_page->off;
     new_page->ref = 1;
     new_page->vm_object = NULL;
@@ -246,12 +266,18 @@ static inline int pf_object(struct pf *pf)
     pmap_page_copy(vm_page->paddr, new_page->paddr);
 
     vm_aref->vm_page = new_page;
-    hashmap_insert(vm_entry->vm_anon->arefs, pf->hash, vm_aref);
 
-    mm_page_map(pmap, pf->addr, new_page->paddr, vm_entry->flags & VM_PERM);
+    if (hashmap_insert(vm_entry->vm_anon->arefs, pf->hash, vm_aref)) {
+        mm_page_dealloc(new_page->paddr);
+        kfree(vm_aref);
+        return -ENOMEM;
+    }
 
+    /* no memory for its page table: the copy is the anon's now, a fault
+     * again maps it */
+    int err = mm_page_map(pmap, pf->addr, new_page->paddr, vm_entry->flags & VM_PERM);
 
-    return 1;
+    return err ? err : 1;
 }
 
 static inline int pf_zero(struct pf *pf)
@@ -272,18 +298,36 @@ static inline int pf_zero(struct pf *pf)
         return -ENOMEM;
 
     struct vm_page *new_page = mm_page_alloc();
+
+    if (!new_page) {
+        kfree(vm_aref);
+        return -ENOMEM;
+    }
+
     new_page->off = pf->off;
     new_page->ref = 1;
-    //new_page->vm_object = vm_object;
-    
+
     vm_aref->vm_page = new_page;
     vm_aref->ref = 1;
 
-    hashmap_insert(vm_entry->vm_anon->arefs, pf->hash, vm_aref);
+    /* zeroed through its mapping (the kernel's, for now), before the anon
+     * has it: a page that isn't zeroed is never anyone's */
+    int err = mm_page_map(pmap, pf->addr, new_page->paddr, VM_KW);
 
-    mm_page_map(pmap, pf->addr, new_page->paddr, VM_KW); //vm_entry->flags & VM_PERM);
-    memset((void *) pf->addr, 0, PAGE_SIZE);
-    pmap_protect(pmap, pf->addr, pf->addr+PAGE_SIZE, vm_entry->flags & VM_PERM);
+    if (!err) {
+        memset((void *) pf->addr, 0, PAGE_SIZE);
+        pmap_protect(pmap, pf->addr, pf->addr + PAGE_SIZE, vm_entry->flags & VM_PERM);
+        err = hashmap_insert(vm_entry->vm_anon->arefs, pf->hash, vm_aref);
+
+        if (err)
+            pmap_remove(pmap, pf->addr, pf->addr + PAGE_SIZE);
+    }
+
+    if (err) {
+        mm_page_dealloc(new_page->paddr);
+        kfree(vm_aref);
+        return err;
+    }
 
     return 1;
 }
@@ -357,6 +401,12 @@ done:
     if (ret < 0)
         printk("[%d:%d] %s: page fault at %p not resolved: error %d\n",
                curproc->pid, curthread->tid, curproc->name, (void *) vaddr, -ret);
+
+    /* out of memory: the process can't go on (the access would fault
+     * again), it's killed; a copy from or to its memory in a system call
+     * fails (EFAULT), and it's killed on its way back */
+    if (ret == -ENOMEM)
+        signal_proc_send(curproc, SIGKILL);
 
 sigsegv:
     curthread->fault_addr = vaddr;

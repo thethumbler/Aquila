@@ -52,6 +52,11 @@ struct netbuf *netbuf_alloc(void)
 
         uint8_t *page = arch_phys_map(vm_page->paddr, PAGE_SIZE);
 
+        if (!page) {
+            mm_page_dealloc(vm_page->paddr);
+            return NULL;
+        }
+
         for (size_t off = 0; off < PAGE_SIZE; off += NETBUF_SIZE) {
             struct netbuf *nb = (struct netbuf *) (page + off);
             nb->page = vm_page->paddr;

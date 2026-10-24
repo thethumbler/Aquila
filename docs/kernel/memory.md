@@ -59,7 +59,28 @@ Shortcuts:
   marked used in whole 4 MiB blocks, and the end of RAM is rounded down
   to 4 MiB. A few MiB are lost this way.
 - There is no reclaiming: pages aren't swapped out, cached file pages
-  aren't dropped. When the buddy allocator runs out, the kernel panics.
+  aren't dropped.
+
+**Out of memory is an error**, not a panic, as in xv6: `mm_page_alloc()`
+returns `NULL`, and each caller fails the way it can:
+
+- a page fault that finds no memory kills the process (`SIGKILL`): it
+  couldn't go on, the access would fault again. If the fault came from a
+  system call copying to or from the process's memory, the copy fails
+  (`EFAULT`) and the process is killed on its way back;
+- `fork()`, `mmap()` and the others return `ENOMEM`: a page table, a
+  map entry or a structure they need couldn't be had;
+- `kmalloc()` returns `NULL` (the slab allocator, the page-granular one);
+- the network drops a frame it has no buffer for;
+- the kernel panics only for what it can't boot without: its own page
+  tables, a driver's rings, the RAM disk's mapping.
+
+Each step of a page fault takes its page, its mapping and its place in
+the anon (below) before it changes anything shared, and undoes what it
+did if one of them fails; a page is zeroed before any process can see
+it. The `oom` test (`tests/oom/`) runs out of memory on purpose, from a
+page fault and from inside `read()`, three times each: the process is
+killed, the memory comes back, the system goes on.
 
 `/proc/meminfo` shows the total and what the allocator has left:
 
@@ -87,7 +108,7 @@ struct vm_entry *e = kmalloc(sizeof(struct vm_entry), &M_VM_ENTRY, M_ZERO);
 Each type counts its objects and bytes, and `/proc/kvmem` lists them, so
 a leak shows up as one type's count that only grows. `M_ZERO` asks for
 zeroed memory. `kmalloc()` returns `NULL` when its region of addresses
-is full; when RAM itself runs out, the buddy allocator panics first.
+is full, or RAM is.
 
 Behind `kmalloc()` are two allocators:
 

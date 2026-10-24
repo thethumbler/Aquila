@@ -1,4 +1,5 @@
 #include <core/system.h>
+#include <core/panic.h>
 #include <core/arch.h>
 #include <core/module.h>
 #include <core/string.h>
@@ -57,6 +58,9 @@ static int rd_probe()
     /* the module, where the boot loader put it */
     rd_size = rd_module->size;
     rd_addr = arch_phys_map(rd_module->paddr, rd_size);
+
+    if (!rd_addr)
+        panic("ramdisk: no room to map it");
 
     kdev_blkdev_register(1, &rddev);
 

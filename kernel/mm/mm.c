@@ -56,7 +56,10 @@ size_t mm_page_ref(paddr_t paddr)
 }
 
 /**
- * allocate an unused page from physical memory
+ * An unused page of physical memory, NULL if there's none: out of memory
+ * is an error its caller handles, as any other (a process's page fault
+ * kills it, a system call returns ENOMEM, a frame is dropped), not a
+ * panic. Only what the kernel can't boot without panics.
  */
 struct vm_page *mm_page_alloc(void)
 {
@@ -68,7 +71,7 @@ struct vm_page *mm_page_alloc(void)
         paddr = buddy_alloc(BUDDY_ZONE_DMA, PAGE_SIZE);
 
     if (paddr == (paddr_t) -1)
-        panic("out of memory");
+        return NULL;
 
     struct vm_page *vm_page = &PAGE(paddr);
 
@@ -124,9 +127,22 @@ int mm_map(struct pmap *pmap, paddr_t paddr, vaddr_t vaddr, size_t size, int fla
 
         if (!phys) {
             if (alloc) {
-                paddr = mm_page_alloc()->paddr;
+                struct vm_page *vm_page = mm_page_alloc();
+
+                if (!vm_page)
+                    return -ENOMEM;
+
+                paddr = vm_page->paddr;
             }
-            mm_page_map(pmap, vaddr, paddr, flags);
+
+            int err = mm_page_map(pmap, vaddr, paddr, flags);
+
+            if (err) {
+                if (alloc)
+                    mm_page_dealloc(paddr);
+
+                return err;
+            }
         }
 
         vaddr += PAGE_SIZE;

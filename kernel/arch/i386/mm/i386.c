@@ -53,15 +53,27 @@ static inline uint32_t *table(paddr_t paddr)
     return PHYS2VIRT(paddr);
 }
 
+/** a page table, empty; 0 if there's no memory for it */
 static paddr_t table_alloc(void)
 {
     struct vm_page *vm_page = mm_page_alloc();
 
     if (!vm_page)
-        panic("could not allocate a page table");
+        return 0;
 
     memset(table(vm_page->paddr), 0, PAGE_SIZE);
     return vm_page->paddr;
+}
+
+/** a page table the kernel can't boot without */
+static paddr_t table_alloc_boot(void)
+{
+    paddr_t paddr = table_alloc();
+
+    if (!paddr)
+        panic("no memory for the kernel's page tables");
+
+    return paddr;
 }
 
 static void table_free(paddr_t paddr)
@@ -70,17 +82,19 @@ static void table_free(paddr_t paddr)
 }
 
 /** the entry of the page table that maps `va' in `pmap', its table made
- * if `make', else NULL if there is none */
+ * if `make' (NULL if there's no memory for it), else NULL if there is
+ * none */
 static uint32_t *pte_get(struct pmap *pmap, vaddr_t va, int make)
 {
     uint32_t *pde = &table(pmap->map)[VDIR(va)];
 
     if (!(*pde & PG_PRESENT)) {
-        if (!make)
+        paddr_t t;
+
+        if (!make || !(t = table_alloc()))
             return NULL;
 
-        *pde = table_alloc() | PG_PRESENT | PG_WRITE |
-            (VDIR(va) < KERNEL_PDE ? PG_USER : 0);
+        *pde = t | PG_PRESENT | PG_WRITE | (VDIR(va) < KERNEL_PDE ? PG_USER : 0);
     }
 
     return &table(PG_ADDR(*pde))[VTBL(va)];
@@ -121,7 +135,7 @@ void pmap_init(void)
      * directory */
     for (int i = KERNEL_PDE; i < 1024; ++i)
         if (!(dir[i] & PG_PRESENT))
-            dir[i] = table_alloc() | PG_PRESENT | PG_WRITE;
+            dir[i] = table_alloc_boot() | PG_PRESENT | PG_WRITE;
 
     tlb_flush();
 }
@@ -151,7 +165,11 @@ struct pmap *pmap_create(void)
 
     memset(pmap, 0, sizeof(struct pmap));
 
-    pmap->map = table_alloc();
+    if (!(pmap->map = table_alloc())) {
+        kfree(pmap);
+        return NULL;
+    }
+
     pmap->ref = 1;
 
     /* the kernel's half, the same in every directory */
@@ -197,6 +215,11 @@ int pmap_add(struct pmap *pmap, vaddr_t va, paddr_t pa, uint32_t flags)
         return -EINVAL;
 
     uint32_t *pte = pte_get(pmap, va, 1);
+
+    /* no memory for its table */
+    if (!pte)
+        return -ENOMEM;
+
     uint32_t old = *pte;
     *pte = pa | pte_flags(flags);
 
@@ -362,19 +385,27 @@ int pmap_page_write(paddr_t paddr, off_t off, size_t size, void *buf)
 /* where the window has room for the memory past the direct map */
 static vaddr_t phys_window_next = ARCH_PHYS_WINDOW_BASE;
 
+/** physical memory mapped in the window, with `flags'; NULL if there's
+ * no room left in it, or no memory for a page table */
 static void *phys_window_map(uintptr_t paddr, size_t size, uint32_t flags)
 {
     paddr_t start = PAGE_ALIGN(paddr);
     size_t  len   = PAGE_ROUND(paddr + size) - start;
 
     if (phys_window_next + len > ARCH_PHYS_WINDOW_BASE + ARCH_PHYS_WINDOW_SIZE)
-        panic("no room to map memory past the direct map");
+        return NULL;    /* no room left in the window */
 
     vaddr_t vaddr = phys_window_next;
-    phys_window_next += len;
 
-    for (size_t off = 0; off < len; off += PAGE_SIZE)
-        pmap_add(&k_pmap, vaddr + off, start + off, flags);
+    /* no memory for a page table: what was mapped of it goes */
+    for (size_t off = 0; off < len; off += PAGE_SIZE) {
+        if (pmap_add(&k_pmap, vaddr + off, start + off, flags)) {
+            pmap_remove(&k_pmap, vaddr, vaddr + off);
+            return NULL;
+        }
+    }
+
+    phys_window_next += len;
 
     return (void *) (vaddr + (paddr - start));
 }
