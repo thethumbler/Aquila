@@ -126,10 +126,9 @@ int proc_fork(struct thread *thread, struct proc **ref)
     if (err)
         goto error;
 
-    /* Return 0 to child */
+    /* fork() returns 0 in the child (its registers: it's another thread;
+     * the parent's result is sys_fork()'s, the child's PID) */
     arch_syscall_return(fork_thread, 0);
-    /* And PID to parent */
-    arch_syscall_return(thread, fork->pid);
 
     if (ref)
         *ref = fork;

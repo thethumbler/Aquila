@@ -15,6 +15,7 @@
 #include <sys/signal.h>
 #include <sys/binfmt.h>
 #include <sys/uaccess.h>
+#include <sys/syscall.h>
 
 #include <fs/iobuf.h>
 
@@ -149,7 +150,7 @@ static int at_lookup(int dirfd, const char *upath, int flags, struct uio *uio, s
     return ret;
 }
 
-static void sys_exit(int code)
+static long sys_exit(int code)
 {
     syscall_log(LOG_DEBUG, "exit(code=%d)\n", code);
 
@@ -160,20 +161,21 @@ static void sys_exit(int code)
     proc_kill(owner);
     arch_sleep();
 
-    /* We should never reach this anyway */
+    /* not reached: the process is gone, this thread with it */
     for (;;);
+    return 0;
 }
 
-static void sys_close(int fildes)
+static long sys_close(int fildes)
 {
     syscall_log(LOG_DEBUG, "close(fildes=%d)\n", fildes);
 
     /* the descriptor goes; the open file once nothing else refers to it
      * (another descriptor, a call using it) */
-    arch_syscall_return(curthread, proc_fd_close(curproc, fildes));
+    return proc_fd_close(curproc, fildes);
 }
 
-static void sys_execve(const char *path, char * const argp[], char * const envp[])
+static long sys_execve(const char *path, char * const argp[], char * const envp[])
 {
     syscall_log(LOG_DEBUG, "execve(path=%p, argp=%p, envp=%p)\n", path, argp, envp);
 
@@ -181,28 +183,27 @@ static void sys_execve(const char *path, char * const argp[], char * const envp[
     int err = upath_get(path, &fn);
 
     if (err) {
-        arch_syscall_return(curthread, err);
-        return;
+        return err;
     }
 
     if (!*fn) {
         kfree(fn);
-        arch_syscall_return(curthread, -ENOENT);
-        return;
+        return -ENOENT;
     }
 
     err = proc_execve(curthread, fn, argp, envp);
 
     kfree(fn);
 
-    if (err) {
-        arch_syscall_return(curthread, err);
-    } else {
-        sched_thread_spawn(curthread);
-    }
+    if (err)
+        return err;
+
+    /* the new program, from its entry point: no return from here */
+    sched_thread_spawn(curthread);
+    return 0;
 }
 
-static void sys_fork(void)
+static long sys_fork(void)
 {
     syscall_log(LOG_DEBUG, "fork()\n");
 
@@ -210,26 +211,24 @@ static void sys_fork(void)
     int err = proc_fork(curthread, &fork);
 
     if (err) {
-        arch_syscall_return(curthread, err);
-        return;
+        return err;
     }
 
-    /* Returns are handled inside proc_fork */
-    if (fork != NULL) {
-        struct thread *thread = (struct thread *) fork->threads.head->value;
-        sched_thread_ready(thread);
-    }
+    /* the child runs, from fork()'s return (0: proc_fork()) */
+    struct thread *thread = (struct thread *) fork->threads.head->value;
+    sched_thread_ready(thread);
+
+    return fork->pid;
 }
 
-static void sys_fstat(int fildes, struct aquila_stat *buf)
+static long sys_fstat(int fildes, struct aquila_stat *buf)
 {
     syscall_log(LOG_DEBUG, "fstat(fildes=%d, buf=%p)\n", fildes, buf);
 
     struct file *file = fd_file(fildes);
 
     if (!file) {
-        arch_syscall_return(curthread, -EBADF);
-        return;
+        return -EBADF;
     }
 
     struct aquila_stat st;
@@ -245,43 +244,41 @@ static void sys_fstat(int fildes, struct aquila_stat *buf)
     if (!ret)
         ret = copyout(buf, &st, sizeof(st));
 
-    arch_syscall_return(curthread, ret);
+    return ret;
 }
 
-static void sys_getpid(void)
+static long sys_getpid(void)
 {
     syscall_log(LOG_DEBUG, "getpid()\n");
-    arch_syscall_return(curthread, curproc->pid);
+    return curproc->pid;
 }
 
-static void sys_isatty(int fildes)
+static long sys_isatty(int fildes)
 {
     syscall_log(LOG_DEBUG, "isatty(fildes=%d)\n", fildes);
 
     struct file *file = fd_file(fildes);
 
     if (!file) {    /* Invalid File Descriptor */
-        arch_syscall_return(curthread, -EBADF);
-        return;
+        return -EBADF;
     }
 
     /* only character devices can be terminals (libc's isatty() asks the
      * device with TCGETS instead) */
     if ((file->flags & FILE_SOCKET) || !S_ISCHR(file->vnode->mode)) {
-        arch_syscall_return(curthread, -ENOTTY);
-        return;
+        return -ENOTTY;
     }
 
-    arch_syscall_return(curthread, 1);
+    return 1;
 }
 
-static void sys_kill(pid_t pid, int sig)
+static long sys_kill(pid_t pid, int sig)
 {
     syscall_log(LOG_DEBUG, "kill(pid=%d, sig=%d)\n", pid, sig);
 
     /* one sent to ourselves is delivered before this returns to user
      * mode (x86_return_to_user) */
-    arch_syscall_return(curthread, signal_send(pid, sig));
+    return signal_send(pid, sig);
 }
 
 static int do_linkat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, int flags)
@@ -307,20 +304,20 @@ static int do_linkat(int olddirfd, const char *oldpath, int newdirfd, const char
     return ret;
 }
 
-static void sys_link(const char *oldpath, const char *newpath)
+static long sys_link(const char *oldpath, const char *newpath)
 {
     syscall_log(LOG_DEBUG, "link(oldpath=%p, newpath=%p)\n", oldpath, newpath);
-    arch_syscall_return(curthread, do_linkat(AT_FDCWD, oldpath, AT_FDCWD, newpath, 0));
+    return do_linkat(AT_FDCWD, oldpath, AT_FDCWD, newpath, 0);
 }
 
-static void sys_linkat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, int flags)
+static long sys_linkat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, int flags)
 {
     syscall_log(LOG_DEBUG, "linkat(olddirfd=%d, oldpath=%p, newdirfd=%d, newpath=%p, flags=%x)\n",
             olddirfd, oldpath, newdirfd, newpath, flags);
-    arch_syscall_return(curthread, do_linkat(olddirfd, oldpath, newdirfd, newpath, flags));
+    return do_linkat(olddirfd, oldpath, newdirfd, newpath, flags);
 }
 
-static void sys_lseek(int fildes, off_t offset, int whence)
+static long sys_lseek(int fildes, off_t offset, int whence)
 {
     syscall_log(LOG_DEBUG, "lseek(fildes=%d, offset=%ld, whence=%d)\n",
             fildes, (long) offset, whence);
@@ -328,18 +325,16 @@ static void sys_lseek(int fildes, off_t offset, int whence)
     struct file *file = fd_file(fildes);
 
     if (!file) {    /* Invalid File Descriptor */
-        arch_syscall_return(curthread, -EBADF);
-        return;
+        return -EBADF;
     }
 
     if (file->flags & FILE_SOCKET) {
-        arch_syscall_return(curthread, -ESPIPE);
-        return;
+        return -ESPIPE;
     }
 
     /* the new offset, all of it: an int would cut one past 2 GiB */
     off_t ret = vfs_file_lseek(file, offset, whence);
-    arch_syscall_return(curthread, ret);
+    return ret;
 }
 
 /**
@@ -508,43 +503,40 @@ done:
     return ret;
 }
 
-static void sys_open(const char *path, int oflags, mode_t mode)
+static long sys_open(const char *path, int oflags, mode_t mode)
 {
     syscall_log(LOG_DEBUG, "open(path=%p, oflags=0x%x, mode=0x%x)\n", path, oflags, mode);
-    arch_syscall_return(curthread, do_openat(AT_FDCWD, path, oflags, mode));
+    return do_openat(AT_FDCWD, path, oflags, mode);
 }
 
-static void sys_openat(int dirfd, const char *path, int oflags, mode_t mode)
+static long sys_openat(int dirfd, const char *path, int oflags, mode_t mode)
 {
     syscall_log(LOG_DEBUG, "openat(dirfd=%d, path=%p, oflags=0x%x, mode=0x%x)\n", dirfd, path, oflags, mode);
-    arch_syscall_return(curthread, do_openat(dirfd, path, oflags, mode));
+    return do_openat(dirfd, path, oflags, mode);
 }
 
-static void sys_read(int fildes, void *buf, size_t nbytes)
+static long sys_read(int fildes, void *buf, size_t nbytes)
 {
     syscall_log(LOG_DEBUG, "read(fd=%d, buf=%p, count=%d)\n", fildes, buf, nbytes);
 
     struct file *file = fd_file(fildes);
 
     if (!file) {
-        arch_syscall_return(curthread, -EBADF);
-        return;
+        return -EBADF;
     }
 
     if (uaccess_check(buf, nbytes)) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
+        return -EFAULT;
     }
 
     struct iobuf io;
     iobuf_init(&io, buf, nbytes, 1);
 
     ssize_t ret = vfs_file_read(file, &io);
-    arch_syscall_return(curthread, ret);
-    return;
+    return ret;
 }
 
-static void sys_sbrk(ptrdiff_t incr)
+static long sys_sbrk(ptrdiff_t incr)
 {
     syscall_log(LOG_DEBUG, "sbrk(incr=0x%x)\n", incr);
 
@@ -562,15 +554,13 @@ static void sys_sbrk(ptrdiff_t incr)
         (incr > 0 && (heap_limit < heap || (uintptr_t) incr > heap_limit - heap))) {
         /* libc passes the return value through and only treats
          * (void *) -1 as failure, so return that instead of -ENOMEM */
-        arch_syscall_return(curthread, (uintptr_t) -1);
-        return;
+        return (uintptr_t) -1;
     }
 
     curproc->heap = heap + incr;
     curproc->heap_vm->size = PAGE_ROUND(heap + incr - heap_start);
 
-    arch_syscall_return(curthread, heap);
-    return;
+    return heap;
 }
 
 static int do_fstatat(int dirfd, const char *path, struct aquila_stat *buf, int flags)
@@ -593,19 +583,19 @@ static int do_fstatat(int dirfd, const char *path, struct aquila_stat *buf, int 
     return ret ? ret : copyout(buf, &st, sizeof(st));
 }
 
-static void sys_stat(const char *path, struct aquila_stat *buf)
+static long sys_stat(const char *path, struct aquila_stat *buf)
 {
     syscall_log(LOG_DEBUG, "stat(path=%p, buf=%p)\n", path, buf);
-    arch_syscall_return(curthread, do_fstatat(AT_FDCWD, path, buf, 0));
+    return do_fstatat(AT_FDCWD, path, buf, 0);
 }
 
-static void sys_fstatat(int dirfd, const char *path, struct aquila_stat *buf, int flags)
+static long sys_fstatat(int dirfd, const char *path, struct aquila_stat *buf, int flags)
 {
     syscall_log(LOG_DEBUG, "fstatat(dirfd=%d, path=%p, buf=%p, flags=%x)\n", dirfd, path, buf, flags);
-    arch_syscall_return(curthread, do_fstatat(dirfd, path, buf, flags));
+    return do_fstatat(dirfd, path, buf, flags);
 }
 
-static void sys_times(struct aquila_tms *buf)
+static long sys_times(struct aquila_tms *buf)
 {
     syscall_log(LOG_DEBUG, "times(buf=%p)\n", buf);
 
@@ -619,12 +609,11 @@ static void sys_times(struct aquila_tms *buf)
     };
 
     if (copyout(buf, &tms, sizeof(tms))) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
+        return -EFAULT;
     }
 
     /* elapsed real time, since boot */
-    arch_syscall_return(curthread, (uint32_t) (arch_rtime_ns() / tick));
+    return (uint32_t) (arch_rtime_ns() / tick);
 }
 
 static int do_unlinkat(int dirfd, const char *upath, int flags)
@@ -646,19 +635,19 @@ static int do_unlinkat(int dirfd, const char *upath, int flags)
     return ret;
 }
 
-static void sys_unlink(const char *path)
+static long sys_unlink(const char *path)
 {
     syscall_log(LOG_DEBUG, "unlink(path=%p)\n", path);
-    arch_syscall_return(curthread, do_unlinkat(AT_FDCWD, path, 0));
+    return do_unlinkat(AT_FDCWD, path, 0);
 }
 
-static void sys_unlinkat(int dirfd, const char *path, int flags)
+static long sys_unlinkat(int dirfd, const char *path, int flags)
 {
     syscall_log(LOG_DEBUG, "unlinkat(dirfd=%d, path=%p, flags=%x)\n", dirfd, path, flags);
-    arch_syscall_return(curthread, do_unlinkat(dirfd, path, flags));
+    return do_unlinkat(dirfd, path, flags);
 }
 
-static void sys_waitpid(int pid, int *stat_loc, int options)
+static long sys_waitpid(int pid, int *stat_loc, int options)
 {
     syscall_log(LOG_DEBUG, "waitpid(pid=%d, stat_loc=%p, options=0x%x)\n", pid, stat_loc, options);
 
@@ -697,65 +686,60 @@ static void sys_waitpid(int pid, int *stat_loc, int options)
 
             /* nowhere to put it: the child stays as it is */
             if (stat_loc && copyout(stat_loc, &status, sizeof(status))) {
-                arch_syscall_return(curthread, -EFAULT);
-                return;
+                return -EFAULT;
             }
 
-            arch_syscall_return(curthread, proc->pid);
+            pid_t child = proc->pid;
 
             if (proc->zombie)
                 proc_reap(proc);
 
-            return;
+            return child;
         }
 
         if (!found) {
-            arch_syscall_return(curthread, -ECHILD);
-            return;
+            return -ECHILD;
         }
 
         if (options & WNOHANG) {
-            arch_syscall_return(curthread, 0);
-            return;
+            return 0;
         }
 
         if (waitq_sleep(&curproc->wait_queue)) {
-            arch_syscall_return(curthread, -ERESTARTSYS);
-            return;
+            return -ERESTARTSYS;
         }
     }
 }
 
-static void sys_write(int fd, void *buf, size_t nbytes)
+static long sys_write(int fd, void *buf, size_t nbytes)
 {
     syscall_log(LOG_DEBUG, "write(fd=%d, buf=%p, nbytes=%d)\n", fd, buf, nbytes);
 
     struct file *file = fd_file(fd);
 
     if (!file) {
-        arch_syscall_return(curthread, -EBADF);
-        return;
+        return -EBADF;
     }
 
     if (uaccess_check(buf, nbytes)) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
+        return -EFAULT;
     }
 
     struct iobuf io;
     iobuf_init(&io, buf, nbytes, 1);
 
     ssize_t ret = vfs_file_write(file, &io);
-    arch_syscall_return(curthread, ret);
 
     /* writing to a pipe no one reads: SIGPIPE, the write fails with
-     * EPIPE if it is caught or ignored (the return value is set first,
-     * a handler may run right away) */
+     * EPIPE if it is caught or ignored (delivered on the way back to
+     * user mode, once the result is the call's) */
     if (ret == -EPIPE)
         signal_proc_send(curproc, SIGPIPE);
+
+    return ret;
 }
 
-static void sys_ioctl(int fd, int request, void *argp)
+static long sys_ioctl(int fd, int request, void *argp)
 {
     syscall_log(LOG_DEBUG, "ioctl(fd=%d, request=0x%x, argp=%p)\n",
             fd, request, argp);
@@ -763,8 +747,7 @@ static void sys_ioctl(int fd, int request, void *argp)
     struct file *file = fd_file(fd);
 
     if (!file) {
-        arch_syscall_return(curthread, -EBADF);
-        return;
+        return -EBADF;
     }
 
     /* the descriptor's own, whatever it is: non-blocking (as F_SETFL) */
@@ -772,8 +755,7 @@ static void sys_ioctl(int fd, int request, void *argp)
         int on;
 
         if (copyin(&on, argp, sizeof(on))) {
-            arch_syscall_return(curthread, -EFAULT);
-            return;
+            return -EFAULT;
         }
 
         if (on)
@@ -781,37 +763,32 @@ static void sys_ioctl(int fd, int request, void *argp)
         else
             file->flags &= ~O_NONBLOCK;
 
-        arch_syscall_return(curthread, 0);
-        return;
+        return 0;
     }
 
     /* argp is user space's: the socket, the device copy what each
      * request reads and writes */
     if (file->flags & FILE_SOCKET) {
-        arch_syscall_return(curthread, socket_ioctl(file, request, argp));
-        return;
+        return socket_ioctl(file, request, argp);
     }
 
     int ret = vfs_file_ioctl(file, request, argp);
-    arch_syscall_return(curthread, ret);
-    return;
+    return ret;
 }
 
-static void sys_sigaction(int sig, const struct aquila_sigaction *act, struct aquila_sigaction *oact)
+static long sys_sigaction(int sig, const struct aquila_sigaction *act, struct aquila_sigaction *oact)
 {
     syscall_log(LOG_DEBUG, "sigaction(sig=%d, act=%p, oact=%p)\n",
             sig, act, oact);
 
     if (sig < 1 || sig > SIG_MAX) {
-        arch_syscall_return(curthread, -EINVAL);
-        return;
+        return -EINVAL;
     }
 
     struct aquila_sigaction new;
 
     if (act && copyin(&new, act, sizeof(new))) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
+        return -EFAULT;
     }
 
     if (act) {
@@ -819,20 +796,17 @@ static void sys_sigaction(int sig, const struct aquila_sigaction *act, struct aq
 
         /* SIGKILL and SIGSTOP can not be caught or ignored */
         if ((sig == SIGKILL || sig == SIGSTOP) && handler != SIG_DFL) {
-            arch_syscall_return(curthread, -EINVAL);
-            return;
+            return -EINVAL;
         }
 
         /* handlers must live in user space */
         if (handler != SIG_DFL && handler != SIG_IGN && uaccess_check((void *) handler, 1)) {
-            arch_syscall_return(curthread, -EFAULT);
-            return;
+            return -EFAULT;
         }
     }
 
     if (oact && copyout(oact, &curproc->sigaction[sig], sizeof(struct aquila_sigaction))) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
+        return -EFAULT;
     }
 
     if (act) {
@@ -840,23 +814,21 @@ static void sys_sigaction(int sig, const struct aquila_sigaction *act, struct aq
         signal_action_set(curproc, sig);
     }
 
-    arch_syscall_return(curthread, 0);
+    return 0;
 }
 
-static void sys_readdir(int fd, struct dirent *dirent)
+static long sys_readdir(int fd, struct dirent *dirent)
 {
     syscall_log(LOG_DEBUG, "readdir(fd=%d, dirent=%p)\n", fd, dirent);
 
     struct file *file = fd_file(fd);
 
     if (!file) {
-        arch_syscall_return(curthread, -EBADF);
-        return;
+        return -EBADF;
     }
 
     if (file->flags & FILE_SOCKET) {
-        arch_syscall_return(curthread, -ENOTDIR);
-        return;
+        return -ENOTDIR;
     }
 
     struct dirent d;
@@ -871,22 +843,19 @@ static void sys_readdir(int fd, struct dirent *dirent)
             ret = -EFAULT;
     }
 
-    arch_syscall_return(curthread, ret);
-    return;
+    return ret;
 }
 
-static void sys_mount(struct aquila_mount_args *args)
+static long sys_mount(struct aquila_mount_args *args)
 {
     if (curproc->uid != 0) {
-        arch_syscall_return(curthread, -EACCES);
-        return;
+        return -EACCES;
     }
 
     struct aquila_mount_args a;
 
     if (copyin(&a, args, sizeof(a))) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
+        return -EFAULT;
     }
 
     char *type = NULL, *dir = NULL;
@@ -920,7 +889,7 @@ done:
     kfree(dir);
     kfree(data[0]);
     kfree(data[1]);
-    arch_syscall_return(curthread, ret);
+    return ret;
 }
 
 static int do_mknodat(int dirfd, const char *upath, mode_t mode, dev_t dev)
@@ -958,16 +927,16 @@ static int do_mknodat(int dirfd, const char *upath, mode_t mode, dev_t dev)
     return ret;
 }
 
-static void sys_mkdir(const char *path, mode_t mode)
+static long sys_mkdir(const char *path, mode_t mode)
 {
     syscall_log(LOG_DEBUG, "mkdir(path=%p, mode=%x)\n", path, mode);
-    arch_syscall_return(curthread, do_mknodat(AT_FDCWD, path, S_IFDIR | (mode & 07777), 0));
+    return do_mknodat(AT_FDCWD, path, S_IFDIR | (mode & 07777), 0);
 }
 
 /* set by sethostname(), shown by uname() */
 static char nodename[sizeof(((struct utsname *) 0)->nodename)] = UTSNAME_NODENAME;
 
-static void sys_uname(struct utsname *name)
+static long sys_uname(struct utsname *name)
 {
     syscall_log(LOG_DEBUG, "uname(name=%p)\n", name);
 
@@ -982,17 +951,15 @@ static void sys_uname(struct utsname *name)
     memcpy(u.version, UTSNAME_VERSION, n);
     strcpy(u.machine,  UTSNAME_MACHINE);
 
-    arch_syscall_return(curthread, copyout(name, &u, sizeof(u)));
-    return;
+    return copyout(name, &u, sizeof(u));
 }
 
-static void sys_pipe(int fd[2])
+static long sys_pipe(int fd[2])
 {
     syscall_log(LOG_DEBUG, "pipe(fd=%p)\n", fd);
 
     if (uaccess_check(fd, 2 * sizeof(int))) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
+        return -EFAULT;
     }
 
     int err = 0;
@@ -1023,12 +990,10 @@ static void sys_pipe(int fd[2])
     if (copyout(fd, fds, sizeof(fds))) {
         proc_fd_close(curproc, fd1);
         proc_fd_close(curproc, fd2);
-        arch_syscall_return(curthread, -EFAULT);
-        return;
+        return -EFAULT;
     }
 
-    arch_syscall_return(curthread, 0);
-    return;
+    return 0;
 
 error:
     /* not open: nothing to close */
@@ -1041,10 +1006,10 @@ error:
     if (fd2 != -1)
         proc_fd_release(curproc, fd2);
 
-    arch_syscall_return(curthread, err);
+    return err;
 }
 
-static void sys_fcntl(int fd, int cmd, uintptr_t arg)
+static long sys_fcntl(int fd, int cmd, uintptr_t arg)
 {
     syscall_log(LOG_DEBUG, "fcntl(fd=%d, cmd=%d, arg=0x%x)\n",
             fd, cmd, arg);
@@ -1052,8 +1017,7 @@ static void sys_fcntl(int fd, int cmd, uintptr_t arg)
     struct file *file = fd_file(fd);
 
     if (!file) {
-        arch_syscall_return(curthread, -EBADF);
-        return;
+        return -EBADF;
     }
 
     /* file status flags that F_SETFL may change */
@@ -1064,8 +1028,7 @@ static void sys_fcntl(int fd, int cmd, uintptr_t arg)
         case F_DUPFD:
         case F_DUPFD_CLOEXEC:
             if (arg >= FDS_COUNT) {
-                arch_syscall_return(curthread, -EINVAL);
-                return;
+                return -EINVAL;
             }
 
             /* lowest numbered free descriptor greater than or equal to arg */
@@ -1075,34 +1038,28 @@ static void sys_fcntl(int fd, int cmd, uintptr_t arg)
             }
 
             if (dupfd == FDS_COUNT) {
-                arch_syscall_return(curthread, -EMFILE);
-                return;
+                return -EMFILE;
             }
 
             /* the same open file: its offset and status flags shared */
             proc_fd_install(curproc, dupfd, file_ref(file), cmd == F_DUPFD_CLOEXEC ? FD_CLOEXEC : 0);
 
-            arch_syscall_return(curthread, dupfd);
-            return;
+            return dupfd;
         case F_GETFD:
-            arch_syscall_return(curthread, curproc->fds[fd].flags);
-            return;
+            return curproc->fds[fd].flags;
         case F_SETFD:
             /* the descriptor's own */
             curproc->fds[fd].flags = arg & FD_CLOEXEC;
-            arch_syscall_return(curthread, 0);
-            return;
+            return 0;
         case F_GETFL:
-            arch_syscall_return(curthread, file->flags & ~FILE_SOCKET);
-            return;
+            return file->flags & ~FILE_SOCKET;
         case F_SETFL:
             /* the open file's: every descriptor referring to it */
             file->flags = (file->flags & ~setfl) | ((int) arg & setfl);
-            arch_syscall_return(curthread, 0);
-            return;
+            return 0;
     }
 
-    arch_syscall_return(curthread, -EINVAL);
+    return -EINVAL;
 }
 
 /** the current directory is `vnode' (a searchable directory; the
@@ -1124,7 +1081,7 @@ static int cwd_set(struct vnode *vnode)
     return 0;
 }
 
-static void sys_chdir(const char *upath)
+static long sys_chdir(const char *upath)
 {
     syscall_log(LOG_DEBUG, "chdir(path=%p)\n", upath);
 
@@ -1142,16 +1099,15 @@ static void sys_chdir(const char *upath)
         vfs_close(vnode);
 
     kfree(path);
-    arch_syscall_return(curthread, ret);
+    return ret;
 }
 
-static void sys_getcwd(char *buf, size_t size)
+static long sys_getcwd(char *buf, size_t size)
 {
     syscall_log(LOG_DEBUG, "getcwd(buf=%p, size=%d)\n", buf, size);
 
     if (!size) {
-        arch_syscall_return(curthread, -EINVAL);
-        return;
+        return -EINVAL;
     }
 
     /* made from the directory up (it isn't kept as a string) */
@@ -1160,8 +1116,7 @@ static void sys_getcwd(char *buf, size_t size)
     int ret;
 
     if (!path) {
-        arch_syscall_return(curthread, -ENOMEM);
-        return;
+        return -ENOMEM;
     }
 
     if (!curproc->cwd)
@@ -1173,16 +1128,15 @@ static void sys_getcwd(char *buf, size_t size)
         ret = copyout(buf, path, strlen(path) + 1);
 
     kfree(path);
-    arch_syscall_return(curthread, ret);
+    return ret;
 }
 
-static void sys_thread_create(struct aquila_thread_args *__uthread)
+static long sys_thread_create(struct aquila_thread_args *__uthread)
 {
     struct aquila_thread_args a;
 
     if (copyin(&a, __uthread, sizeof(a))) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
+        return -EFAULT;
     }
 
     syscall_log(LOG_DEBUG,
@@ -1194,23 +1148,21 @@ static void sys_thread_create(struct aquila_thread_args *__uthread)
     /* the kernel pushes the initial frame (3 words) on the user stack */
     if (stack < 3 * sizeof(uintptr_t) ||
         uaccess_check((void *) (stack - 3 * sizeof(uintptr_t)), 3 * sizeof(uintptr_t))) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
+        return -EFAULT;
     }
 
     int err = 0;
     struct thread *thread = NULL;
 
     if ((err = thread_create(curthread, stack, a.entry, a.uentry, a.arg, a.attr, &thread))) {
-        arch_syscall_return(curthread, err);
-        return;
+        return err;
     }
 
     sched_thread_ready(thread);
-    arch_syscall_return(curthread, thread->tid);
+    return thread->tid;
 }
 
-static void sys_thread_exit(void *value_ptr)
+static long sys_thread_exit(void *value_ptr)
 {
     syscall_log(LOG_DEBUG, "thread_exit(value_ptr=%p)\n", value_ptr);
 
@@ -1238,10 +1190,12 @@ static void sys_thread_exit(void *value_ptr)
     curthread->state = ZOMBIE;
     arch_cur_thread_kill();
 
+    /* not reached: the thread is gone */
     for (;;);
+    return 0;
 }
 
-static void sys_thread_join(int tid, void **value_ptr)
+static long sys_thread_join(int tid, void **value_ptr)
 {
     syscall_log(LOG_DEBUG, "thread_join(tid=%d, value_ptr=%p)\n", tid, value_ptr);
 
@@ -1256,26 +1210,22 @@ static void sys_thread_join(int tid, void **value_ptr)
 
     /* No such thread (or joined already) */
     if (!thread) {
-        arch_syscall_return(curthread, -ESRCH);
-        return;
+        return -ESRCH;
     }
 
     /* it would wait for itself forever */
     if (thread == curthread) {
-        arch_syscall_return(curthread, -EDEADLK);
-        return;
+        return -EDEADLK;
     }
 
     while (thread->state != ZOMBIE) {
         if (waitq_sleep(&curproc->thread_join)) {
-            arch_syscall_return(curthread, -ERESTARTSYS);
-            return;
+            return -ERESTARTSYS;
         }
     }
 
     if (value_ptr && copyout(value_ptr, &thread->exit_value, sizeof(void *))) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
+        return -EFAULT;
     }
 
     /* joined: what's left of it goes (thread_exit freed the rest; its
@@ -1284,24 +1234,22 @@ static void sys_thread_join(int tid, void **value_ptr)
     queue_remove(&owner->threads, thread);
     kfree(thread);
 
-    arch_syscall_return(curthread, joined);
+    return joined;
 }
 
-static void sys_setpgid(pid_t pid, pid_t pgid)
+static long sys_setpgid(pid_t pid, pid_t pgid)
 {
     syscall_log(LOG_DEBUG, "setpgid(pid=%d, pgid=%d)\n", pid, pgid);
 
     if (pgid < 0) {
-        arch_syscall_return(curthread, -EINVAL);
-        return;
+        return -EINVAL;
     }
 
     /* the caller or one of its children */
     struct proc *proc = pid ? proc_pid_find(pid) : curproc;
 
     if (!proc || (proc != curproc && proc->parent != curproc)) {
-        arch_syscall_return(curthread, -ESRCH);
-        return;
+        return -ESRCH;
     }
 
     struct session *session = proc->pgrp->session;
@@ -1309,102 +1257,96 @@ static void sys_setpgid(pid_t pid, pid_t pgid)
     /* a session leader can't change its group, nor can a process outside
      * the caller's session */
     if (session != curproc->pgrp->session || session->leader == proc) {
-        arch_syscall_return(curthread, -EPERM);
-        return;
+        return -EPERM;
     }
 
-    arch_syscall_return(curthread, proc_setpgid(proc, pgid ? pgid : proc->pid));
+    return proc_setpgid(proc, pgid ? pgid : proc->pid);
 }
 
-static void sys_mknod(const char *path, uint32_t mode, uint32_t dev)
+static long sys_mknod(const char *path, uint32_t mode, uint32_t dev)
 {
     syscall_log(LOG_DEBUG, "mknod(path=%s, mode=%x, dev=%x)\n", path, mode, dev);
-    arch_syscall_return(curthread, do_mknodat(AT_FDCWD, path, mode, dev));
+    return do_mknodat(AT_FDCWD, path, mode, dev);
 }
 
-static void sys_mknodat(int dirfd, const char *path, uint32_t mode, uint32_t dev)
+static long sys_mknodat(int dirfd, const char *path, uint32_t mode, uint32_t dev)
 {
     syscall_log(LOG_DEBUG, "mknodat(dirfd=%d, path=%s, mode=%x, dev=%x)\n", dirfd, path, mode, dev);
-    arch_syscall_return(curthread, do_mknodat(dirfd, path, mode, dev));
+    return do_mknodat(dirfd, path, mode, dev);
 }
 
-static void sys_lstat(const char *path, struct aquila_stat *buf)
+static long sys_lstat(const char *path, struct aquila_stat *buf)
 {
     syscall_log(LOG_DEBUG, "lstat(path=%s, buf=%p)\n", path, buf);
-    arch_syscall_return(curthread, do_fstatat(AT_FDCWD, path, buf, AT_SYMLINK_NOFOLLOW));
+    return do_fstatat(AT_FDCWD, path, buf, AT_SYMLINK_NOFOLLOW);
 }
 
 /**
  * There are no separate effective or saved ids, setuid() and setgid()
  * set the process ids: root may set any id, other users only their own.
  */
-static void sys_setuid(uid_t uid)
+static long sys_setuid(uid_t uid)
 {
     syscall_log(LOG_DEBUG, "setuid(uid=%d)\n", uid);
 
     if (curproc->uid != 0 && uid != curproc->uid) {
-        arch_syscall_return(curthread, -EPERM);
-        return;
+        return -EPERM;
     }
 
     curproc->uid = uid;
-    arch_syscall_return(curthread, 0);
+    return 0;
 }
 
-static void sys_ftruncate(int fildes, off_t len)
+static long sys_ftruncate(int fildes, off_t len)
 {
     syscall_log(LOG_DEBUG, "ftruncate(fildes=%d, len=%d)\n", fildes, len);
 
     struct file *file = fd_file(fildes);
 
     if (!file) {
-        arch_syscall_return(curthread, -EBADF);
-        return;
+        return -EBADF;
     }
 
     /* must be open for writing */
     if (len < 0 || (file->flags & O_ACCMODE) == O_RDONLY) {
-        arch_syscall_return(curthread, -EINVAL);
-        return;
+        return -EINVAL;
     }
 
-    arch_syscall_return(curthread, vfs_file_trunc(file, len));
+    return vfs_file_trunc(file, len);
 }
 
-static void sys_setgid(gid_t gid)
+static long sys_setgid(gid_t gid)
 {
     syscall_log(LOG_DEBUG, "setgid(gid=%d)\n", gid);
 
     if (curproc->uid != 0 && gid != curproc->gid) {
-        arch_syscall_return(curthread, -EPERM);
-        return;
+        return -EPERM;
     }
 
     curproc->gid = gid;
-    arch_syscall_return(curthread, 0);
+    return 0;
 }
 
-static void sys_getuid(void)
+static long sys_getuid(void)
 {
     syscall_log(LOG_DEBUG, "getuid()\n");
-    arch_syscall_return(curthread, curproc->uid);
+    return curproc->uid;
 }
 
-static void sys_getgid(void)
+static long sys_getgid(void)
 {
     syscall_log(LOG_DEBUG, "getgid()\n");
-    arch_syscall_return(curthread, curproc->gid);
+    return curproc->gid;
 }
 
-static void sys_mmap(struct aquila_mmap_args *uargs, void **ret)
+static long sys_mmap(struct aquila_mmap_args *uargs, void **ret)
 {
     struct aquila_mmap_args _args, *args = &_args;
     void *none = NULL;
 
     /* the address goes out at the end: where to, writable, first */
     if (copyin(args, uargs, sizeof(*args)) || copyout(ret, &none, sizeof(none))) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
+        return -EFAULT;
     }
 
     syscall_log(LOG_DEBUG, "mmap(addr=%p, len=%d, prot=%x, flags=%x, fildes=%d, off=%d, ret=%p)\n",
@@ -1415,32 +1357,27 @@ static void sys_mmap(struct aquila_mmap_args *uargs, void **ret)
 
     /* anonymous memory is the process's own (fork() copies it) */
     if (anon && (args->flags & MAP_SHARED)) {
-        arch_syscall_return(curthread, -EINVAL);
-        return;
+        return -EINVAL;
     }
 
     struct file *file = anon ? NULL : fd_file(args->fildes);
 
     if (!anon && !file) {    /* Invalid File Descriptor */
-        arch_syscall_return(curthread, -EBADF);
-        return;
+        return -EBADF;
     }
 
     if (file && (file->flags & FILE_SOCKET)) {
-        arch_syscall_return(curthread, -ENODEV);
-        return;
+        return -ENODEV;
     }
 
     if (!args->len) {
-        arch_syscall_return(curthread, -EINVAL);
-        return;
+        return -EINVAL;
     }
 
     /* a fixed mapping must lie entirely in user space, on pages */
     if ((args->flags & MAP_FIXED) && (((uintptr_t) args->addr & PAGE_MASK) ||
                 uaccess_check(args->addr, args->len))) {
-        arch_syscall_return(curthread, -EINVAL);
-        return;
+        return -EINVAL;
     }
 
     /* Allocate VMR */
@@ -1485,8 +1422,7 @@ static void sys_mmap(struct aquila_mmap_args *uargs, void **ret)
     void *addr = (void *) vm_entry->base;
     err = copyout(ret, &addr, sizeof(addr));
 
-    arch_syscall_return(curthread, err);
-    return;
+    return err;
 
 error:
     if (vm_entry) {
@@ -1499,19 +1435,17 @@ error:
         kfree(vm_entry);
     }
 
-    arch_syscall_return(curthread, err);
-    return;
+    return err;
 }
 
-static void sys_munmap(void *addr, size_t len)
+static long sys_munmap(void *addr, size_t len)
 {
     syscall_log(LOG_DEBUG, "munmap(addr=%p, len=%d)\n", addr, len);
 
     struct vm_space *vm_space = &curproc->vm_space;
 
     if (!len) {
-        arch_syscall_return(curthread, -EINVAL);
-        return;
+        return -EINVAL;
     }
 
     queue_for (node, &vm_space->vm_entries) {
@@ -1526,17 +1460,15 @@ static void sys_munmap(void *addr, size_t len)
             vm_unmap_full(vm_space, vm_entry);
             vm_entry_destroy(vm_entry);
             kfree(vm_entry);
-            arch_syscall_return(curthread, 0);
-            return;
+            return 0;
         }
     }
 
     /* Not found */
-    arch_syscall_return(curthread, -EINVAL);
-    return;
+    return -EINVAL;
 }
 
-static void sys_socket(int domain, int type, int protocol)
+static long sys_socket(int domain, int type, int protocol)
 {
     syscall_log(LOG_DEBUG, "socket(domain=%d, type=%d, protocol=%d)\n",
             domain, type, protocol);
@@ -1545,8 +1477,7 @@ static void sys_socket(int domain, int type, int protocol)
 
     if (fd == -1) {     /* No free file descriptor */
         /* Reached maximum number of open file descriptors */
-        arch_syscall_return(curthread, -EMFILE);
-        return;
+        return -EMFILE;
     }
     
     int err = 0;
@@ -1556,13 +1487,11 @@ static void sys_socket(int domain, int type, int protocol)
         /* not open: nothing to close */
         kfree(file);
         proc_fd_release(curproc, fd);
-        arch_syscall_return(curthread, file ? err : -ENOMEM);
-        return;
+        return file ? err : -ENOMEM;
     }
 
     proc_fd_install(curproc, fd, file, 0);
-    arch_syscall_return(curthread, fd);
-    return;
+    return fd;
 }
 
 /**
@@ -1602,7 +1531,7 @@ static int sockaddr_copyout(struct sockaddr *uaddr, socklen_t *ulen, const union
     return 0;
 }
 
-static void sys_accept(int fd, const struct sockaddr *addr, socklen_t *len)
+static long sys_accept(int fd, const struct sockaddr *addr, socklen_t *len)
 {
     syscall_log(LOG_DEBUG, "accept(fd=%d, addr=%p, len=%p)\n",
             fd, addr, len);
@@ -1610,23 +1539,20 @@ static void sys_accept(int fd, const struct sockaddr *addr, socklen_t *len)
     struct file *socket = fd_file(fd);
 
     if (!socket) {
-        arch_syscall_return(curthread, -EBADF);
-        return;
+        return -EBADF;
     }
 
     int conn_fd = proc_fd_get(curproc);
 
     if (conn_fd == -1) {
-        arch_syscall_return(curthread, -EMFILE);
-        return;
+        return -EMFILE;
     }
 
     struct file *conn = file_new();
 
     if (!conn) {
         proc_fd_release(curproc, conn_fd);
-        arch_syscall_return(curthread, -ENOMEM);
-        return;
+        return -ENOMEM;
     }
 
     union ksockaddr k;
@@ -1637,8 +1563,7 @@ static void sys_accept(int fd, const struct sockaddr *addr, socklen_t *len)
     if (addr && (err = sockaddr_room(len, &room))) {
         kfree(conn);
         proc_fd_release(curproc, conn_fd);
-        arch_syscall_return(curthread, err);
-        return;
+        return err;
     }
 
     klen = room;
@@ -1646,8 +1571,7 @@ static void sys_accept(int fd, const struct sockaddr *addr, socklen_t *len)
     if ((err = socket_accept(socket, conn, addr ? &k.sa : NULL, addr ? &klen : NULL))) {
         kfree(conn);
         proc_fd_release(curproc, conn_fd);
-        arch_syscall_return(curthread, err);
-        return; 
+        return err; 
     }
 
     proc_fd_install(curproc, conn_fd, conn, 0);
@@ -1655,15 +1579,13 @@ static void sys_accept(int fd, const struct sockaddr *addr, socklen_t *len)
     /* nowhere to say who: the connection goes */
     if (addr && sockaddr_copyout((struct sockaddr *) addr, len, &k, klen, room)) {
         proc_fd_close(curproc, conn_fd);
-        arch_syscall_return(curthread, -EFAULT);
-        return;
+        return -EFAULT;
     }
 
-    arch_syscall_return(curthread, conn_fd);
-    return;
+    return conn_fd;
 }
 
-static void sys_bind(int fd, const struct sockaddr *addr, socklen_t len)
+static long sys_bind(int fd, const struct sockaddr *addr, socklen_t len)
 {
     syscall_log(LOG_DEBUG, "bind(fd=%d, addr=%p, len=%d)\n",
             fd, addr, len);
@@ -1671,8 +1593,7 @@ static void sys_bind(int fd, const struct sockaddr *addr, socklen_t len)
     struct file *file = fd_file(fd);
 
     if (!file) {
-        arch_syscall_return(curthread, -EBADF);
-        return; 
+        return -EBADF; 
     }
 
     union ksockaddr k;
@@ -1680,15 +1601,13 @@ static void sys_bind(int fd, const struct sockaddr *addr, socklen_t len)
     int err = 0;
 
     if ((err = sockaddr_copyin(&k, addr, len)) || (err = socket_bind(file, &k.sa, len))) {
-        arch_syscall_return(curthread, err);
-        return; 
+        return err; 
     }
 
-    arch_syscall_return(curthread, 0);
-    return;
+    return 0;
 }
 
-static void sys_connect(int fd, const struct sockaddr *addr, socklen_t len)
+static long sys_connect(int fd, const struct sockaddr *addr, socklen_t len)
 {
     syscall_log(LOG_DEBUG, "connect(fd=%d, addr=%p, len=%d)\n",
             fd, addr, len);
@@ -1696,8 +1615,7 @@ static void sys_connect(int fd, const struct sockaddr *addr, socklen_t len)
     struct file *socket = fd_file(fd);
 
     if (!socket) {
-        arch_syscall_return(curthread, -EBADF);
-        return; 
+        return -EBADF; 
     }
 
     union ksockaddr k;
@@ -1705,43 +1623,37 @@ static void sys_connect(int fd, const struct sockaddr *addr, socklen_t len)
     int err = 0;
 
     if ((err = sockaddr_copyin(&k, addr, len)) || (err = socket_connect(socket, &k.sa, len))) {
-        arch_syscall_return(curthread, err);
-        return; 
+        return err; 
     }
 
-    arch_syscall_return(curthread, 0);
-    return;
+    return 0;
 }
 
-static void sys_listen(int fd, int backlog)
+static long sys_listen(int fd, int backlog)
 {
     syscall_log(LOG_DEBUG, "listen(fd=%d, backlog=%d)\n", fd, backlog);
 
     struct file *file = fd_file(fd);
 
     if (!file) {
-        arch_syscall_return(curthread, -EBADF);
-        return; 
+        return -EBADF; 
     }
 
     int err = 0;
 
     if ((err = socket_listen(file, backlog))) {
-        arch_syscall_return(curthread, err);
-        return; 
+        return err; 
     }
 
-    arch_syscall_return(curthread, 0);
-    return;
+    return 0;
 }
 
-static void sys_send(struct aquila_socket_io_args *us)
+static long sys_send(struct aquila_socket_io_args *us)
 {
     struct aquila_socket_io_args _s, *s = &_s;
 
     if (copyin(s, us, sizeof(*s))) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
+        return -EFAULT;
     }
 
     int fd = s->fd;
@@ -1755,15 +1667,13 @@ static void sys_send(struct aquila_socket_io_args *us)
     struct file *file = fd_file(fd);
 
     if (!file) {
-        arch_syscall_return(curthread, -EBADF);
-        return; 
+        return -EBADF; 
     }
 
     int err = 0;
 
     if (uaccess_check(buf, len)) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
+        return -EFAULT;
     }
 
     /* sendto(): where to */
@@ -1773,13 +1683,11 @@ static void sys_send(struct aquila_socket_io_args *us)
 
     if (s->addr) {
         if (copyin(&tolen, s->addrlen, sizeof(tolen))) {
-            arch_syscall_return(curthread, -EFAULT);
-            return;
+            return -EFAULT;
         }
 
         if ((err = sockaddr_copyin(&to, s->addr, tolen))) {
-            arch_syscall_return(curthread, err);
-            return;
+            return err;
         }
     }
 
@@ -1787,21 +1695,21 @@ static void sys_send(struct aquila_socket_io_args *us)
     iobuf_init(&io, buf, len, 1);
 
     ssize_t ret = socket_send(file, &io, flags, s->addr ? &to.sa : NULL, tolen);
-    arch_syscall_return(curthread, ret);
 
     /* to a connection that can't send anymore: SIGPIPE too, as write()
      * (not with MSG_NOSIGNAL) */
     if (ret == -EPIPE && !(flags & MSG_NOSIGNAL))
         signal_proc_send(curproc, SIGPIPE);
+
+    return ret;
 }
 
-static void sys_recv(struct aquila_socket_io_args *us)
+static long sys_recv(struct aquila_socket_io_args *us)
 {
     struct aquila_socket_io_args _s, *s = &_s;
 
     if (copyin(s, us, sizeof(*s))) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
+        return -EFAULT;
     }
 
     int fd = s->fd;
@@ -1815,15 +1723,13 @@ static void sys_recv(struct aquila_socket_io_args *us)
     struct file *file = fd_file(fd);
 
     if (!file) {
-        arch_syscall_return(curthread, -EBADF);
-        return; 
+        return -EBADF; 
     }
 
     int err = 0;
 
     if (uaccess_check(buf, len)) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
+        return -EFAULT;
     }
 
     /* recvfrom(): where from */
@@ -1832,8 +1738,7 @@ static void sys_recv(struct aquila_socket_io_args *us)
     socklen_t room = 0, fromlen = 0;
 
     if (s->addr && (err = sockaddr_room(s->addrlen, &room))) {
-        arch_syscall_return(curthread, err);
-        return;
+        return err;
     }
 
     fromlen = room;
@@ -1846,17 +1751,16 @@ static void sys_recv(struct aquila_socket_io_args *us)
     if (ret >= 0 && s->addr && sockaddr_copyout(s->addr, s->addrlen, &from, fromlen, room))
         ret = -EFAULT;
 
-    arch_syscall_return(curthread, ret);
+    return ret;
 }
 
 /** getsockname(), getpeername() */
-static void socket_name(int fd, struct sockaddr *addr, socklen_t *len, int peer)
+static long socket_name(int fd, struct sockaddr *addr, socklen_t *len, int peer)
 {
     struct file *file = fd_file(fd);
 
     if (!file) {
-        arch_syscall_return(curthread, -EBADF);
-        return;
+        return -EBADF;
     }
 
     union ksockaddr k;
@@ -1865,8 +1769,7 @@ static void socket_name(int fd, struct sockaddr *addr, socklen_t *len, int peer)
     int err;
 
     if ((err = sockaddr_room(len, &room))) {
-        arch_syscall_return(curthread, err);
-        return;
+        return err;
     }
 
     klen = room;
@@ -1874,22 +1777,22 @@ static void socket_name(int fd, struct sockaddr *addr, socklen_t *len, int peer)
     if (!(err = socket_getname(file, &k.sa, &klen, peer)))
         err = sockaddr_copyout(addr, len, &k, klen, room);
 
-    arch_syscall_return(curthread, err);
+    return err;
 }
 
-static void sys_getsockname(int fd, struct sockaddr *addr, socklen_t *len)
+static long sys_getsockname(int fd, struct sockaddr *addr, socklen_t *len)
 {
     syscall_log(LOG_DEBUG, "getsockname(fd=%d, addr=%p, len=%p)\n", fd, addr, len);
-    socket_name(fd, addr, len, 0);
+    return socket_name(fd, addr, len, 0);
 }
 
-static void sys_getpeername(int fd, struct sockaddr *addr, socklen_t *len)
+static long sys_getpeername(int fd, struct sockaddr *addr, socklen_t *len)
 {
     syscall_log(LOG_DEBUG, "getpeername(fd=%d, addr=%p, len=%p)\n", fd, addr, len);
-    socket_name(fd, addr, len, 1);
+    return socket_name(fd, addr, len, 1);
 }
 
-static void sys_getsockopt(int fd, int level, int name, void *val, socklen_t *len)
+static long sys_getsockopt(int fd, int level, int name, void *val, socklen_t *len)
 {
     syscall_log(LOG_DEBUG, "getsockopt(fd=%d, level=%d, name=%d, val=%p, len=%p)\n",
             fd, level, name, val, len);
@@ -1897,8 +1800,7 @@ static void sys_getsockopt(int fd, int level, int name, void *val, socklen_t *le
     struct file *file = fd_file(fd);
 
     if (!file) {
-        arch_syscall_return(curthread, -EBADF);
-        return;
+        return -EBADF;
     }
 
     /* an option's value: the kernel's copy (the biggest is a timeval) */
@@ -1908,8 +1810,7 @@ static void sys_getsockopt(int fd, int level, int name, void *val, socklen_t *le
     int err;
 
     if (copyin(&room, len, sizeof(room))) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
+        return -EFAULT;
     }
 
     klen = room = MIN(room, sizeof(kval));
@@ -1918,10 +1819,10 @@ static void sys_getsockopt(int fd, int level, int name, void *val, socklen_t *le
         (copyout(val, kval, MIN(klen, room)) || copyout(len, &klen, sizeof(klen))))
         err = -EFAULT;
 
-    arch_syscall_return(curthread, err);
+    return err;
 }
 
-static void sys_setsockopt(int fd, int level, int name, const void *val, socklen_t len)
+static long sys_setsockopt(int fd, int level, int name, const void *val, socklen_t len)
 {
     syscall_log(LOG_DEBUG, "setsockopt(fd=%d, level=%d, name=%d, val=%p, len=%d)\n",
             fd, level, name, val, len);
@@ -1929,8 +1830,7 @@ static void sys_setsockopt(int fd, int level, int name, const void *val, socklen
     struct file *file = fd_file(fd);
 
     if (!file) {
-        arch_syscall_return(curthread, -EBADF);
-        return;
+        return -EBADF;
     }
 
     char kval[64];
@@ -1938,22 +1838,20 @@ static void sys_setsockopt(int fd, int level, int name, const void *val, socklen
     len = MIN(len, sizeof(kval));
 
     if (copyin(kval, val, len)) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
+        return -EFAULT;
     }
 
-    arch_syscall_return(curthread, socket_setsockopt(file, level, name, kval, len));
+    return socket_setsockopt(file, level, name, kval, len);
 }
 
-static void sys_umask(mode_t mask)
+static long sys_umask(mode_t mask)
 {
     syscall_log(LOG_DEBUG, "umask(mask=%d)\n", mask);
 
     mode_t cur_mask = curproc->mask;
     curproc->mask = mask & 0777;
 
-    arch_syscall_return(curthread, cur_mask);
-    return;
+    return cur_mask;
 }
 
 static int do_fchmodat(int dirfd, const char *path, mode_t mode, int flags)
@@ -1977,16 +1875,16 @@ static int do_fchmodat(int dirfd, const char *path, mode_t mode, int flags)
     return ret;
 }
 
-static void sys_chmod(const char *path, mode_t mode)
+static long sys_chmod(const char *path, mode_t mode)
 {
     syscall_log(LOG_DEBUG, "chmod(path=%p, mode=%o)\n", path, mode);
-    arch_syscall_return(curthread, do_fchmodat(AT_FDCWD, path, mode, 0));
+    return do_fchmodat(AT_FDCWD, path, mode, 0);
 }
 
-static void sys_fchmodat(int dirfd, const char *path, mode_t mode, int flags)
+static long sys_fchmodat(int dirfd, const char *path, mode_t mode, int flags)
 {
     syscall_log(LOG_DEBUG, "fchmodat(dirfd=%d, path=%p, mode=%o, flags=%x)\n", dirfd, path, mode, flags);
-    arch_syscall_return(curthread, do_fchmodat(dirfd, path, mode, flags));
+    return do_fchmodat(dirfd, path, mode, flags);
 }
 
 /** the vnode of an open file, NULL for sockets */
@@ -2002,7 +1900,7 @@ static struct vnode *fd_vnode(int fd, int *err)
     return file->vnode;
 }
 
-static void sys_fchmod(int fd, mode_t mode)
+static long sys_fchmod(int fd, mode_t mode)
 {
     syscall_log(LOG_DEBUG, "fchmod(fd=%d, mode=%o)\n", fd, mode);
 
@@ -2012,13 +1910,13 @@ static void sys_fchmod(int fd, mode_t mode)
     if (vnode)
         ret = vfs_chmod(vnode, mode, &PROC_UIO(curproc));
 
-    arch_syscall_return(curthread, ret);
+    return ret;
 }
 
-static void sys_sysconf(int name)
+static long sys_sysconf(int name)
 {
     syscall_log(LOG_DEBUG, "sysconf(name=%d)\n", name);
-    arch_syscall_return(curthread, -ENOSYS);
+    return -ENOSYS;
 }
 
 #define F_OK    0
@@ -2046,19 +1944,19 @@ static int do_faccessat(int dirfd, const char *path, int mode, int flags)
     return ret;
 }
 
-static void sys_access(const char *path, int mode)
+static long sys_access(const char *path, int mode)
 {
     syscall_log(LOG_DEBUG, "access(path=%p, mode=%d)\n", path, mode);
-    arch_syscall_return(curthread, do_faccessat(AT_FDCWD, path, mode, 0));
+    return do_faccessat(AT_FDCWD, path, mode, 0);
 }
 
-static void sys_faccessat(int dirfd, const char *path, int mode, int flags)
+static long sys_faccessat(int dirfd, const char *path, int mode, int flags)
 {
     syscall_log(LOG_DEBUG, "faccessat(dirfd=%d, path=%p, mode=%d, flags=%x)\n", dirfd, path, mode, flags);
-    arch_syscall_return(curthread, do_faccessat(dirfd, path, mode, flags));
+    return do_faccessat(dirfd, path, mode, flags);
 }
 
-static void sys_gettimeofday(struct timeval *tv, struct timezone *tz)
+static long sys_gettimeofday(struct timeval *tv, struct timezone *tz)
 {
     syscall_log(LOG_DEBUG, "gettimeofday(tv=%p, tz=%p)\n", tv, tz);
 
@@ -2069,18 +1967,17 @@ static void sys_gettimeofday(struct timeval *tv, struct timezone *tz)
     if (!err && ((tv && copyout(tv, &ktv, sizeof(ktv))) || (tz && copyout(tz, &ktz, sizeof(ktz)))))
         err = -EFAULT;
 
-    arch_syscall_return(curthread, err);
+    return err;
 }
 
-static void sys_sigmask(int how, const sigset_t *set, sigset_t *oldset)
+static long sys_sigmask(int how, const sigset_t *set, sigset_t *oldset)
 {
     syscall_log(LOG_DEBUG, "sigmask(how=%d, set=%p, oldset=%p)\n", how, set, oldset);
 
     sigset_t kset, mask = curproc->sigmask;
 
     if (set && copyin(&kset, set, sizeof(kset))) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
+        return -EFAULT;
     }
 
     if (set) {
@@ -2089,31 +1986,28 @@ static void sys_sigmask(int how, const sigset_t *set, sigset_t *oldset)
             case SIG_UNBLOCK: mask &= ~kset; break;
             case SIG_SETMASK: mask = kset;   break;
             default:
-                arch_syscall_return(curthread, -EINVAL);
-                return;
+                return -EINVAL;
         }
     }
 
     if (oldset && copyout(oldset, &curproc->sigmask, sizeof(sigset_t))) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
+        return -EFAULT;
     }
 
     /* one no longer blocked is delivered before this returns to user
      * mode */
     curproc->sigmask = mask & ~SIG_UNMASKABLE;
-    arch_syscall_return(curthread, 0);
+    return 0;
 }
 
-static void sys_sigsuspend(const sigset_t *set)
+static long sys_sigsuspend(const sigset_t *set)
 {
     syscall_log(LOG_DEBUG, "sigsuspend(set=%p)\n", set);
 
     sigset_t kset;
 
     if (copyin(&kset, set, sizeof(kset))) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
+        return -EFAULT;
     }
 
     struct thread *thread = curthread;
@@ -2130,22 +2024,26 @@ static void sys_sigsuspend(const sigset_t *set)
         ;
 
     /* EINTR once a handler ran; restarted if none did (a stop) */
-    arch_syscall_return(thread, -ERESTARTNOHAND);
+    return -ERESTARTNOHAND;
 }
 
 /** a handler returns (the kernel's sigcode calls this): its frame back */
-static void sys_sigreturn(void)
+static long sys_sigreturn(void)
 {
     syscall_log(LOG_DEBUG, "sigreturn()\n");
     arch_sigreturn();
+
+    /* the registers are the frame's now: syscall_dispatch() doesn't set
+     * a result */
+    return 0;
 }
 
-static void sys_getppid(void)
+static long sys_getppid(void)
 {
     syscall_log(LOG_DEBUG, "getppid()\n");
 
     /* orphans are init's; init and the kernel's process have no parent */
-    arch_syscall_return(curthread, curproc->parent ? curproc->parent->pid : 0);
+    return curproc->parent ? curproc->parent->pid : 0;
 }
 
 typedef unsigned long fd_mask;
@@ -2184,15 +2082,14 @@ static uint64_t poll_deadline(int64_t ns)
     return until;
 }
 
-static void sys_select(struct aquila_select_args *args)
+static long sys_select(struct aquila_select_args *args)
 {
     syscall_log(LOG_DEBUG, "select(args=%p)\n", args);
 
     struct aquila_select_args a;
 
     if (copyin(&a, args, sizeof(a))) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
+        return -EFAULT;
     }
 
     int nfds = a.nfds;
@@ -2202,8 +2099,7 @@ static void sys_select(struct aquila_select_args *args)
     sigset_t *sigmask = a.sigmask;
 
     if (nfds < 0 || nfds > FD_SETSIZE) {
-        arch_syscall_return(curthread, -EINVAL);
-        return;
+        return -EINVAL;
     }
 
     /* what was asked (the sets are overwritten with the result), the
@@ -2216,13 +2112,11 @@ static void sys_select(struct aquila_select_args *args)
         (writefds && copyin(&want_write, writefds, sizeof(fd_set))) ||
         (a.timeout && copyin(&timeout, a.timeout, sizeof(timeout))) ||
         (sigmask && copyin(&mask, sigmask, sizeof(mask)))) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
+        return -EFAULT;
     }
 
     if (a.timeout && ((int64_t) timeout.tv_sec < 0 || timeout.tv_usec < 0 || timeout.tv_usec >= 1000000)) {
-        arch_syscall_return(curthread, -EINVAL);
-        return;
+        return -EINVAL;
     }
 
     /* pselect(): the mask while waiting; the old one is back when this
@@ -2267,8 +2161,7 @@ static void sys_select(struct aquila_select_args *args)
 
             if (err) {
                 poll_unregister(curthread);
-                arch_syscall_return(curthread, err);
-                return;
+                return err;
             }
         }
 
@@ -2284,8 +2177,7 @@ static void sys_select(struct aquila_select_args *args)
         poll_unregister(curthread);
 
         if (timed_out < 0) {
-            arch_syscall_return(curthread, -ERESTARTNOHAND);
-            return;
+            return -ERESTARTNOHAND;
         }
     }
 
@@ -2302,20 +2194,18 @@ static void sys_select(struct aquila_select_args *args)
     if ((readfds && copyout(readfds, &out_read, sizeof(fd_set))) ||
         (writefds && copyout(writefds, &out_write, sizeof(fd_set))) ||
         (exceptfds && copyout(exceptfds, &none, sizeof(fd_set)))) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
+        return -EFAULT;
     }
 
-    arch_syscall_return(curthread, count);
+    return count;
 }
 
-static void sys_poll(struct pollfd *fds, nfds_t nfds, int timeout_ms)
+static long sys_poll(struct pollfd *fds, nfds_t nfds, int timeout_ms)
 {
     syscall_log(LOG_DEBUG, "poll(fds=%p, nfds=%d, timeout=%d)\n", fds, nfds, timeout_ms);
 
     if (nfds > FDS_COUNT * 2) {
-        arch_syscall_return(curthread, -EINVAL);
-        return;
+        return -EINVAL;
     }
 
     /* the kernel's copy, the events in it, the results out at the end */
@@ -2323,14 +2213,12 @@ static void sys_poll(struct pollfd *fds, nfds_t nfds, int timeout_ms)
     struct pollfd *kfds = nfds ? kmalloc(size, &M_BUFFER, 0) : NULL;
 
     if (nfds && !kfds) {
-        arch_syscall_return(curthread, -ENOMEM);
-        return;
+        return -ENOMEM;
     }
 
     if (copyin(kfds, fds, size)) {
         kfree(kfds);
-        arch_syscall_return(curthread, -EFAULT);
-        return;
+        return -EFAULT;
     }
 
     int64_t ns = timeout_ms < 0 ? -1 : (int64_t) timeout_ms * 1000000;
@@ -2390,13 +2278,13 @@ static void sys_poll(struct pollfd *fds, nfds_t nfds, int timeout_ms)
         count = -EFAULT;
 
     kfree(kfds);
-    arch_syscall_return(curthread, count);
+    return count;
 }
 
-static void sys_getpgrp(void)
+static long sys_getpgrp(void)
 {
     syscall_log(LOG_DEBUG, "getpgrp()\n");
-    arch_syscall_return(curthread, curproc->pgrp->pgid);
+    return curproc->pgrp->pgid;
 }
 
 static int do_fchownat(int dirfd, const char *path, uid_t owner, gid_t group, int flags)
@@ -2416,20 +2304,20 @@ static int do_fchownat(int dirfd, const char *path, uid_t owner, gid_t group, in
     return ret;
 }
 
-static void sys_chown(const char *path, uid_t owner, gid_t group)
+static long sys_chown(const char *path, uid_t owner, gid_t group)
 {
     syscall_log(LOG_DEBUG, "chown(path=%p, owner=%d, group=%d)\n", path, owner, group);
-    arch_syscall_return(curthread, do_fchownat(AT_FDCWD, path, owner, group, 0));
+    return do_fchownat(AT_FDCWD, path, owner, group, 0);
 }
 
-static void sys_fchownat(int dirfd, const char *path, uid_t owner, gid_t group, int flags)
+static long sys_fchownat(int dirfd, const char *path, uid_t owner, gid_t group, int flags)
 {
     syscall_log(LOG_DEBUG, "fchownat(dirfd=%d, path=%p, owner=%d, group=%d, flags=%x)\n",
             dirfd, path, owner, group, flags);
-    arch_syscall_return(curthread, do_fchownat(dirfd, path, owner, group, flags));
+    return do_fchownat(dirfd, path, owner, group, flags);
 }
 
-static void sys_fchown(int fd, uid_t owner, gid_t group)
+static long sys_fchown(int fd, uid_t owner, gid_t group)
 {
     syscall_log(LOG_DEBUG, "fchown(fd=%d, owner=%d, group=%d)\n", fd, owner, group);
 
@@ -2439,17 +2327,17 @@ static void sys_fchown(int fd, uid_t owner, gid_t group)
     if (vnode)
         ret = vfs_chown(vnode, owner, group, &PROC_UIO(curproc));
 
-    arch_syscall_return(curthread, ret);
+    return ret;
 }
 
-static void sys_lchown(const char *path, uid_t owner, gid_t group)
+static long sys_lchown(const char *path, uid_t owner, gid_t group)
 {
     syscall_log(LOG_DEBUG, "lchown(path=%p, owner=%d, group=%d)\n", path, owner, group);
-    arch_syscall_return(curthread, do_fchownat(AT_FDCWD, path, owner, group, AT_SYMLINK_NOFOLLOW));
+    return do_fchownat(AT_FDCWD, path, owner, group, AT_SYMLINK_NOFOLLOW);
 }
 
 /** `path' NULL: the file `dirfd' refers to (futimens) */
-static void sys_utimensat(int dirfd, const char *path, const struct aquila_timespec times[2], int flags)
+static long sys_utimensat(int dirfd, const char *path, const struct aquila_timespec times[2], int flags)
 {
     syscall_log(LOG_DEBUG, "utimensat(dirfd=%d, path=%p, times=%p, flags=%x)\n", dirfd, path, times, flags);
 
@@ -2483,16 +2371,16 @@ static void sys_utimensat(int dirfd, const char *path, const struct aquila_times
     vfs_close(vnode);
 
 done:
-    arch_syscall_return(curthread, ret);
+    return ret;
 }
 
-static void sys_rmdir(const char *path)
+static long sys_rmdir(const char *path)
 {
     syscall_log(LOG_DEBUG, "rmdir(path=%p)\n", path);
-    arch_syscall_return(curthread, do_unlinkat(AT_FDCWD, path, AT_REMOVEDIR));
+    return do_unlinkat(AT_FDCWD, path, AT_REMOVEDIR);
 }
 
-static void sys_symlinkat(const char *utarget, int dirfd, const char *upath)
+static long sys_symlinkat(const char *utarget, int dirfd, const char *upath)
 {
     syscall_log(LOG_DEBUG, "symlinkat(target=%p, dirfd=%d, path=%p)\n", utarget, dirfd, upath);
 
@@ -2507,10 +2395,10 @@ static void sys_symlinkat(const char *utarget, int dirfd, const char *upath)
 
     kfree(target);
     kfree(path);
-    arch_syscall_return(curthread, ret);
+    return ret;
 }
 
-static void sys_readlinkat(int dirfd, const char *upath, char *buf, size_t size)
+static long sys_readlinkat(int dirfd, const char *upath, char *buf, size_t size)
 {
     syscall_log(LOG_DEBUG, "readlinkat(dirfd=%d, path=%p, buf=%p, size=%d)\n", dirfd, upath, buf, size);
 
@@ -2521,8 +2409,7 @@ static void sys_readlinkat(int dirfd, const char *upath, char *buf, size_t size)
     ssize_t ret;
 
     if (uaccess_check(buf, size)) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
+        return -EFAULT;
     }
 
     if (!(ret = upath_get(upath, &path)) && !(ret = at_uio(dirfd, path, &uio))) {
@@ -2535,10 +2422,10 @@ static void sys_readlinkat(int dirfd, const char *upath, char *buf, size_t size)
 
     kfree(path);
     kfree(target);
-    arch_syscall_return(curthread, ret);
+    return ret;
 }
 
-static void sys_renameat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath)
+static long sys_renameat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath)
 {
     syscall_log(LOG_DEBUG, "renameat(olddirfd=%d, oldpath=%p, newdirfd=%d, newpath=%p)\n",
             olddirfd, oldpath, newdirfd, newpath);
@@ -2553,68 +2440,63 @@ static void sys_renameat(int olddirfd, const char *oldpath, int newdirfd, const 
 
     kfree(opath);
     kfree(npath);
-    arch_syscall_return(curthread, ret);
+    return ret;
 }
 
-static void sys_flock(int fd, int op)
+static long sys_flock(int fd, int op)
 {
     syscall_log(LOG_DEBUG, "flock(fd=%d, op=%d)\n", fd, op);
 
     struct file *file = fd_file(fd);
 
     if (!file) {
-        arch_syscall_return(curthread, -EBADF);
-        return;
+        return -EBADF;
     }
 
-    arch_syscall_return(curthread, vfs_file_flock(file, op));
+    return vfs_file_flock(file, op);
 }
 
-static void sys_sync(void)
+static long sys_sync(void)
 {
     syscall_log(LOG_DEBUG, "sync()\n");
 
     /* writes go to the devices right away, only their caches are left */
-    arch_syscall_return(curthread, kdev_sync());
+    return kdev_sync();
 }
 
-static void sys_shutdown(int fd, int how)
+static long sys_shutdown(int fd, int how)
 {
     syscall_log(LOG_DEBUG, "shutdown(fd=%d, how=%d)\n", fd, how);
 
     struct file *file = fd_file(fd);
 
     if (!file) {
-        arch_syscall_return(curthread, -EBADF);
-        return;
+        return -EBADF;
     }
 
-    arch_syscall_return(curthread, socket_shutdown_dir(file, how));
+    return socket_shutdown_dir(file, how);
 }
 
-static void sys_setitimer(int which, const struct aquila_itimer *new, struct aquila_itimer *old)
+static long sys_setitimer(int which, const struct aquila_itimer *new, struct aquila_itimer *old)
 {
     syscall_log(LOG_DEBUG, "setitimer(which=%d, new=%p, old=%p)\n", which, new, old);
 
     struct aquila_itimer knew;
 
     if (new && copyin(&knew, new, sizeof(knew))) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
+        return -EFAULT;
     }
 
     /* only the real time timer, the kernel doesn't count virtual time */
     if (which != AQUILA_ITIMER_REAL) {
-        arch_syscall_return(curthread, -EINVAL);
-        return;
+        return -EINVAL;
     }
 
     struct aquila_itimer prev = {0};
 
     /* where the old one goes: writable, before the new one is set */
     if (old && copyout(old, &prev, sizeof(prev))) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
+        return -EFAULT;
     }
 
     if (new)
@@ -2622,15 +2504,14 @@ static void sys_setitimer(int which, const struct aquila_itimer *new, struct aqu
     else
         sched_alarm_get(curproc, &prev.value, &prev.interval);
 
-    arch_syscall_return(curthread, old ? copyout(old, &prev, sizeof(prev)) : 0);
+    return old ? copyout(old, &prev, sizeof(prev)) : 0;
 }
 
 /** random bytes, as many as asked (getentropy) */
-static void sys_getrandom(void *buf, size_t len, unsigned flags __unused)
+static long sys_getrandom(void *buf, size_t len, unsigned flags __unused)
 {
     if (uaccess_check(buf, len)) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
+        return -EFAULT;
     }
 
     /* a piece at a time through the kernel */
@@ -2648,28 +2529,27 @@ static void sys_getrandom(void *buf, size_t len, unsigned flags __unused)
     }
 
     memset(kbuf, 0, sizeof(kbuf));
-    arch_syscall_return(curthread, done || !len ? (ssize_t) done : -EFAULT);
+    return done || !len ? (ssize_t) done : -EFAULT;
 }
 
 /** the calling thread's id (pthread_self) */
-static void sys_thread_self(void)
+static long sys_thread_self(void)
 {
-    arch_syscall_return(curthread, curthread->tid);
+    return curthread->tid;
 }
 
-static void sys_reboot(unsigned cmd)
+static long sys_reboot(unsigned cmd)
 {
     syscall_log(LOG_DEBUG, "reboot(cmd=0x%x)\n", cmd);
 
     if (curproc->uid) {
-        arch_syscall_return(curthread, -EPERM);
-        return;
+        return -EPERM;
     }
 
-    arch_syscall_return(curthread, kernel_reboot(cmd));
+    return kernel_reboot(cmd);
 }
 
-static void sys_fchdir(int fd)
+static long sys_fchdir(int fd)
 {
     syscall_log(LOG_DEBUG, "fchdir(fd=%d)\n", fd);
 
@@ -2688,10 +2568,10 @@ static void sys_fchdir(int fd)
             vfs_close(file->vnode);
     }
 
-    arch_syscall_return(curthread, ret);
+    return ret;
 }
 
-static void sys_setsid(void)
+static long sys_setsid(void)
 {
     syscall_log(LOG_DEBUG, "setsid()\n");
 
@@ -2701,8 +2581,7 @@ static void sys_setsid(void)
 
     /* a group leader can't leave its group, the group would be in two sessions */
     if (pgrp->pgid == proc->pid) {
-        arch_syscall_return(curthread, -EPERM);
-        return;
+        return -EPERM;
     }
 
     int ret = session_new(proc);
@@ -2710,29 +2589,26 @@ static void sys_setsid(void)
     if (ret) {
         proc->pgrp = pgrp;
         proc->pgrp_node = pgrp_node;
-        arch_syscall_return(curthread, ret);
-        return;
+        return ret;
     }
 
     queue_node_remove(pgrp->procs, pgrp_node);
     pgrp_release(pgrp);
-    arch_syscall_return(curthread, proc->pid);
+    return proc->pid;
 }
 
-static void sys_nanosleep(const struct aquila_timespec *req, struct aquila_timespec *rem)
+static long sys_nanosleep(const struct aquila_timespec *req, struct aquila_timespec *rem)
 {
     syscall_log(LOG_DEBUG, "nanosleep(req=%p, rem=%p)\n", req, rem);
 
     struct aquila_timespec kreq;
 
     if (copyin(&kreq, req, sizeof(kreq))) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
+        return -EFAULT;
     }
 
     if (kreq.tv_nsec >= 1000000000) {
-        arch_syscall_return(curthread, -EINVAL);
-        return;
+        return -EINVAL;
     }
 
     /* until the deadline it had when a stop interrupted it, restarted
@@ -2754,19 +2630,17 @@ static void sys_nanosleep(const struct aquila_timespec *req, struct aquila_times
             };
 
             if (copyout(rem, &krem, sizeof(krem))) {
-                arch_syscall_return(curthread, -EFAULT);
-                return;
+                return -EFAULT;
             }
         }
 
-        arch_syscall_return(curthread, -ERESTARTNOHAND);
-        return;
+        return -ERESTARTNOHAND;
     }
 
-    arch_syscall_return(curthread, 0);
+    return 0;
 }
 
-static void sys_clock_gettime(int clock, struct aquila_timespec *ts)
+static long sys_clock_gettime(int clock, struct aquila_timespec *ts)
 {
     syscall_log(LOG_DEBUG, "clock_gettime(clock=%d, ts=%p)\n", clock, ts);
 
@@ -2786,133 +2660,289 @@ static void sys_clock_gettime(int clock, struct aquila_timespec *ts)
             kts.tv_nsec = ns % 1000000000ULL;
             break;
         default:
-            arch_syscall_return(curthread, -EINVAL);
-            return;
+            return -EINVAL;
     }
 
-    arch_syscall_return(curthread, copyout(ts, &kts, sizeof(kts)));
+    return copyout(ts, &kts, sizeof(kts));
 }
 
-static void sys_sethostname(const char *name, size_t len)
+static long sys_sethostname(const char *name, size_t len)
 {
     syscall_log(LOG_DEBUG, "sethostname(name=%p, len=%d)\n", name, len);
 
     if (curproc->uid != 0) {
-        arch_syscall_return(curthread, -EPERM);
-        return;
+        return -EPERM;
     }
 
     if (len >= sizeof(nodename)) {
-        arch_syscall_return(curthread, -EINVAL);
-        return;
+        return -EINVAL;
     }
 
     char name_in[sizeof(nodename)];
 
     if (copyin(name_in, name, len)) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
+        return -EFAULT;
     }
 
     memcpy(nodename, name_in, len);
     nodename[len] = '\0';
-    arch_syscall_return(curthread, 0);
+    return 0;
 }
 
-void (*syscall_table[])() = {
-    [SYS_exit]          = sys_exit,
-    [SYS_close]         = sys_close,
-    [SYS_execve]        = sys_execve,
-    [SYS_fork]          = sys_fork,
-    [SYS_fstat]         = sys_fstat,
-    [SYS_getpid]        = sys_getpid,
-    [SYS_isatty]        = sys_isatty,
-    [SYS_kill]          = sys_kill,
-    [SYS_link]          = sys_link,
-    [SYS_lseek]         = sys_lseek,
-    [SYS_open]          = sys_open,
-    [SYS_read]          = sys_read,
-    [SYS_sbrk]          = sys_sbrk,
-    [SYS_stat]          = sys_stat,
-    [SYS_times]         = sys_times,
-    [SYS_unlink]        = sys_unlink,
-    [SYS_waitpid]       = sys_waitpid,
-    [SYS_write]         = sys_write,
-    [SYS_ioctl]         = sys_ioctl,
-    [SYS_sigaction]     = sys_sigaction,
-    [SYS_readdir]       = sys_readdir,
-    [SYS_mount]         = sys_mount,
-    [SYS_mkdir]         = sys_mkdir,
-    [SYS_uname]         = sys_uname,
-    [SYS_pipe]          = sys_pipe,
-    [SYS_fcntl]         = sys_fcntl,
-    [SYS_chdir]         = sys_chdir,
-    [SYS_getcwd]        = sys_getcwd,
-    [SYS_thread_create] = sys_thread_create,
-    [SYS_thread_exit]   = sys_thread_exit,
-    [SYS_thread_join]   = sys_thread_join,
-    [SYS_setpgid]       = sys_setpgid,
-    [SYS_mknod]         = sys_mknod,
-    [SYS_lstat]         = sys_lstat,
-    [SYS_getuid]        = sys_getuid,
-    [SYS_getgid]        = sys_getgid,
-    [SYS_mmap]          = sys_mmap,
-    [SYS_munmap]        = sys_munmap,
-    [SYS_socket]        = sys_socket,
-    [SYS_accept]        = sys_accept,
-    [SYS_bind]          = sys_bind,
-    [SYS_connect]       = sys_connect,
-    [SYS_listen]        = sys_listen,
-    [SYS_send]          = sys_send,
-    [SYS_recv]          = sys_recv,
-    [SYS_umask]         = sys_umask,
-    [SYS_chmod]         = sys_chmod,
-    [SYS_sysconf]       = sys_sysconf,
-    [SYS_gettimeofday]  = sys_gettimeofday,
-    [SYS_access]        = sys_access,
-    [SYS_sigmask]       = sys_sigmask,
-    [SYS_select]        = sys_select,
-    [SYS_getpgrp]       = sys_getpgrp,
-    [SYS_chown]         = sys_chown,
-    [SYS_fchown]        = sys_fchown,
-    [SYS_lchown]        = sys_lchown,
-    [SYS_rmdir]         = sys_rmdir,
-    [SYS_setuid]        = sys_setuid,
-    [SYS_setgid]        = sys_setgid,
-    [SYS_ftruncate]     = sys_ftruncate,
-    [SYS_sigsuspend]    = sys_sigsuspend,
-    [SYS_getppid]       = sys_getppid,
-    [SYS_openat]        = sys_openat,
-    [SYS_fstatat]       = sys_fstatat,
-    [SYS_unlinkat]      = sys_unlinkat,
-    [SYS_mknodat]       = sys_mknodat,
-    [SYS_linkat]        = sys_linkat,
-    [SYS_symlinkat]     = sys_symlinkat,
-    [SYS_readlinkat]    = sys_readlinkat,
-    [SYS_renameat]      = sys_renameat,
-    [SYS_faccessat]     = sys_faccessat,
-    [SYS_fchmodat]      = sys_fchmodat,
-    [SYS_fchownat]      = sys_fchownat,
-    [SYS_utimensat]     = sys_utimensat,
-    [SYS_fchmod]        = sys_fchmod,
-    [SYS_fchdir]        = sys_fchdir,
-    [SYS_setsid]        = sys_setsid,
-    [SYS_nanosleep]     = sys_nanosleep,
-    [SYS_clock_gettime] = sys_clock_gettime,
-    [SYS_sethostname]   = sys_sethostname,
-    [SYS_poll]          = sys_poll,
-    [SYS_flock]         = sys_flock,
-    [SYS_reboot]        = sys_reboot,
-    [SYS_sync]          = sys_sync,
-    [SYS_shutdown]      = sys_shutdown,
-    [SYS_setitimer]     = sys_setitimer,
-    [SYS_thread_self]   = sys_thread_self,
-    [SYS_getrandom]     = sys_getrandom,
-    [SYS_getsockname]   = sys_getsockname,
-    [SYS_getpeername]   = sys_getpeername,
-    [SYS_getsockopt]    = sys_getsockopt,
-    [SYS_setsockopt]    = sys_setsockopt,
-    [SYS_sigreturn]     = sys_sigreturn,
+/*
+ * The table: what each system call number calls. Its entries all have
+ * the one type the dispatch calls through, five register-sized
+ * arguments and a long result (syscall_t); a system call is written
+ * with its own types, sys_read(int fd, void *buf, size_t nbytes).
+ * SYSCALLn(name, types...) makes the entry for sys_<name>, of n
+ * arguments: sys_<name>_entry(), which converts the registers to those
+ * types and calls it, so the compiler checks the call. Calling sys_read
+ * itself through a pointer of another type would be undefined in C (it
+ * happened to work with x86's and aarch64's calling conventions).
+ */
+
+#define SYSCALL_ARGS \
+    uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4, uintptr_t a5
+
+#define SYSCALL0(name) \
+    static long sys_##name##_entry(SYSCALL_ARGS) \
+    { return sys_##name(); }
+#define SYSCALL1(name, t1) \
+    static long sys_##name##_entry(SYSCALL_ARGS) \
+    { return sys_##name((t1) a1); }
+#define SYSCALL2(name, t1, t2) \
+    static long sys_##name##_entry(SYSCALL_ARGS) \
+    { return sys_##name((t1) a1, (t2) a2); }
+#define SYSCALL3(name, t1, t2, t3) \
+    static long sys_##name##_entry(SYSCALL_ARGS) \
+    { return sys_##name((t1) a1, (t2) a2, (t3) a3); }
+#define SYSCALL4(name, t1, t2, t3, t4) \
+    static long sys_##name##_entry(SYSCALL_ARGS) \
+    { return sys_##name((t1) a1, (t2) a2, (t3) a3, (t4) a4); }
+#define SYSCALL5(name, t1, t2, t3, t4, t5) \
+    static long sys_##name##_entry(SYSCALL_ARGS) \
+    { return sys_##name((t1) a1, (t2) a2, (t3) a3, (t4) a4, (t5) a5); }
+
+SYSCALL1(exit, int)
+SYSCALL1(close, int)
+SYSCALL3(execve, const char *, char * const *, char * const *)
+SYSCALL0(fork)
+SYSCALL2(fstat, int, struct aquila_stat *)
+SYSCALL0(getpid)
+SYSCALL1(isatty, int)
+SYSCALL2(kill, pid_t, int)
+SYSCALL2(link, const char *, const char *)
+SYSCALL5(linkat, int, const char *, int, const char *, int)
+SYSCALL3(lseek, int, off_t, int)
+SYSCALL3(open, const char *, int, mode_t)
+SYSCALL4(openat, int, const char *, int, mode_t)
+SYSCALL3(read, int, void *, size_t)
+SYSCALL1(sbrk, ptrdiff_t)
+SYSCALL2(stat, const char *, struct aquila_stat *)
+SYSCALL4(fstatat, int, const char *, struct aquila_stat *, int)
+SYSCALL1(times, struct aquila_tms *)
+SYSCALL1(unlink, const char *)
+SYSCALL3(unlinkat, int, const char *, int)
+SYSCALL3(waitpid, int, int *, int)
+SYSCALL3(write, int, void *, size_t)
+SYSCALL3(ioctl, int, int, void *)
+SYSCALL3(sigaction, int, const struct aquila_sigaction *, struct aquila_sigaction *)
+SYSCALL2(readdir, int, struct dirent *)
+SYSCALL1(mount, struct aquila_mount_args *)
+SYSCALL2(mkdir, const char *, mode_t)
+SYSCALL1(uname, struct utsname *)
+SYSCALL1(pipe, int *)
+SYSCALL3(fcntl, int, int, uintptr_t)
+SYSCALL1(chdir, const char *)
+SYSCALL2(getcwd, char *, size_t)
+SYSCALL1(thread_create, struct aquila_thread_args *)
+SYSCALL1(thread_exit, void *)
+SYSCALL2(thread_join, int, void **)
+SYSCALL2(setpgid, pid_t, pid_t)
+SYSCALL3(mknod, const char *, uint32_t, uint32_t)
+SYSCALL4(mknodat, int, const char *, uint32_t, uint32_t)
+SYSCALL2(lstat, const char *, struct aquila_stat *)
+SYSCALL1(setuid, uid_t)
+SYSCALL2(ftruncate, int, off_t)
+SYSCALL1(setgid, gid_t)
+SYSCALL0(getuid)
+SYSCALL0(getgid)
+SYSCALL2(mmap, struct aquila_mmap_args *, void **)
+SYSCALL2(munmap, void *, size_t)
+SYSCALL3(socket, int, int, int)
+SYSCALL3(accept, int, const struct sockaddr *, socklen_t *)
+SYSCALL3(bind, int, const struct sockaddr *, socklen_t)
+SYSCALL3(connect, int, const struct sockaddr *, socklen_t)
+SYSCALL2(listen, int, int)
+SYSCALL1(send, struct aquila_socket_io_args *)
+SYSCALL1(recv, struct aquila_socket_io_args *)
+SYSCALL3(getsockname, int, struct sockaddr *, socklen_t *)
+SYSCALL3(getpeername, int, struct sockaddr *, socklen_t *)
+SYSCALL5(getsockopt, int, int, int, void *, socklen_t *)
+SYSCALL5(setsockopt, int, int, int, const void *, socklen_t)
+SYSCALL1(umask, mode_t)
+SYSCALL2(chmod, const char *, mode_t)
+SYSCALL4(fchmodat, int, const char *, mode_t, int)
+SYSCALL2(fchmod, int, mode_t)
+SYSCALL1(sysconf, int)
+SYSCALL2(access, const char *, int)
+SYSCALL4(faccessat, int, const char *, int, int)
+SYSCALL2(gettimeofday, struct timeval *, struct timezone *)
+SYSCALL3(sigmask, int, const sigset_t *, sigset_t *)
+SYSCALL1(sigsuspend, const sigset_t *)
+SYSCALL0(sigreturn)
+SYSCALL0(getppid)
+SYSCALL1(select, struct aquila_select_args *)
+SYSCALL3(poll, struct pollfd *, nfds_t, int)
+SYSCALL0(getpgrp)
+SYSCALL3(chown, const char *, uid_t, gid_t)
+SYSCALL5(fchownat, int, const char *, uid_t, gid_t, int)
+SYSCALL3(fchown, int, uid_t, gid_t)
+SYSCALL3(lchown, const char *, uid_t, gid_t)
+SYSCALL4(utimensat, int, const char *, const struct aquila_timespec *, int)
+SYSCALL1(rmdir, const char *)
+SYSCALL3(symlinkat, const char *, int, const char *)
+SYSCALL4(readlinkat, int, const char *, char *, size_t)
+SYSCALL4(renameat, int, const char *, int, const char *)
+SYSCALL2(flock, int, int)
+SYSCALL0(sync)
+SYSCALL2(shutdown, int, int)
+SYSCALL3(setitimer, int, const struct aquila_itimer *, struct aquila_itimer *)
+SYSCALL3(getrandom, void *, size_t, unsigned)
+SYSCALL0(thread_self)
+SYSCALL1(reboot, unsigned)
+SYSCALL1(fchdir, int)
+SYSCALL0(setsid)
+SYSCALL2(nanosleep, const struct aquila_timespec *, struct aquila_timespec *)
+SYSCALL2(clock_gettime, int, struct aquila_timespec *)
+SYSCALL2(sethostname, const char *, size_t)
+
+const syscall_t syscall_table[] = {
+    [SYS_exit]          = sys_exit_entry,
+    [SYS_close]         = sys_close_entry,
+    [SYS_execve]        = sys_execve_entry,
+    [SYS_fork]          = sys_fork_entry,
+    [SYS_fstat]         = sys_fstat_entry,
+    [SYS_getpid]        = sys_getpid_entry,
+    [SYS_isatty]        = sys_isatty_entry,
+    [SYS_kill]          = sys_kill_entry,
+    [SYS_link]          = sys_link_entry,
+    [SYS_lseek]         = sys_lseek_entry,
+    [SYS_open]          = sys_open_entry,
+    [SYS_read]          = sys_read_entry,
+    [SYS_sbrk]          = sys_sbrk_entry,
+    [SYS_stat]          = sys_stat_entry,
+    [SYS_times]         = sys_times_entry,
+    [SYS_unlink]        = sys_unlink_entry,
+    [SYS_waitpid]       = sys_waitpid_entry,
+    [SYS_write]         = sys_write_entry,
+    [SYS_ioctl]         = sys_ioctl_entry,
+    [SYS_sigaction]     = sys_sigaction_entry,
+    [SYS_readdir]       = sys_readdir_entry,
+    [SYS_mount]         = sys_mount_entry,
+    [SYS_mkdir]         = sys_mkdir_entry,
+    [SYS_uname]         = sys_uname_entry,
+    [SYS_pipe]          = sys_pipe_entry,
+    [SYS_fcntl]         = sys_fcntl_entry,
+    [SYS_chdir]         = sys_chdir_entry,
+    [SYS_getcwd]        = sys_getcwd_entry,
+    [SYS_thread_create] = sys_thread_create_entry,
+    [SYS_thread_exit]   = sys_thread_exit_entry,
+    [SYS_thread_join]   = sys_thread_join_entry,
+    [SYS_setpgid]       = sys_setpgid_entry,
+    [SYS_mknod]         = sys_mknod_entry,
+    [SYS_lstat]         = sys_lstat_entry,
+    [SYS_getuid]        = sys_getuid_entry,
+    [SYS_getgid]        = sys_getgid_entry,
+    [SYS_mmap]          = sys_mmap_entry,
+    [SYS_munmap]        = sys_munmap_entry,
+    [SYS_socket]        = sys_socket_entry,
+    [SYS_accept]        = sys_accept_entry,
+    [SYS_bind]          = sys_bind_entry,
+    [SYS_connect]       = sys_connect_entry,
+    [SYS_listen]        = sys_listen_entry,
+    [SYS_send]          = sys_send_entry,
+    [SYS_recv]          = sys_recv_entry,
+    [SYS_umask]         = sys_umask_entry,
+    [SYS_chmod]         = sys_chmod_entry,
+    [SYS_sysconf]       = sys_sysconf_entry,
+    [SYS_gettimeofday]  = sys_gettimeofday_entry,
+    [SYS_access]        = sys_access_entry,
+    [SYS_sigmask]       = sys_sigmask_entry,
+    [SYS_select]        = sys_select_entry,
+    [SYS_getpgrp]       = sys_getpgrp_entry,
+    [SYS_chown]         = sys_chown_entry,
+    [SYS_fchown]        = sys_fchown_entry,
+    [SYS_lchown]        = sys_lchown_entry,
+    [SYS_rmdir]         = sys_rmdir_entry,
+    [SYS_setuid]        = sys_setuid_entry,
+    [SYS_setgid]        = sys_setgid_entry,
+    [SYS_ftruncate]     = sys_ftruncate_entry,
+    [SYS_sigsuspend]    = sys_sigsuspend_entry,
+    [SYS_getppid]       = sys_getppid_entry,
+    [SYS_openat]        = sys_openat_entry,
+    [SYS_fstatat]       = sys_fstatat_entry,
+    [SYS_unlinkat]      = sys_unlinkat_entry,
+    [SYS_mknodat]       = sys_mknodat_entry,
+    [SYS_linkat]        = sys_linkat_entry,
+    [SYS_symlinkat]     = sys_symlinkat_entry,
+    [SYS_readlinkat]    = sys_readlinkat_entry,
+    [SYS_renameat]      = sys_renameat_entry,
+    [SYS_faccessat]     = sys_faccessat_entry,
+    [SYS_fchmodat]      = sys_fchmodat_entry,
+    [SYS_fchownat]      = sys_fchownat_entry,
+    [SYS_utimensat]     = sys_utimensat_entry,
+    [SYS_fchmod]        = sys_fchmod_entry,
+    [SYS_fchdir]        = sys_fchdir_entry,
+    [SYS_setsid]        = sys_setsid_entry,
+    [SYS_nanosleep]     = sys_nanosleep_entry,
+    [SYS_clock_gettime] = sys_clock_gettime_entry,
+    [SYS_sethostname]   = sys_sethostname_entry,
+    [SYS_poll]          = sys_poll_entry,
+    [SYS_flock]         = sys_flock_entry,
+    [SYS_reboot]        = sys_reboot_entry,
+    [SYS_sync]          = sys_sync_entry,
+    [SYS_shutdown]      = sys_shutdown_entry,
+    [SYS_setitimer]     = sys_setitimer_entry,
+    [SYS_thread_self]   = sys_thread_self_entry,
+    [SYS_getrandom]     = sys_getrandom_entry,
+    [SYS_getsockname]   = sys_getsockname_entry,
+    [SYS_getpeername]   = sys_getpeername_entry,
+    [SYS_getsockopt]    = sys_getsockopt_entry,
+    [SYS_setsockopt]    = sys_setsockopt_entry,
+    [SYS_sigreturn]     = sys_sigreturn_entry,
 };
 
 const size_t syscall_cnt = sizeof(syscall_table)/sizeof(syscall_table[0]);
+
+
+/**
+ * A system call from user mode (the architecture's arch_syscall(): the
+ * number and the arguments, as they came in registers). Its result is
+ * the thread's to return to user mode (arch_syscall_return()), but
+ * sigreturn's: its registers are the signal frame's it restored. A call
+ * that doesn't return (exit, an exec that worked) doesn't come back here.
+ */
+void syscall_dispatch(unsigned long nr, uintptr_t a1, uintptr_t a2, uintptr_t a3,
+                      uintptr_t a4, uintptr_t a5)
+{
+    curthread->syscall_nr = nr;
+
+    if (nr >= syscall_cnt || !syscall_table[nr]) {
+        printk("[%d:%d] %s: undefined syscall %ld\n", curproc->pid, curthread->tid,
+               curproc->name, (long) nr);
+        arch_syscall_return(curthread, -ENOSYS);
+        return;
+    }
+
+    long ret = syscall_table[nr](a1, a2, a3, a4, a5);
+
+    if (nr != SYS_sigreturn)
+        arch_syscall_return(curthread, ret);
+
+    /* the open files the call used: let go of */
+    thread_files_release(curthread);
+
+    /* a restart was this call, or none */
+    curthread->restarting = 0;
+}

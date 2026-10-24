@@ -16,25 +16,8 @@ void aarch64_preempt(void);
 
 void arch_syscall(struct aarch64_regs *r)
 {
-    uint64_t nr = r->x[8];
-
-    if (nr >= syscall_cnt || !syscall_table[nr]) {
-        printk("[%d:%d] %s: undefined syscall %ld\n", curproc->pid, curthread->tid, curproc->name, nr);
-        arch_syscall_return(curthread, -ENOSYS);
-        aarch64_return_to_user(r, 0);
-        return;
-    }
-
-    curthread->syscall_nr = nr;
-
-    void (*syscall)(uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t) = syscall_table[nr];
-    syscall(r->x[0], r->x[1], r->x[2], r->x[3], r->x[4]);
-
-    /* the open files the call used: let go of */
-    thread_files_release(curthread);
-
-    /* a restart was this call, or none */
-    curthread->restarting = 0;
+    /* the number in x8, the arguments in x0 to x4 (Linux's) */
+    syscall_dispatch(r->x[8], r->x[0], r->x[1], r->x[2], r->x[3], r->x[4]);
 
     /* an urgent thread was woken during the call (the network's, by a
      * packet to ourselves): it runs before returning to user mode */
