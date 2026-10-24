@@ -46,10 +46,12 @@ void vm_object_decref(struct vm_object *vm_object)
  *
  * @param vm_object  the object
  * @param vm_page    the page
+ * @return 0, or `-ENOMEM` if there was no memory to add it (the object
+ *         doesn't have the page then)
  */
-void vm_object_page_insert(struct vm_object *vm_object, struct vm_page *vm_page)
+int vm_object_page_insert(struct vm_object *vm_object, struct vm_page *vm_page)
 {
     size_t off = vm_page->off;
     hash_t hash = hashmap_digest(&off, sizeof(off));
-    hashmap_insert(vm_object->pages, hash, vm_page);
+    return hashmap_insert(vm_object->pages, hash, vm_page) ? -ENOMEM : 0;
 }

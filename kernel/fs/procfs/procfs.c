@@ -492,7 +492,7 @@ static ssize_t procfs_proc_vmstats(int pid, off_t off, size_t size, void *buf)
                 perm,
                 vm_entry->off,
                 vm_entry->vm_object,
- 0); 
+                type);
     }
     
     if (off < sz) {
@@ -809,11 +809,12 @@ static int procfs_init()
     return 0;
 }
 
-/** Mounts procfs on a directory: its one root directory is bound there. */
+/** Mounts procfs on a directory: its one root directory is bound there.
+ * Returns 0, or `-EBUSY` if something is mounted on the directory, or
+ * procfs is mounted elsewhere already. */
 static int procfs_mount(struct vnode *dir, int flags, void *data)
 {
-    vfs_bind(dir, procfs_root);
-    return 0;
+    return vfs_bind(dir, procfs_root);
 }
 
 struct fs procfs = {

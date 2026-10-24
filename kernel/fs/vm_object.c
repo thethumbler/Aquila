@@ -104,7 +104,12 @@ struct vm_page *vnode_page_in(struct vm_object *vm_object, size_t off)
     pmap_page_write(vm_page->paddr, 0, PAGE_SIZE, buf);
     kfree(buf);
 
-    vm_object_page_insert(vm_object, vm_page);
+    /* no memory to keep it in the object: the fault fails, as with no
+     * memory for the page */
+    if (vm_object_page_insert(vm_object, vm_page)) {
+        mm_page_dealloc(vm_page->paddr);
+        return NULL;
+    }
 
     return vm_page;
 }

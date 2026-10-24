@@ -15,13 +15,13 @@
 MALLOC_DEFINE(M_VM_ANON, "vm-anon", "anonymous virtual memory object");
 
 /** Says whether an aref is the one for an offset (`_b`, a `size_t *`), for
- * the anon's hashmap. */
+ * the anon's hashmap. An aref without a page is for no offset. */
 static int vm_aref_eq(void *_a, void *_b)
 {
     struct vm_aref *a = (struct vm_aref *) _a;
 
     if (!a->vm_page)
-        return -1;
+        return 0;
 
     size_t *b = (size_t *) _b;
 
@@ -141,7 +141,9 @@ void vm_anon_decref(struct vm_anon *vm_anon)
 }
 
 /** Puts all of `src`'s arefs in `dst` as well, shared: each gets one more
- * reference. Returns 0, or `-EINVAL`. */
+ * reference. Returns 0, `-EINVAL`, or `-ENOMEM` if there was no memory
+ * for one; the arefs put in `dst` before that have their reference, and
+ * go with `vm_anon_destroy(dst)`. */
 static int vm_anon_copy_arefs(struct vm_anon *src, struct vm_anon *dst)
 {
     if (!src || !dst || !src->arefs || !dst->arefs)
@@ -151,7 +153,9 @@ static int vm_anon_copy_arefs(struct vm_anon *src, struct vm_anon *dst)
         struct hashmap_node *node = (struct hashmap_node *) qnode->value;
         struct vm_aref *aref = (struct vm_aref *) node->entry;
 
-        hashmap_insert(dst->arefs, node->hash, aref);
+        if (hashmap_insert(dst->arefs, node->hash, aref))
+            return -ENOMEM;
+
         aref->ref++;
     }
 
@@ -180,7 +184,10 @@ struct vm_anon *vm_anon_copy(struct vm_anon *vm_anon)
     new_anon->flags = vm_anon->flags & ~VM_COPY;
     new_anon->ref   = 1;
 
+    /* on failure, the arefs copied so far give back their references,
+     * and the hashmap goes */
     if (vm_anon_copy_arefs(vm_anon, new_anon)) {
+        vm_anon_destroy(new_anon);
         kfree(new_anon);
         return NULL;
     }

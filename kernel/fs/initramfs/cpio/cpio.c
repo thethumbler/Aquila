@@ -132,7 +132,12 @@ static int cpio_new_node(const char *name, struct cpio_hdr *hdr, size_t sz, size
     p->count  = 0;
     p->data   = data;
     p->next   = NULL;
-    p->name   = strdup(name);
+
+    /* its own copy of the name */
+    if (!(p->name = strdup(name))) {
+        err = -ENOMEM;
+        goto error;
+    }
 
     if (ref) *ref = vnode;
 
@@ -174,46 +179,45 @@ static struct vnode *cpio_new_child_node(struct vnode *parent, struct vnode *chi
  * Returns NULL if there's none. */
 static struct vnode *cpio_find(struct vnode *root, const char *path)
 {
+    /* the path's components; NULL for an empty path (or no memory) */
     char **tokens = tokenize(path, '/');
+    struct vnode *cur = NULL;
 
     if (!S_ISDIR(root->mode))
-        return NULL;
+        goto done;
 
-    struct vnode *cur = root;
+    cur = root;
     struct vnode *dir = ((struct cpio *) cur->p)->dir;
 
     if (!dir) { /* the root has no entries yet */
-        if (*tokens == NULL)
-            return root;
-        else
-            return NULL;
+        if (tokens && *tokens)
+            cur = NULL;
+
+        goto done;
     }
 
-    int flag;
-    for (char **token_p = tokens; *token_p; ++token_p) {
+    for (char **token_p = tokens; token_p && *token_p; ++token_p) {
         char *token = *token_p;
+        int found = 0;
 
-        flag = 0;
         for (struct vnode *e = dir; e; e = ((struct cpio *) e->p)->next) {
             if (((struct cpio *) e->p)->name &&
                     !strcmp(((struct cpio *) e->p)->name, token)) {
                 cur = e;
                 dir = ((struct cpio *) e->p)->dir;
-                flag = 1;
-                goto next;
+                found = 1;
+                break;
             }
         }
 
-        next:
-
-        if (!flag)  /* no such entry */
-            return NULL;
-
-        continue;
+        if (!found) {   /* no such entry */
+            cur = NULL;
+            goto done;
+        }
     }
 
+done:
     free_tokens(tokens);
-
     return cur;
 }
 
@@ -271,12 +275,16 @@ static int cpio_vget(struct vnode *super, ino_t ino, struct vnode **vnode)
 /** Loads the archive on a device: the root directory, then a vnode for
  * each member, linked into its directory, until the archive's trailer. A
  * member that isn't in the old binary format panics: the kernel has no
- * root without it. Returns 0. */
+ * root without it. A member whose directory isn't in the archive is
+ * skipped. Returns 0, or `-ENOMEM`. */
 static int cpio_load(struct vnode *dev, struct vnode **super)
 {
     /* the root directory */
     struct vnode *rootfs = NULL;
-    cpio_root_node(dev, &rootfs);
+    int err = cpio_root_node(dev, &rootfs);
+
+    if (err)
+        return err;
 
     struct cpio_hdr hdr;
     size_t offset = 0;
@@ -326,10 +334,19 @@ static int cpio_load(struct vnode *dev, struct vnode **super)
         
         data_offset += hdr.namesize + (hdr.namesize % 2);
 
-        struct vnode *_node = NULL; 
-        cpio_new_node(strdup(name), &hdr, size, data_offset, dev, &_node);
-
+        /* its directory comes before it in the archive */
         struct vnode *parent = cpio_find(rootfs, dir);
+
+        if (!parent) {
+            printk("cpio: %s/%s: its directory isn't in the archive\n", dir, name);
+            continue;
+        }
+
+        struct vnode *_node = NULL;
+
+        if ((err = cpio_new_node(name, &hdr, size, data_offset, dev, &_node)))
+            return err;
+
         cpio_new_child_node(parent, _node);
     }
 
@@ -399,11 +416,12 @@ static int cpio_close(struct vnode *vnode)
     return 0;
 }
 
-/** Says whether an open file (or directory) is at its end. */
+/** Says whether an open file (or directory) is at its end. A directory's
+ * offset counts its `.` and `..` entries too (`cpio_readdir()`). */
 static int cpio_eof(struct file *file)
 {
     if (S_ISDIR(file->vnode->mode)) {
-        return (size_t) file->offset >= ((struct cpio *) file->vnode->p)->count;
+        return (size_t) file->offset >= ((struct cpio *) file->vnode->p)->count + 2;
     } else {
         return (size_t) file->offset >= file->vnode->size;
     }

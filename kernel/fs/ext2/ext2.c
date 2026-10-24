@@ -144,6 +144,7 @@ int ext2_init()
 int ext2_load(struct vnode *dev, struct vnode **super)
 {
     int err = 0;
+    ssize_t r;
 
     struct ext2_superblock *sb = NULL;
     struct ext2 *desc = NULL;
@@ -151,9 +152,11 @@ int ext2_load(struct vnode *dev, struct vnode **super)
     sb = kmalloc(sizeof(struct ext2_superblock), &M_EXT2_SB, M_ZERO);
     if (!sb) goto e_nomem;
 
-    /* the superblock */
-    if ((err = vfs_read(dev, 1024, sizeof(struct ext2_superblock), sb)) < 0)
+    /* the superblock: all of it, a short read is an I/O error */
+    if ((r = vfs_read(dev, 1024, sizeof(struct ext2_superblock), sb)) != (ssize_t) sizeof(struct ext2_superblock)) {
+        err = r < 0 ? (int) r : -EIO;
         goto error;
+    }
 
     /* is it ext2, with blocks of 1, 2 or 4 KiB (the code keeps blocks in
      * buffers, some of them on the stack) and groups of blocks? */
@@ -203,8 +206,10 @@ int ext2_load(struct vnode *dev, struct vnode **super)
     desc->groups  = kmalloc(groups_sz, &M_EXT2_GROUP, 0);
     if (!desc->groups) goto e_nomem;
 
-    if ((err = vfs_read(desc->supernode, groups, groups_sz, desc->groups)) < 0)
+    if ((r = vfs_read(desc->supernode, groups, groups_sz, desc->groups)) != (ssize_t) groups_sz) {
+        err = r < 0 ? (int) r : -EIO;
         goto error;
+    }
 
     desc->vcache = kmalloc(sizeof(struct vcache), &M_VCACHE, M_ZERO);
     if (!desc->vcache) goto e_nomem;

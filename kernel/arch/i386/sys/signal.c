@@ -105,7 +105,11 @@ static struct vm_page *sigcode_in(struct vm_object *vm_object, size_t off)
     vm_page->vm_object = vm_object;
     vm_page->off = 0;
     vm_page->ref = 1;
-    vm_object_page_insert(vm_object, vm_page);
+
+    if (vm_object_page_insert(vm_object, vm_page)) {
+        mm_page_dealloc(vm_page->paddr);
+        return NULL;
+    }
 
     return vm_page;
 }

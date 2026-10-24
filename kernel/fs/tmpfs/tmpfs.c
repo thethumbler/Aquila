@@ -155,7 +155,8 @@ static int tmpfs_init()
 }
 
 /** Mounts a new, empty tmpfs on a directory. The `mode=` option (octal)
- * sets its root's permissions, 0777 otherwise. */
+ * sets its root's permissions, 0777 otherwise. Returns 0, `-ENOMEM`, or
+ * `-EBUSY` if something is mounted on the directory already. */
 static int tmpfs_mount(struct vnode *dir, int flags __unused, void *data __unused)
 {
     /* a new root directory */
@@ -171,7 +172,7 @@ static int tmpfs_mount(struct vnode *dir, int flags __unused, void *data __unuse
 
     if (mdata && mdata->opt) {
         char **tokens = tokenize(mdata->opt, ',');
-        for (char **token_p = tokens; *token_p; ++token_p) {
+        for (char **token_p = tokens; token_p && *token_p; ++token_p) {
             char *token = *token_p;
             if (!strncmp(token, "mode=", 5)) {    /* an octal number */
                 char *t = token + 5;
@@ -182,6 +183,8 @@ static int tmpfs_mount(struct vnode *dir, int flags __unused, void *data __unuse
                 }
             }
         }
+
+        free_tokens(tokens);
     }
 
     tmpfs_root->ino   = (vino_t) tmpfs_root;
@@ -199,9 +202,13 @@ static int tmpfs_mount(struct vnode *dir, int flags __unused, void *data __unuse
     tmpfs_root->atime = ts;
     tmpfs_root->mtime = ts;
 
-    vfs_bind(dir, tmpfs_root);
+    /* something is mounted there already: the new root goes */
+    int err = vfs_bind(dir, tmpfs_root);
 
-    return 0;
+    if (err)
+        kfree(tmpfs_root);
+
+    return err;
 }
 
 struct fs tmpfs = {
