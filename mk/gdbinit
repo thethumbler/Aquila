@@ -1,0 +1,15 @@
+# gdb for the kernel QEMU runs (make debug):
+#
+#   gdb -x mk/gdbinit build/min-x86_64-debug/kernel/kernel-0.0.1.x86_64
+#
+# QEMU waits before the first instruction. These stop at kmain(), the
+# generic kernel's entry, once the architecture has set up the CPU and
+# memory (see docs/kernel/booting.md). Then: `break sys_fork', `continue',
+# `bt', `next', `print *curthread', `info registers'.
+
+target remote localhost:1234
+
+# a hardware breakpoint: the kernel's addresses aren't mapped yet when
+# QEMU starts, a software one couldn't be written there
+hbreak kmain
+continue

@@ -190,6 +190,44 @@ struct elf32_sym {
 };
 
 /**
+ * elf64 section header
+ */
+struct elf64_shdr {
+    elf64_word  sh_name;
+    elf64_word  sh_type;
+    elf64_xword sh_flags;
+    elf64_addr  sh_addr;
+    elf64_off   sh_offset;
+    elf64_xword sh_size;
+    elf64_word  sh_link;
+    elf64_word  sh_info;
+    elf64_xword sh_addralign;
+    elf64_xword sh_entsize;
+};
+
+/**
+ * elf64 symbol
+ */
+struct elf64_sym {
+    elf64_word  st_name;
+    uint8_t     st_info;
+    uint8_t     st_other;
+    elf64_half  st_shndx;
+    elf64_addr  st_value;
+    elf64_xword st_size;
+};
+
+/* the kernel's own: its ELF class is the word size (the section headers
+ * and symbols a Multiboot loader passes are the kernel file's) */
+#if __SIZEOF_POINTER__ == 8
+typedef struct elf64_shdr elf_shdr_t;
+typedef struct elf64_sym  elf_sym_t;
+#else
+typedef struct elf32_shdr elf_shdr_t;
+typedef struct elf32_sym  elf_sym_t;
+#endif
+
+/**
  * elf32 program header
  */
 struct elf32_phdr {

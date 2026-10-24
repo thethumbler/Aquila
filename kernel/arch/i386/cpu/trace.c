@@ -1,3 +1,10 @@
+/** \file
+ * A panic's backtrace: the frame pointers, each frame's saved %ebp/%rbp
+ * and return address. Each address is named from the kernel's symbol
+ * table when the boot loader passed it (Limine does, QEMU's -kernel
+ * doesn't); mk/backtrace.sh names them from the kernel's file otherwise.
+ */
+
 #include <core/system.h>
 #include <core/printk.h>
 #include <boot/boot.h>
@@ -11,9 +18,24 @@ extern struct boot *__kboot;
 
 int __printing_trace = 0;
 
-void arch_stack_trace()
+/** the function `ip' is in, NULL if there are no symbols or none has it */
+static const elf_sym_t *symbol_of(uintptr_t ip)
 {
-#if 1
+    if (!__kboot || !__kboot->symtab || !__kboot->strtab)
+        return NULL;
+
+    const elf_sym_t *sym = (const elf_sym_t *) (uintptr_t) __kboot->symtab->sh_addr;
+
+    for (size_t i = 0; i < __kboot->symnum; ++i, ++sym)
+        if (ELF32_ST_TYPE(sym->st_info) == STT_FUNC &&
+            ip >= sym->st_value && ip < sym->st_value + sym->st_size)
+            return sym;
+
+    return NULL;
+}
+
+void arch_stack_trace(void)
+{
     __printing_trace = 1;
 
     struct stack_frame *stk = NULL;
@@ -26,35 +48,16 @@ void arch_stack_trace()
 
     printk("stack trace:\n");
 
-    /* symbols are not always provided by the bootloader */
-    int have_syms = __kboot && __kboot->symtab && __kboot->strtab;
-    const char *strs = have_syms ? (const char *) (uintptr_t) __kboot->strtab->sh_addr : NULL;
-
     for (int frame = 0; stk && frame < 20; ++frame) {
+        const elf_sym_t *sym = symbol_of(stk->ip);
 
-        /* find symbol */
-        struct elf32_sym *sym = have_syms ? (struct elf32_sym *) (uintptr_t) __kboot->symtab->sh_addr : NULL;
-
-        int found = 0;
-
-        for (size_t i = 0; have_syms && i < __kboot->symnum; ++i) {
-            if (ELF32_ST_TYPE(sym->st_info) == STT_FUNC) {
-                if (stk->ip > sym->st_value && stk->ip < sym->st_value + sym->st_size) {
-                    found = 1;
-                    break;
-                }
-            }
-            ++sym;
-        }
-
-        if (found) {
-            off_t off = stk->ip - sym->st_value;
-            printk("  [%p] %s+0x%x\n", stk->ip, strs + sym->st_name, off);
+        if (sym) {
+            const char *names = (const char *) (uintptr_t) __kboot->strtab->sh_addr;
+            printk("  [%p] %s+0x%lx\n", stk->ip, names + sym->st_name, (unsigned long) (stk->ip - sym->st_value));
         } else {
             printk("  [%p]\n", stk->ip);
         }
 
         stk = stk->bp;
     }
-#endif
 }

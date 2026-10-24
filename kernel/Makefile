@@ -31,6 +31,14 @@ KCONFIG := $(foreach v,$(filter ARCH_% PLATFORM_% DEV_% FS_% NET_% INITRAMFS_% F
 KCFLAGS  := $(CFLAGS) $(INCLUDES) $(KCONFIG) -MMD -MP
 KASFLAGS := $(ASFLAGS) $(INCLUDES) $(KCONFIG) -MMD -MP
 
+# DEBUG=1: debugging information, and only the optimizations that keep
+# the code close to the source, for gdb (make debug). Build it in a
+# directory of its own: flags alone don't make objects be rebuilt.
+ifeq ($(DEBUG),1)
+KCFLAGS  += -g -Og
+KASFLAGS += -g
+endif
+
 #
 # Collect objects
 #

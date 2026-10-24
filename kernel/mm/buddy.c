@@ -342,12 +342,12 @@ int buddy_setup(size_t total_mem)
     extern struct boot *__kboot;
 
     if (__kboot->symtab) {
-        struct elf32_shdr *shdr = __kboot->symtab;
+        elf_shdr_t *shdr = __kboot->symtab;
         buddy_set_unusable(LMA((uintptr_t) shdr->sh_addr), shdr->sh_size);
     }
 
     if (__kboot->strtab) {
-        struct elf32_shdr *shdr = __kboot->strtab;
+        elf_shdr_t *shdr = __kboot->strtab;
         buddy_set_unusable(LMA((uintptr_t) shdr->sh_addr), shdr->sh_size);
     }
 

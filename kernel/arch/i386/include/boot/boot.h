@@ -83,22 +83,23 @@ static inline struct boot *process_multiboot_info(multiboot_info_t *info)
     if (info->flags & MULTIBOOT_INFO_MEMORY)
         boot.total_mem = info->mem_lower + info->mem_upper;
 
-    if (info->flags & MULTIBOOT_INFO_ELF_SHDR) {
-        boot.shdr = (struct elf32_shdr *) VMA((uintptr_t) info->u.elf_sec.addr);
+    /* the kernel's section headers, if they're its ELF class's */
+    if ((info->flags & MULTIBOOT_INFO_ELF_SHDR) && info->u.elf_sec.size == sizeof(elf_shdr_t)) {
+        boot.shdr = (elf_shdr_t *) VMA((uintptr_t) info->u.elf_sec.addr);
         boot.shdr_num = info->u.elf_sec.num;
 
         for (size_t i = 0; i < boot.shdr_num; ++i) {
-            struct elf32_shdr *shdr = &boot.shdr[i];
+            elf_shdr_t *shdr = &boot.shdr[i];
 
             if (shdr->sh_type == SHT_SYMTAB && !boot.symtab) {
                 shdr->sh_addr = VMA((uintptr_t) shdr->sh_addr);
                 boot.symtab = shdr;
-                boot.symnum = shdr->sh_size / sizeof(struct elf32_sym);
+                boot.symnum = shdr->sh_size / sizeof(elf_sym_t);
 
                 /* The symbol names live in the string table linked to the
                  * symbol table, which isn't necessarily the first one */
                 if (shdr->sh_link && shdr->sh_link < boot.shdr_num) {
-                    struct elf32_shdr *strtab = &boot.shdr[shdr->sh_link];
+                    elf_shdr_t *strtab = &boot.shdr[shdr->sh_link];
                     strtab->sh_addr = VMA((uintptr_t) strtab->sh_addr);
                     boot.strtab = strtab;
                 }
