@@ -273,7 +273,8 @@ process maps the same object.
 | `include/uapi/aquila/signal.h`           | kernel | the numbers, `siginfo`, `sigaction` and its flags (shared with the C library) |
 | `kernel/include/sys/signal.h`            | kernel | the interface, `ERESTARTSYS`, `ERESTARTNOHAND` |
 | `kernel/sys/signal.c`                    | kernel | default actions, sending, taking, stopping   |
-| `kernel/sys/syscall.c`                   | kernel | `kill`, `sigaction`, `sigprocmask`, `sigsuspend`, `sigreturn`, `select`'s mask |
+| `kernel/sys/sys_signal.c`                | kernel | `kill`, `sigaction`, `sigprocmask`, `sigsuspend`, `sigreturn` |
+| `kernel/sys/sys_poll.c`                  | kernel | `select`'s mask                              |
 | `kernel/sys/proc.c`                      | kernel | `SIGCHLD`, orphaned groups                   |
 | `kernel/dev/tty/generic.c`               | kernel | the terminal's signals                       |
 | `kernel/arch/i386/sys/signal.c`          | x86    | `x86_return_to_user()`, restarts, the frame, sigcode, `sigreturn` |

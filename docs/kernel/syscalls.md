@@ -40,18 +40,39 @@ are compiled against the same numbers and structures.
 #define SYS_sigreturn       95
 ```
 
-The kernel's handlers are the `sys_*` functions of
-[`sys/syscall.c`](../../kernel/sys/syscall.c), and `syscall_table[]` maps
-the numbers to them:
+The kernel's handlers are the `sys_*` functions, by subject in
+`kernel/sys/`: [`sys_file.c`](../../kernel/sys/sys_file.c),
+[`sys_proc.c`](../../kernel/sys/sys_proc.c),
+[`sys_signal.c`](../../kernel/sys/sys_signal.c),
+[`sys_net.c`](../../kernel/sys/sys_net.c) and
+[`sys_poll.c`](../../kernel/sys/sys_poll.c);
+[`sys/syscalls.h`](../../kernel/sys/syscalls.h) lists them all with their
+arguments. `syscall_table[]`, in
+[`sys/syscall.c`](../../kernel/sys/syscall.c), maps the numbers to them:
 
 ```c
-void (*syscall_table[])() = {
-    [SYS_exit]          = sys_exit,
-    [SYS_close]         = sys_close,
-    [SYS_execve]        = sys_execve,
+SYSCALL1(exit, int)
+SYSCALL1(close, int)
+SYSCALL3(read, int, void *, size_t)
+...
+
+const syscall_t syscall_table[] = {
+    [SYS_exit]          = sys_exit_entry,
+    [SYS_close]         = sys_close_entry,
+    [SYS_read]          = sys_read_entry,
     ...
 };
 ```
+
+Every entry has the same type, `syscall_t`: five arguments the size of a
+register, and a `long` result. A handler is written with its own types,
+`sys_read(int fd, void *buf, size_t nbytes)`, so the table can't hold it
+directly: calling a function through a pointer of another type is
+undefined behaviour in C, even where the calling convention makes it
+work. `SYSCALL3(read, int, void *, size_t)` makes `sys_read_entry()`, a
+function of the table's type that converts its arguments to those types
+and calls `sys_read()`: the compiler checks that call. Linux's
+`SYSCALL_DEFINE3()` does the same.
 
 A number with no handler (past the table's end, or a hole in it) returns
 `ENOSYS`. Two numbers are holes on purpose: 35 (`auth`, removed: `login`
@@ -66,48 +87,47 @@ pointer to a structure instead, defined in the same header:
 `mmap`'s `struct aquila_mmap_args`, `mount`'s, the sockets' `send` and
 `recv` (`struct aquila_socket_io_args`), `select`'s, `thread_create`'s.
 
-The architecture finds the number and the arguments, and calls the
-handler as a C function: `sys_read(fd, buf, nbytes)`.
+The architecture finds the number and the arguments in the registers
+and hands them to `syscall_dispatch()` ([`sys/syscall.c`](../../kernel/sys/syscall.c)),
+which calls the handler through the table.
 
-The result is one word, given back with `arch_syscall_return(thread,
-value)`, which puts it where the architecture returns it to user mode.
-By the kernel's convention (see the [README](README.md))
-an error is a negative `errno`: `-EBADF`, `-EFAULT`. The C library turns
-that into the C convention, `-1` and `errno` set (`__syscall_ret()`, in
+The handler returns the result, one word. By the kernel's convention
+(see the [README](README.md)) an error is a negative `errno`: `-EBADF`,
+`-EFAULT`. The C library turns that into the C convention, `-1` and
+`errno` set (`__syscall_ret()`, in
 [`libc/aquila/syscall.h`](../../libc/aquila/syscall.h)).
 
 ```c
-static void sys_read(int fildes, void *buf, size_t nbytes)
+long sys_read(int fildes, void *buf, size_t nbytes)
 {
     struct file *file = fd_file(fildes);
 
-    if (!file) {
-        arch_syscall_return(curthread, -EBADF);
-        return;
-    }
+    if (!file)
+        return -EBADF;
 
-    if (uaccess_check(buf, nbytes)) {
-        arch_syscall_return(curthread, -EFAULT);
-        return;
-    }
+    if (uaccess_check(buf, nbytes))
+        return -EFAULT;
 
     struct iobuf io;
     iobuf_init(&io, buf, nbytes, 1);
 
-    ssize_t ret = vfs_file_read(file, &io);
-    arch_syscall_return(curthread, ret);
+    return vfs_file_read(file, &io);
 }
 ```
 
-The handlers return nothing; they set the result with
-`arch_syscall_return()`. That looks roundabout, but some calls return to
-more than one thread, or not to the caller at all: `fork` returns the
-child's pid to the parent and 0 to the child, a thread that hasn't run
-yet ([Processes and threads](processes.md)); `execve` doesn't return
-when it works; `exit` never does; `sigreturn` puts back the registers a
-signal handler interrupted ([Signals](signals.md)). Naming the thread
-covers them all. The cost is that every error path in `sys/syscall.c`
-is three lines, not one.
+`syscall_dispatch()` gives the result to the thread with
+`arch_syscall_return(thread, value)`, which puts it where the
+architecture returns it to user mode. A few calls don't return to their
+caller the usual way:
+
+- `fork` returns to two threads: the parent gets the child's pid,
+  `sys_fork()`'s result, and the child, a thread that hasn't run yet,
+  gets 0, set in it with `arch_syscall_return()` by `proc_fork()`
+  ([Processes and threads](processes.md));
+- `execve` doesn't return when it works: the new program starts;
+- `exit` never returns;
+- `sigreturn` puts back the registers a signal handler interrupted
+  ([Signals](signals.md)): `syscall_dispatch()` sets no result for it.
 
 A call that returns something bigger than a word (`mmap`'s address and
 an error, `pipe`'s two descriptors, `stat`'s structure) writes it to user
@@ -210,10 +230,11 @@ On the kernel's side:
 
 1. a number in `include/uapi/aquila/syscall.h`, the next free one, and a
    structure there if it needs more than five arguments;
-2. its handler, `sys_<name>()`, in `kernel/sys/syscall.c`: arguments
-   checked, user memory copied in and out, the result with
-   `arch_syscall_return()`;
-3. its entry in `syscall_table[]`.
+2. its handler, `long sys_<name>(...)`, in the `kernel/sys/sys_*.c` of
+   its subject, declared in `kernel/sys/syscalls.h`: arguments checked,
+   user memory copied in and out, the result returned;
+3. its wrapper, `SYSCALLn(name, types...)`, and its entry in
+   `syscall_table[]`, in `kernel/sys/syscall.c`.
 
 On the C library's side, in `libc/aquila/` (newlib's port, see
 [Building and testing](building.md)):
@@ -269,11 +290,12 @@ vector `0x80`, remembers where the registers are (`arch->regs`), and calls
 `arch_syscall()` ([`sys/syscall.c`](../../kernel/arch/i386/sys/syscall.c)),
 which:
 
-1. looks the number up in `syscall_table[]` (`ENOSYS` if there's none),
-   and keeps it in `curthread->syscall_nr`;
-2. calls the handler with the five argument registers;
-3. on the way out: the held files, an urgent thread (`x86_preempt()`),
-   then the signals (`x86_return_to_user()`, [`sys/signal.c`](../../kernel/arch/i386/sys/signal.c)).
+1. hands the number and the five argument registers to
+   `syscall_dispatch()`, which looks the number up in `syscall_table[]`
+   (`ENOSYS` if there's none), keeps it in `curthread->syscall_nr`, calls
+   the handler, sets its result and lets go of the files it held;
+2. on the way out: an urgent thread (`x86_preempt()`), then the signals
+   (`x86_return_to_user()`, [`sys/signal.c`](../../kernel/arch/i386/sys/signal.c)).
 
 `arch_syscall_return()` writes the result into the saved `eax` (`rax`),
 which the return from the interrupt loads. A thread that hasn't run yet,
@@ -313,8 +335,10 @@ them, the fault "returns" to its fixup, which returns what wasn't copied
 | File                                         | Layer    | What                                    |
 |----------------------------------------------|----------|-----------------------------------------|
 | `include/uapi/aquila/syscall.h`              | kernel   | the numbers and argument structures, shared with libc |
-| `kernel/sys/syscall.c`                       | kernel   | the handlers, `syscall_table[]`         |
-| `kernel/include/sys/syscall.h`               | kernel   | the table's declaration                 |
+| `kernel/sys/syscall.c`                       | kernel   | `syscall_dispatch()`, `syscall_table[]`, `fd_file()`, `upath_get()` |
+| `kernel/sys/syscalls.h`                      | kernel   | every handler, with its arguments       |
+| `kernel/sys/sys_{file,proc,signal,net,poll}.c` | kernel | the handlers, by subject              |
+| `kernel/include/sys/syscall.h`               | kernel   | `syscall_t`, the table, the dispatch    |
 | `kernel/include/sys/uaccess.h`               | kernel   | `copyin()`, `copyout()`, `copyinstr()`  |
 | `kernel/include/fs/iobuf.h`, `kernel/fs/iobuf.c` | kernel | I/O buffers in user memory           |
 | `kernel/fs/file.c`                           | kernel   | `file_hold()`, `thread_files_release()` |

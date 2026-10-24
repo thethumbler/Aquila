@@ -234,7 +234,7 @@ stops.
 
 ## Open files and descriptors
 
-`open()` ([`sys/syscall.c`](../../kernel/sys/syscall.c), `do_openat()`)
+`open()` ([`sys/sys_file.c`](../../kernel/sys/sys_file.c), `do_openat()`)
 looks the path up (and creates the file with `O_CREAT`), checks the
 permissions against the open mode, and makes an open file:
 
@@ -367,7 +367,7 @@ Nearly nothing. The VFS is written against the kernel's interfaces only:
 | `kernel/fs/vm_object.c`                  | kernel | a file's pages                               |
 | `kernel/fs/sync.c`                       | kernel | (stubs)                                      |
 | `kernel/dev/blkcache.c`                  | kernel | the disks' block cache                       |
-| `kernel/sys/syscall.c`                   | kernel | the file system calls, `do_openat()`         |
+| `kernel/sys/sys_file.c`                  | kernel | the file system calls, `do_openat()`         |
 | `kernel/sys/thread.c`                    | kernel | `poll_register()`                            |
 
 ## References

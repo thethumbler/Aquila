@@ -347,7 +347,7 @@ handed out and never given back.
 | `kernel/mm/vm_object.c`, `kernel/fs/vm_object.c` | kernel | a file's pages                       |
 | `kernel/mm/fault.c`                      | kernel | `mm_page_fault()`                            |
 | `kernel/sys/binfmt/`                     | kernel | the regions of a new program                 |
-| `kernel/sys/syscall.c`                   | kernel | `sbrk()`, `mmap()`, `munmap()`               |
+| `kernel/sys/sys_proc.c`                  | kernel | `sbrk()`, `mmap()`, `munmap()`               |
 | `kernel/include/mm/`                     | kernel | the structures, and the `pmap` interface     |
 | `kernel/arch/i386/include/mm/mm.h`       | x86    | the address space layouts                    |
 | `kernel/arch/i386/mm/i386.c`             | x86    | 32-bit paging                                |

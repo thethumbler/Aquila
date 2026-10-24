@@ -228,9 +228,9 @@ Two more kinds of things happen at a time to come:
    same pages read-only, and the first to write one gets its own copy
    (`vm_space_fork()`, see [Memory](memory.md));
 5. its one thread is a copy of the calling thread, made by the
-   architecture (`arch_proc_fork()`), which also arranges for `fork()` to
-   return 0 in the child and the child's pid in the parent
-   (`arch_syscall_return()`).
+   architecture (`arch_proc_fork()`); `fork()` returns 0 in the child
+   (set in its registers, `arch_syscall_return()`) and the child's pid in
+   the parent (`sys_fork()`'s result).
 
 The child's thread is put on the ready queue; it starts by returning
 from `fork()`. Only the calling thread is copied: the child of a process
@@ -281,7 +281,7 @@ linked statically.
 ### Threads
 
 A process makes more threads with `thread_create()`, the C library's
-`pthread_create()` underneath ([`sys/syscall.c`](../../kernel/sys/syscall.c),
+`pthread_create()` underneath ([`sys/sys_proc.c`](../../kernel/sys/sys_proc.c),
 `sys_thread_create()`). It gives a user stack, the C library's start
 routine, the thread's function and its argument; the architecture makes
 the thread's registers and kernel stack (`arch_thread_create()`), and the
@@ -438,7 +438,8 @@ clean FPU, and `sigreturn` puts the old state back.
 | `kernel/sys/fork.c`                     | kernel | `fork()`                                     |
 | `kernel/sys/execve.c`                   | kernel | `execve()`, scripts                          |
 | `kernel/sys/binfmt/`                    | kernel | binary formats: ELF                          |
-| `kernel/sys/syscall.c`                  | kernel | `exit`, `waitpid`, threads, `setpgid`, `setsid`, `nanosleep`, `setitimer` |
+| `kernel/sys/sys_proc.c`                 | kernel | `exit`, `waitpid`, threads, `setpgid`, `setsid` |
+| `kernel/sys/sys_signal.c`               | kernel | `nanosleep`, `setitimer`                     |
 | `kernel/arch/i386/include/core/arch.h`  | x86    | `struct x86_thread`, stack sizes, `USER_STACK` |
 | `kernel/arch/i386/sys/thread.c`         | x86    | making, spawning, switching, killing threads |
 | `kernel/arch/i386/sys/sched.c`          | x86    | the idle loop, the tick's handler, killing the current thread |

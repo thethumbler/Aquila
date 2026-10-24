@@ -142,7 +142,7 @@ machine does something:
 | When                            | The kernel's function                                   |
 |---------------------------------|---------------------------------------------------------|
 | boot is done                    | `kmain(struct boot *)`                                  |
-| a system call                   | the handler in `syscall_table[]`, by number             |
+| a system call                   | `syscall_dispatch()`: the handler in `syscall_table[]`, by number |
 | a page fault                    | `mm_page_fault()`, with the address and what was tried  |
 | the timer's tick                | `sched_timer_tick()` (the boot CPU), `sched_cpu_tick()` (the others) |
 | a switch is due                 | `schedule()`                                            |
@@ -185,7 +185,7 @@ where x86 still shows through in generic code:
   `platform_timer_setup()`) is x86's own, in
   `kernel/arch/i386/include/core/platform.h`: the architecture calls it,
   the kernel doesn't.
-- **System call restarts** are explained in `sys/syscall.c` in terms of
+- **System call restarts** are explained in `sys/sys_signal.c` in terms of
   x86 (`x86_return_to_user()`), though the decision is the architecture's.
 
 When reading the code, a name tells you the layer: `arch_*` is the
